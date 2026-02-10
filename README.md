@@ -36,7 +36,7 @@ FootballEngine/
 │   └── Views/             # UI components
 │       ├── Components/    # Reusable UI elements
 │       └── Pages/         # Main application views
-└── .gitignore
+
 ```
 
 ## Getting Started
