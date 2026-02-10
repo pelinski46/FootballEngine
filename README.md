@@ -2,6 +2,12 @@
 
 A proof-of-concept football management simulation built with F# and Avalonia UI.
 
+
+## Screenshots
+![Home Board](screenshots/Home.png)
+![Tactics Board](screenshots/Tactics.png)
+![Squad Simulation](screenshots/Squad.png)
+
 ## About This Project
 
 FootballEngine is my experimental journey into creating a football management simulator using functional programming. I'm building this as a learning project to explore both game development concepts and functional programming patterns with F#. The current version demonstrates core mechanics like player statistics, basic match simulation, and team management interfaces.
