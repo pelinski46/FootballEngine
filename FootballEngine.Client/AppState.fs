@@ -175,8 +175,10 @@ module AppState =
             match state.SetupSelectedCountry with
             | None -> state
             | Some primary ->
+                let seedRnd = Random()
+
                 let newGs =
-                    Engine.generateNewGame primary state.SetupManagerName state.SetupSecondaryCountries
+                    Engine.generateNewGame seedRnd primary state.SetupManagerName state.SetupSecondaryCountries
 
                 Db.saveGame newGs
 
@@ -239,33 +241,63 @@ module AppState =
         | DropPlayerInSlot(targetIdx, pId) ->
             let team = state.GameState.Clubs[state.GameState.UserClubId]
 
+            let createCompleteSlots (formationName: string) : LineupSlot list =
+                let formationSlots = FormationData.getFormation formationName
+
+                formationSlots
+                |> List.map (fun fs ->
+                    { Index = fs.Index
+                      Role = fs.Role
+                      X = fs.X
+                      Y = fs.Y
+                      PlayerId = None })
+                |> List.sortBy (fun s -> s.Index)
+
             let lineup =
                 team.CurrentLineup
                 |> Option.defaultValue
                     { FormationName = state.SelectedTactics
                       TeamTactics = "Balanced"
-                      PlayerSlots = [] }
+                      Slots = createCompleteSlots state.SelectedTactics }
 
-            let slots = lineup.PlayerSlots |> Map.ofList
+            let slotsMap = lineup.Slots |> List.map (fun s -> s.Index, s.PlayerId) |> Map.ofList
+
+
 
             let sourceIdx =
-                slots
+                slotsMap
                 |> Map.tryPick (fun idx idOpt -> if idOpt = Some pId then Some idx else None)
 
-            let occupant = slots |> Map.tryFind targetIdx |> Option.flatten
+            let occupant = slotsMap |> Map.tryFind targetIdx |> Option.flatten
+
+            let newSlotsMap =
+                match sourceIdx with
+                | Some src ->
+                    // Intercambiar: el jugador va a target, el ocupante va a source
+                    slotsMap |> Map.add targetIdx (Some pId) |> Map.add src occupant
+                | None ->
+                    // El jugador viene del banquillo, lo colocamos en target, y el ocupante (si existe) queda libre
+                    slotsMap
+                    |> Map.add targetIdx (Some pId)
+                    |> Map.map (fun idx idOpt -> if idx <> targetIdx && idOpt = Some pId then None else idOpt)
 
             let newSlots =
-                match sourceIdx with
-                | Some src -> slots |> Map.add targetIdx (Some pId) |> Map.add src occupant
-                | None ->
-                    slots
-                    |> Map.map (fun _ idOpt -> if idOpt = Some pId then None else idOpt)
-                    |> Map.add targetIdx (Some pId)
+                newSlotsMap
                 |> Map.toList
+                |> List.map (fun (idx, pidOpt) ->
+                    // El slot original siempre existe porque el lineup tiene todos los índices
+                    let originalSlot = lineup.Slots |> List.find (fun s -> s.Index = idx)
+
+                    { Index = idx
+                      Role = originalSlot.Role
+                      X = originalSlot.X
+                      Y = originalSlot.Y
+                      PlayerId = pidOpt })
+                |> List.sortBy (fun s -> s.Index)
 
             let updatedTeam =
                 { team with
-                    CurrentLineup = Some { lineup with PlayerSlots = newSlots } }
+                    CurrentLineup = Some { lineup with Slots = newSlots } }
 
             let newGameState =
                 { state.GameState with

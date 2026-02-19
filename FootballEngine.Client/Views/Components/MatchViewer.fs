@@ -7,19 +7,11 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine.Domain
+open FootballEngine.MatchEngine
 
 module MatchViewer =
 
-    type MatchState =
-        { Home: Club
-          Away: Club
-          HomeLineup: Player array
-          AwayLineup: Player array
-          BallPosition: float * float
-          Minute: int
-          HomeScore: int
-          AwayScore: int
-          Events: MatchEvent list }
+
 
     let private getPlayerPositions (formation: string) =
         match formation with
@@ -211,7 +203,7 @@ module MatchViewer =
                           Border.padding (15.0, 8.0)
                           Border.child (
                               TextBlock.create
-                                  [ TextBlock.text $"{matchState.Minute}'"
+                                  [ TextBlock.text $"{matchState.Second * 60}'"
                                     TextBlock.foreground "white"
                                     TextBlock.fontSize 18.0
                                     TextBlock.fontWeight FontWeight.Bold ]

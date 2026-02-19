@@ -1,23 +1,422 @@
 namespace FootballEngine
 
 open System
+open FootballEngine.Client.AI
 open FootballEngine.Domain
 open FSharp.Stats.Distributions
 
-module Engine =
 
-    let rnd = Random()
+module MatchEngine =
 
 
     let nextNormalInt mean stdDev min max =
         let sample = Continuous.Normal.Sample mean stdDev
         Math.Clamp(int (Math.Round(sample)), min, max)
 
+    let inline private effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
+        let baseValue =
+            float stat * (float condition / 100.0) * (0.8 + (float morale / 500.0))
 
-    let createRegen id pos clubId (nationality: CountryCode) =
+        Continuous.Normal.Sample baseValue sigma
+
+    let isDefender p =
+        match p.Position with
+        | DC
+        | DL
+        | DR
+        | DM -> true
+        | _ -> false
+
+    let isMidfielder p =
+        match p.Position with
+        | MC
+        | AMC
+        | AML
+        | AMR -> true
+        | _ -> false
+
+    let isAttacker p =
+        match p.Position with
+        | ST
+        | AML
+        | AMR -> true
+        | _ -> false
+
+    let private isCenterBack p =
+        match p.Position with
+        | DC
+        | DL
+        | DR -> true
+        | _ -> false
+
+    let private isDefensiveMid p =
+        match p.Position with
+        | MC
+        | DM -> true
+        | _ -> false
+
+    type Possession =
+        | Home
+        | Away
+
+    type MatchPhase =
+        | BuildUp
+        | Midfield
+        | Attack
+
+    type MatchState =
+        { Home: Club
+          Away: Club
+          Second: int
+          HomeScore: int
+          AwayScore: int
+          BallPosition: float * float
+          Possession: Possession
+          Momentum: float
+          EventsRev: MatchEvent list }
+
+    let inline private addEvent (ev: MatchEvent) (s: MatchState) =
+        { s with EventsRev = ev :: s.EventsRev }
+
+    let private flipPossession =
+        function
+        | Home -> Away
+        | Away -> Home
+
+    let inline private clampBallZone z = Math.Clamp(z, 0.0, 100.0)
+
+    let inline private phaseFromBallZone (z: float) =
+        if z < 30.0 || z > 70.0 then BuildUp
+        elif z >= 40.0 && z <= 60.0 then Midfield
+        else Attack
 
 
+    let private calculateAttackEffort phase att attCond =
+        match phase with
+        | BuildUp ->
+            effectiveStat att.Technical.Passing attCond att.Morale 2.0
+            + effectiveStat att.Mental.Vision attCond att.Morale 1.5
+            + effectiveStat att.Mental.Composure attCond att.Morale 1.0
+        | Midfield ->
+            effectiveStat att.Technical.BallControl attCond att.Morale 2.0
+            + effectiveStat att.Mental.Vision attCond att.Morale 2.0
+            + effectiveStat att.Technical.Dribbling attCond att.Morale 1.5
+        | Attack ->
+            effectiveStat att.Technical.Dribbling attCond att.Morale 2.5
+            + effectiveStat att.Physical.Pace attCond att.Morale 2.0
+            + effectiveStat att.Physical.Agility attCond att.Morale 1.5
 
+    let private calculateDefenseEffort def defCond =
+        effectiveStat def.Technical.Tackling defCond def.Morale 2.0
+        + effectiveStat def.Mental.Positioning defCond def.Morale 2.0
+        + effectiveStat def.Physical.Strength defCond def.Morale 1.0
+        + effectiveStat def.Mental.Concentration defCond def.Morale 1.0
+
+    let simulateMatch (home: Club) (away: Club) =
+        let getLineupPlayers (club: Club) =
+            match club.CurrentLineup with
+            | None -> failwithf $"El club %s{club.Name} no tiene alineación definida"
+            | Some lineup ->
+                lineup.Slots
+                |> List.choose (fun slot ->
+                    slot.PlayerId
+                    |> Option.bind (fun pid ->
+                        club.Players
+                        |> List.tryFind (fun p -> p.Id = pid)
+                        |> Option.map (fun p -> (p, slot.X, slot.Y))))
+                |> List.toArray
+
+        let homePlayersWithPos = getLineupPlayers home
+        let awayPlayersWithPos = getLineupPlayers away
+
+        if homePlayersWithPos.Length <> 11 || awayPlayersWithPos.Length <> 11 then
+            failwith "Ambos equipos deben tener exactamente 11 jugadores en la alineación"
+
+        // Separar jugadores y posiciones
+        let homePlayers = homePlayersWithPos |> Array.map (fun (p, _, _) -> p)
+        let awayPlayers = awayPlayersWithPos |> Array.map (fun (p, _, _) -> p)
+        let homePos = homePlayersWithPos |> Array.map (fun (_, x, y) -> (x, y))
+        let awayPos = awayPlayersWithPos |> Array.map (fun (_, x, y) -> (x, y))
+
+        // Condiciones mutables
+        let hCondition = homePlayers |> Array.map (fun p -> p.Condition)
+        let aCondition = awayPlayers |> Array.map (fun p -> p.Condition)
+
+        let getCondition playerId pos =
+            match pos with
+            | Home ->
+                let idx = homePlayers |> Array.findIndex (fun p -> p.Id = playerId)
+                hCondition[idx]
+            | Away ->
+                let idx = awayPlayers |> Array.findIndex (fun p -> p.Id = playerId)
+                aCondition[idx]
+
+        let applyFatigue (ballZone: float) =
+            let homePressing = ballZone > 70.0
+            let awayPressing = ballZone < 30.0
+
+            let updateTeamFatigue (team: Player array) (condition: int array) isPressing =
+                for i in 0..10 do
+                    let p = team[i]
+                    let baseFatigue = (100 - p.Physical.Stamina) / 20
+                    let workRateFatigue = p.Mental.WorkRate / 15
+                    let multiplier = if isPressing then 1.5 else 1.0
+                    let totalFatigue = float (baseFatigue + workRateFatigue) * multiplier
+                    condition[i] <- Math.Max(0, condition[i] - int totalFatigue)
+
+            updateTeamFatigue homePlayers hCondition homePressing
+            updateTeamFatigue awayPlayers aCondition awayPressing
+
+        let distance (x1, y1) (x2, y2) =
+            sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
+
+        let pickDuel (s: MatchState) =
+            let ball = s.BallPosition
+            let homeDists = homePos |> Array.map (distance ball)
+            let awayDists = awayPos |> Array.map (distance ball)
+
+            match s.Possession with
+            | Home ->
+                let attIdx = homeDists |> Array.mapi (fun i d -> i, d) |> Array.minBy snd |> fst
+                let defIdx = awayDists |> Array.mapi (fun i d -> i, d) |> Array.minBy snd |> fst
+                let att = homePlayers[attIdx]
+                let def = awayPlayers[defIdx]
+                (att, def, attIdx, defIdx)
+            | Away ->
+                let attIdx = awayDists |> Array.mapi (fun i d -> i, d) |> Array.minBy snd |> fst
+                let defIdx = homeDists |> Array.mapi (fun i d -> i, d) |> Array.minBy snd |> fst
+                let att = awayPlayers[attIdx]
+                let def = homePlayers[defIdx]
+                (att, def, attIdx, defIdx)
+
+        let resolveDuel (att: Player, def: Player, attIdx, defIdx) (s: MatchState) =
+            let attPos =
+                if s.Possession = Home then
+                    homePos[attIdx]
+                else
+                    awayPos[attIdx]
+
+            let defPos =
+                if s.Possession = Home then
+                    awayPos[defIdx]
+                else
+                    homePos[defIdx]
+
+            let attCond = getCondition att.Id s.Possession
+            let defCond = getCondition def.Id (flipPossession s.Possession)
+
+            let homeBonus =
+                match s.Possession with
+                | Home when home.Id = att.ClubId -> 3.0
+                | Away when home.Id = def.ClubId -> 3.0
+                | _ -> 0.0
+
+            let momentumBonus = if s.Possession = Home then s.Momentum else -s.Momentum
+
+            let attackEffort =
+                calculateAttackEffort (phaseFromBallZone (fst s.BallPosition)) att attCond
+
+            let defenseEffort = calculateDefenseEffort def defCond
+            let duelDiff = (attackEffort + homeBonus + momentumBonus) - defenseEffort
+
+            if duelDiff > 2.0 then
+                // Atacante gana claramente: la pelota se mueve hacia su posición
+                let moveX =
+                    (fst attPos - fst s.BallPosition) * 0.5 + Continuous.Normal.Sample 0.0 10.0
+
+                let moveY =
+                    (snd attPos - snd s.BallPosition) * 0.5 + Continuous.Normal.Sample 0.0 10.0
+
+                let newX = Math.Clamp(fst s.BallPosition + moveX, 0.0, 100.0)
+                let newY = Math.Clamp(snd s.BallPosition + moveY, 0.0, 100.0)
+
+                { s with
+                    BallPosition = (newX, newY)
+                    Momentum = Math.Clamp(s.Momentum + 0.5, -10.0, 10.0) }
+            elif duelDiff > -2.0 then
+                // Equilibrado: movimiento aleatorio pequeño
+                let moveX = Continuous.Normal.Sample 0.0 3.0
+                let moveY = Continuous.Normal.Sample 0.0 3.0
+                let newX = clampBallZone (fst s.BallPosition + moveX)
+                let newY = Math.Clamp(snd s.BallPosition + moveY, 0.0, 100.0)
+                { s with BallPosition = (newX, newY) }
+            else
+                // Defensa gana: robo y pelota hacia el defensor
+                let newPoss = flipPossession s.Possession
+
+                let moveX =
+                    (fst defPos - fst s.BallPosition) * 0.5 + Continuous.Normal.Sample 0.0 2.0
+
+                let moveY =
+                    (snd defPos - snd s.BallPosition) * 0.5 + Continuous.Normal.Sample 0.0 2.0
+
+                let newX = Math.Clamp(fst s.BallPosition + moveX, 0.0, 100.0)
+                let newY = Math.Clamp(snd s.BallPosition + moveY, 0.0, 100.0)
+
+                { s with
+                    Possession = newPoss
+                    BallPosition = (newX, newY)
+                    Momentum = Math.Clamp(s.Momentum - 1.0, -10.0, 10.0) }
+
+        let tryShot (s: MatchState) (attacker: Player) =
+            let ballX, ballY = s.BallPosition
+
+            let inChance =
+                (s.Possession = Home && ballX >= 70.0) || (s.Possession = Away && ballX <= 30.0)
+
+            if not inChance then
+                s
+            else
+                let shooter = attacker
+                // Encontrar al arquero rival
+                let gkIdxRival =
+                    if s.Possession = Home then
+                        awayPlayers |> Array.findIndex (fun p -> p.Position = GK)
+                    else
+                        homePlayers |> Array.findIndex (fun p -> p.Position = GK)
+
+                let gk =
+                    if s.Possession = Home then
+                        awayPlayers[gkIdxRival]
+                    else
+                        homePlayers[gkIdxRival]
+
+                // Índices para condición
+                let shooterIdx =
+                    if s.Possession = Home then
+                        homePlayers |> Array.findIndex (fun p -> p.Id = shooter.Id)
+                    else
+                        awayPlayers |> Array.findIndex (fun p -> p.Id = shooter.Id)
+
+                let gkIdx =
+                    if s.Possession = Home then
+                        awayPlayers |> Array.findIndex (fun p -> p.Id = gk.Id)
+                    else
+                        homePlayers |> Array.findIndex (fun p -> p.Id = gk.Id)
+
+                let shooterCond = if s.Possession = Home then hCondition else aCondition
+                let gkCond = if s.Possession = Home then aCondition else hCondition
+
+                let distanceToGoal = if s.Possession = Home then 100.0 - ballX else ballX
+                let distancePenalty = distanceToGoal * 0.15
+
+                let shotPower =
+                    effectiveStat shooter.Technical.Finishing shooterCond[shooterIdx] shooter.Morale 3.5
+                    + effectiveStat shooter.Mental.Composure shooterCond[shooterIdx] shooter.Morale 3.0
+                    + effectiveStat shooter.Technical.LongShots shooterCond[shooterIdx] shooter.Morale 2.0
+                    + effectiveStat shooter.Physical.Pace shooterCond[shooterIdx] shooter.Morale 1.5
+                    - distancePenalty
+
+                // Defensores rivales más cercanos al tirador (usamos los 3 más cercanos)
+                let defendersWithPos =
+                    if s.Possession = Home then
+                        awayPlayers
+                        |> Array.mapi (fun i p -> (p, awayPos[i]))
+                        |> Array.filter (fun (p, _) -> isDefender p)
+                    else
+                        homePlayers
+                        |> Array.mapi (fun i p -> (p, homePos[i]))
+                        |> Array.filter (fun (p, _) -> isDefender p)
+
+                let defCondArr = if s.Possession = Home then aCondition else hCondition
+
+                let defenderPressure =
+                    defendersWithPos
+                    |> Array.map (fun (p, pos) -> (p, pos, distance (ballX, ballY) pos))
+                    |> Array.sortBy (fun (_, _, d) -> d)
+                    |> Array.truncate 1
+                    |> Array.sumBy (fun (p, _, _) ->
+                        let idx =
+                            if s.Possession = Home then
+                                awayPlayers |> Array.findIndex (fun p2 -> p2.Id = p.Id)
+                            else
+                                homePlayers |> Array.findIndex (fun p2 -> p2.Id = p.Id)
+
+                        effectiveStat p.Technical.Marking defCondArr[idx] p.Morale 0.5)
+
+                let savePower =
+                    effectiveStat gk.Goalkeeping.Reflexes gkCond[gkIdx] gk.Morale 1.5
+                    + effectiveStat gk.Goalkeeping.OneOnOne gkCond[gkIdx] gk.Morale 2.0
+
+                    + defenderPressure
+
+                let goalThreshold = Continuous.Normal.Sample 0.0 2.0
+
+                if shotPower > savePower + goalThreshold then
+                    // Gol
+                    let clubId = shooter.ClubId
+
+                    let s' =
+                        { s with
+                            HomeScore = if s.Possession = Home then s.HomeScore + 1 else s.HomeScore
+                            AwayScore = if s.Possession = Away then s.AwayScore + 1 else s.AwayScore
+                            BallPosition = (50.0, 50.0)
+                            Possession = flipPossession s.Possession
+                            Momentum =
+                                if s.Possession = Home then
+                                    s.Momentum + 3.0
+                                else
+                                    s.Momentum - 3.0 }
+                        |> addEvent
+                            { Second = s.Second
+                              PlayerId = shooter.Id
+                              ClubId = clubId
+                              Type = Goal }
+
+                    s'
+                else
+                    // Rechace, la pelota sale hacia un lateral
+                    let newX =
+                        if s.Possession = Home then
+                            Continuous.Normal.Sample 75.0 5.0
+                        else
+                            Continuous.Normal.Sample 25.0 5.0
+
+                    let newY = Math.Clamp(Continuous.Normal.Sample ballY 10.0, 0.0, 100.0)
+
+                    { s with
+                        BallPosition = (newX, newY)
+                        Possession = flipPossession s.Possession }
+
+
+        let mutable s =
+            { Home = home
+              Away = away
+              Second = 0
+              HomeScore = 0
+              AwayScore = 0
+              BallPosition = (50.0, 50.0)
+              Possession = Home
+              Momentum = 0.0
+              EventsRev = [] }
+
+        let totalSeconds = 95 * 60
+
+        for second in 1..totalSeconds do
+            s <- { s with Second = second }
+
+            if second % 180 = 0 then
+                applyFatigue (fst s.BallPosition)
+
+            if second % 30 = 0 then
+                let (att, def, attIdx, defIdx) = pickDuel s
+                let sAfterDuel = resolveDuel (att, def, attIdx, defIdx) s
+                // Si después del duelo el equipo en posesión es el mismo, el atacante original puede tirar
+                let sAfterShot =
+                    if sAfterDuel.Possession = s.Possession then
+                        tryShot sAfterDuel att
+                    else
+                        sAfterDuel
+
+                s <- sAfterShot
+
+        (s.HomeScore, s.AwayScore, s.EventsRev)
+
+
+open MatchEngine
+
+module Engine =
+    let createRegen (seedRnd: Random) id pos clubId (nationality: CountryCode) =
         let targetCA = nextNormalInt 80.0 25.0 40 180
         let potential = nextNormalInt (float targetCA + 15.0) 15.0 targetCA 200
         let b = float targetCA / 10.0
@@ -26,7 +425,8 @@ module Engine =
         let firsts = GameData.firstNames[nationality]
         let lasts = GameData.lastNames[nationality]
 
-        let fullName = $"{firsts[rnd.Next(firsts.Length)]} {lasts[rnd.Next(lasts.Length)]}"
+        let fullName =
+            $"{firsts[seedRnd.Next(firsts.Length)]} {lasts[seedRnd.Next(lasts.Length)]}"
 
         let genPhysical () =
             { Acceleration = nextNormalInt b 3.0 1 20
@@ -75,12 +475,12 @@ module Engine =
             { Id = id
               ClubId = clubId
               Name = fullName
-              Birthday = DateTime.Now.AddYears(-(17 + rnd.Next(18)))
+              Birthday = DateTime.Now.AddYears(-(17 + seedRnd.Next(18)))
               Nationality = nationality
               Position = pos
-              PreferredFoot = if rnd.NextDouble() > 0.3 then Right else Left
-              Height = 170 + rnd.Next(25)
-              Weight = 65 + rnd.Next(25)
+              PreferredFoot = if seedRnd.NextDouble() > 0.3 then Right else Left
+              Height = 170 + seedRnd.Next(25)
+              Weight = 65 + seedRnd.Next(25)
               Physical = genPhysical ()
               Technical = genTechnical ()
               Mental = genMental ()
@@ -99,347 +499,6 @@ module Engine =
 
         { p with
             CurrentSkill = Player.calculateCurrentAbility p }
-
-    let pickStartingXI (club: Club) =
-        let getBest n pos =
-            club.Players
-            |> List.filter (fun p -> p.Position = pos)
-            |> List.sortByDescending _.CurrentSkill
-            |> List.take n
-
-        let gk = getBest 1 GK
-        let df = getBest 4 DC
-        let md = getBest 4 MC
-        let st = getBest 2 ST
-
-        gk @ df @ md @ st
-        |> List.take (Math.Min(11, club.Players.Length))
-        |> List.toArray
-
-    let inline private effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
-        let baseValue =
-            float stat * (float condition / 100.0) * (0.8 + (float morale / 500.0))
-
-        Continuous.Normal.Sample baseValue sigma
-
-    let simulateMatch (home: Club) (away: Club) =
-
-        let h11 = pickStartingXI home
-        let a11 = pickStartingXI away
-
-
-        let hDefenders =
-            h11
-            |> Array.filter (fun p -> p.Position = DC || p.Position = DL || p.Position = DR || p.Position = DM)
-
-
-        let aDefenders =
-            a11
-            |> Array.filter (fun p -> p.Position = DC || p.Position = DL || p.Position = DR || p.Position = DM)
-
-
-        let hMidfielders =
-            h11
-            |> Array.filter (fun p -> p.Position = MC || p.Position = AMC || p.Position = AML || p.Position = AMR)
-
-
-        let aMidfielders =
-            a11
-            |> Array.filter (fun p -> p.Position = MC || p.Position = AMC || p.Position = AML || p.Position = AMR)
-
-
-        let hAttackers =
-            h11
-            |> Array.filter (fun p -> p.Position = ST || p.Position = AML || p.Position = AMR)
-
-
-        let aAttackers =
-            a11
-            |> Array.filter (fun p -> p.Position = ST || p.Position = AML || p.Position = AMR)
-
-
-        let hDMs = h11 |> Array.filter (fun p -> p.Position = MC || p.Position = DM)
-
-        let aDMs = a11 |> Array.filter (fun p -> p.Position = MC || p.Position = DM)
-
-        let hCBs =
-            h11
-            |> Array.filter (fun p -> p.Position = DC || p.Position = DL || p.Position = DR)
-
-
-        let aCBs =
-            a11
-            |> Array.filter (fun p -> p.Position = DC || p.Position = DL || p.Position = DR)
-
-
-        let hGK = h11 |> Array.find (fun p -> p.Position = GK)
-        let aGK = a11 |> Array.find (fun p -> p.Position = GK)
-
-
-        let mutable hScore, aScore = 0, 0
-        let events = ResizeArray<MatchEvent>(10)
-        let mutable ballZone, possessionHome = 50.0, true
-        let mutable momentum = 0.0
-
-
-        let hCondition = Array.init 11 (fun i -> h11[i].Condition)
-        let aCondition = Array.init 11 (fun i -> a11[i].Condition)
-
-        let hIdToIdx = h11 |> Array.mapi (fun i p -> p.Id, i) |> dict
-        let aIdToIdx = a11 |> Array.mapi (fun i p -> p.Id, i) |> dict
-
-        for min in 1..95 do
-            if min % 3 = 0 then
-                let homePressing = ballZone > 70.0
-                let awayPressing = ballZone < 30.0
-
-                for i in 0..10 do
-                    let hp = h11[i]
-                    let baseFatigue = (100 - hp.Physical.Stamina) / 20
-                    let workRateFatigue = hp.Mental.WorkRate / 15
-                    let multiplier = if homePressing then 1.5 else 1.0
-                    let totalFatigue = float (baseFatigue + workRateFatigue) * multiplier
-                    hCondition[i] <- Math.Max(0, hCondition[i] - int totalFatigue)
-
-                    let ap = a11[i]
-                    let baseFatigue2 = (100 - ap.Physical.Stamina) / 20
-                    let workRateFatigue2 = ap.Mental.WorkRate / 15
-                    let multiplier2 = if awayPressing then 1.5 else 1.0
-                    let totalFatigue2 = float (baseFatigue2 + workRateFatigue2) * multiplier2
-                    aCondition[i] <- Math.Max(0, aCondition[i] - int totalFatigue2)
-
-            let att, def, attCond, defCond, phase =
-                let attackingTeam = if possessionHome then h11 else a11
-                let defendingTeam = if possessionHome then a11 else h11
-                let attCondArr = if possessionHome then hCondition else aCondition
-                let defCondArr = if possessionHome then aCondition else hCondition
-
-                match ballZone with
-                | z when z <= 30.0 || z >= 70.0 ->
-                    let attPlayers = if possessionHome then hDefenders else aDefenders
-                    let defPlayers = if possessionHome then aDMs else hDMs
-
-                    let att =
-                        if attPlayers.Length > 0 then
-                            attPlayers |> Array.maxBy (fun p -> p.Technical.Passing)
-                        else
-                            attackingTeam[4]
-
-                    let def =
-                        if defPlayers.Length > 0 then
-                            defPlayers |> Array.maxBy (fun p -> p.Mental.Positioning)
-                        else
-                            defendingTeam[5]
-
-                    let attIdx =
-                        if possessionHome then
-                            hIdToIdx[att.Id]
-                        else
-                            aIdToIdx[att.Id]
-
-                    let defIdx =
-                        if possessionHome then
-                            aIdToIdx[def.Id]
-                        else
-                            hIdToIdx[def.Id]
-
-                    att, def, attCondArr[attIdx], defCondArr[defIdx], "buildup"
-
-                | z when z > 30.0 && z < 70.0 ->
-                    let attPlayers = if possessionHome then hMidfielders else aMidfielders
-                    let defPlayers = if possessionHome then aDMs else hDMs
-
-                    let att =
-                        if attPlayers.Length > 0 then
-                            attPlayers |> Array.maxBy (fun p -> p.Mental.Vision + p.Technical.Passing)
-                        else
-                            attackingTeam[6]
-
-                    let def =
-                        if defPlayers.Length > 0 then
-                            defPlayers |> Array.maxBy (fun p -> p.Technical.Tackling + p.Mental.Positioning)
-                        else
-                            defendingTeam[5]
-
-                    let attIdx =
-                        if possessionHome then
-                            hIdToIdx[att.Id]
-                        else
-                            aIdToIdx[att.Id]
-
-                    let defIdx =
-                        if possessionHome then
-                            aIdToIdx[def.Id]
-                        else
-                            hIdToIdx[def.Id]
-
-                    att, def, attCondArr[attIdx], defCondArr[defIdx], "midfield"
-
-                | _ ->
-                    let attPlayers = if possessionHome then hAttackers else aAttackers
-                    let defPlayers = if possessionHome then aCBs else hCBs
-
-                    let att =
-                        if attPlayers.Length > 0 then
-                            attPlayers |> Array.maxBy (fun p -> p.Physical.Pace + p.Technical.Dribbling)
-                        else
-                            attackingTeam[9]
-
-                    let def =
-                        if defPlayers.Length > 0 then
-                            defPlayers |> Array.maxBy (fun p -> p.Physical.Pace + p.Technical.Marking)
-                        else
-                            defendingTeam[2]
-
-                    let attIdx =
-                        if possessionHome then
-                            hIdToIdx[att.Id]
-                        else
-                            aIdToIdx[att.Id]
-
-                    let defIdx =
-                        if possessionHome then
-                            aIdToIdx[def.Id]
-                        else
-                            hIdToIdx[def.Id]
-
-                    att, def, attCondArr[attIdx], defCondArr[defIdx], "attack"
-
-            let homeBonus =
-                if
-                    (possessionHome && home.Id = att.ClubId)
-                    || (not possessionHome && home.Id = def.ClubId)
-                then
-                    2.0
-                else
-                    1.0
-
-            let momentumBonus = if possessionHome then momentum else -momentum
-
-            let attackEffort =
-                match phase with
-                | "buildup" ->
-                    effectiveStat att.Technical.Passing attCond att.Morale 2.0
-                    + effectiveStat att.Mental.Vision attCond att.Morale 1.5
-                    + effectiveStat att.Mental.Composure attCond att.Morale 1.0
-                | "midfield" ->
-                    effectiveStat att.Technical.BallControl attCond att.Morale 2.0
-                    + effectiveStat att.Mental.Vision attCond att.Morale 2.0
-                    + effectiveStat att.Technical.Dribbling attCond att.Morale 1.5
-                | "attack" ->
-                    effectiveStat att.Technical.Dribbling attCond att.Morale 2.5
-                    + effectiveStat att.Physical.Pace attCond att.Morale 2.0
-                    + effectiveStat att.Physical.Agility attCond att.Morale 1.5
-                | _ -> 10.0
-
-            let defenseEffort =
-                effectiveStat def.Technical.Tackling defCond def.Morale 2.0
-                + effectiveStat def.Mental.Positioning defCond def.Morale 2.0
-                + effectiveStat def.Physical.Strength defCond def.Morale 1.0
-                + effectiveStat def.Mental.Concentration defCond def.Morale 1.0
-
-            let totalAttack = attackEffort + homeBonus + momentumBonus
-            let duelDiff = totalAttack - defenseEffort
-
-            if duelDiff > 2.0 then
-                let move = Continuous.Normal.Sample 12.0 6.0 |> Math.Abs
-
-                ballZone <-
-                    if possessionHome then
-                        Math.Min(100.0, ballZone + move)
-                    else
-                        Math.Max(0.0, ballZone - move)
-
-                momentum <- Math.Clamp(momentum + (if possessionHome then 0.5 else -0.5), -10.0, 10.0)
-            elif duelDiff > -2.0 then
-                let move = Continuous.Normal.Sample 5.0 3.0
-                ballZone <- Math.Clamp(ballZone + (if possessionHome then move else -move), 0.0, 100.0)
-            else
-                possessionHome <- not possessionHome
-                momentum <- Math.Clamp(momentum + (if possessionHome then -1.0 else 1.0), -10.0, 10.0)
-                let move = Continuous.Normal.Sample 8.0 4.0 |> Math.Abs
-
-                ballZone <-
-                    if possessionHome then
-                        Math.Min(100.0, ballZone + move)
-                    else
-                        Math.Max(0.0, ballZone - move)
-
-            if (possessionHome && ballZone >= 88.0) || (not possessionHome && ballZone <= 12.0) then
-                let shooterTeam = if possessionHome then hAttackers else aAttackers
-                let gk = if possessionHome then aGK else hGK
-                let shooterCond = if possessionHome then hCondition else aCondition
-                let gkCond = if possessionHome then aCondition else hCondition
-                let currentClub = if possessionHome then home else away
-
-                if shooterTeam.Length > 0 then
-                    let shooter = shooterTeam |> Array.maxBy (fun p -> p.Technical.Finishing)
-
-                    let shooterIdx =
-                        if possessionHome then
-                            hIdToIdx[shooter.Id]
-                        else
-                            aIdToIdx[shooter.Id]
-
-                    let gkIdx = if possessionHome then aIdToIdx[gk.Id] else hIdToIdx[gk.Id]
-
-                    let distance = if ballZone >= 88.0 then 100.0 - ballZone else ballZone
-                    let distancePenalty = distance * 0.3
-
-                    let shotPower =
-                        effectiveStat shooter.Technical.Finishing shooterCond[shooterIdx] shooter.Morale 3.0
-                        + effectiveStat shooter.Mental.Composure shooterCond[shooterIdx] shooter.Morale 2.5
-                        + effectiveStat shooter.Technical.LongShots shooterCond[shooterIdx] shooter.Morale 1.5
-                        - distancePenalty
-
-                    let defenders = if possessionHome then aCBs else hCBs
-                    let defCond = if possessionHome then aCondition else hCondition
-
-                    let defenderPressure =
-                        defenders
-                        |> Array.sumBy (fun p ->
-                            let idx = if possessionHome then aIdToIdx[p.Id] else hIdToIdx[p.Id]
-                            effectiveStat p.Technical.Marking defCond[idx] p.Morale 0.5)
-
-                    let savePower =
-                        effectiveStat gk.Goalkeeping.Reflexes gkCond[gkIdx] gk.Morale 3.0
-                        + effectiveStat gk.Goalkeeping.OneOnOne gkCond[gkIdx] gk.Morale 2.5
-                        + effectiveStat gk.Mental.Positioning gkCond[gkIdx] gk.Morale 2.0
-                        + defenderPressure
-
-                    let goalThreshold = Continuous.Normal.Sample 2.5 3.0
-
-                    if shotPower > savePower + goalThreshold then
-                        if possessionHome then
-                            hScore <- hScore + 1
-                        else
-                            aScore <- aScore + 1
-
-                        events.Add(
-                            { Minute = min
-                              PlayerId = shooter.Id
-                              ClubId = currentClub.Id
-                              Type = Goal }
-                        )
-
-                        ballZone <- 50.0
-                        possessionHome <- not possessionHome
-                        momentum <- if possessionHome then momentum - 3.0 else momentum + 3.0
-                    else
-                        ballZone <-
-                            if possessionHome then
-                                Continuous.Normal.Sample 75.0 5.0
-                            else
-                                Continuous.Normal.Sample 25.0 5.0
-
-                        possessionHome <- not possessionHome
-                else
-                    ballZone <- if possessionHome then 75.0 else 25.0
-                    possessionHome <- not possessionHome
-
-        (hScore, aScore, Seq.toList events)
-
-
 
     let generateRoundRobinFixture (clubIds: ClubId list) (startDate: DateTime) =
         let n = clubIds.Length
@@ -481,7 +540,12 @@ module Engine =
 
 
 
-    let generateNewGame (primaryCountry: CountryCode) (managerName: string) (secondaryCountries: CountryCode list) =
+    let generateNewGame
+        (seedRnd: Random)
+        (primaryCountry: CountryCode)
+        (managerName: string)
+        (secondaryCountries: CountryCode list)
+        =
         let mutable playerIdCounter = 1
         let mutable clubIdCounter = 1
         let mutable leagueIdCounter = 1
@@ -534,10 +598,11 @@ module Engine =
                     let clubPlayers =
                         positions
                         |> List.map (fun pos ->
-                            let p = createRegen playerIdCounter pos clubId country
+                            let p = createRegen seedRnd playerIdCounter pos clubId country
                             playerIdCounter <- playerIdCounter + 1
                             allPlayers <- Map.add p.Id p allPlayers
                             p)
+
 
                     let club =
                         { Id = clubId
@@ -554,7 +619,8 @@ module Engine =
                           GoalsFor = 0
                           GoalsAgainst = 0 }
 
-                    allClubs <- Map.add clubId club allClubs
+                    let clubWithLineup = ManagerAI.ensureLineup club ManagerAI.defaultFormationSlots
+                    allClubs <- Map.add clubId clubWithLineup allClubs
 
                 let league =
                     { Id = leagueId
@@ -591,34 +657,6 @@ module Engine =
           UserClubId = firstClubId
           ManagerName = managerName
           PrimaryCountry = primaryCountry }
-
-
-
-    let updateDaily (state: GameState) =
-        let updatedPlayers =
-            state.Players
-            |> Map.map (fun _ p ->
-                let recovered = Math.Clamp(p.Condition + 10, 0, 100)
-                let age = Player.age state.CurrentDate p
-
-                let devFactor =
-                    if age < 23 then 0.05
-                    elif age > 31 then -0.05
-                    else 0.01
-
-                let newSkill =
-                    if rnd.NextDouble() < abs devFactor && p.CurrentSkill < p.PotentialSkill then
-                        p.CurrentSkill + (if devFactor > 0.0 then 1 else -1)
-                    else
-                        p.CurrentSkill
-
-                { p with
-                    Condition = recovered
-                    CurrentSkill = newSkill })
-
-        { state with
-            CurrentDate = state.CurrentDate.AddDays(1.0)
-            Players = updatedPlayers }
 
     let simulateFixture (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
         let home = clubs[fixture.HomeClubId]

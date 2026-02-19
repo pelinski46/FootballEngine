@@ -116,7 +116,7 @@ module Tactics =
                                                     Border.background color
                                                     Border.horizontalAlignment HorizontalAlignment.Right
                                                     Border.verticalAlignment VerticalAlignment.Top ] ] ]
-                              UI.roleBadge slot.Role (if player.IsSome then "OK" else "-")
+                              UI.roleBadge (string slot.Role) (if player.IsSome then "OK" else "-")
                               Border.create
                                   [ Border.background "#0f172aee"
                                     Border.cornerRadius 4.0
@@ -137,9 +137,7 @@ module Tactics =
         let myTeam = state.GameState.Clubs[state.GameState.UserClubId]
 
         let lineup =
-            myTeam.CurrentLineup
-            |> Option.map (fun l -> l.PlayerSlots)
-            |> Option.defaultValue []
+            myTeam.CurrentLineup |> Option.map (fun l -> l.Slots) |> Option.defaultValue []
 
         let formationName =
             if state.SelectedTactics <> "" then
@@ -153,9 +151,9 @@ module Tactics =
         FootballPitch.render formationName (fun slot ->
             let assignedPlayer =
                 lineup
-                |> List.tryFind (fun (idx, _) -> idx = slot.Index)
-                |> Option.bind snd
-                |> Option.bind (fun id -> state.GameState.Players.TryFind id)
+                |> List.tryFind (fun s -> s.Index = slot.Index)
+                |> Option.bind _.PlayerId
+                |> Option.bind state.GameState.Players.TryFind
 
             playerNode assignedPlayer slot dispatch)
 
@@ -173,7 +171,7 @@ module Tactics =
 
         let starterIds =
             myTeam.CurrentLineup
-            |> Option.map (fun l -> l.PlayerSlots |> List.choose snd)
+            |> Option.map (fun l -> l.Slots |> List.choose (fun s -> s.PlayerId))
             |> Option.defaultValue []
             |> Set.ofList
 

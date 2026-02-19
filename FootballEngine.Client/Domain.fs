@@ -10,7 +10,6 @@ type CountryCode = string
 
 type Position =
     | GK
-    | SW
     | DR
     | DC
     | DL
@@ -109,14 +108,21 @@ type Player =
 
 type FormationSlot =
     { Index: int
-      Role: string
+      Role: Position
       X: float
       Y: float }
+
+type LineupSlot =
+    { Index: int
+      Role: Position
+      X: float
+      Y: float
+      PlayerId: PlayerId option }
 
 type ClubLineup =
     { FormationName: string
       TeamTactics: string
-      PlayerSlots: (int * PlayerId option) list }
+      Slots: LineupSlot list }
 
 type Club =
     { Id: ClubId
@@ -157,7 +163,7 @@ type MatchEventType =
     | SubstitutionOut
 
 type MatchEvent =
-    { Minute: int
+    { Second: int
       PlayerId: PlayerId
       ClubId: ClubId
       Type: MatchEventType }

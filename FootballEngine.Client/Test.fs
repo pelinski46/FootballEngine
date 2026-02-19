@@ -2,9 +2,16 @@ namespace FootballEngine.Test
 
 open System
 open FootballEngine
+open FootballEngine.Client.AI
 open FootballEngine.Domain
 
 module TestMatchExtended =
+    type MatchStats =
+        { TotalGoals: int
+          TotalEvents: int
+          HomeWins: int
+          AwayWins: int
+          Draws: int }
 
     let rnd = Random()
 
@@ -36,10 +43,10 @@ module TestMatchExtended =
                 printfn "-----------------------------------"
 
                 let sw = System.Diagnostics.Stopwatch.StartNew()
-                let hScore, aScore, events = Engine.simulateMatch home away
+                let hScore, aScore, events = MatchEngine.simulateMatch home away
                 sw.Stop()
 
-                let sortedEvents = events |> List.sortBy (fun e -> e.Minute)
+                let sortedEvents = events |> List.sortBy (fun e -> e.Second)
 
                 for e in sortedEvents do
                     let teamName = if e.ClubId = home.Id then home.Name else away.Name
@@ -50,11 +57,13 @@ module TestMatchExtended =
                         else
                             getPlayerName away e.PlayerId
 
+                    let minute = e.Second / 60
+
                     match e.Type with
-                    | Goal -> printfn $"⚽ Min {e.Minute}: GOL de {playerName} ({teamName})"
-                    | YellowCard -> printfn $"🟨 Min {e.Minute}: Amarilla para {playerName} ({teamName})"
-                    | RedCard -> printfn $"🟥 Min {e.Minute}: ROJA para {playerName} ({teamName})"
-                    | Injury desc -> printfn $"🚑 Min {e.Minute}: Lesión ({desc}) de {playerName} ({teamName})"
+                    | Goal -> printfn $"⚽ Min {minute}: GOL de {playerName} ({teamName})"
+                    | YellowCard -> printfn $"🟨 Min {minute}: Amarilla para {playerName} ({teamName})"
+                    | RedCard -> printfn $"🟥 Min {minute}: ROJA para {playerName} ({teamName})"
+                    | Injury desc -> printfn $"🚑 Min {minute}: Lesión ({desc}) de {playerName} ({teamName})"
                     | _ -> ()
 
                 printfn "-----------------------------------"
@@ -62,60 +71,72 @@ module TestMatchExtended =
                 printfn $"Simulation Time: {sw.Elapsed.TotalMilliseconds:F4} ms"
                 printfn "===================================\n"
 
-    let runMassSimulation () =
-        let iterations = 100000
+    let runMassSimulationParallel () =
+        let iterations = 100_000
 
         match Db.loadGame () with
         | None -> printfn "[TEST] No game loaded."
         | Some game ->
-            let clubs = game.Clubs |> Map.toList |> List.map snd
+            let clubs = game.Clubs |> Map.toArray |> Array.map snd
 
             if clubs.Length < 2 then
                 printfn "[TEST] Not enough clubs."
             else
-
-                let mutable totalGoals = 0
-                let mutable homeWins = 0
-                let mutable awayWins = 0
-                let mutable draws = 0
-                let mutable totalEvents = 0
-
-                printfn $"[TEST] Iniciando simulación masiva de {iterations:N0} partidos..."
+                printfn $"[TEST] Iniciando simulación masiva (PARALLEL) de {iterations:N0} partidos..."
                 let sw = System.Diagnostics.Stopwatch.StartNew()
 
-                for i in 1..iterations do
-                    let home = clubs[rnd.Next(clubs.Length)]
-                    let away = clubs[rnd.Next(clubs.Length)]
+                let results: MatchStats[] =
+                    Array.Parallel.init iterations (fun _ ->
+                        // Random.Shared es thread-safe
+                        let home = clubs[Random.Shared.Next(clubs.Length)]
+                        let away = clubs[Random.Shared.Next(clubs.Length)]
 
+                        let homeReady = ManagerAI.ensureLineup home ManagerAI.defaultFormationSlots
+                        let awayReady = ManagerAI.ensureAwayLineup away ManagerAI.defaultFormationSlots
+                        let hScore, aScore, events = MatchEngine.simulateMatch homeReady awayReady
 
-                    let hScore, aScore, events = Engine.simulateMatch home away
+                        { TotalGoals = hScore + aScore
+                          TotalEvents = events.Length
+                          HomeWins = if hScore > aScore then 1 else 0
+                          AwayWins = if aScore > hScore then 1 else 0
+                          Draws = if hScore = aScore then 1 else 0 })
 
-                    totalGoals <- totalGoals + hScore + aScore
-                    totalEvents <- totalEvents + events.Length
-
-                    if hScore > aScore then homeWins <- homeWins + 1
-                    elif aScore > hScore then awayWins <- awayWins + 1
-                    else draws <- draws + 1
-
-                    if i % (iterations / 10) = 0 then
-                        printfn $"[TEST] Progreso: {i:N0} partidos..."
+                let totals =
+                    results
+                    |> Array.fold
+                        (fun acc r ->
+                            { TotalGoals = acc.TotalGoals + r.TotalGoals
+                              TotalEvents = acc.TotalEvents + r.TotalEvents
+                              HomeWins = acc.HomeWins + r.HomeWins
+                              AwayWins = acc.AwayWins + r.AwayWins
+                              Draws = acc.Draws + r.Draws })
+                        { TotalGoals = 0
+                          TotalEvents = 0
+                          HomeWins = 0
+                          AwayWins = 0
+                          Draws = 0 }
 
                 sw.Stop()
 
-                let avgGoals = float totalGoals / float iterations
-                let avgEvents = float totalEvents / float iterations
-                let msPerMatch = float sw.ElapsedMilliseconds / float iterations
+                let avgGoals = float totals.TotalGoals / float iterations
+                let avgEvents = float totals.TotalEvents / float iterations
+                let msPerMatch = sw.Elapsed.TotalMilliseconds / float iterations
 
-                printfn "\n=== RESULTADOS DE SIMULACIÓN MASIVA ==="
+                printfn "\n=== RESULTADOS DE SIMULACIÓN MASIVA (PARALLEL) ==="
                 printfn $"Partidos Simulados: {iterations:N0}"
                 printfn $"Tiempo Total:       {sw.Elapsed.TotalSeconds:F2} segundos"
                 printfn $"Velocidad:          {msPerMatch:F4} ms/partido ({(1000.0 / msPerMatch):N0} matches/sec)"
                 printfn "---------------------------------------"
-                printfn $"Goles Totales:      {totalGoals:N0}"
-                printfn $"Promedio Goles:     {avgGoals:F2} (Ideal: 2.5 - 3.0)"
-                printfn $"Eventos p/Partido:  {avgEvents:F1} (Goles + Tarjetas + Lesiones)"
+                printfn $"Goles Totales:      {totals.TotalGoals:N0}"
+                printfn $"Promedio Goles:     {avgGoals:F2}"
+                printfn $"Eventos p/Partido:  {avgEvents:F1}"
                 printfn "---------------------------------------"
-                printfn $"Victorias Local:    {homeWins:N0} ({float homeWins / float iterations * 100.0:F1}%%)"
-                printfn $"Victorias Visita:   {awayWins:N0} ({float awayWins / float iterations * 100.0:F1}%%)"
-                printfn $"Empates:            {draws:N0} ({float draws / float iterations * 100.0:F1}%%)"
+
+                printfn
+                    $"Victorias Local:    {totals.HomeWins:N0} ({float totals.HomeWins / float iterations * 100.0:F1}%%)"
+
+                printfn
+                    $"Victorias Visita:   {totals.AwayWins:N0} ({float totals.AwayWins / float iterations * 100.0:F1}%%)"
+
+                printfn $"Empates:            {totals.Draws:N0} ({float totals.Draws / float iterations * 100.0:F1}%%)"
                 printfn "=======================================\n"

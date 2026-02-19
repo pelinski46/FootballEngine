@@ -94,6 +94,9 @@ module Db =
           FormationName: string
           TacticsName: string
           SlotIndex: int
+          Role: string
+          X: float
+          Y: float
           PlayerId: int }
 
     [<CLIMutable>]
@@ -340,14 +343,17 @@ module Db =
                 | Some lineup ->
                     db.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", club.Id) |> ignore
 
-                    for idx, pIdOpt in lineup.PlayerSlots do
+                    for slot in lineup.Slots do
                         db.Insert(
                             { Id = 0
                               ClubId = club.Id
                               FormationName = lineup.FormationName
                               TacticsName = lineup.TeamTactics
-                              SlotIndex = idx
-                              PlayerId = (pIdOpt |> Option.defaultValue -1) }
+                              SlotIndex = slot.Index
+                              Role = string slot.Role
+                              X = slot.X
+                              Y = slot.Y
+                              PlayerId = (slot.PlayerId |> Option.defaultValue -1) }
                         )
                         |> ignore
                 | None -> ()
@@ -412,19 +418,28 @@ module Db =
                             |> Seq.filter (fun p -> p.ClubId = ce.Id)
                             |> List.ofSeq
 
-                        let slots = lineupSlots |> List.filter (fun ls -> ls.ClubId = ce.Id)
+                        let slots =
+                            lineupSlots
+                            |> List.filter (fun ls -> ls.ClubId = ce.Id)
+                            |> List.sortBy (fun ls -> ls.SlotIndex)
 
                         let lineup =
                             if slots.IsEmpty then
                                 None
                             else
+                                let first = slots.Head
+
                                 Some
-                                    { FormationName = slots[0].FormationName
-                                      TeamTactics = slots[0].TacticsName
-                                      PlayerSlots =
+                                    { FormationName = first.FormationName
+                                      TeamTactics = first.TacticsName
+                                      Slots =
                                         slots
                                         |> List.map (fun s ->
-                                            s.SlotIndex, (if s.PlayerId = -1 then None else Some s.PlayerId)) }
+                                            { Index = s.SlotIndex
+                                              Role = parsePosition s.Role
+                                              X = s.X
+                                              Y = s.Y
+                                              PlayerId = if s.PlayerId = -1 then None else Some s.PlayerId }) }
 
                         ce.Id,
                         { Id = ce.Id
