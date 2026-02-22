@@ -105,6 +105,26 @@ type Player =
       ContractExpiry: int
       TeamId: ClubId }
 
+type Formation =
+
+    | F442
+    | F442Diamond
+    | F433
+    | F433Flat
+    | F451
+    | F4141
+    | F4231
+    | F4312
+    | F4321
+
+    | F352
+    | F343
+    | F3421
+
+    | F532
+    | F541
+    | F523
+
 
 type FormationSlot =
     { Index: int
@@ -120,7 +140,7 @@ type LineupSlot =
       PlayerId: PlayerId option }
 
 type ClubLineup =
-    { FormationName: string
+    { Formation: Formation
       TeamTactics: string
       Slots: LineupSlot list }
 
@@ -253,3 +273,21 @@ module Player =
         let finalSkill = int (Math.Round(average * 10.0))
 
         Math.Clamp(finalSkill, 1, 200)
+
+module Formation =
+    let all =
+        [ F442
+          F442Diamond
+          F433
+          F433Flat
+          F451
+          F4141
+          F4231
+          F4312
+          F4321
+          F352
+          F343
+          F3421
+          F532
+          F541
+          F523 ]

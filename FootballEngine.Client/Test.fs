@@ -19,7 +19,7 @@ module TestMatchExtended =
     let private getPlayerName (c: Club) (id: int) =
         c.Players
         |> List.tryFind (fun p -> p.Id = id)
-        |> Option.map (fun p -> p.Name)
+        |> Option.map _.Name
         |> Option.defaultValue "Unknown Player"
 
     let runDetailedMatch () =
@@ -46,7 +46,7 @@ module TestMatchExtended =
                 let hScore, aScore, events = MatchEngine.simulateMatch home away
                 sw.Stop()
 
-                let sortedEvents = events |> List.sortBy (fun e -> e.Second)
+                let sortedEvents = events |> List.sortBy _.Second
 
                 for e in sortedEvents do
                     let teamName = if e.ClubId = home.Id then home.Name else away.Name
@@ -72,7 +72,7 @@ module TestMatchExtended =
                 printfn "===================================\n"
 
     let runMassSimulationParallel () =
-        let iterations = 100_000
+        let iterations = 10000
 
         match Db.loadGame () with
         | None -> printfn "[TEST] No game loaded."
@@ -91,8 +91,8 @@ module TestMatchExtended =
                         let home = clubs[Random.Shared.Next(clubs.Length)]
                         let away = clubs[Random.Shared.Next(clubs.Length)]
 
-                        let homeReady = ManagerAI.ensureLineup home ManagerAI.defaultFormationSlots
-                        let awayReady = ManagerAI.ensureAwayLineup away ManagerAI.defaultFormationSlots
+                        let homeReady = ManagerAI.ensureLineup home F433
+                        let awayReady = ManagerAI.ensureLineup away F433
                         let hScore, aScore, events = MatchEngine.simulateMatch homeReady awayReady
 
                         { TotalGoals = hScore + aScore

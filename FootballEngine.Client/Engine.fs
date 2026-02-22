@@ -139,8 +139,8 @@ module MatchEngine =
         let awayPos = awayPlayersWithPos |> Array.map (fun (_, x, y) -> (x, y))
 
         // Condiciones mutables
-        let hCondition = homePlayers |> Array.map (fun p -> p.Condition)
-        let aCondition = awayPlayers |> Array.map (fun p -> p.Condition)
+        let hCondition = homePlayers |> Array.map _.Condition
+        let aCondition = awayPlayers |> Array.map _.Condition
 
         let getCondition playerId pos =
             match pos with
@@ -619,7 +619,7 @@ module Engine =
                           GoalsFor = 0
                           GoalsAgainst = 0 }
 
-                    let clubWithLineup = ManagerAI.ensureLineup club ManagerAI.defaultFormationSlots
+                    let clubWithLineup = ManagerAI.ensureLineup club (ManagerAI.pickBestFormation club)
                     allClubs <- Map.add clubId clubWithLineup allClubs
 
                 let league =
@@ -647,7 +647,7 @@ module Engine =
             |> Seq.filter (fun (_, l) -> l.Nationality = primaryCountry && l.Level = First)
             |> Seq.head
             |> snd
-            |> (fun l -> l.ClubIds.Head)
+            |> _.ClubIds.Head
 
         { CurrentDate = DateTime(2026, 7, 1)
           Clubs = allClubs
@@ -688,3 +688,29 @@ module Engine =
                     GoalsAgainst = c.GoalsAgainst + oppS }
 
         (updatedFixture, update home hScore aScore, update away aScore hScore)
+
+    let simulateFixtures (gameState: GameState) fixtures =
+        let results =
+            fixtures
+            |> List.toArray
+            |> Array.Parallel.map (fun (id, fixture) ->
+                let updatedFixture, updatedHome, updatedAway =
+                    simulateFixture fixture gameState.Clubs
+
+                let hScore = updatedFixture.HomeScore |> Option.defaultValue 0
+                let aScore = updatedFixture.AwayScore |> Option.defaultValue 0
+
+                id,
+                updatedFixture,
+                updatedHome,
+                updatedAway,
+                $"⚽ {updatedHome.Name} {hScore}-{aScore} {updatedAway.Name}")
+
+        results
+        |> Array.fold
+            (fun (gs, logs) (id, fixture, home, away, log) ->
+                { gs with
+                    Fixtures = gs.Fixtures |> Map.add id fixture
+                    Clubs = gs.Clubs |> Map.add home.Id home |> Map.add away.Id away },
+                log :: logs)
+            (gameState, [])

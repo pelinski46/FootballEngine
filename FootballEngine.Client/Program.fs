@@ -23,15 +23,16 @@ module Views =
             [ DockPanel.background Theme.BgMain
               DockPanel.children
                   [ sidebar state dispatch
-                    StackPanel.create
-                        [ StackPanel.children
+                    DockPanel.create
+                        [ DockPanel.lastChildFill true
+                          DockPanel.children
                               [ header state dispatch
+                                |> fun h -> Border.create [ Border.dock Dock.Top; Border.child h ]
                                 match state.CurrentPage with
                                 | Setup -> setupView state dispatch
                                 | Home ->
                                     homeView state state.SelectedLeagueId (fun leagueId ->
                                         dispatch (ChangeLeague leagueId))
-
                                 | Inbox -> failwith "todo"
                                 | Squad -> squadView state dispatch
                                 | Tactics -> tacticView state dispatch
@@ -48,7 +49,7 @@ type MainWindow() as this =
         base.Title <- "Football Engine 2026"
         base.WindowState <- WindowState.Maximized
 
-        Elmish.Program.mkSimple AppState.init AppState.update Views.mainView
+        Elmish.Program.mkProgram AppState.init AppState.update Views.mainView
         |> Elmish.Program.withHost this
         |> Elmish.Program.runWithAvaloniaSyncDispatch ()
 

@@ -9,10 +9,11 @@
     <ItemGroup>
         <Compile Include="Domain.fs"/>
         <Compile Include="GameData.fs"/>
+        <Compile Include="FormationData.fs"/>
+        <Compile Include="Lineup.fs"/>
         <Compile Include="AI\ManagerAI.fs"/>
         <Compile Include="Engine.fs"/>
         <Compile Include="Database.fs"/>
-        <Compile Include="FormationData.fs"/>
         <Compile Include="AppState.fs"/>
         <Compile Include="Views\Theme.fs"/>
         <Compile Include="Views\Components\UI.fs"/>

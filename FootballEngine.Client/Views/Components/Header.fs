@@ -9,7 +9,11 @@ open FootballEngine.AppState
 
 
 module Header =
+
+
     let header (state: State) dispatch =
+
+
         Border.create
             [ Border.height 70.0
               Border.background Theme.BgSidebar
@@ -32,14 +36,16 @@ module Header =
                                                 TextBlock.fontWeight FontWeight.Bold
                                                 TextBlock.lineSpacing 1.5 ]
                                           Button.create
-                                              [ Button.content "CONTINUE"
-                                                Button.background Theme.Accent
-                                                Button.foreground Theme.BgSidebar
+                                              [ Button.content (if state.IsProcessing then "..." else "CONTINUE")
+                                                Button.isEnabled (not state.IsProcessing)
+                                                Button.background (
+                                                    if state.IsProcessing then Theme.TextMuted else Theme.Accent
+                                                )
                                                 Button.fontWeight FontWeight.Bold
                                                 Button.padding (30.0, 8.0)
                                                 Button.cornerRadius 6.0
-                                                Button.onClick (fun _ -> dispatch AdvanceDay) ] ] ]
-
-
-                              ] ]
+                                                Button.onClick (fun e ->
+                                                    e.Handled <- true
+                                                    dispatch AdvanceDay) ]
+                                          |> View.withKey (if state.IsProcessing then "btn-processing" else "btn-ready") ] ] ] ]
               ) ]

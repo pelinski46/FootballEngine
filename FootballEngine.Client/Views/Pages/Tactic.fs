@@ -17,15 +17,17 @@ open FootballEngine.Components
 
 
 module Tactics =
-    let private startDrag (playerId: int) (args: PointerPressedEventArgs) =
-        let data = DataObject()
-        data.Set("PLAYER_ID", string playerId)
+    // Mutable ref compartido entre drag y drop
+    let private draggedId = ref<PlayerId option> None
 
-        async {
-            let! _ = DragDrop.DoDragDrop(args, data, DragDropEffects.Move) |> Async.AwaitTask
-            ()
+    let private startDrag (playerId: int) (dispatch: Msg -> unit) (args: PointerPressedEventArgs) =
+        draggedId.Value <- Some playerId // 👈 guardar aquí, no en Elmish
+
+        task {
+            let! _ = DragDrop.DoDragDropAsync(args, new DataTransfer(), DragDropEffects.Move)
+            draggedId.Value <- None
         }
-        |> Async.StartImmediate
+        |> ignore
 
     let benchRow (p: Player) dispatch =
         let pId = p.Id
@@ -44,7 +46,7 @@ module Tactics =
 
                   if point.Properties.IsLeftButtonPressed then
                       e.Handled <- true
-                      startDrag pId e)
+                      startDrag pId dispatch e)
 
               Border.child (
                   DockPanel.create
@@ -66,10 +68,10 @@ module Tactics =
 
 
     // Nodo visual de un jugador en la cancha
-    let playerNode (player: Player option) (slot: FormationSlot) (dispatch: Msg -> unit) =
-        let pIdFijo = player |> Option.map (fun p -> p.Id) |> Option.defaultValue -1
+    let playerNode (player: Player option) (slot: FormationSlot) (state: State) (dispatch: Msg -> unit) =
+        let pIdFijo = player |> Option.map _.Id |> Option.defaultValue -1
 
-        let name, color, displayId =
+        let name, color, _ =
             match player with
             | Some p -> p.Name.ToUpper(), (if p.MatchFitness > 80 then "#22c55e" else "#ef4444"), $"ID: {p.Id}"
             | None -> "VACÍO", "#334155", "-"
@@ -79,18 +81,19 @@ module Tactics =
               Border.background "Transparent"
               Control.allowDrop true
               Control.onDragOver (fun e -> e.DragEffects <- DragDropEffects.Move)
-              Control.onDrop (fun e ->
-                  if e.Data.Contains("PLAYER_ID") then
-                      let dataRaw = e.Data.Get("PLAYER_ID") :?> string
-                      let pId = System.Int32.Parse(dataRaw)
-                      dispatch (DropPlayerInSlot(slot.Index, pId)))
+              Control.onDrop (fun _ ->
+                  match draggedId.Value with
+                  | Some pId ->
+                      draggedId.Value <- None
+                      dispatch (DropPlayerInSlot(slot.Index, pId))
+                  | None -> ())
               if player.IsSome then
                   Border.onPointerPressed (fun e ->
                       let point = e.GetCurrentPoint(e.Source :?> Control)
 
                       if point.Properties.IsLeftButtonPressed then
                           e.Handled <- true
-                          startDrag player.Value.Id e)
+                          startDrag player.Value.Id dispatch e)
               Border.child (
                   StackPanel.create
                       [ StackPanel.spacing 4.0
@@ -133,52 +136,45 @@ module Tactics =
               ) ]
         |> View.withKey (string pIdFijo)
 
-    let pitchContainer (state: AppState.State) dispatch =
+    let pitchContainer (state: State) dispatch =
         let myTeam = state.GameState.Clubs[state.GameState.UserClubId]
 
+        let formation =
+            myTeam.CurrentLineup
+            |> Option.map _.Formation
+            |> Option.defaultValue state.SelectedTactics
+
         let lineup =
-            myTeam.CurrentLineup |> Option.map (fun l -> l.Slots) |> Option.defaultValue []
+            myTeam.CurrentLineup |> Option.map _.Slots |> Option.defaultValue [] // 👈 Slots, no Formation
 
-        let formationName =
-            if state.SelectedTactics <> "" then
-                state.SelectedTactics
-            else
-                myTeam.CurrentLineup
-                |> Option.map (fun l -> l.FormationName)
-                |> Option.defaultValue "4-4-2"
-
-
-        FootballPitch.render formationName (fun slot ->
+        FootballPitch.render formation (fun slot ->
             let assignedPlayer =
                 lineup
                 |> List.tryFind (fun s -> s.Index = slot.Index)
                 |> Option.bind _.PlayerId
                 |> Option.bind state.GameState.Players.TryFind
 
-            playerNode assignedPlayer slot dispatch)
+            playerNode assignedPlayer slot state dispatch)
 
 
-    let tacticView (state: AppState.State) dispatch =
+    let tacticView (state: State) dispatch =
         let myTeam = state.GameState.Clubs[state.GameState.UserClubId]
 
         let currentFormation =
-            if state.SelectedTactics <> "" then
-                state.SelectedTactics
-            else
-                myTeam.CurrentLineup
-                |> Option.map (fun l -> l.FormationName)
-                |> Option.defaultValue "4-4-2"
+            myTeam.CurrentLineup
+            |> Option.map _.Formation
+            |> Option.defaultValue state.SelectedTactics
 
         let starterIds =
             myTeam.CurrentLineup
-            |> Option.map (fun l -> l.Slots |> List.choose (fun s -> s.PlayerId))
+            |> Option.map (fun l -> l.Slots |> List.choose _.PlayerId)
             |> Option.defaultValue []
             |> Set.ofList
 
         let benchPlayers =
             myTeam.Players
             |> List.filter (fun p -> not (starterIds.Contains p.Id))
-            |> List.sortBy (fun p -> p.Id)
+            |> List.sortBy _.Id
 
         Grid.create
             [ Grid.columnDefinitions "260, *, 320"
@@ -203,7 +199,7 @@ module Tactics =
                                                             ComboBox.selectedItem currentFormation
                                                             ComboBox.onSelectedItemChanged (fun obj ->
                                                                 if obj <> null then
-                                                                    dispatch (SetTactics(obj.ToString())))
+                                                                    dispatch (SetTactics(obj :?> Formation)))
                                                             ComboBox.horizontalAlignment HorizontalAlignment.Stretch ] ] ] ] ]
                           ) ]
                     Border.create
@@ -215,8 +211,7 @@ module Tactics =
                           Border.background Theme.BgMain
                           Border.child (
                               ScrollViewer.create
-                                  [ ScrollViewer.maxHeight 800
-                                    ScrollViewer.verticalAlignment VerticalAlignment.Top
+                                  [
 
                                     ScrollViewer.content (
                                         StackPanel.create

@@ -21,8 +21,8 @@ module SquadPresenter =
 
     let getTeamStats (team: Club) =
 
-        let totalValue = team.Players |> List.sumBy (fun p -> p.Value)
-        let totalWages = team.Players |> List.sumBy (fun p -> p.Salary)
+        let totalValue = team.Players |> List.sumBy _.Value
+        let totalWages = team.Players |> List.sumBy _.Salary
 
         let avgSkill =
             if team.Players.IsEmpty then
@@ -36,10 +36,10 @@ module SquadPresenter =
 
     let getSortedPlayers (team: Club) (currentDate: DateTime) (sortKey: string) =
         match sortKey with
-        | "name" -> team.Players |> List.sortBy (fun p -> p.Name)
-        | "skill" -> team.Players |> List.sortByDescending (fun p -> p.CurrentSkill)
+        | "name" -> team.Players |> List.sortBy _.Name
+        | "skill" -> team.Players |> List.sortByDescending _.CurrentSkill
         | "age" -> team.Players |> List.sortBy (fun p -> Player.age currentDate p)
-        | "value" -> team.Players |> List.sortByDescending (fun p -> p.Value)
+        | "value" -> team.Players |> List.sortByDescending _.Value
         | _ -> team.Players |> List.sortBy (fun p -> p.Position, -p.CurrentSkill)
 
 // --- PAGE VIEW ---
@@ -59,81 +59,65 @@ module Squad =
             [ Grid.columnDefinitions "*, 400"
               Grid.verticalAlignment VerticalAlignment.Stretch
               Grid.children
-                  [
-
-
-                    ScrollViewer.create
+                  [ Grid.create
                         [ Grid.column 0
-                          ScrollViewer.content (
-                              StackPanel.create
-                                  [ StackPanel.spacing 20.0
-                                    StackPanel.margin (0.0, 0.0, 20.0, 0.0)
-                                    StackPanel.children
-                                        [
+                          Grid.rowDefinitions "auto, auto, auto, *"
+                          Grid.margin (0.0, 0.0, 20.0, 0.0)
+                          Grid.children
+                              [ UniformGrid.create
+                                    [ Grid.row 0
+                                      UniformGrid.columns 3
+                                      UniformGrid.children
+                                          [ UI.statCard "TEAM VALUE" stats.TotalValue "💰" "Market Value"
+                                            UI.statCard "AVG SKILL" stats.AvgSkill "⭐" "Squad Rating (1-200)"
+                                            UI.statCard "WAGE BILL" stats.TotalWages "💵" "Weekly" ] ]
 
+                                DockPanel.create
+                                    [ Grid.row 1
+                                      DockPanel.children
+                                          [ TextBlock.create
+                                                [ TextBlock.text "First Team Squad"
+                                                  TextBlock.fontSize 24.0
+                                                  TextBlock.fontWeight FontWeight.Black ]
+                                            StackPanel.create
+                                                [ StackPanel.dock Dock.Right
+                                                  StackPanel.orientation Orientation.Horizontal
+                                                  StackPanel.children
+                                                      [ UI.tabButton "Pos" (state.PlayerSortBy = "position") (fun _ ->
+                                                            dispatch (SortPlayersBy "position"))
+                                                        UI.tabButton "Skill" (state.PlayerSortBy = "skill") (fun _ ->
+                                                            dispatch (SortPlayersBy "skill"))
+                                                        UI.tabButton "Age" (state.PlayerSortBy = "age") (fun _ ->
+                                                            dispatch (SortPlayersBy "age")) ] ] ] ]
 
-                                          UniformGrid.create
-                                              [ UniformGrid.columns 3
-                                                UniformGrid.children
-                                                    [ UI.statCard "TEAM VALUE" stats.TotalValue "💰" "Market Value"
-                                                      UI.statCard "AVG SKILL" stats.AvgSkill "⭐" "Squad Rating (1-200)"
-                                                      UI.statCard "WAGE BILL" stats.TotalWages "💵" "Weekly" ] ]
+                                UI.playerTableHeader () |> fun h -> Border.create [ Grid.row 2; Border.child h ]
 
-
-                                          DockPanel.create
-                                              [ DockPanel.children
-                                                    [ TextBlock.create
-                                                          [ TextBlock.text "First Team Squad"
-                                                            TextBlock.fontSize 24.0
-                                                            TextBlock.fontWeight FontWeight.Black ]
-                                                      StackPanel.create
-                                                          [ StackPanel.dock Dock.Right
-                                                            StackPanel.orientation Orientation.Horizontal
-                                                            StackPanel.children
-                                                                [ UI.tabButton
-                                                                      "Pos"
-                                                                      (state.PlayerSortBy = "position")
-                                                                      (fun _ -> dispatch (SortPlayersBy "position"))
-                                                                  UI.tabButton
-                                                                      "Skill"
-                                                                      (state.PlayerSortBy = "skill")
-                                                                      (fun _ -> dispatch (SortPlayersBy "skill"))
-                                                                  UI.tabButton
-                                                                      "Age"
-                                                                      (state.PlayerSortBy = "age")
-                                                                      (fun _ -> dispatch (SortPlayersBy "age")) ] ] ] ]
-
-
+                                ScrollViewer.create
+                                    [ Grid.row 3
+                                      ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                      ScrollViewer.content (
                                           StackPanel.create
-                                              [ StackPanel.children
-                                                    [ UI.playerTableHeader ()
+                                              [ StackPanel.spacing 5.0
+                                                StackPanel.children
+                                                    [ for player in players do
+                                                          let isSelected =
+                                                              state.SelectedPlayer
+                                                              |> Option.map (fun p -> p.Id = player.Id)
+                                                              |> Option.defaultValue false
 
-                                                      StackPanel.create
-                                                          [ StackPanel.spacing 5.0
-                                                            StackPanel.children
-                                                                [ for player in players do
-                                                                      let isSelected =
-                                                                          state.SelectedPlayer
-                                                                          |> Option.map (fun p -> p.Id = player.Id)
-                                                                          |> Option.defaultValue false
+                                                          UI.playerRow
+                                                              player
+                                                              state.GameState.CurrentDate
+                                                              player.Value
+                                                              isSelected
+                                                              (state.DraggedPlayer = Some player.Id)
+                                                              (fun () -> dispatch (SelectPlayer player.Id))
 
-
-                                                                      UI.playerRow
-                                                                          player
-                                                                          state.GameState.CurrentDate
-                                                                          player.Value
-                                                                          isSelected
-                                                                          (state.DraggedPlayer = Some player.Id)
-                                                                          (fun () -> dispatch (SelectPlayer player.Id))
-                                                                          (fun () ->
-                                                                              dispatch (DragStartPlayer player.Id))
-                                                                      |> View.withKey (string player.Id) ] ] ] ] ] ]
-                          ) ]
-
+                                                          |> View.withKey (string player.Id) ] ]
+                                      ) ] ] ]
 
                     Grid.create
                         [ Grid.column 1
-
                           Grid.children
                               [ UI.playerDetail
                                     state.SelectedPlayer

@@ -161,6 +161,44 @@ module Db =
         | "BOTH" -> Both
         | _ -> Right
 
+    let private formationToString =
+        function
+        | F442 -> "4-4-2"
+        | F442Diamond -> "4-4-2 Diamond"
+        | F433 -> "4-3-3"
+        | F433Flat -> "4-3-3 Flat"
+        | F451 -> "4-5-1"
+        | F4141 -> "4-1-4-1"
+        | F4231 -> "4-2-3-1"
+        | F4312 -> "4-3-1-2"
+        | F4321 -> "4-3-2-1"
+        | F352 -> "3-5-2"
+        | F343 -> "3-4-3"
+        | F3421 -> "3-4-2-1"
+        | F532 -> "5-3-2"
+        | F541 -> "5-4-1"
+        | F523 -> "5-2-3"
+
+
+    let private parseFormation =
+        function
+        | "4-4-2" -> F442
+        | "4-4-2 Diamond" -> F442Diamond
+        | "4-3-3" -> F433
+        | "4-3-3 Flat" -> F433Flat
+        | "4-5-1" -> F451
+        | "4-1-4-1" -> F4141
+        | "4-2-3-1" -> F4231
+        | "4-3-1-2" -> F4312
+        | "4-3-2-1" -> F4321
+        | "3-5-2" -> F352
+        | "3-4-3" -> F343
+        | "3-4-2-1" -> F3421
+        | "5-3-2" -> F532
+        | "5-4-1" -> F541
+        | "5-2-3" -> F523
+        | _ -> F442
+
     let private toPlayerEntity (p: Player) : PlayerEntity =
         let statusStr, sInt, sDate =
             match p.Status with
@@ -347,7 +385,7 @@ module Db =
                         db.Insert(
                             { Id = 0
                               ClubId = club.Id
-                              FormationName = lineup.FormationName
+                              FormationName = formationToString lineup.Formation
                               TacticsName = lineup.TeamTactics
                               SlotIndex = slot.Index
                               Role = string slot.Role
@@ -388,6 +426,28 @@ module Db =
             for KeyValue(_, fixture) in state.Fixtures do
                 db.InsertOrReplace(toFixtureEntity fixture) |> ignore)
 
+    let saveDailyProgress (state: GameState) =
+        use db = getConnection ()
+
+        db.RunInTransaction(fun () ->
+            db.InsertOrReplace(
+                { Id = 1
+                  CurrentDate = state.CurrentDate
+                  UserClubId = state.UserClubId
+                  ManagerName = state.ManagerName
+                  PrimaryCountry = state.PrimaryCountry }
+            )
+            |> ignore
+
+            for KeyValue(_, club) in state.Clubs do
+                db.InsertOrReplace(toClubEntity club) |> ignore
+
+            for KeyValue(_, player) in state.Players do
+                db.InsertOrReplace(toPlayerEntity player) |> ignore
+
+            for KeyValue(_, fixture) in state.Fixtures do
+                db.InsertOrReplace(toFixtureEntity fixture) |> ignore)
+
     let loadGame () : GameState option =
         if not (File.Exists dbPath) then
             None
@@ -421,7 +481,7 @@ module Db =
                         let slots =
                             lineupSlots
                             |> List.filter (fun ls -> ls.ClubId = ce.Id)
-                            |> List.sortBy (fun ls -> ls.SlotIndex)
+                            |> List.sortBy _.SlotIndex
 
                         let lineup =
                             if slots.IsEmpty then
@@ -430,7 +490,7 @@ module Db =
                                 let first = slots.Head
 
                                 Some
-                                    { FormationName = first.FormationName
+                                    { Formation = parseFormation first.FormationName
                                       TeamTactics = first.TacticsName
                                       Slots =
                                         slots
@@ -463,7 +523,7 @@ module Db =
                         let cIds =
                             leagueClubs
                             |> List.filter (fun lc -> lc.LeagueId = le.Id)
-                            |> List.map (fun lc -> lc.ClubId)
+                            |> List.map _.ClubId
 
                         le.Id,
                         { Id = le.Id

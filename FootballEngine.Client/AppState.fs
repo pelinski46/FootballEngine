@@ -1,7 +1,11 @@
 namespace FootballEngine
 
 open System
+open System.Threading.Tasks
+open Elmish
+open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.Engine
 
 module AppState =
 
@@ -21,6 +25,7 @@ module AppState =
     type SetupStep =
         | MainMenu
         | CountrySelection
+        | ClubSelection
         | ManagerNaming
 
     type Msg =
@@ -31,11 +36,13 @@ module AppState =
         | StartNewGame
 
         | GoToSetupStep of SetupStep
-
+        | ConfirmClub of ClubId
         | ChangePage of Page
 
+        | SetProcessing of bool
         | AdvanceDay
-        | AdvanceWeek
+        | AdvanceDayDone of GameState * string list
+
 
         | SimulateMatch
         | SimulateNextFixture
@@ -44,24 +51,23 @@ module AppState =
 
         | SelectPlayer of PlayerId
         | DropPlayerInSlot of slotIndex: int * playerId: int
-        | DragStartPlayer of PlayerId
         | SortPlayersBy of string
 
 
         | SaveGame
         | ChangeLeague of LeagueId
-        | SetTactics of string
+        | SetTactics of Formation
 
     type State =
         { GameState: GameState
           SelectedPlayer: Player option
           CurrentPage: Page
           LogMessages: string list
-          SelectedTactics: string
+          SelectedTactics: Formation
           SelectedLeagueId: LeagueId
           DraggedPlayer: PlayerId option
           PlayerSortBy: string
-
+          IsProcessing: bool
           SetupSelectedCountry: CountryCode option
           SetupSecondaryCountries: CountryCode list
           SetupManagerName: string
@@ -97,34 +103,12 @@ module AppState =
                     { p with
                         MatchFitness = Math.Clamp(p.MatchFitness + 5, 0, 100) }) }
 
-    let private runSimulation gs fixtureId fixture =
-        let updatedFixture, updatedHome, updatedAway =
-            Engine.simulateFixture fixture gs.Clubs
 
-        let hScore = updatedFixture.HomeScore |> Option.defaultValue 0
-        let aScore = updatedFixture.AwayScore |> Option.defaultValue 0
-
-        let newGs =
-            { gs with
-                Fixtures = gs.Fixtures |> Map.add fixtureId updatedFixture
-                Clubs =
-                    gs.Clubs
-                    |> Map.add updatedHome.Id updatedHome
-                    |> Map.add updatedAway.Id updatedAway }
-
-        (newGs, $"⚽ {updatedHome.Name} {hScore}-{aScore} {updatedAway.Name}")
-
-    let private simulateBatch gameState fixtures =
-        fixtures
-        |> List.fold
-            (fun (gs, logs) (id, fixture) ->
-                let newGs, log = runSimulation gs id fixture
-                (newGs, log :: logs))
-            (gameState, [])
-
+    let private saveAsync (gs: GameState) =
+        Task.Run(fun () -> Db.saveGame gs) |> ignore
     // === INIT ===
 
-    let init () : State =
+    let init () =
         let gameState =
             Db.loadGame ()
             |> Option.defaultValue
@@ -141,39 +125,43 @@ module AppState =
           SelectedPlayer = None
           CurrentPage = if gameState.Clubs.IsEmpty then Setup else Home
           LogMessages = [ "Football Engine 2026 Initialized" ]
-          SelectedTactics = "4-3-3"
+          SelectedTactics = F433
           SelectedLeagueId = 1
           DraggedPlayer = None
           PlayerSortBy = "position"
+          IsProcessing = false
           SetupSelectedCountry = None
           SetupSecondaryCountries = []
           SetupManagerName = ""
-          SetupStep = MainMenu }
+          SetupStep = MainMenu },
+        Cmd.none
 
 
-    let rec update (msg: Msg) (state: State) : State =
+    let rec update (msg: Msg) (state: State) =
         match msg with
-        | GoToSetupStep step -> { state with SetupStep = step }
+        | GoToSetupStep step -> { state with SetupStep = step }, Cmd.none
         | SelectPrimaryCountry code ->
             { state with
                 SetupSelectedCountry = Some code
-                SetupSecondaryCountries = state.SetupSecondaryCountries |> List.filter ((<>) code) }
+                SetupSecondaryCountries = state.SetupSecondaryCountries |> List.filter ((<>) code) },
+            Cmd.none
 
         | ToggleSecondaryCountry code ->
             if state.SetupSelectedCountry = Some code then
-                state
+                state, Cmd.none
             else
                 { state with
                     SetupSecondaryCountries =
                         if List.contains code state.SetupSecondaryCountries then
                             state.SetupSecondaryCountries |> List.filter ((<>) code)
                         else
-                            code :: state.SetupSecondaryCountries }
+                            code :: state.SetupSecondaryCountries },
+                Cmd.none
 
-        | UpdateManagerName name -> { state with SetupManagerName = name }
+        | UpdateManagerName name -> { state with SetupManagerName = name }, Cmd.none
         | StartNewGame ->
             match state.SetupSelectedCountry with
-            | None -> state
+            | None -> state, Cmd.none
             | Some primary ->
                 let seedRnd = Random()
 
@@ -184,120 +172,93 @@ module AppState =
 
                 { state with
                     GameState = newGs
-                    CurrentPage = Home
-                    LogMessages = [ $"Career started by {state.SetupManagerName} in {primary}" ] }
+                    SetupStep = ClubSelection },
+                Cmd.none
 
-        | ChangePage page -> { state with CurrentPage = page }
+        | ChangePage page -> { state with CurrentPage = page }, Cmd.none
+        | SetProcessing processing -> { state with IsProcessing = processing }, Cmd.none
         | AdvanceDay ->
-            let gs =
-                { state.GameState with
-                    CurrentDate = state.GameState.CurrentDate.AddDays(1.0) }
+            { state with IsProcessing = true },
+            Cmd.OfTask.perform
+                (fun () ->
+                    Task.Run(fun () ->
+                        let gs =
+                            { state.GameState with
+                                CurrentDate = state.GameState.CurrentDate.AddDays(1.0) }
 
-            let gs = updateDailyFitness gs
-            let fixtures = getTodayFixturesWithId gs
-            let finalGs, logs = simulateBatch gs fixtures
 
-            Db.saveGame finalGs
+                        let fixtures = getTodayFixturesWithId gs
+                        let finalGs, logs = simulateFixtures gs fixtures
 
-            let dayLog = $"📅 {{finalGs.CurrentDate:yyyy-MM-dd}}"
+                        finalGs, logs))
+                ()
+                AdvanceDayDone
+
+        | AdvanceDayDone(finalGs, logs) ->
+            Db.saveDailyProgress finalGs
 
             let allLogs =
                 if logs.IsEmpty then
-                    [ dayLog ]
+                    []
                 else
-                    dayLog :: $"📊 {fixtures.Length} matches played" :: logs
+                    $"📊 {logs.Length} matches played" :: logs
 
             { state with
                 GameState = finalGs
-                LogMessages = allLogs @ state.LogMessages |> List.truncate 30 }
+                IsProcessing = false
+                LogMessages = allLogs @ state.LogMessages |> List.truncate 30 },
+            Cmd.none
 
-        | AdvanceWeek -> [ 1..7 ] |> List.fold (fun s _ -> update AdvanceDay s) state
         | SimulateNextFixture ->
             match getUserNextFixture state.GameState with
-            | None -> state |> addLog "⚠️ No next fixture found"
+            | None -> state |> addLog "⚠️ No next fixture found", Cmd.none
             | Some(id, fixture) ->
-                let newGs, log = runSimulation state.GameState id fixture
+                let newGs, log = simulateFixtures state.GameState [ (id, fixture) ]
                 Db.saveGame newGs
-                { state with GameState = newGs } |> addLog $"🏁 {log}"
+                { state with GameState = newGs } |> addLog $"🏁 {log}", Cmd.none
         | SimulateAllToday ->
             let fixtures = getTodayFixturesWithId state.GameState
 
             if fixtures.IsEmpty then
-                state |> addLog "⚠️ No matches scheduled for today"
+                state |> addLog "⚠️ No matches scheduled for today", Cmd.none
             else
-                let finalGs, logs = simulateBatch state.GameState fixtures
+                let finalGs, logs = simulateFixtures state.GameState fixtures
                 Db.saveGame finalGs
 
                 { state with GameState = finalGs }
                 |> addLog $"📊 {fixtures.Length} matches simulated"
                 |> fun s ->
                     { s with
-                        LogMessages = logs @ s.LogMessages |> List.truncate 30 }
+                        LogMessages = logs @ s.LogMessages |> List.truncate 30 },
+                    Cmd.none
         | SimulateMatch -> update SimulateNextFixture state
         | SelectPlayer pId ->
             { state with
-                SelectedPlayer = state.GameState.Players.TryFind pId }
-        | DragStartPlayer pId -> { state with DraggedPlayer = Some pId }
+                SelectedPlayer = state.GameState.Players.TryFind pId },
+            Cmd.none
         | DropPlayerInSlot(targetIdx, pId) ->
             let team = state.GameState.Clubs[state.GameState.UserClubId]
-
-            let createCompleteSlots (formationName: string) : LineupSlot list =
-                let formationSlots = FormationData.getFormation formationName
-
-                formationSlots
-                |> List.map (fun fs ->
-                    { Index = fs.Index
-                      Role = fs.Role
-                      X = fs.X
-                      Y = fs.Y
-                      PlayerId = None })
-                |> List.sortBy (fun s -> s.Index)
 
             let lineup =
                 team.CurrentLineup
                 |> Option.defaultValue
-                    { FormationName = state.SelectedTactics
+                    { Formation = state.SelectedTactics
                       TeamTactics = "Balanced"
-                      Slots = createCompleteSlots state.SelectedTactics }
+                      Slots =
+                        FormationData.getFormation state.SelectedTactics
+                        |> List.map (fun fs ->
+                            { Index = fs.Index
+                              Role = fs.Role
+                              X = fs.X
+                              Y = fs.Y
+                              PlayerId = None })
+                        |> List.sortBy _.Index }
 
-            let slotsMap = lineup.Slots |> List.map (fun s -> s.Index, s.PlayerId) |> Map.ofList
-
-
-
-            let sourceIdx =
-                slotsMap
-                |> Map.tryPick (fun idx idOpt -> if idOpt = Some pId then Some idx else None)
-
-            let occupant = slotsMap |> Map.tryFind targetIdx |> Option.flatten
-
-            let newSlotsMap =
-                match sourceIdx with
-                | Some src ->
-                    // Intercambiar: el jugador va a target, el ocupante va a source
-                    slotsMap |> Map.add targetIdx (Some pId) |> Map.add src occupant
-                | None ->
-                    // El jugador viene del banquillo, lo colocamos en target, y el ocupante (si existe) queda libre
-                    slotsMap
-                    |> Map.add targetIdx (Some pId)
-                    |> Map.map (fun idx idOpt -> if idx <> targetIdx && idOpt = Some pId then None else idOpt)
-
-            let newSlots =
-                newSlotsMap
-                |> Map.toList
-                |> List.map (fun (idx, pidOpt) ->
-                    // El slot original siempre existe porque el lineup tiene todos los índices
-                    let originalSlot = lineup.Slots |> List.find (fun s -> s.Index = idx)
-
-                    { Index = idx
-                      Role = originalSlot.Role
-                      X = originalSlot.X
-                      Y = originalSlot.Y
-                      PlayerId = pidOpt })
-                |> List.sortBy (fun s -> s.Index)
+            let updatedLineup = Lineup.swapPlayer targetIdx pId lineup
 
             let updatedTeam =
                 { team with
-                    CurrentLineup = Some { lineup with Slots = newSlots } }
+                    CurrentLineup = Some updatedLineup }
 
             let newGameState =
                 { state.GameState with
@@ -308,13 +269,87 @@ module AppState =
             { state with
                 GameState = newGameState
                 DraggedPlayer = None }
-            |> addLog $"🔄 Swap made: Slot {targetIdx}"
+            |> addLog $"🔄 Swap made: Slot {targetIdx}",
+            Cmd.none
 
-        | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }
+        | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
         | SaveGame ->
             Db.saveGame state.GameState
-            state |> addLog "💾 Game Saved"
+            state |> addLog "💾 Game Saved", Cmd.none
         | ChangeLeague leagueId ->
             { state with
-                SelectedLeagueId = leagueId }
-        | SetTactics tactics -> { state with SelectedTactics = tactics }
+                SelectedLeagueId = leagueId },
+            Cmd.none
+        | SetTactics formation ->
+            let userClub = state.GameState.Clubs[state.GameState.UserClubId]
+
+            let newSlots =
+                match userClub.CurrentLineup with
+                | None ->
+                    FormationData.getFormation formation
+                    |> List.map (fun s ->
+                        { Index = s.Index
+                          Role = s.Role
+                          X = s.X
+                          Y = s.Y
+                          PlayerId = None })
+                | Some lineup ->
+                    let newFormationSlots = FormationData.getFormation formation
+
+                    let assignedPairs =
+                        lineup.Slots
+                        |> List.choose (fun s -> s.PlayerId |> Option.map (fun pid -> s.Role, pid))
+
+
+                    let mutable remaining = assignedPairs
+
+                    newFormationSlots
+                    |> List.map (fun fs ->
+                        let found = remaining |> List.tryFind (fun (role, _) -> role = fs.Role)
+
+                        match found with
+                        | Some(role, pid) ->
+                            remaining <- remaining |> List.filter (fun x -> x <> (role, pid))
+
+                            { Index = fs.Index
+                              Role = fs.Role
+                              X = fs.X
+                              Y = fs.Y
+                              PlayerId = Some pid }
+                        | None ->
+                            { Index = fs.Index
+                              Role = fs.Role
+                              X = fs.X
+                              Y = fs.Y
+                              PlayerId = None })
+
+            let updatedClub =
+                { userClub with
+                    CurrentLineup =
+                        Some
+                            { Formation = formation
+                              TeamTactics = "Balanced"
+                              Slots = newSlots } }
+
+            let newGs =
+                { state.GameState with
+                    Clubs = state.GameState.Clubs |> Map.add updatedClub.Id updatedClub }
+
+            saveAsync newGs
+
+            { state with
+                GameState = newGs
+                SelectedTactics = formation },
+            Cmd.none
+        | ConfirmClub clubId ->
+            let newGs =
+                { state.GameState with
+                    UserClubId = clubId }
+
+            Db.saveGame newGs
+
+            { state with
+                GameState = newGs
+                CurrentPage = Home
+                LogMessages = [ $"Career started by {state.SetupManagerName}" ] },
+            Cmd.none

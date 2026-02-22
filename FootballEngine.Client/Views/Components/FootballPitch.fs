@@ -134,9 +134,9 @@ module FootballPitch =
                     yield! penaltyArea cfg false ] ]
 
 
-    let render (formationName: string) (renderPlayer: FormationSlot -> IView) =
+    let render formation (renderPlayer: FormationSlot -> IView) =
         let cfg = defaultCfg
-        let slots = getFormation formationName
+        let slots = getFormation formation
 
         Viewbox.create
             [ Viewbox.stretch Stretch.Uniform

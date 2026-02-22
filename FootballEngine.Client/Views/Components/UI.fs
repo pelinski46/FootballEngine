@@ -256,7 +256,6 @@ module UI =
         (isSelected: bool)
         (isDragged: bool)
         onSelect
-        onDrag
         =
         Border.create
             [ Border.background (
@@ -267,7 +266,6 @@ module UI =
               Border.cornerRadius 8.0
               Border.padding 12.0
               Border.onTapped (fun _ -> onSelect ())
-              Border.onPointerPressed (fun _ -> onDrag ())
               Border.child (
                   Grid.create
                       [ Grid.columnDefinitions "220, 60, 60, 80, 80, *"
@@ -440,7 +438,7 @@ module UI =
                                                             statRow "ONE ON ONE" p.Goalkeeping.OneOnOne "#3b82f6"
                                                             statRow "AERIAL REACH" p.Goalkeeping.AerialReach "#3b82f6"
 
-                                                        // Espacio final para que no corte el último
+
                                                         Border.create [ Border.height 50.0 ] ] ]
                                         ) ] ] ]
 

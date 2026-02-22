@@ -9,6 +9,7 @@ open Avalonia.Media
 open FootballEngine
 open FootballEngine.AppState
 open FootballEngine.Components
+open FootballEngine.Domain
 
 module Setup =
 
@@ -107,7 +108,44 @@ module Setup =
                                                   Button.padding (20.0, 10.0)
                                                   Button.onClick (fun _ -> dispatch (GoToSetupStep ManagerNaming)) ] ] ] ] ]
             )
+        | ClubSelection ->
+            let clubs =
+                state.GameState.Leagues
+                |> Map.tryPick (fun _ l ->
+                    if l.Nationality = state.SetupSelectedCountry.Value && l.Level = First then
+                        Some l
+                    else
+                        None)
+                |> Option.map (fun l -> l.ClubIds |> List.map (fun id -> state.GameState.Clubs[id]))
+                |> Option.defaultValue []
+                |> List.sortByDescending _.Reputation
 
+            setupContainer (
+                StackPanel.create
+                    [ StackPanel.spacing 20.0
+                      StackPanel.children
+                          [ TextBlock.create
+                                [ TextBlock.text "CHOOSE YOUR CLUB"
+                                  TextBlock.fontSize 24.0
+                                  TextBlock.fontWeight FontWeight.Bold
+                                  TextBlock.horizontalAlignment HorizontalAlignment.Center ]
+                            for club in clubs do
+                                Button.create
+                                    [ Button.horizontalAlignment HorizontalAlignment.Stretch
+                                      Button.padding (20.0, 12.0)
+                                      Button.onClick (fun _ -> dispatch (ConfirmClub club.Id))
+                                      Button.content (
+                                          DockPanel.create
+                                              [ DockPanel.children
+                                                    [ TextBlock.create
+                                                          [ TextBlock.text club.Name
+                                                            TextBlock.fontWeight FontWeight.Bold ]
+                                                      TextBlock.create
+                                                          [ TextBlock.dock Dock.Right
+                                                            TextBlock.text $"⭐ {club.Reputation}"
+                                                            TextBlock.foreground Theme.TextMuted ] ] ]
+                                      ) ] ] ]
+            )
         | ManagerNaming ->
             setupContainer (
                 StackPanel.create
