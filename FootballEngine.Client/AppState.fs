@@ -106,6 +106,9 @@ module AppState =
 
     let private saveAsync (gs: GameState) =
         Task.Run(fun () -> Db.saveGame gs) |> ignore
+
+    let private saveDailyProgressAsync (gs: GameState) =
+        Task.Run(fun () -> Db.saveDailyProgress gs) |> ignore
     // === INIT ===
 
     let init () =
@@ -166,7 +169,7 @@ module AppState =
                 let seedRnd = Random()
 
                 let newGs =
-                    Engine.generateNewGame seedRnd primary state.SetupManagerName state.SetupSecondaryCountries
+                    generateNewGame seedRnd primary state.SetupManagerName state.SetupSecondaryCountries
 
                 Db.saveGame newGs
 
@@ -195,7 +198,7 @@ module AppState =
                 AdvanceDayDone
 
         | AdvanceDayDone(finalGs, logs) ->
-            Db.saveDailyProgress finalGs
+            saveDailyProgressAsync finalGs
 
             let allLogs =
                 if logs.IsEmpty then

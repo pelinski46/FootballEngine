@@ -3,6 +3,7 @@ namespace FootballEngine.Test
 open System
 open FootballEngine
 open FootballEngine.Client.AI
+open FootballEngine.Client.AI.ManagerAI
 open FootballEngine.Domain
 
 module TestMatchExtended =
@@ -91,8 +92,12 @@ module TestMatchExtended =
                         let home = clubs[Random.Shared.Next(clubs.Length)]
                         let away = clubs[Random.Shared.Next(clubs.Length)]
 
-                        let homeReady = ManagerAI.ensureLineup home F433
-                        let awayReady = ManagerAI.ensureLineup away F433
+                        let homeReady =
+                            ManagerAI.ensureLineup { home with CurrentLineup = None } (pickBestFormation home)
+
+                        let awayReady =
+                            ManagerAI.ensureLineup { away with CurrentLineup = None } (pickBestFormation away)
+
                         let hScore, aScore, events = MatchEngine.simulateMatch homeReady awayReady
 
                         { TotalGoals = hScore + aScore

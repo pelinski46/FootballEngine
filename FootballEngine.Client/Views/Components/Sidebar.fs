@@ -59,7 +59,7 @@ module Sidebar =
                                     Border.height 80.0
                                     Border.child (
                                         TextBlock.create
-                                            [ TextBlock.text ("FOOTBALL ENGINE")
+                                            [ TextBlock.text "FOOTBALL ENGINE"
                                               TextBlock.verticalAlignment VerticalAlignment.Center
                                               TextBlock.horizontalAlignment HorizontalAlignment.Center
                                               TextBlock.fontSize 18.0

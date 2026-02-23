@@ -135,8 +135,20 @@ module MatchEngine =
         // Separar jugadores y posiciones
         let homePlayers = homePlayersWithPos |> Array.map (fun (p, _, _) -> p)
         let awayPlayers = awayPlayersWithPos |> Array.map (fun (p, _, _) -> p)
-        let homePos = homePlayersWithPos |> Array.map (fun (_, x, y) -> (x, y))
-        let awayPos = awayPlayersWithPos |> Array.map (fun (_, x, y) -> (x, y))
+
+        let homePos =
+            homePlayersWithPos
+            |> Array.map (fun (_, x, y) ->
+                let engineX = (1.0 - y) * 100.0
+                let engineY = x * 100.0
+                (engineX, engineY))
+
+        let awayPos =
+            awayPlayersWithPos
+            |> Array.map (fun (_, x, y) ->
+                let engineX = y * 100.0
+                let engineY = x * 100.0
+                (engineX, engineY))
 
         // Condiciones mutables
         let hCondition = homePlayers |> Array.map _.Condition
@@ -399,9 +411,9 @@ module MatchEngine =
                 applyFatigue (fst s.BallPosition)
 
             if second % 30 = 0 then
-                let (att, def, attIdx, defIdx) = pickDuel s
+                let att, def, attIdx, defIdx = pickDuel s
                 let sAfterDuel = resolveDuel (att, def, attIdx, defIdx) s
-                // Si después del duelo el equipo en posesión es el mismo, el atacante original puede tirar
+
                 let sAfterShot =
                     if sAfterDuel.Possession = s.Possession then
                         tryShot sAfterDuel att
