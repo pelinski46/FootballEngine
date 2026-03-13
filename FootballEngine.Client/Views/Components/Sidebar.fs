@@ -38,7 +38,10 @@ module Navigation =
             Icon = "💰" }
           { Page = Settings
             Label = "Settings"
-            Icon = "⚙️" } ]
+            Icon = "⚙️" }
+          { Page = MatchLab
+            Label = "MatchLab"
+            Icon = "M" } ]
 
 module Sidebar =
     let sidebar (state: State) dispatch =

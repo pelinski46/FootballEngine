@@ -7,6 +7,7 @@ open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.DomainTypes
 open FootballEngine.Engine
+open FootballEngine.MatchContext
 
 module AppState =
 
@@ -21,7 +22,7 @@ module AppState =
         | Transfers
         | Finances
         | Settings
-
+        | MatchLab
 
     type SetupStep =
         | MainMenu
@@ -54,7 +55,10 @@ module AppState =
         | DropPlayerInSlot of slotIndex: int * playerId: int
         | SortPlayersBy of string
 
-
+        | SelectMatchLabHome of ClubId
+        | SelectMatchLabAway of ClubId
+        | RunMatchLab
+        | SetMatchLabSnapshot of int
         | SaveGame
         | ChangeLeague of LeagueId
         | SetTactics of Formation
@@ -72,8 +76,11 @@ module AppState =
           SetupSelectedCountry: CountryCode option
           SetupSecondaryCountries: CountryCode list
           SetupManagerName: string
-
-          SetupStep: SetupStep }
+          SetupStep: SetupStep
+          MatchLabHome: ClubId option
+          MatchLabAway: ClubId option
+          MatchLabResult: MatchReplay option
+          MatchLabSnapshot: int }
 
 
     let private addLog msg state =
@@ -139,7 +146,11 @@ module AppState =
           SetupSelectedCountry = None
           SetupSecondaryCountries = []
           SetupManagerName = ""
-          SetupStep = MainMenu },
+          SetupStep = MainMenu
+          MatchLabHome = None
+          MatchLabAway = None
+          MatchLabResult = None
+          MatchLabSnapshot = 0 },
         Cmd.none
 
 
@@ -383,3 +394,19 @@ module AppState =
                 CurrentPage = Home
                 LogMessages = [ $"Career started by {state.SetupManagerName}" ] },
             Cmd.none
+        | SelectMatchLabHome id -> { state with MatchLabHome = Some id }, Cmd.none
+        | SelectMatchLabAway id -> { state with MatchLabAway = Some id }, Cmd.none
+
+        | RunMatchLab ->
+            match state.MatchLabHome, state.MatchLabAway with
+            | Some hId, Some aId ->
+                match MatchSimulator.trySimulateMatchFull state.GameState.Clubs[hId] state.GameState.Clubs[aId] with
+                | Ok replay ->
+                    { state with
+                        MatchLabResult = Some replay
+                        MatchLabSnapshot = 0 },
+                    Cmd.none
+                | Error e -> state |> addLog $"⚠️ {e}", Cmd.none
+            | _ -> state |> addLog "⚠️ Select both clubs", Cmd.none
+
+        | SetMatchLabSnapshot i -> { state with MatchLabSnapshot = i }, Cmd.none

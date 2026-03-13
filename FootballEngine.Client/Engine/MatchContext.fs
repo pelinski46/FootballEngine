@@ -47,6 +47,8 @@ module MatchContext =
             HomeSubsUsed: int
             AwaySubsUsed: int
             EventsRev: MatchEvent list
+            HomePositions: Map<PlayerId, float * float>
+            AwayPositions: Map<PlayerId, float * float>
         }
 
     /// Pre-computed spatial data. Positions are indexed by PlayerId so they
@@ -55,6 +57,9 @@ module MatchContext =
         { HomePositions: Map<PlayerId, float * float>
           AwayPositions: Map<PlayerId, float * float> }
 
+    type MatchReplay =
+        { Final: MatchState
+          Snapshots: MatchState[] }
     // ------------------------------------------------------------------ //
     //  Scheduled events                                                    //
     // ------------------------------------------------------------------ //

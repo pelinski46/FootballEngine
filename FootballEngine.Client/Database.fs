@@ -633,17 +633,14 @@ module Db =
             for KeyValue(_, fixture) in state.Fixtures do
                 db.InsertOrReplace(toFixtureEntity fixture) |> ignore
 
-            // Knockout ties
+
             for KeyValue(_, tie) in state.KnockoutTies do
                 db.InsertOrReplace(toKnockoutTieEntity tie) |> ignore
 
-            // Countries
+
             for KeyValue(_, country) in state.Countries do
                 db.InsertOrReplace(toCountryEntity country) |> ignore)
 
-
-
-    // --- LOAD ---
 
     let loadGame () : GameState option =
         if not (File.Exists dbPath) then

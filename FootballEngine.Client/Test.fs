@@ -4,6 +4,8 @@ open System
 open FootballEngine
 open FootballEngine.Client.AI.ManagerAI
 open FootballEngine.Domain
+open FootballEngine.DomainTypes
+open FootballEngine.MatchContext
 open FootballEngine.MatchSimulator
 
 module MatchEngineTests =
@@ -20,7 +22,7 @@ module MatchEngineTests =
         | Pass name -> printfn $"  ✅ %s{name}"
         | Fail(name, reason) -> printfn $"  ❌ %s{name} — %s{reason}"
 
-    let private runSuite suiteName (tests: TestResult list) =
+    let runSuite suiteName (tests: TestResult list) =
         printfn $"\n── %s{suiteName} ──"
         tests |> List.iter printResult
 
@@ -37,7 +39,6 @@ module MatchEngineTests =
 
         failures
 
-
     let private makeReadyClub (c: Club) =
         ensureLineup { c with CurrentLineup = None } (pickBestFormation c)
 
@@ -51,7 +52,6 @@ module MatchEngineTests =
                 failwith "Need at least 2 clubs."
 
             clubs
-
 
     // ------------------------------------------------------------------ //
     //  Single match                                                        //
@@ -101,7 +101,6 @@ module MatchEngineTests =
 
         runSuite "Single Match Invariants" tests
 
-
     // ------------------------------------------------------------------ //
     //  Statistical contracts                                               //
     // ------------------------------------------------------------------ //
@@ -119,10 +118,6 @@ module MatchEngineTests =
           Draws: int
           Count: int }
 
-    // Three-way discriminated union so we can distinguish:
-    //   Choice1Of3 → successful simulation
-    //   Choice2Of3 → known SimulationError (returned as Error)
-    //   Choice3Of3 → unhandled .NET exception (escaped trySimulateMatch)
     type private FixtureOutcome =
         | Success of homeGoals: int * awayGoals: int
         | KnownError of home: string * away: string * error: SimulationError
@@ -133,8 +128,6 @@ module MatchEngineTests =
         let clubs = loadClubs ()
         let sw = Diagnostics.Stopwatch.StartNew()
 
-        // Rotation: hi advances through every club; ai is always hi+1 (mod n),
-        // guaranteed distinct as long as clubs.Length >= 2 (checked in loadClubs).
         let outcomes =
             Array.Parallel.init iterations (fun i ->
                 let hi = i % clubs.Length
@@ -151,7 +144,6 @@ module MatchEngineTests =
 
         sw.Stop()
 
-        // ── Failure diagnostics ──────────────────────────────────────── //
         let failures =
             outcomes
             |> Array.choose (function
@@ -168,7 +160,6 @@ module MatchEngineTests =
 
             printfn ""
 
-        // ── Aggregate stats (successes only) ─────────────────────────── //
         let totals =
             outcomes
             |> Array.fold
@@ -230,7 +221,6 @@ module MatchEngineTests =
 
         runSuite "Statistical Contracts" tests
 
-
     // ------------------------------------------------------------------ //
     //  Error handling                                                      //
     // ------------------------------------------------------------------ //
@@ -273,6 +263,157 @@ module MatchEngineTests =
 
         runSuite "Error Handling Contracts" tests
 
+    // ------------------------------------------------------------------ //
+    //  Replay UI contracts                                                 //
+    // ------------------------------------------------------------------ //
+
+    let private inBounds (x: float, y: float) =
+        x >= 0.0 && x <= 100.0 && y >= 0.0 && y <= 100.0
+
+    let private allPositionsInBounds (positions: Map<PlayerId, float * float>) =
+        positions |> Map.forall (fun _ pos -> inBounds pos)
+
+    let private checkSnapshot (label: string) (s: MatchState) : TestResult list =
+        let homeActiveCount =
+            s.HomePlayers
+            |> Array.filter (fun p -> not (Map.containsKey p.Id s.HomeSidelined))
+            |> Array.length
+
+        let awayActiveCount =
+            s.AwayPlayers
+            |> Array.filter (fun p -> not (Map.containsKey p.Id s.AwaySidelined))
+            |> Array.length
+
+        [ check $"{label}: ball in bounds" (inBounds s.BallPosition) $"ball at {s.BallPosition}"
+
+          check $"{label}: home positions in bounds" (allPositionsInBounds s.HomePositions) "home player outside 0-100"
+
+          check $"{label}: away positions in bounds" (allPositionsInBounds s.AwayPositions) "away player outside 0-100"
+
+          check
+              $"{label}: scores non-negative"
+              (s.HomeScore >= 0 && s.AwayScore >= 0)
+              $"score {s.HomeScore}-{s.AwayScore}"
+
+          check $"{label}: second in [0, 5700]" (s.Second >= 0 && s.Second <= 95 * 60) $"second = {s.Second}"
+
+          check $"{label}: momentum in [-10, 10]" (s.Momentum >= -10.0 && s.Momentum <= 10.0) $"momentum = {s.Momentum}"
+
+          check
+              $"{label}: home has at least 1 active player"
+              (homeActiveCount >= 1)
+              $"active home players = {homeActiveCount}"
+
+          check
+              $"{label}: away has at least 1 active player"
+              (awayActiveCount >= 1)
+              $"active away players = {awayActiveCount}"
+
+          check
+              $"{label}: home conditions length matches players"
+              (s.HomeConditions.Length = s.HomePlayers.Length)
+              $"players={s.HomePlayers.Length} conditions={s.HomeConditions.Length}"
+
+          check
+              $"{label}: away conditions length matches players"
+              (s.AwayConditions.Length = s.AwayPlayers.Length)
+              $"players={s.AwayPlayers.Length} conditions={s.AwayConditions.Length}"
+
+          check
+              $"{label}: all home conditions in [0, 100]"
+              (s.HomeConditions |> Array.forall (fun c -> c >= 0 && c <= 100))
+              "home condition out of range"
+
+          check
+              $"{label}: all away conditions in [0, 100]"
+              (s.AwayConditions |> Array.forall (fun c -> c >= 0 && c <= 100))
+              "away condition out of range"
+
+          check
+              $"{label}: each home player has a position entry"
+              (s.HomePlayers |> Array.forall (fun p -> Map.containsKey p.Id s.HomePositions))
+              "home player missing position"
+
+          check
+              $"{label}: each away player has a position entry"
+              (s.AwayPlayers |> Array.forall (fun p -> Map.containsKey p.Id s.AwayPositions))
+              "away player missing position"
+
+          check
+              $"{label}: no player on both teams"
+              (let homeIds = s.HomePlayers |> Array.map _.Id |> Set.ofArray
+               let awayIds = s.AwayPlayers |> Array.map _.Id |> Set.ofArray
+               Set.isEmpty (Set.intersect homeIds awayIds))
+              "player appears in both squads"
+
+          check
+              $"{label}: subs used in [0, 3]"
+              (s.HomeSubsUsed >= 0
+               && s.HomeSubsUsed <= 3
+               && s.AwaySubsUsed >= 0
+               && s.AwaySubsUsed <= 3)
+              $"subs home={s.HomeSubsUsed} away={s.AwaySubsUsed}" ]
+
+    let private checkReplayProgression (replay: MatchReplay) : TestResult list =
+        let snapshots = replay.Snapshots
+        let final = replay.Final
+
+        [ check "replay has snapshots" (snapshots.Length > 0) "no snapshots — viewer slider will be empty"
+
+          check
+              "snapshot seconds are non-decreasing"
+              (snapshots |> Array.pairwise |> Array.forall (fun (a, b) -> b.Second >= a.Second))
+              "time went backwards between snapshots"
+
+          check
+              "home score never decreases"
+              (snapshots
+               |> Array.pairwise
+               |> Array.forall (fun (a, b) -> b.HomeScore >= a.HomeScore))
+              "home score decreased between snapshots"
+
+          check
+              "away score never decreases"
+              (snapshots
+               |> Array.pairwise
+               |> Array.forall (fun (a, b) -> b.AwayScore >= a.AwayScore))
+              "away score decreased between snapshots"
+
+          check
+              "final score >= last snapshot score"
+              (snapshots.Length = 0
+               || let last = snapshots[snapshots.Length - 1] in
+                  final.HomeScore >= last.HomeScore && final.AwayScore >= last.AwayScore)
+              "final score lower than last snapshot"
+
+          check "final second = 5700 (95 min)" (final.Second = 95 * 60) $"final.Second = {final.Second}"
+
+          check
+              "goal events match final score"
+              (let goals = final.EventsRev |> List.filter (fun e -> e.Type = Goal)
+               let hGoals = goals |> List.filter (fun e -> e.ClubId = final.Home.Id) |> List.length
+               let aGoals = goals |> List.filter (fun e -> e.ClubId = final.Away.Id) |> List.length
+               hGoals = final.HomeScore && aGoals = final.AwayScore)
+              $"goal events don't match {final.HomeScore}-{final.AwayScore}" ]
+
+    let replayUIContracts () =
+        let clubs = loadClubs ()
+        let home = clubs[0]
+        let away = clubs[1]
+
+        match trySimulateMatchFull home away with
+        | Error e -> runSuite "Replay UI Contracts" [ Fail("simulation", $"SimulationError: %A{e}") ]
+        | Ok replay ->
+            let finalTests = checkSnapshot "final" replay.Final
+            let progressTests = checkReplayProgression replay
+
+            let snapshotTests =
+                replay.Snapshots
+                |> Array.mapi (fun i s -> checkSnapshot $"snapshot[{i}]" s)
+                |> Array.toList
+                |> List.concat
+
+            runSuite "Replay UI Contracts" (finalTests @ progressTests @ snapshotTests)
 
     // ------------------------------------------------------------------ //
     //  Entry point                                                         //
@@ -282,7 +423,10 @@ module MatchEngineTests =
         printfn "\n====== Football Engine — Match Simulation Tests ======"
 
         let failures =
-            singleMatchContracts () @ statisticalContracts 1000 @ errorHandlingContracts ()
+            singleMatchContracts ()
+            @ statisticalContracts 1000
+            @ errorHandlingContracts ()
+            @ replayUIContracts ()
 
         printfn "======================================================"
 

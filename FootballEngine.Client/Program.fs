@@ -8,6 +8,7 @@ open Avalonia.Controls
 open Avalonia.FuncUI
 open Avalonia.FuncUI.DSL
 open FootballEngine
+open FootballEngine.Components
 open FootballEngine.Components.Header
 open FootballEngine.Components.Sidebar
 open FootballEngine.Pages.Home
@@ -41,7 +42,8 @@ module Views =
                                 | Scouting -> failwith "todo"
                                 | Transfers -> failwith "todo"
                                 | Finances -> failwith "todo"
-                                | Settings -> failwith "todo" ] ] ] ]
+                                | Settings -> failwith "todo"
+                                | MatchLab -> MatchLabView.view state dispatch ] ] ] ]
 
 type MainWindow() as this =
     inherit HostWindow()
