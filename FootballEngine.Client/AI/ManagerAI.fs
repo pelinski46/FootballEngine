@@ -2,6 +2,7 @@ namespace FootballEngine.Client.AI
 
 open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.DomainTypes
 
 module ManagerAI =
 

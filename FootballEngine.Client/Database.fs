@@ -1,9 +1,10 @@
 namespace FootballEngine
 
 open System
+open FootballEngine.DomainTypes
+open FootballEngine.Domain
 open SQLite
 open System.IO
-open FootballEngine.Domain
 
 module Db =
 
@@ -99,42 +100,79 @@ module Db =
           Y: float
           PlayerId: int }
 
+    /// Persists every Competition (league, cup, international).
+    /// CompetitionType is stored as a discriminated-union tag + payload strings
+    /// so no child table is needed for the type itself.
     [<CLIMutable>]
-    type LeagueEntity =
-        { [<PrimaryKey>]
-          Id: int
-          Name: string
-          Level: int
-          Season: int
-          Nationality: string
-          IsPlayable: bool }
+    type CompetitionEntity =
+        {
+            [<PrimaryKey>]
+            Id: int
+            Name: string
+            /// "NationalLeague" | "NationalCup" | "InternationalCup"
+            TypeTag: string
+            /// For NationalLeague: "First" | "Second"
+            /// For NationalCup / InternationalCup: serialised CupFormat (see below)
+            TypeParam1: string
+            /// For InternationalCup: confederation code or "" if None
+            TypeParam2: string
+            Country: string // "" when None
+            Season: int
+            /// Pipe-separated key=value pairs for Settings map
+            Settings: string
+        }
 
     [<CLIMutable>]
-    type LeagueClubEntity =
+    type CompetitionClubEntity =
         { [<PrimaryKey; AutoIncrement>]
           Id: int
-          LeagueId: int
+          CompetitionId: int
           ClubId: int }
+
+    [<CLIMutable>]
+    type KnockoutTieEntity =
+        { [<PrimaryKey>]
+          TieId: int
+          Round: string
+          HomeClubId: int
+          AwayClubId: int
+          Leg1FixtureId: int // -1 = None
+          Leg2FixtureId: int // -1 = None
+          AggHome: int // -1 = None
+          AggAway: int // -1 = None
+          WinnerId: int } // -1 = None
 
     [<CLIMutable>]
     type MatchFixtureEntity =
         { [<PrimaryKey>]
           Id: int
+          CompetitionId: int
+          Round: string // serialised Round option; "" = None
           HomeClubId: int
           AwayClubId: int
           ScheduledDate: DateTime
-          HomeScore: int
-          AwayScore: int
+          HomeScore: int // -1 = None
+          AwayScore: int // -1 = None
           Played: bool }
+
+    [<CLIMutable>]
+    type CountryEntity =
+        { [<PrimaryKey>]
+          Code: string
+          Name: string
+          Confederation: string }
 
     [<CLIMutable>]
     type GameSaveMeta =
         { [<PrimaryKey>]
           Id: int
           CurrentDate: DateTime
+          Season: int
           UserClubId: int
           ManagerName: string
           PrimaryCountry: string }
+
+    // --- HELPERS: Position / Foot / Formation ---
 
     let private parsePosition (s: string) =
         match s.Trim().ToUpper() with
@@ -179,7 +217,6 @@ module Db =
         | F541 -> "5-4-1"
         | F523 -> "5-2-3"
 
-
     let private parseFormation =
         function
         | "4-4-2" -> F442
@@ -198,6 +235,109 @@ module Db =
         | "5-4-1" -> F541
         | "5-2-3" -> F523
         | _ -> F442
+
+    // --- HELPERS: Round / CompetitionType / CupFormat ---
+
+    let private roundToString (r: Round) =
+        match r with
+        | GroupStage g -> $"GroupStage:{g}"
+        | RoundOf32 -> "RoundOf32"
+        | RoundOf16 -> "RoundOf16"
+        | QuarterFinal -> "QuarterFinal"
+        | SemiFinal -> "SemiFinal"
+        | Final -> "Final"
+        | ThirdPlace -> "ThirdPlace"
+
+    let private parseRound (s: string) : Round =
+        if s.StartsWith("GroupStage:") then
+            GroupStage(int (s.Substring(11)))
+        else
+            match s with
+            | "RoundOf32" -> RoundOf32
+            | "RoundOf16" -> RoundOf16
+            | "QuarterFinal" -> QuarterFinal
+            | "SemiFinal" -> SemiFinal
+            | "Final" -> Final
+            | "ThirdPlace" -> ThirdPlace
+            | _ -> Final
+
+    let private cupFormatToString (f: CupFormat) =
+        match f with
+        | SingleMatch -> "SingleMatch"
+        | TwoLegs -> "TwoLegs"
+        | GroupThenKnockout(gs, tpg) -> $"GroupThenKnockout:{gs}:{tpg}"
+        | StraightKnockout legs -> $"StraightKnockout:{legs}"
+
+    let private parseCupFormat (s: string) : CupFormat =
+        if s.StartsWith("GroupThenKnockout:") then
+            let parts = s.Split(':')
+            GroupThenKnockout(int parts.[1], int parts.[2])
+        elif s.StartsWith("StraightKnockout:") then
+            StraightKnockout(int (s.Substring(17)))
+        elif s = "TwoLegs" then
+            TwoLegs
+        else
+            SingleMatch
+
+    let private confederationToString (c: Confederation) =
+        match c with
+        | UEFA -> "UEFA"
+        | CONMEBOL -> "CONMEBOL"
+        | CONCACAF -> "CONCACAF"
+        | CAF -> "CAF"
+        | AFC -> "AFC"
+        | OFC -> "OFC"
+
+    let private parseConfederation (s: string) : Confederation =
+        match s with
+        | "CONMEBOL" -> CONMEBOL
+        | "CONCACAF" -> CONCACAF
+        | "CAF" -> CAF
+        | "AFC" -> AFC
+        | "OFC" -> OFC
+        | _ -> UEFA
+
+    let private competitionTypeToStrings (ct: CompetitionType) : string * string * string =
+        match ct with
+        | NationalLeague First -> "NationalLeague", "First", ""
+        | NationalLeague Second -> "NationalLeague", "Second", ""
+        | NationalCup fmt -> "NationalCup", cupFormatToString fmt, ""
+        | InternationalCup(confOpt, fmt) ->
+            let confStr = confOpt |> Option.map confederationToString |> Option.defaultValue ""
+            "InternationalCup", cupFormatToString fmt, confStr
+
+    let private parseCompetitionType (tag: string) (p1: string) (p2: string) : CompetitionType =
+        match tag with
+        | "NationalLeague" -> NationalLeague(if p1 = "Second" then Second else First)
+        | "NationalCup" -> NationalCup(parseCupFormat p1)
+        | "InternationalCup" ->
+            let conf =
+                if String.IsNullOrEmpty(p2) then
+                    None
+                else
+                    Some(parseConfederation p2)
+
+            InternationalCup(conf, parseCupFormat p1)
+        | _ -> NationalLeague First
+
+    let private settingsToString (m: Map<string, string>) =
+        m |> Map.toSeq |> Seq.map (fun (k, v) -> $"{k}={v}") |> String.concat "|"
+
+    let private parseSettings (s: string) : Map<string, string> =
+        if String.IsNullOrEmpty(s) then
+            Map.empty
+        else
+            s.Split('|')
+            |> Array.choose (fun kv ->
+                let idx = kv.IndexOf('=')
+
+                if idx > 0 then
+                    Some(kv.[.. idx - 1], kv.[idx + 1 ..])
+                else
+                    None)
+            |> Map.ofArray
+
+    // --- ENTITY <-> DOMAIN CONVERSIONS ---
 
     let private toPlayerEntity (p: Player) : PlayerEntity =
         let statusStr, sInt, sDate =
@@ -263,7 +403,7 @@ module Db =
         let status =
             match e.StatusType with
             | "Suspended" -> Suspended e.StatusParamInt
-            | "Injured" -> Injured(Moderate, e.StatusParamDate) // Simplificado severidad
+            | "Injured" -> Injured(Moderate, e.StatusParamDate)
             | _ -> Available
 
         { Id = e.Id
@@ -335,8 +475,35 @@ module Db =
           GoalsFor = c.GoalsFor
           GoalsAgainst = c.GoalsAgainst }
 
+    let private toCompetitionEntity (c: Competition) : CompetitionEntity =
+        let tag, p1, p2 = competitionTypeToStrings c.Type
+
+        { Id = c.Id
+          Name = c.Name
+          TypeTag = tag
+          TypeParam1 = p1
+          TypeParam2 = p2
+          Country = c.Country |> Option.defaultValue ""
+          Season = c.Season
+          Settings = settingsToString c.Settings }
+
+    let private toCompetitionDomain (e: CompetitionEntity) (clubIds: ClubId list) : Competition =
+        { Id = e.Id
+          Name = e.Name
+          Type = parseCompetitionType e.TypeTag e.TypeParam1 e.TypeParam2
+          Country =
+            if String.IsNullOrEmpty(e.Country) then
+                None
+            else
+                Some e.Country
+          Season = e.Season
+          ClubIds = clubIds
+          Settings = parseSettings e.Settings }
+
     let private toFixtureEntity (f: MatchFixture) : MatchFixtureEntity =
         { Id = f.Id
+          CompetitionId = f.CompetitionId
+          Round = f.Round |> Option.map roundToString |> Option.defaultValue ""
           HomeClubId = f.HomeClubId
           AwayClubId = f.AwayClubId
           ScheduledDate = f.ScheduledDate
@@ -346,6 +513,12 @@ module Db =
 
     let private toFixtureDomain (e: MatchFixtureEntity) : MatchFixture =
         { Id = e.Id
+          CompetitionId = e.CompetitionId
+          Round =
+            if String.IsNullOrEmpty(e.Round) then
+                None
+            else
+                Some(parseRound e.Round)
           HomeClubId = e.HomeClubId
           AwayClubId = e.AwayClubId
           ScheduledDate = e.ScheduledDate
@@ -354,6 +527,42 @@ module Db =
           Played = e.Played
           Events = [] }
 
+    let private toKnockoutTieEntity (t: KnockoutTie) : KnockoutTieEntity =
+        let aggHome, aggAway =
+            match t.AggregateScore with
+            | Some(h, a) -> h, a
+            | None -> -1, -1
+
+        { TieId = t.TieId
+          Round = roundToString t.Round
+          HomeClubId = t.HomeClubId
+          AwayClubId = t.AwayClubId
+          Leg1FixtureId = t.Leg1FixtureId |> Option.defaultValue -1
+          Leg2FixtureId = t.Leg2FixtureId |> Option.defaultValue -1
+          AggHome = aggHome
+          AggAway = aggAway
+          WinnerId = t.WinnerId |> Option.defaultValue -1 }
+
+    let private toKnockoutTieDomain (e: KnockoutTieEntity) : KnockoutTie =
+        { TieId = e.TieId
+          Round = parseRound e.Round
+          HomeClubId = e.HomeClubId
+          AwayClubId = e.AwayClubId
+          Leg1FixtureId = if e.Leg1FixtureId = -1 then None else Some e.Leg1FixtureId
+          Leg2FixtureId = if e.Leg2FixtureId = -1 then None else Some e.Leg2FixtureId
+          AggregateScore = if e.AggHome = -1 then None else Some(e.AggHome, e.AggAway)
+          WinnerId = if e.WinnerId = -1 then None else Some e.WinnerId }
+
+    let private toCountryEntity (c: Country) : CountryEntity =
+        { Code = c.Code
+          Name = c.Name
+          Confederation = confederationToString c.Confederation }
+
+    let private toCountryDomain (e: CountryEntity) : Country =
+        { Code = e.Code
+          Name = e.Name
+          Confederation = parseConfederation e.Confederation }
+
     // --- DATABASE CORE ---
 
     let private dbPath =
@@ -361,29 +570,35 @@ module Db =
 
     let private getConnection () = new SQLiteConnection(dbPath)
 
+    // --- SAVE ---
+
     let saveGame (state: GameState) =
         use db = getConnection ()
 
         db.RunInTransaction(fun () ->
+
+            // Meta
             db.InsertOrReplace(
-                { Id = 1
+                { GameSaveMeta.Id = 1
                   CurrentDate = state.CurrentDate
+                  Season = state.Season
                   UserClubId = state.UserClubId
                   ManagerName = state.ManagerName
                   PrimaryCountry = state.PrimaryCountry }
             )
             |> ignore
 
+            // Clubs + lineups
             for KeyValue(_, club) in state.Clubs do
                 db.InsertOrReplace(toClubEntity club) |> ignore
-                // Guardar Lineup si existe
+
                 match club.CurrentLineup with
                 | Some lineup ->
                     db.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", club.Id) |> ignore
 
                     for slot in lineup.Slots do
                         db.Insert(
-                            { Id = 0
+                            { LineupSlotEntity.Id = 0
                               ClubId = club.Id
                               FormationName = formationToString lineup.Formation
                               TacticsName = lineup.TeamTactics
@@ -391,62 +606,44 @@ module Db =
                               Role = string slot.Role
                               X = slot.X
                               Y = slot.Y
-                              PlayerId = (slot.PlayerId |> Option.defaultValue -1) }
+                              PlayerId = slot.PlayerId |> Option.defaultValue -1 }
                         )
                         |> ignore
                 | None -> ()
 
+            // Players
             for KeyValue(_, player) in state.Players do
                 db.InsertOrReplace(toPlayerEntity player) |> ignore
 
-            db.DeleteAll<LeagueClubEntity>() |> ignore
+            // Competitions + club membership
+            db.DeleteAll<CompetitionClubEntity>() |> ignore
 
-            for KeyValue(_, league) in state.Leagues do
-                db.InsertOrReplace(
-                    { Id = league.Id
-                      Name = league.Name
-                      Level =
-                        (match league.Level with
-                         | First -> 0
-                         | Second -> 1)
-                      Season = league.Season
-                      Nationality = league.Nationality
-                      IsPlayable = league.IsPlayable }
-                )
-                |> ignore
+            for KeyValue(_, comp) in state.Competitions do
+                db.InsertOrReplace(toCompetitionEntity comp) |> ignore
 
-                for clubId in league.ClubIds do
+                for clubId in comp.ClubIds do
                     db.Insert(
-                        { Id = 0
-                          LeagueId = league.Id
+                        { CompetitionClubEntity.Id = 0
+                          CompetitionId = comp.Id
                           ClubId = clubId }
                     )
                     |> ignore
 
+            // Fixtures
             for KeyValue(_, fixture) in state.Fixtures do
-                db.InsertOrReplace(toFixtureEntity fixture) |> ignore)
+                db.InsertOrReplace(toFixtureEntity fixture) |> ignore
 
-    let saveDailyProgress (state: GameState) =
-        use db = getConnection ()
+            // Knockout ties
+            for KeyValue(_, tie) in state.KnockoutTies do
+                db.InsertOrReplace(toKnockoutTieEntity tie) |> ignore
 
-        db.RunInTransaction(fun () ->
-            db.InsertOrReplace(
-                { Id = 1
-                  CurrentDate = state.CurrentDate
-                  UserClubId = state.UserClubId
-                  ManagerName = state.ManagerName
-                  PrimaryCountry = state.PrimaryCountry }
-            )
-            |> ignore
+            // Countries
+            for KeyValue(_, country) in state.Countries do
+                db.InsertOrReplace(toCountryEntity country) |> ignore)
 
-            for KeyValue(_, club) in state.Clubs do
-                db.InsertOrReplace(toClubEntity club) |> ignore
 
-            for KeyValue(_, player) in state.Players do
-                db.InsertOrReplace(toPlayerEntity player) |> ignore
 
-            for KeyValue(_, fixture) in state.Fixtures do
-                db.InsertOrReplace(toFixtureEntity fixture) |> ignore)
+    // --- LOAD ---
 
     let loadGame () : GameState option =
         if not (File.Exists dbPath) then
@@ -458,17 +655,18 @@ module Db =
             if box meta = null then
                 None
             else
-                let players =
+                // Players
+                let players: Map<PlayerId, Player> =
                     db.Table<PlayerEntity>().ToList()
                     |> Seq.map toPlayerDomain
                     |> Seq.map (fun p -> p.Id, p)
                     |> Map.ofSeq
 
+                // Clubs
                 let clubEntities = db.Table<ClubEntity>().ToList() |> List.ofSeq
-                let leagueClubs = db.Table<LeagueClubEntity>().ToList() |> List.ofSeq
                 let lineupSlots = db.Table<LineupSlotEntity>().ToList() |> List.ofSeq
 
-                let clubs =
+                let clubs: Map<ClubId, Club> =
                     clubEntities
                     |> Seq.map (fun ce ->
                         let squad =
@@ -481,7 +679,7 @@ module Db =
                         let slots =
                             lineupSlots
                             |> List.filter (fun ls -> ls.ClubId = ce.Id)
-                            |> List.sortBy _.SlotIndex
+                            |> List.sortBy (fun ls -> ls.SlotIndex)
 
                         let lineup =
                             if slots.IsEmpty then
@@ -517,46 +715,64 @@ module Db =
                           GoalsAgainst = ce.GoalsAgainst })
                     |> Map.ofSeq
 
-                let leagues =
-                    db.Table<LeagueEntity>().ToList()
-                    |> Seq.map (fun le ->
-                        let cIds =
-                            leagueClubs
-                            |> List.filter (fun lc -> lc.LeagueId = le.Id)
-                            |> List.map _.ClubId
 
-                        le.Id,
-                        { Id = le.Id
-                          Name = le.Name
-                          Level = (if le.Level = 0 then First else Second)
-                          ClubIds = cIds
-                          Season = le.Season
-                          Nationality = le.Nationality
-                          IsPlayable = le.IsPlayable })
+                let compClubs = db.Table<CompetitionClubEntity>().ToList() |> List.ofSeq
+
+                let competitions: Map<CompetitionId, Competition> =
+                    db.Table<CompetitionEntity>().ToList()
+                    |> Seq.map (fun ce ->
+                        let clubIds =
+                            compClubs
+                            |> List.filter (fun cc -> cc.CompetitionId = ce.Id)
+                            |> List.map (fun cc -> cc.ClubId)
+
+                        ce.Id, toCompetitionDomain ce clubIds)
                     |> Map.ofSeq
 
-                let fixtures =
+
+                let fixtures: Map<MatchId, MatchFixture> =
                     db.Table<MatchFixtureEntity>().ToList()
                     |> Seq.map toFixtureDomain
                     |> Seq.map (fun f -> f.Id, f)
                     |> Map.ofSeq
 
+
+                let knockoutTies: Map<int, KnockoutTie> =
+                    db.Table<KnockoutTieEntity>().ToList()
+                    |> Seq.map toKnockoutTieDomain
+                    |> Seq.map (fun t -> t.TieId, t)
+                    |> Map.ofSeq
+
+                // Countries
+                let countries: Map<CountryCode, Country> =
+                    db.Table<CountryEntity>().ToList()
+                    |> Seq.map toCountryDomain
+                    |> Seq.map (fun c -> c.Code, c)
+                    |> Map.ofSeq
+
                 Some
                     { CurrentDate = meta.CurrentDate
+                      Season = meta.Season
                       Clubs = clubs
                       Players = players
-                      Leagues = leagues
+                      Competitions = competitions
                       Fixtures = fixtures
+                      KnockoutTies = knockoutTies
                       UserClubId = meta.UserClubId
                       ManagerName = meta.ManagerName
-                      PrimaryCountry = meta.PrimaryCountry }
+                      PrimaryCountry = meta.PrimaryCountry
+                      Countries = countries }
+
+    // --- SCHEMA INIT ---
 
     let initTables () =
         use db = getConnection ()
         db.CreateTable<PlayerEntity>() |> ignore
         db.CreateTable<ClubEntity>() |> ignore
-        db.CreateTable<LeagueEntity>() |> ignore
-        db.CreateTable<LeagueClubEntity>() |> ignore
-        db.CreateTable<MatchFixtureEntity>() |> ignore
-        db.CreateTable<GameSaveMeta>() |> ignore
         db.CreateTable<LineupSlotEntity>() |> ignore
+        db.CreateTable<CompetitionEntity>() |> ignore
+        db.CreateTable<CompetitionClubEntity>() |> ignore
+        db.CreateTable<MatchFixtureEntity>() |> ignore
+        db.CreateTable<KnockoutTieEntity>() |> ignore
+        db.CreateTable<CountryEntity>() |> ignore
+        db.CreateTable<GameSaveMeta>() |> ignore

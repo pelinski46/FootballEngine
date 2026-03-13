@@ -44,7 +44,7 @@ module HomePresenter =
         | _ -> Theme.TextMuted
 
     let getTableData (state: GameState) (leagueId: int) =
-        match state.Leagues.TryFind leagueId with
+        match state.Competitions.TryFind leagueId with
         | None -> []
         | Some league ->
             league.ClubIds
@@ -60,14 +60,14 @@ module HomePresenter =
                   Display.Tables.PosColor = getPosColor leagueId (i + 1) })
 
     let getAvailableLeagues (state: GameState) =
-        state.Leagues
+        state.Competitions
         |> Map.toList
         |> List.map (fun (k, v) -> k, v.Name)
         |> List.sortBy fst
 
 module Home =
 
-    let homeView (state: State) (selectedLeagueId: LeagueId) (onLeagueChange: LeagueId -> unit) =
+    let homeView (state: State) (selectedLeagueId: CompetitionId) (onLeagueChange: CompetitionId -> unit) =
         let userTeam = state.GameState.Clubs[state.GameState.UserClubId]
 
         ScrollViewer.create

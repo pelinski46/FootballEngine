@@ -110,13 +110,12 @@ module Setup =
             )
         | ClubSelection ->
             let clubs =
-                state.GameState.Leagues
-                |> Map.tryPick (fun _ l ->
-                    if l.Nationality = state.SetupSelectedCountry.Value && l.Level = First then
-                        Some l
-                    else
-                        None)
-                |> Option.map (fun l -> l.ClubIds |> List.map (fun id -> state.GameState.Clubs[id]))
+                state.GameState.Competitions
+                |> Map.tryPick (fun _ (comp: Competition) ->
+                    match comp.Type, comp.Country with
+                    | NationalLeague First, Some country when country = state.SetupSelectedCountry.Value -> Some comp
+                    | _ -> None)
+                |> Option.map (fun comp -> comp.ClubIds |> List.map (fun id -> state.GameState.Clubs[id]))
                 |> Option.defaultValue []
                 |> List.sortByDescending _.Reputation
 

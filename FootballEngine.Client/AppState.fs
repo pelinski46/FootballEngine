@@ -5,6 +5,7 @@ open System.Threading.Tasks
 open Elmish
 open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.DomainTypes
 open FootballEngine.Engine
 
 module AppState =
@@ -41,7 +42,7 @@ module AppState =
 
         | SetProcessing of bool
         | AdvanceDay
-        | AdvanceDayDone of GameState * string list
+        | AdvanceDayDone of GameState * (MatchId * MatchFixture) list
 
 
         | SimulateMatch
@@ -107,8 +108,7 @@ module AppState =
     let private saveAsync (gs: GameState) =
         Task.Run(fun () -> Db.saveGame gs) |> ignore
 
-    let private saveDailyProgressAsync (gs: GameState) =
-        Task.Run(fun () -> Db.saveDailyProgress gs) |> ignore
+
     // === INIT ===
 
     let init () =
@@ -116,9 +116,12 @@ module AppState =
             Db.loadGame ()
             |> Option.defaultValue
                 { CurrentDate = DateTime.Now
+                  Season = DateTime.Now.Year
                   Clubs = Map.empty
                   Players = Map.empty
-                  Leagues = Map.empty
+                  Competitions = Map.empty
+                  KnockoutTies = Map.empty
+                  Countries = Map.empty
                   Fixtures = Map.empty
                   UserClubId = 0
                   ManagerName = ""
@@ -189,50 +192,74 @@ module AppState =
                             { state.GameState with
                                 CurrentDate = state.GameState.CurrentDate.AddDays(1.0) }
 
-
                         let fixtures = getTodayFixturesWithId gs
-                        let finalGs, logs = simulateFixtures gs fixtures
-
-                        finalGs, logs))
+                        // Return the GameState + fixture list; Engine.simulateFixtures
+                        // runs in AdvanceDayDone so error handling stays in one place.
+                        gs, fixtures))
                 ()
                 AdvanceDayDone
 
-        | AdvanceDayDone(finalGs, logs) ->
-            saveDailyProgressAsync finalGs
+        | AdvanceDayDone(gs, fixtures) ->
+            let result = simulateFixtures gs fixtures
+            saveAsync result.GameState
+
+            let errorLogs =
+                result.Errors |> List.map (fun (id, e) -> $"⚠️ Fixture {id} skipped: {e}")
 
             let allLogs =
-                if logs.IsEmpty then
+                if result.Logs.IsEmpty && errorLogs.IsEmpty then
                     []
                 else
-                    $"📊 {logs.Length} matches played" :: logs
+                    $"📊 {result.Logs.Length} matches played" :: (result.Logs @ errorLogs)
 
             { state with
-                GameState = finalGs
+                GameState = result.GameState
                 IsProcessing = false
                 LogMessages = allLogs @ state.LogMessages |> List.truncate 30 },
             Cmd.none
 
-        | SimulateNextFixture ->
-            match getUserNextFixture state.GameState with
-            | None -> state |> addLog "⚠️ No next fixture found", Cmd.none
-            | Some(id, fixture) ->
-                let newGs, log = simulateFixtures state.GameState [ (id, fixture) ]
-                Db.saveGame newGs
-                { state with GameState = newGs } |> addLog $"🏁 {log}", Cmd.none
         | SimulateAllToday ->
             let fixtures = getTodayFixturesWithId state.GameState
 
             if fixtures.IsEmpty then
                 state |> addLog "⚠️ No matches scheduled for today", Cmd.none
             else
-                let finalGs, logs = simulateFixtures state.GameState fixtures
-                Db.saveGame finalGs
+                let result = simulateFixtures state.GameState fixtures
+                Db.saveGame result.GameState
 
-                { state with GameState = finalGs }
-                |> addLog $"📊 {fixtures.Length} matches simulated"
+                let errorLogs =
+                    result.Errors |> List.map (fun (id, e) -> $"⚠️ Fixture {id} skipped: {e}")
+
+                { state with
+                    GameState = result.GameState }
+                |> addLog $"📊 {result.Logs.Length} matches simulated"
                 |> fun s ->
                     { s with
-                        LogMessages = logs @ s.LogMessages |> List.truncate 30 },
+                        LogMessages = (result.Logs @ errorLogs) @ s.LogMessages |> List.truncate 30 },
+                    Cmd.none
+
+        | SimulateNextFixture ->
+            match getUserNextFixture state.GameState with
+            | None -> state |> addLog "⚠️ No next fixture found", Cmd.none
+            | Some(id, fixture) ->
+                match simulateFixture fixture state.GameState.Clubs with
+                | Error e -> state |> addLog $"⚠️ Could not simulate fixture: {e}", Cmd.none
+                | Ok(updatedFixture, updatedHome, updatedAway) ->
+                    let h = updatedFixture.HomeScore |> Option.defaultValue 0
+                    let a = updatedFixture.AwayScore |> Option.defaultValue 0
+
+                    let newGs =
+                        { state.GameState with
+                            Fixtures = state.GameState.Fixtures |> Map.add id updatedFixture
+                            Clubs =
+                                state.GameState.Clubs
+                                |> Map.add updatedHome.Id updatedHome
+                                |> Map.add updatedAway.Id updatedAway }
+
+                    Db.saveGame newGs
+
+                    { state with GameState = newGs }
+                    |> addLog $"🏁 {updatedHome.Name} {h}-{a} {updatedAway.Name}",
                     Cmd.none
         | SimulateMatch -> update SimulateNextFixture state
         | SelectPlayer pId ->

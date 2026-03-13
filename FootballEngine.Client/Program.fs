@@ -14,6 +14,7 @@ open FootballEngine.Pages.Home
 open FootballEngine.Pages.Setup.Setup
 open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
+open FootballEngine.Test.MatchEngineTests
 
 module Views =
     open AppState
@@ -66,4 +67,5 @@ module Program =
     [<EntryPoint>]
     let main args =
         Db.initTables ()
+        runAll () |> ignore
         AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)

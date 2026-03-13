@@ -1,31 +1,30 @@
 namespace FootballEngine
 
 module Theme =
-    // Backgrounds
+
     let BgMain = "#0f172a"
-    let BgCard = "#1e293b"
     let BgSidebar = "#020617"
+    let BgCard = "#1e293b"
+    let BgHover = "#334155"
 
-    // Accents
-    let Accent = "#10b981"
-    let AccentHover = "#059669"
-    let AccentLight = "#10b98133"
-
-    // Text
-    let TextMain = "#f8fafc"
-    let TextMuted = "#94a3b8"
-
-    // Borders
     let Border = "#334155"
 
-    // Status Colors
-    let Success = "#22c55e"
+    let TextMain = "#f1f5f9"
+    let TextMuted = "#64748b"
+    let TextSub = "#94a3b8"
+
+    let Accent = "#10b981"
+    let AccentAlt = "#3b82f6"
+    let AccentLight = "#10b98133"
+
+    let Success = "#10b981"
     let Warning = "#f59e0b"
     let Danger = "#ef4444"
 
-    // Drag & Drop
-    let DragOverlay = "#3b82f622"
     let DragBorder = "#3b82f6"
+    let DragOverlay = "#3b82f622"
 
-    // Shadows
-    let Shadow = "#00000044"
+    let moraleColor morale =
+        if morale > 70 then Success
+        elif morale > 40 then Warning
+        else Danger

@@ -9,6 +9,7 @@ open Avalonia.Media
 open FootballEngine
 open FootballEngine.AppState
 open FootballEngine.Domain
+open FootballEngine.DomainTypes
 open FootballEngine.Components
 
 
@@ -144,8 +145,7 @@ module Tactics =
             |> Option.map _.Formation
             |> Option.defaultValue state.SelectedTactics
 
-        let lineup =
-            myTeam.CurrentLineup |> Option.map _.Slots |> Option.defaultValue [] // 👈 Slots, no Formation
+        let lineup = myTeam.CurrentLineup |> Option.map _.Slots |> Option.defaultValue [] // 👈 Slots, no Formation
 
         FootballPitch.render formation (fun slot ->
             let assignedPlayer =

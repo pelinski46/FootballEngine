@@ -7,7 +7,8 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine.Domain
-open FootballEngine.MatchEngine
+open FootballEngine.MatchContext
+
 
 module MatchViewer =
 

@@ -7,12 +7,22 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="Domain.fs"/>
+        <Compile Include="Domain\DomainTypes.fs"/>
+        <Compile Include="Domain\Country.fs"/>
+        <Compile Include="Domain\Competition.fs"/>
+        <Compile Include="Domain\Match.fs"/>
+        <Compile Include="Domain\Player.fs"/>
+        <Compile Include="Domain\Club.fs"/>
+        <Compile Include="Domain\GameState.fs"/>
         <Compile Include="GameData.fs"/>
         <Compile Include="FormationData.fs"/>
         <Compile Include="Lineup.fs"/>
         <Compile Include="AI\ManagerAI.fs"/>
-        <Compile Include="Engine.fs"/>
+        <Compile Include="Engine\MatchContext.fs"/>
+        <Compile Include="Engine\MatchStats.fs"/>
+        <Compile Include="Engine\MatchSimulator.fs"/>
+        <Compile Include="Engine\GameGenerator.fs"/>
+        <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database.fs"/>
         <Compile Include="AppState.fs"/>
         <Compile Include="Views\Theme.fs"/>
