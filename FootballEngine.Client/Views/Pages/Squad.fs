@@ -11,6 +11,7 @@ open FootballEngine.Domain
 open FootballEngine.AppState
 open FootballEngine.Components
 open FootballEngine.DomainTypes
+open FootballEngine.Icons
 
 
 module SquadPresenter =
@@ -57,7 +58,7 @@ module SquadPresenter =
         match sortKey with
         | "name" -> team.Players |> List.sortBy _.Name
         | "skill" -> team.Players |> List.sortByDescending _.CurrentSkill
-        | "age" -> team.Players |> List.sortBy (Player.age currentDate)
+        | "age" -> team.Players |> List.sortBy (fun p -> Player.age currentDate p)
         | "value" -> team.Players |> List.sortByDescending _.Value
         | _ ->
             team.Players
@@ -79,17 +80,64 @@ module SquadPresenter =
 module Squad =
 
     let private positionGroupHeader (label: string) =
-        Border.create
-            [ Border.padding (12.0, 6.0)
-              Border.background Theme.BgSidebar
-              Border.child (
-                  TextBlock.create
-                      [ TextBlock.text label
-                        TextBlock.fontSize 10.0
-                        TextBlock.fontWeight FontWeight.Black
-                        TextBlock.foreground Theme.Accent
-                        TextBlock.lineSpacing 1.5 ]
-              ) ]
+        Grid.create
+            [ Grid.columnDefinitions "auto, *"
+              Grid.margin (0.0, 8.0, 0.0, 4.0)
+              Grid.children
+                  [ Border.create
+                        [ Grid.column 0
+                          Border.background Theme.Accent
+                          Border.cornerRadius 3.0
+                          Border.width 3.0
+                          Border.margin (0.0, 0.0, 8.0, 0.0) ]
+                    TextBlock.create
+                        [ Grid.column 1
+                          TextBlock.text label
+                          TextBlock.fontSize 10.0
+                          TextBlock.fontWeight FontWeight.Black
+                          TextBlock.foreground Theme.Accent
+                          TextBlock.lineSpacing 1.5
+                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+
+    let private sectionHeader (squadCount: int) (dispatch: Msg -> unit) (state: State) =
+        DockPanel.create
+            [ DockPanel.margin (0.0, 0.0, 0.0, 10.0)
+              DockPanel.children
+                  [ StackPanel.create
+                        [ StackPanel.dock Dock.Right
+                          StackPanel.orientation Orientation.Horizontal
+                          StackPanel.spacing 4.0
+                          StackPanel.children
+                              [ let a = state.PlayerSortBy
+
+                                UI.iconToggleButton "Line" PlayerIcon.position (a = "position") (fun _ ->
+                                    dispatch (SortPlayersBy "position"))
+
+                                UI.iconToggleButton "Skill" PlayerIcon.skill (a = "skill") (fun _ ->
+                                    dispatch (SortPlayersBy "skill"))
+
+                                UI.iconToggleButton "Age" PlayerIcon.age (a = "age") (fun _ ->
+                                    dispatch (SortPlayersBy "age"))
+
+                                UI.iconToggleButton "Value" PlayerIcon.value (a = "value") (fun _ ->
+                                    dispatch (SortPlayersBy "value"))
+
+                                UI.iconToggleButton "Name" UI.sort (a = "name") (fun _ ->
+                                    dispatch (SortPlayersBy "name")) ] ]
+
+                    StackPanel.create
+                        [ StackPanel.orientation Orientation.Horizontal
+                          StackPanel.spacing 10.0
+                          StackPanel.verticalAlignment VerticalAlignment.Center
+                          StackPanel.children
+                              [ Icons.iconMd UI.squad Theme.Accent
+                                TextBlock.create
+                                    [ TextBlock.text "First Team"
+                                      TextBlock.fontSize 18.0
+                                      TextBlock.fontWeight FontWeight.Black
+                                      TextBlock.foreground Theme.TextMain
+                                      TextBlock.verticalAlignment VerticalAlignment.Center ]
+                                UI.countBadge squadCount ] ] ] ]
 
     let squadView (state: State) dispatch =
         let userTeam = state.GameState.Clubs[state.GameState.UserClubId]
@@ -97,9 +145,6 @@ module Squad =
 
         let groups =
             SquadPresenter.getGroupedPlayers userTeam state.GameState.CurrentDate state.PlayerSortBy
-
-        let sortButton label key =
-            UI.tabButton label (state.PlayerSortBy = key) (fun _ -> dispatch (SortPlayersBy key))
 
         Grid.create
             [ Grid.columnDefinitions "*, 420"
@@ -113,32 +158,16 @@ module Squad =
                               [ UniformGrid.create
                                     [ Grid.row 0
                                       UniformGrid.columns 4
-                                      UniformGrid.margin (0.0, 0.0, 0.0, 20.0)
+                                      UniformGrid.margin (0.0, 0.0, 0.0, 16.0)
+                                      UniformGrid.horizontalAlignment HorizontalAlignment.Stretch
                                       UniformGrid.children
-                                          [ UI.statCard "SQUAD SIZE" stats.SquadSize "👤" ""
-                                            UI.statCard "TEAM VALUE" stats.TotalValue "💰" "Market Value"
-                                            UI.statCard "AVG SKILL" stats.AvgSkill "⭐" "CA (1-200)"
-                                            UI.statCard "WAGE BILL" stats.TotalWages "💵" "Weekly" ] ]
+                                          [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize UI.squad ""
+                                            UI.iconStatCard "TEAM VALUE" stats.TotalValue PlayerIcon.value "Market"
+                                            UI.iconStatCard "AVG SKILL" stats.AvgSkill PlayerIcon.skill "CA"
+                                            UI.iconStatCard "WAGE BILL" stats.TotalWages Club.finances "Weekly" ] ]
 
-                                DockPanel.create
-                                    [ Grid.row 1
-                                      DockPanel.margin (0.0, 0.0, 0.0, 10.0)
-                                      DockPanel.children
-                                          [ TextBlock.create
-                                                [ TextBlock.text "First Team Squad"
-                                                  TextBlock.fontSize 20.0
-                                                  TextBlock.fontWeight FontWeight.Black
-                                                  TextBlock.verticalAlignment VerticalAlignment.Center ]
-                                            StackPanel.create
-                                                [ StackPanel.dock Dock.Right
-                                                  StackPanel.orientation Orientation.Horizontal
-                                                  StackPanel.spacing 4.0
-                                                  StackPanel.children
-                                                      [ sortButton "Line" "position"
-                                                        sortButton "Skill" "skill"
-                                                        sortButton "Age" "age"
-                                                        sortButton "Value" "value"
-                                                        sortButton "Name" "name" ] ] ] ]
+                                (sectionHeader userTeam.Players.Length dispatch state)
+                                |> fun h -> Border.create [ Grid.row 1; Border.child h ]
 
                                 PlayerView.tableHeader ()
                                 |> fun h -> Border.create [ Grid.row 2; Border.child h ]
@@ -148,7 +177,7 @@ module Squad =
                                       ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                                       ScrollViewer.content (
                                           StackPanel.create
-                                              [ StackPanel.spacing 2.0
+                                              [ StackPanel.spacing 1.0
                                                 StackPanel.children
                                                     [ for label, players in groups do
                                                           match label with

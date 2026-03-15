@@ -30,8 +30,54 @@ module AppState =
         | ClubSelection
         | ManagerNaming
 
-    type Msg =
+    type TransferTab =
+        | MarketSearch
+        | MyWatchlist
+        | IncomingOffers
+        | OutgoingOffers
+        | TransferHistory
 
+    type TransferFilter =
+        | AllPositions
+        | Goalkeepers
+        | Defenders
+        | Midfielders
+        | Attackers
+
+    type SortField =
+        | ByName
+        | ByCA
+        | ByValue
+        | ByAge
+        | ByPosition
+
+    type TransferState =
+        { ActiveTab: TransferTab
+          SearchQuery: string
+          PositionFilter: TransferFilter
+          SortBy: SortField
+          SortAsc: bool
+          SelectedPlayerId: PlayerId option
+          WatchlistIds: PlayerId list
+          CachedPlayers: Player list
+          ClubNameCache: Map<PlayerId, string>
+          IsLoading: bool
+          Page: int }
+
+    let initTransferState =
+        { ActiveTab = MarketSearch
+          SearchQuery = ""
+          PositionFilter = AllPositions
+          SortBy = ByCA
+          SortAsc = false
+          SelectedPlayerId = None
+          WatchlistIds = []
+          CachedPlayers = []
+          ClubNameCache = Map.empty
+          IsLoading = false
+          Page = 0 }
+
+    type Msg =
         | SelectPrimaryCountry of CountryCode
         | ToggleSecondaryCountry of CountryCode
         | UpdateManagerName of string
@@ -45,12 +91,11 @@ module AppState =
         | AdvanceDay
         | AdvanceDayDone of GameState * (MatchId * MatchFixture) list
 
-
         | SimulateMatch
         | SimulateNextFixture
         | SimulateAllToday
 
-
+        | StepMatchLabSnapshot of int
         | SelectPlayer of PlayerId
         | DropPlayerInSlot of slotIndex: int * playerId: int
         | SortPlayersBy of string
@@ -58,10 +103,21 @@ module AppState =
         | SelectMatchLabHome of ClubId
         | SelectMatchLabAway of ClubId
         | RunMatchLab
-        | SetMatchLabSnapshot of int
         | SaveGame
         | ChangeLeague of LeagueId
         | SetTactics of Formation
+
+        | GameLoaded of GameState option
+
+        | LoadTransfers
+        | TransfersLoaded of players: Player list * clubNames: Map<PlayerId, string>
+        | TransferTabChange of TransferTab
+        | TransferSearch of string
+        | TransferFilterChange of TransferFilter
+        | TransferSortChange of SortField
+        | TransferPlayerSelect of PlayerId
+        | TransferWatchToggle of PlayerId
+        | TransferPageChange of int
 
     type State =
         { GameState: GameState
@@ -80,8 +136,41 @@ module AppState =
           MatchLabHome: ClubId option
           MatchLabAway: ClubId option
           MatchLabResult: MatchReplay option
-          MatchLabSnapshot: int }
+          MatchLabSnapshot: int
+          TransferState: TransferState }
 
+    let private emptyGameState () =
+        { CurrentDate = DateTime.Now
+          Season = DateTime.Now.Year
+          Clubs = Map.empty
+          Players = Map.empty
+          Competitions = Map.empty
+          KnockoutTies = Map.empty
+          Countries = Map.empty
+          Fixtures = Map.empty
+          UserClubId = 0
+          ManagerName = ""
+          PrimaryCountry = "" }
+
+    let private initialState gs =
+        { GameState = gs
+          SelectedPlayer = None
+          CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
+          LogMessages = [ "Football Engine 2026 Initialized" ]
+          SelectedTactics = F433
+          SelectedLeagueId = 1
+          DraggedPlayer = None
+          PlayerSortBy = "position"
+          IsProcessing = true
+          SetupSelectedCountry = None
+          SetupSecondaryCountries = []
+          SetupManagerName = ""
+          SetupStep = MainMenu
+          MatchLabHome = None
+          MatchLabAway = None
+          MatchLabResult = None
+          MatchLabSnapshot = 0
+          TransferState = initTransferState }
 
     let private addLog msg state =
         { state with
@@ -103,60 +192,45 @@ module AppState =
             else
                 None)
 
-    let private updateDailyFitness (gameState: GameState) =
-        { gameState with
-            Players =
-                gameState.Players
-                |> Map.map (fun _ p ->
-                    { p with
-                        MatchFitness = Math.Clamp(p.MatchFitness + 5, 0, 100) }) }
-
-
     let private saveAsync (gs: GameState) =
         Task.Run(fun () -> Db.saveGame gs) |> ignore
 
+    let private buildTransferCache (gs: GameState) =
+        Task.Run(fun () ->
+            let clubNameByPlayerId =
+                gs.Clubs
+                |> Map.toSeq
+                |> Seq.collect (fun (_, c) -> c.Players |> List.map (fun p -> p.Id, c.Name))
+                |> Map.ofSeq
 
-    // === INIT ===
+            let players =
+                gs.Players
+                |> Map.toList
+                |> List.map snd
+                |> List.filter (fun p -> p.ClubId <> gs.UserClubId)
+                |> List.sortByDescending _.CurrentSkill
+
+            players, clubNameByPlayerId)
 
     let init () =
-        let gameState =
-            Db.loadGame ()
-            |> Option.defaultValue
-                { CurrentDate = DateTime.Now
-                  Season = DateTime.Now.Year
-                  Clubs = Map.empty
-                  Players = Map.empty
-                  Competitions = Map.empty
-                  KnockoutTies = Map.empty
-                  Countries = Map.empty
-                  Fixtures = Map.empty
-                  UserClubId = 0
-                  ManagerName = ""
-                  PrimaryCountry = "" }
+        let loadCmd =
+            Cmd.OfTask.perform (fun () -> Task.Run(fun () -> Db.loadGame ())) () GameLoaded
 
-        { GameState = gameState
-          SelectedPlayer = None
-          CurrentPage = if gameState.Clubs.IsEmpty then Setup else Home
-          LogMessages = [ "Football Engine 2026 Initialized" ]
-          SelectedTactics = F433
-          SelectedLeagueId = 1
-          DraggedPlayer = None
-          PlayerSortBy = "position"
-          IsProcessing = false
-          SetupSelectedCountry = None
-          SetupSecondaryCountries = []
-          SetupManagerName = ""
-          SetupStep = MainMenu
-          MatchLabHome = None
-          MatchLabAway = None
-          MatchLabResult = None
-          MatchLabSnapshot = 0 },
-        Cmd.none
-
+        initialState (emptyGameState ()), loadCmd
 
     let rec update (msg: Msg) (state: State) =
         match msg with
+        | GameLoaded result ->
+            let gs = result |> Option.defaultValue (emptyGameState ())
+
+            { state with
+                GameState = gs
+                CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
+                IsProcessing = false },
+            Cmd.none
+
         | GoToSetupStep step -> { state with SetupStep = step }, Cmd.none
+
         | SelectPrimaryCountry code ->
             { state with
                 SetupSelectedCountry = Some code
@@ -176,14 +250,13 @@ module AppState =
                 Cmd.none
 
         | UpdateManagerName name -> { state with SetupManagerName = name }, Cmd.none
+
         | StartNewGame ->
             match state.SetupSelectedCountry with
             | None -> state, Cmd.none
             | Some primary ->
-                let seedRnd = Random()
-
                 let newGs =
-                    generateNewGame seedRnd primary state.SetupManagerName state.SetupSecondaryCountries
+                    generateNewGame (Random()) primary state.SetupManagerName state.SetupSecondaryCountries
 
                 Db.saveGame newGs
 
@@ -192,8 +265,17 @@ module AppState =
                     SetupStep = ClubSelection },
                 Cmd.none
 
-        | ChangePage page -> { state with CurrentPage = page }, Cmd.none
+        | ChangePage page ->
+            let cmd =
+                if page = Transfers && state.TransferState.CachedPlayers.IsEmpty then
+                    Cmd.ofMsg LoadTransfers
+                else
+                    Cmd.none
+
+            { state with CurrentPage = page }, cmd
+
         | SetProcessing processing -> { state with IsProcessing = processing }, Cmd.none
+
         | AdvanceDay ->
             { state with IsProcessing = true },
             Cmd.OfTask.perform
@@ -203,10 +285,7 @@ module AppState =
                             { state.GameState with
                                 CurrentDate = state.GameState.CurrentDate.AddDays(1.0) }
 
-                        let fixtures = getTodayFixturesWithId gs
-                        // Return the GameState + fixture list; Engine.simulateFixtures
-                        // runs in AdvanceDayDone so error handling stays in one place.
-                        gs, fixtures))
+                        gs, getTodayFixturesWithId gs))
                 ()
                 AdvanceDayDone
 
@@ -272,11 +351,14 @@ module AppState =
                     { state with GameState = newGs }
                     |> addLog $"🏁 {updatedHome.Name} {h}-{a} {updatedAway.Name}",
                     Cmd.none
+
         | SimulateMatch -> update SimulateNextFixture state
+
         | SelectPlayer pId ->
             { state with
                 SelectedPlayer = state.GameState.Players.TryFind pId },
             Cmd.none
+
         | DropPlayerInSlot(targetIdx, pId) ->
             let team = state.GameState.Clubs[state.GameState.UserClubId]
 
@@ -295,32 +377,33 @@ module AppState =
                               PlayerId = None })
                         |> List.sortBy _.Index }
 
-            let updatedLineup = Lineup.swapPlayer targetIdx pId lineup
-
             let updatedTeam =
                 { team with
-                    CurrentLineup = Some updatedLineup }
+                    CurrentLineup = Some(Lineup.swapPlayer targetIdx pId lineup) }
 
-            let newGameState =
+            let newGs =
                 { state.GameState with
                     Clubs = state.GameState.Clubs.Add(team.Id, updatedTeam) }
 
-            Db.saveGame newGameState
+            Db.saveGame newGs
 
             { state with
-                GameState = newGameState
+                GameState = newGs
                 DraggedPlayer = None }
             |> addLog $"🔄 Swap made: Slot {targetIdx}",
             Cmd.none
 
         | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
+
         | SaveGame ->
             Db.saveGame state.GameState
             state |> addLog "💾 Game Saved", Cmd.none
+
         | ChangeLeague leagueId ->
             { state with
                 SelectedLeagueId = leagueId },
             Cmd.none
+
         | SetTactics formation ->
             let userClub = state.GameState.Clubs[state.GameState.UserClubId]
 
@@ -340,7 +423,6 @@ module AppState =
                     let assignedPairs =
                         lineup.Slots
                         |> List.choose (fun s -> s.PlayerId |> Option.map (fun pid -> s.Role, pid))
-
 
                     let mutable remaining = assignedPairs
 
@@ -382,6 +464,7 @@ module AppState =
                 GameState = newGs
                 SelectedTactics = formation },
             Cmd.none
+
         | ConfirmClub clubId ->
             let newGs =
                 { state.GameState with
@@ -394,6 +477,7 @@ module AppState =
                 CurrentPage = Home
                 LogMessages = [ $"Career started by {state.SetupManagerName}" ] },
             Cmd.none
+
         | SelectMatchLabHome id -> { state with MatchLabHome = Some id }, Cmd.none
         | SelectMatchLabAway id -> { state with MatchLabAway = Some id }, Cmd.none
 
@@ -409,4 +493,95 @@ module AppState =
                 | Error e -> state |> addLog $"⚠️ {e}", Cmd.none
             | _ -> state |> addLog "⚠️ Select both clubs", Cmd.none
 
-        | SetMatchLabSnapshot i -> { state with MatchLabSnapshot = i }, Cmd.none
+        | StepMatchLabSnapshot delta ->
+            let total =
+                state.MatchLabResult
+                |> Option.map (fun r -> r.Snapshots.Length - 1)
+                |> Option.defaultValue 0
+
+            { state with
+                MatchLabSnapshot = max 0 (min total (state.MatchLabSnapshot + delta)) },
+            Cmd.none
+
+        | LoadTransfers ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        IsLoading = true } },
+            Cmd.OfTask.perform (fun () -> buildTransferCache state.GameState) () (fun (players, cache) ->
+                TransfersLoaded(players, cache))
+
+        | TransfersLoaded(players, cache) ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        CachedPlayers = players
+                        ClubNameCache = cache
+                        IsLoading = false } },
+            Cmd.none
+
+        | TransferTabChange tab ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        ActiveTab = tab
+                        Page = 0 } },
+            Cmd.none
+
+        | TransferSearch query ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        SearchQuery = query
+                        Page = 0 } },
+            Cmd.none
+
+        | TransferFilterChange f ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        PositionFilter = f
+                        Page = 0 } },
+            Cmd.none
+
+        | TransferSortChange s ->
+            let asc =
+                if state.TransferState.SortBy = s then
+                    not state.TransferState.SortAsc
+                else
+                    false
+
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        SortBy = s
+                        SortAsc = asc
+                        Page = 0 } },
+            Cmd.none
+
+        | TransferPlayerSelect pid ->
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        SelectedPlayerId = Some pid } },
+            Cmd.none
+
+        | TransferWatchToggle pid ->
+            let ids = state.TransferState.WatchlistIds
+
+            let updated =
+                if List.contains pid ids then
+                    List.filter ((<>) pid) ids
+                else
+                    pid :: ids
+
+            { state with
+                TransferState =
+                    { state.TransferState with
+                        WatchlistIds = updated } },
+            Cmd.none
+
+        | TransferPageChange p ->
+            { state with
+                TransferState = { state.TransferState with Page = p } },
+            Cmd.none

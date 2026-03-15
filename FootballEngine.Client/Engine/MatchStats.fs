@@ -6,29 +6,17 @@ open FootballEngine.DomainTypes
 open FSharp.Stats.Distributions
 open MatchContext
 
-/// Pure functions for computing effective stats and effort scores.
-/// No side-effects, no mutable state — easy to unit-test in isolation.
 module MatchStats =
-
-    // ------------------------------------------------------------------ //
-    //  Core sampling                                                       //
-    // ------------------------------------------------------------------ //
 
     let nextNormalInt (mean: float) (stdDev: float) (lo: int) (hi: int) =
         let sample = Continuous.Normal.Sample mean stdDev
         Math.Clamp(int (Math.Round(sample)), lo, hi)
 
-    /// Applies condition and morale degradation to a raw stat, then adds
-    /// Gaussian noise with the given sigma.
     let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
         let baseValue =
             float stat * (float condition / 100.0) * (0.8 + (float morale / 500.0))
 
         Continuous.Normal.Sample baseValue sigma
-
-    // ------------------------------------------------------------------ //
-    //  Effort formulae                                                     //
-    // ------------------------------------------------------------------ //
 
     let attackEffort (phase: MatchPhase) (att: Player) (cond: int) =
         match phase with
@@ -51,43 +39,85 @@ module MatchStats =
         + effectiveStat def.Physical.Strength cond def.Morale 1.0
         + effectiveStat def.Mental.Concentration cond def.Morale 1.0
 
-    // ------------------------------------------------------------------ //
-    //  Position predicates                                                 //
-    // ------------------------------------------------------------------ //
+    type PlayerRole =
+        | Defender
+        | Midfielder
+        | Attacker
+        | Goalkeeper
 
-    let isDefender (p: Player) =
+    let playerRole (p: Player) =
         match p.Position with
+        | GK -> Goalkeeper
         | DC
         | DL
         | DR
-        | DM -> true
-        | _ -> false
-
-    let isMidfielder (p: Player) =
-        match p.Position with
+        | DM -> Defender
         | MC
-        | AMC
         | AML
-        | AMR -> true
-        | _ -> false
-
-    let isAttacker (p: Player) =
-        match p.Position with
-        | ST
-        | AML
-        | AMR -> true
-        | _ -> false
-
-    // ------------------------------------------------------------------ //
-    //  Spatial helpers                                                     //
-    // ------------------------------------------------------------------ //
+        | AMR
+        | AMC -> Midfielder
+        | ST -> Attacker
+        | _ -> Midfielder
 
     let inline distance (x1, y1) (x2, y2) =
         sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
 
-    /// Index of the player closest to a given point.
     let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
         positions
         |> Array.mapi (fun i pos -> i, distance point pos)
         |> Array.minBy snd
         |> fst
+
+    // ── TeamSide lens ────────────────────────────────────────────────────────
+    // Eliminates the `if isHome then x else y` pattern throughout MatchSimulator.
+    // All reads and writes go through this record rather than branching on isHome.
+
+    type TeamSide =
+        { Players: Player[]
+          Conditions: int[]
+          Positions: Map<PlayerId, float * float>
+          BasePositions: Map<PlayerId, float * float>
+          Sidelined: Map<PlayerId, PlayerOut>
+          Yellows: Map<PlayerId, int>
+          SubsUsed: int }
+
+    let homeSide (s: MatchState) : TeamSide =
+        { Players = s.HomePlayers
+          Conditions = s.HomeConditions
+          Positions = s.HomePositions
+          BasePositions = s.HomeBasePositions
+          Sidelined = s.HomeSidelined
+          Yellows = s.HomeYellows
+          SubsUsed = s.HomeSubsUsed }
+
+    let awaySide (s: MatchState) : TeamSide =
+        { Players = s.AwayPlayers
+          Conditions = s.AwayConditions
+          Positions = s.AwayPositions
+          BasePositions = s.AwayBasePositions
+          Sidelined = s.AwaySidelined
+          Yellows = s.AwayYellows
+          SubsUsed = s.AwaySubsUsed }
+
+    let side (isHome: bool) (s: MatchState) : TeamSide =
+        if isHome then homeSide s else awaySide s
+
+    let withSide (isHome: bool) (ts: TeamSide) (s: MatchState) : MatchState =
+        if isHome then
+            { s with
+                HomePlayers = ts.Players
+                HomeConditions = ts.Conditions
+                HomePositions = ts.Positions
+                HomeBasePositions = ts.BasePositions
+                HomeSidelined = ts.Sidelined
+                HomeYellows = ts.Yellows
+                HomeSubsUsed = ts.SubsUsed }
+        else
+            { s with
+                AwayPlayers = ts.Players
+                AwayConditions = ts.Conditions
+                AwayPositions = ts.Positions
+                AwayBasePositions = ts.BasePositions
+                AwaySidelined = ts.Sidelined
+                AwayYellows = ts.Yellows
+                AwaySubsUsed = ts.SubsUsed }

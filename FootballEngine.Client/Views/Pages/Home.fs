@@ -2,14 +2,13 @@ namespace FootballEngine.Pages
 
 open Avalonia.Controls
 open Avalonia.FuncUI.DSL
-open Avalonia.Media
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.AppState
 open FootballEngine.Components
 
-
 module HomePresenter =
+
     type NextMatchVM =
         { LocalName: string
           VisitName: string
@@ -23,24 +22,20 @@ module HomePresenter =
             let userTeam = state.Clubs[state.UserClubId]
             let isHome = fixture.HomeClubId = state.UserClubId
             let rivalId = if isHome then fixture.AwayClubId else fixture.HomeClubId
-            let rivalTeam = state.Clubs[rivalId]
-
-
-            let homeName = if isHome then userTeam.Name else rivalTeam.Name
-            let awayName = if isHome then rivalTeam.Name else userTeam.Name
+            let rival = state.Clubs[rivalId]
 
             Some
-                { LocalName = homeName
-                  VisitName = awayName
+                { LocalName = if isHome then userTeam.Name else rival.Name
+                  VisitName = if isHome then rival.Name else userTeam.Name
                   Date = fixture.ScheduledDate
                   LocationTag = if isHome then "HOME" else "AWAY" }
 
     let private getPosColor (leagueId: int) (pos: int) =
         match leagueId, pos with
-        | 1, p when p <= 4 -> "#10b981"
-        | 1, p when p >= 18 -> "#ef4444"
-        | 2, p when p <= 2 -> "#10b981"
-        | 2, p when p <= 6 -> "#f59e0b"
+        | 1, p when p <= 4 -> Theme.Success
+        | 1, p when p >= 18 -> Theme.Danger
+        | 2, p when p <= 2 -> Theme.Success
+        | 2, p when p <= 6 -> Theme.Warning
         | _ -> Theme.TextMuted
 
     let getTableData (state: GameState) (leagueId: int) =
@@ -65,80 +60,81 @@ module HomePresenter =
         |> List.map (fun (k, v) -> k, v.Name)
         |> List.sortBy fst
 
+
 module Home =
+
+    let private quickStatsRow (userTeam: Club) =
+        let budgetCard =
+            UI.iconStatCard "BUDGET" $"€{int (userTeam.Budget / 1_000_000m)}M" Icons.Club.finances "Available"
+
+        let squadCard =
+            UI.iconStatCard "SQUAD" (string userTeam.Players.Length) Icons.UI.squad "Players"
+
+        Grid.create
+            [ Grid.columnDefinitions "*, 8, *"
+              Grid.children
+                  [ Border.create [ Grid.column 0; Border.child budgetCard ]
+                    Border.create [ Grid.column 2; Border.child squadCard ] ] ]
+
+    let private inboxPanel (messages: string list) =
+        Border.create
+            [ Border.background Theme.BgSidebar
+              Border.cornerRadius 10.0
+              Border.padding (0.0, 4.0)
+              Border.child (
+                  ScrollViewer.create
+                      [ ScrollViewer.maxHeight 280.0
+                        ScrollViewer.content (
+                            StackPanel.create
+                                [ StackPanel.spacing 4.0
+                                  StackPanel.margin (8.0, 4.0)
+                                  StackPanel.children
+                                      [ for msg in messages do
+                                            UI.iconRow Icons.UI.info msg ] ]
+                        ) ]
+              ) ]
+
+    let private rightColumn (userTeam: Club) (messages: string list) =
+        StackPanel.create
+            [ Grid.column 2
+              StackPanel.spacing 20.0
+              StackPanel.children
+                  [ quickStatsRow userTeam
+                    StackPanel.create
+                        [ StackPanel.spacing 0.0
+                          StackPanel.children [ UI.sectionTitle "INBOX & NEWS" Icons.UI.info; inboxPanel messages ] ] ] ]
+
+    let private leftColumn (gs: GameState) (selectedLeagueId: CompetitionId) (onLeagueChange: CompetitionId -> unit) =
+        StackPanel.create
+            [ Grid.column 0
+              StackPanel.spacing 0.0
+              StackPanel.children
+                  [ UI.sectionTitle "LEAGUE STANDINGS" Icons.UI.league
+                    Display.Tables.leagueTable
+                        (HomePresenter.getAvailableLeagues gs)
+                        selectedLeagueId
+                        onLeagueChange
+                        (HomePresenter.getTableData gs selectedLeagueId) ] ]
 
     let homeView (state: State) (selectedLeagueId: CompetitionId) (onLeagueChange: CompetitionId -> unit) =
         let userTeam = state.GameState.Clubs[state.GameState.UserClubId]
 
+        let banner =
+            match HomePresenter.getNextMatch state.GameState with
+            | None -> Display.Matches.emptyBanner ()
+            | Some m -> Display.Matches.nextMatchBanner m.LocalName m.VisitName m.Date m.LocationTag
+
         ScrollViewer.create
             [ ScrollViewer.content (
                   StackPanel.create
-                      [ StackPanel.margin 30.0
+                      [ StackPanel.margin 24.0
+                        StackPanel.spacing 20.0
                         StackPanel.children
-                            [
+                            [ banner
 
-                              match HomePresenter.getNextMatch state.GameState with
-                              | None -> Display.Matches.emptyBanner ()
-                              | Some m -> Display.Matches.nextMatchBanner m.LocalName m.VisitName m.Date m.LocationTag
-
-                              // 2. MAIN GRID
                               Grid.create
-                                  [ Grid.columnDefinitions "1.6*, 30, 1*"
+                                  [ Grid.columnDefinitions "1.6*, 24, 1*"
                                     Grid.children
-                                        [
-
-                                          UI.sectionContainer
-                                              "LEAGUE STANDINGS"
-                                              (Display.Tables.leagueTable
-                                                  (HomePresenter.getAvailableLeagues state.GameState)
-                                                  selectedLeagueId
-                                                  onLeagueChange
-                                                  (HomePresenter.getTableData state.GameState selectedLeagueId))
-
-                                          // RIGHT COL: WIDGETS
-                                          StackPanel.create
-                                              [ Grid.column 2
-                                                StackPanel.spacing 20.0
-                                                StackPanel.children
-                                                    [
-
-                                                      // Quick Stats
-                                                      Grid.create
-                                                          [ Grid.columnDefinitions "*, 15, *"
-                                                            Grid.children
-                                                                [ StackPanel.create
-                                                                      [ Grid.column 0
-                                                                        StackPanel.children
-                                                                            [ UI.statCard
-                                                                                  "BUDGET"
-                                                                                  $"€{int (userTeam.Budget / 1_000_000m)}M"
-                                                                                  "💰"
-                                                                                  "Transfer Available" ] ]
-                                                                  StackPanel.create
-                                                                      [ Grid.column 2
-                                                                        StackPanel.children
-                                                                            [ UI.statCard
-                                                                                  "SQUAD"
-                                                                                  (string userTeam.Players.Length)
-                                                                                  "👥"
-                                                                                  "Registered Players" ] ] ] ]
-
-                                                      UI.sectionContainer
-                                                          "INBOX & NEWS"
-                                                          (ScrollViewer.create
-                                                              [ ScrollViewer.maxHeight 300.0
-                                                                ScrollViewer.padding 15.0
-                                                                ScrollViewer.content (
-                                                                    StackPanel.create
-                                                                        [ StackPanel.spacing 8.0
-                                                                          StackPanel.children
-                                                                              [ for msg in state.LogMessages do
-                                                                                    TextBlock.create
-                                                                                        [ TextBlock.text $"• {msg}"
-                                                                                          TextBlock.fontSize 11.0
-                                                                                          TextBlock.foreground
-                                                                                              Theme.TextMain
-                                                                                          TextBlock.textWrapping
-                                                                                              TextWrapping.Wrap ] ] ]
-                                                                ) ]) ] ] ] ] ] ]
+                                        [ leftColumn state.GameState selectedLeagueId onLeagueChange
+                                          rightColumn userTeam state.LogMessages ] ] ] ]
               ) ]

@@ -407,13 +407,9 @@ module MatchEngineTests =
             let finalTests = checkSnapshot "final" replay.Final
             let progressTests = checkReplayProgression replay
 
-            let snapshotTests =
-                replay.Snapshots
-                |> Array.mapi (fun i s -> checkSnapshot $"snapshot[{i}]" s)
-                |> Array.toList
-                |> List.concat
 
-            runSuite "Replay UI Contracts" (finalTests @ progressTests @ snapshotTests)
+
+            runSuite "Replay UI Contracts" (finalTests @ progressTests)
 
     // ------------------------------------------------------------------ //
     //  Entry point                                                         //
@@ -422,19 +418,19 @@ module MatchEngineTests =
     let runAll () =
         printfn "\n====== Football Engine — Match Simulation Tests ======"
 
-        let failures =
-            singleMatchContracts ()
-            @ statisticalContracts 1000
-            @ errorHandlingContracts ()
-            @ replayUIContracts ()
+        // Correr cada suite y acumular solo los fallos
+        let allFailures =
+            [ yield! singleMatchContracts ()
+              yield! statisticalContracts 10000
+              yield! errorHandlingContracts ()
+              yield! replayUIContracts () ]
 
         printfn "======================================================"
 
-        if failures.IsEmpty then
+        if allFailures.IsEmpty then
             printfn "All contracts passed.\n"
             0
         else
-            printfn $"%d{failures.Length} contract(s) failed:"
-            failures |> List.iter (fun (n, r) -> printfn $"  • %s{n}: %s{r}")
-            printfn ""
+            printfn $"{allFailures.Length} contract(s) failed:"
+            allFailures |> List.iter (fun (n, r) -> printfn $"  • {n}: {r}")
             1

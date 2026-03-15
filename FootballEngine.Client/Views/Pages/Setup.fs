@@ -10,80 +10,127 @@ open FootballEngine
 open FootballEngine.AppState
 open FootballEngine.Components
 open FootballEngine.Domain
+open FootballEngine.Icons
 
 module Setup =
 
     let setupView (state: State) dispatch =
 
-
         let setupContainer (content: IView) =
             Grid.create
-                [ Grid.background "#020617"
+                [ Grid.background Theme.BgSidebar
                   Grid.children
                       [ ScrollViewer.create
-                            [ ScrollViewer.content (
+                            [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                              ScrollViewer.content (
                                   StackPanel.create
                                       [ StackPanel.verticalAlignment VerticalAlignment.Center
                                         StackPanel.horizontalAlignment HorizontalAlignment.Center
-                                        StackPanel.maxWidth 900.0
-                                        StackPanel.minWidth 600.0
-                                        StackPanel.margin 40.0
-                                        StackPanel.spacing 40.0
+                                        StackPanel.maxWidth 860.0
+                                        StackPanel.minWidth 560.0
+                                        StackPanel.margin (48.0, 56.0)
+                                        StackPanel.spacing 48.0
                                         StackPanel.children
-                                            [
-                                              // Logo / Título
-                                              StackPanel.create
-                                                  [ StackPanel.children
-                                                        [ TextBlock.create
-                                                              [ TextBlock.text "FOOTBALL"
-                                                                TextBlock.fontSize 50.0
-                                                                TextBlock.fontWeight FontWeight.Black
-                                                                TextBlock.foreground "White"
-                                                                TextBlock.horizontalAlignment HorizontalAlignment.Center ]
-                                                          TextBlock.create
-                                                              [ TextBlock.text "ENGINE 2026"
-                                                                TextBlock.fontSize 20.0
-                                                                TextBlock.foreground Theme.Accent
-                                                                TextBlock.horizontalAlignment HorizontalAlignment.Center
-                                                                TextBlock.margin (0.0, -15.0, 0.0, 0.0) ] ] ]
+                                            [ Border.create
+                                                  [ Border.child (
+                                                        StackPanel.create
+                                                            [ StackPanel.spacing 4.0
+                                                              StackPanel.children
+                                                                  [ TextBlock.create
+                                                                        [ TextBlock.text "FOOTBALL ENGINE"
+                                                                          TextBlock.fontSize 44.0
+                                                                          TextBlock.fontWeight FontWeight.Black
+                                                                          TextBlock.foreground Theme.TextMain
+                                                                          TextBlock.lineSpacing 6.0
+                                                                          TextBlock.horizontalAlignment
+                                                                              HorizontalAlignment.Center ]
+                                                                    TextBlock.create
+                                                                        [ TextBlock.text "2026"
+                                                                          TextBlock.fontSize 13.0
+                                                                          TextBlock.foreground Theme.Accent
+                                                                          TextBlock.lineSpacing 8.0
+                                                                          TextBlock.fontWeight FontWeight.SemiBold
+                                                                          TextBlock.horizontalAlignment
+                                                                              HorizontalAlignment.Center ] ] ]
+                                                    ) ]
                                               content ] ]
                               ) ] ] ]
 
+        let stepDivider (label: string) =
+            DockPanel.create
+                [ DockPanel.margin (0.0, 0.0, 0.0, 4.0)
+                  DockPanel.children
+                      [ TextBlock.create
+                            [ DockPanel.dock Dock.Right
+                              TextBlock.text (label.ToUpperInvariant())
+                              TextBlock.fontSize 10.0
+                              TextBlock.fontWeight FontWeight.Bold
+                              TextBlock.foreground Theme.TextMuted
+                              TextBlock.lineSpacing 2.0
+                              TextBlock.verticalAlignment VerticalAlignment.Center ]
+                        Border.create
+                            [ Border.height 1.0
+                              Border.background Theme.Border
+                              Border.verticalAlignment VerticalAlignment.Center
+                              Border.margin (0.0, 0.0, 12.0, 0.0) ] ] ]
+
+        let navRow (backStep: SetupStep option) (nextView: IView option) =
+            DockPanel.create
+                [ DockPanel.margin (0.0, 8.0, 0.0, 0.0)
+                  DockPanel.children
+                      [ match backStep with
+                        | Some step -> UI.ghostButton "← Back" (fun _ -> dispatch (GoToSetupStep step))
+                        | None -> ()
+                        match nextView with
+                        | Some v -> Border.create [ DockPanel.dock Dock.Right; Border.child v ]
+                        | None -> () ] ]
+
         match state.SetupStep with
+
         | MainMenu ->
             setupContainer (
-                UniformGrid.create
-                    [ UniformGrid.columns 2
-                      UniformGrid.children
-                          [ UI.menuButton "NEW CAREER" "⚽" "Start a new journey as a manager" (fun _ ->
-                                dispatch (GoToSetupStep CountrySelection))
-                            UI.menuButton "LOAD GAME" "💾" "Continue your existing career" (fun _ -> dispatch SaveGame) ] ] // TODO missing LoadGame
+                StackPanel.create
+                    [ StackPanel.spacing 16.0
+                      StackPanel.children
+                          [ stepDivider "Start"
+                            UniformGrid.create
+                                [ UniformGrid.columns 2
+                                  UniformGrid.children
+                                      [ UI.menuButton "NEW CAREER" "⚽" "Start a new journey as a manager" (fun _ ->
+                                            dispatch (GoToSetupStep CountrySelection))
+                                        UI.menuButton "LOAD GAME" "💾" "Continue your existing career" (fun _ ->
+                                            dispatch SaveGame) ] ] ] ]
             )
 
         | CountrySelection ->
             setupContainer (
                 StackPanel.create
-                    [ StackPanel.spacing 20.0
+                    [ StackPanel.spacing 24.0
                       StackPanel.children
-                          [ TextBlock.create
-                                [ TextBlock.text "SELECT COUNTRIES & LEAGUES"
-                                  TextBlock.fontSize 24.0
-                                  TextBlock.fontWeight FontWeight.Bold
-                                  TextBlock.horizontalAlignment HorizontalAlignment.Center ]
-                            TextBlock.create
-                                [ TextBlock.text "Choose one main country to play and others to simulate players."
-                                  TextBlock.foreground Theme.TextMuted
-                                  TextBlock.horizontalAlignment HorizontalAlignment.Center ]
+                          [ stepDivider "Step 1 of 3 — Leagues"
 
-                            // Lista de Países
                             StackPanel.create
-                                [ StackPanel.spacing 10.0
+                                [ StackPanel.spacing 6.0
+                                  StackPanel.children
+                                      [ TextBlock.create
+                                            [ TextBlock.text "Select Countries & Leagues"
+                                              TextBlock.fontSize 22.0
+                                              TextBlock.fontWeight FontWeight.Bold
+                                              TextBlock.foreground Theme.TextMain ]
+                                        TextBlock.create
+                                            [ TextBlock.text
+                                                  "Pick one primary country to manage in. Add others to simulate alongside."
+                                              TextBlock.foreground Theme.TextMuted
+                                              TextBlock.fontSize 13.0 ] ] ]
+
+                            StackPanel.create
+                                [ StackPanel.spacing 8.0
                                   StackPanel.children
                                       [ for code, name, flag in
-                                            [ ("ARG", "Argentina", "🇦🇷")
-                                              ("BRA", "Brazil", "🇧🇷")
-                                              ("ENG", "England", "🏴󠁧󠁢󠁥󠁮󠁧󠁿")
-                                              ("ESP", "Spain", "🇪🇸") ] do
+                                            [ "ARG", "Argentina", "🇦🇷"
+                                              "BRA", "Brazil", "🇧🇷"
+                                              "ENG", "England", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"
+                                              "ESP", "Spain", "🇪🇸" ] do
                                             UI.countrySelectionCard
                                                 name
                                                 flag
@@ -92,22 +139,99 @@ module Setup =
                                                 (fun _ -> dispatch (SelectPrimaryCountry code))
                                                 (fun _ -> dispatch (ToggleSecondaryCountry code)) ] ]
 
-                            // Navegación
-                            DockPanel.create
-                                [ DockPanel.children
-                                      [ Button.create
-                                            [ Button.content "Back"
-                                              Button.onClick (fun _ -> dispatch (GoToSetupStep MainMenu)) ]
-                                        if state.SetupSelectedCountry.IsSome then
-                                            Button.create
-                                                [ Button.dock Dock.Right
-                                                  Button.content "Manager Details →"
-                                                  Button.background Theme.Accent
-                                                  Button.foreground Theme.BgSidebar
-                                                  Button.fontWeight FontWeight.Bold
-                                                  Button.padding (20.0, 10.0)
-                                                  Button.onClick (fun _ -> dispatch (GoToSetupStep ManagerNaming)) ] ] ] ] ]
+                            navRow
+                                (Some MainMenu)
+                                (if state.SetupSelectedCountry.IsSome then
+                                     Some(
+                                         UI.primaryButton "Manager Details" (Some UI.next) (fun _ ->
+                                             dispatch (GoToSetupStep ManagerNaming))
+                                         :> IView
+                                     )
+                                 else
+                                     None) ] ]
             )
+
+        | ManagerNaming ->
+            setupContainer (
+                StackPanel.create
+                    [ StackPanel.spacing 24.0
+                      StackPanel.children
+                          [ stepDivider "Step 2 of 3 — Manager"
+
+                            StackPanel.create
+                                [ StackPanel.spacing 6.0
+                                  StackPanel.children
+                                      [ TextBlock.create
+                                            [ TextBlock.text "Manager Details"
+                                              TextBlock.fontSize 22.0
+                                              TextBlock.fontWeight FontWeight.Bold
+                                              TextBlock.foreground Theme.TextMain ]
+                                        TextBlock.create
+                                            [ TextBlock.text "Your name will appear throughout the game."
+                                              TextBlock.foreground Theme.TextMuted
+                                              TextBlock.fontSize 13.0 ] ] ]
+
+                            UI.sectionContainer
+                                "YOUR NAME"
+                                (TextBox.create
+                                    [ TextBox.text state.SetupManagerName
+                                      TextBox.onTextChanged (fun n -> dispatch (UpdateManagerName n))
+                                      TextBox.padding (16.0, 14.0)
+                                      TextBox.fontSize 17.0
+                                      TextBox.background Theme.BgCard
+                                      TextBox.borderThickness 0.0 ])
+
+                            Border.create
+                                [ Border.background Theme.BgCard
+                                  Border.cornerRadius 10.0
+                                  Border.borderBrush Theme.Border
+                                  Border.borderThickness 1.0
+                                  Border.padding (16.0, 14.0)
+                                  Border.child (
+                                      Grid.create
+                                          [ Grid.columnDefinitions "Auto, *"
+                                            Grid.children
+                                                [ Border.create
+                                                      [ Grid.column 0
+                                                        Border.background Theme.AccentLight
+                                                        Border.cornerRadius 8.0
+                                                        Border.padding 10.0
+                                                        Border.margin (0.0, 0.0, 14.0, 0.0)
+                                                        Border.verticalAlignment VerticalAlignment.Center
+                                                        Border.child (Icons.iconLg UI.league Theme.Accent) ]
+                                                  StackPanel.create
+                                                      [ Grid.column 1
+                                                        StackPanel.verticalAlignment VerticalAlignment.Center
+                                                        StackPanel.spacing 3.0
+                                                        StackPanel.children
+                                                            [ TextBlock.create
+                                                                  [ TextBlock.text "PRIMARY NATION"
+                                                                    TextBlock.fontSize 10.0
+                                                                    TextBlock.fontWeight FontWeight.Bold
+                                                                    TextBlock.foreground Theme.TextMuted
+                                                                    TextBlock.lineSpacing 1.5 ]
+                                                              TextBlock.create
+                                                                  [ TextBlock.text (
+                                                                        state.SetupSelectedCountry
+                                                                        |> Option.defaultValue "—"
+                                                                    )
+                                                                    TextBlock.fontSize 18.0
+                                                                    TextBlock.fontWeight FontWeight.Black
+                                                                    TextBlock.foreground Theme.TextMain ] ] ] ] ]
+                                  ) ]
+
+                            navRow
+                                (Some CountrySelection)
+                                (if state.SetupManagerName.Length > 2 then
+                                     Some(
+                                         UI.primaryButton "Confirm & Create Game" (Some UI.success) (fun _ ->
+                                             dispatch StartNewGame)
+                                         :> IView
+                                     )
+                                 else
+                                     None) ] ]
+            )
+
         | ClubSelection ->
             let clubs =
                 state.GameState.Competitions
@@ -121,65 +245,143 @@ module Setup =
 
             setupContainer (
                 StackPanel.create
-                    [ StackPanel.spacing 20.0
+                    [ StackPanel.spacing 24.0
                       StackPanel.children
-                          [ TextBlock.create
-                                [ TextBlock.text "CHOOSE YOUR CLUB"
-                                  TextBlock.fontSize 24.0
-                                  TextBlock.fontWeight FontWeight.Bold
-                                  TextBlock.horizontalAlignment HorizontalAlignment.Center ]
-                            for club in clubs do
-                                Button.create
-                                    [ Button.horizontalAlignment HorizontalAlignment.Stretch
-                                      Button.padding (20.0, 12.0)
-                                      Button.onClick (fun _ -> dispatch (ConfirmClub club.Id))
-                                      Button.content (
-                                          DockPanel.create
-                                              [ DockPanel.children
-                                                    [ TextBlock.create
-                                                          [ TextBlock.text club.Name
-                                                            TextBlock.fontWeight FontWeight.Bold ]
-                                                      TextBlock.create
-                                                          [ TextBlock.dock Dock.Right
-                                                            TextBlock.text $"⭐ {club.Reputation}"
-                                                            TextBlock.foreground Theme.TextMuted ] ] ]
-                                      ) ] ] ]
-            )
-        | ManagerNaming ->
-            setupContainer (
-                StackPanel.create
-                    [ StackPanel.spacing 30.0
-                      StackPanel.children
-                          [ TextBlock.create
-                                [ TextBlock.text "MANAGER DETAILS"
-                                  TextBlock.fontSize 24.0
-                                  TextBlock.fontWeight FontWeight.Bold ]
+                          [ stepDivider "Step 3 of 3 — Club"
 
-                            UI.sectionContainer
-                                "ENTER YOUR NAME"
-                                (TextBox.create
-                                    [ TextBox.text state.SetupManagerName
-                                      TextBox.onTextChanged (fun n -> dispatch (UpdateManagerName n))
-                                      TextBox.padding 15.0
-                                      TextBox.fontSize 18.0
-                                      TextBox.background "#1e293b"
-                                      TextBox.borderThickness 0.0 ])
+                            StackPanel.create
+                                [ StackPanel.spacing 6.0
+                                  StackPanel.children
+                                      [ TextBlock.create
+                                            [ TextBlock.text "Choose Your Club"
+                                              TextBlock.fontSize 22.0
+                                              TextBlock.fontWeight FontWeight.Bold
+                                              TextBlock.foreground Theme.TextMain ]
+                                        TextBlock.create
+                                            [ TextBlock.text "Select the club you want to manage this season."
+                                              TextBlock.foreground Theme.TextMuted
+                                              TextBlock.fontSize 13.0 ] ] ]
 
-                            UI.statCard "CHOSEN NATION" state.SetupSelectedCountry.Value "🌍" "Your career starts here"
+                            Border.create
+                                [ Border.background Theme.BgCard
+                                  Border.cornerRadius 10.0
+                                  Border.borderBrush Theme.Border
+                                  Border.borderThickness 1.0
+                                  Border.clipToBounds true
+                                  Border.child (
+                                      ScrollViewer.create
+                                          [ ScrollViewer.maxHeight 440.0
+                                            ScrollViewer.content (
+                                                StackPanel.create
+                                                    [ StackPanel.children
+                                                          [ for i, club in clubs |> List.indexed do
+                                                                Button.create
+                                                                    [ Button.horizontalAlignment
+                                                                          HorizontalAlignment.Stretch
+                                                                      Button.padding (18.0, 14.0)
+                                                                      Button.background "Transparent"
+                                                                      Button.borderThickness (
+                                                                          if i < clubs.Length - 1 then
+                                                                              Avalonia.Thickness(0.0, 0.0, 0.0, 1.0)
+                                                                          else
+                                                                              Avalonia.Thickness(0.0)
+                                                                      )
+                                                                      Button.borderBrush Theme.Border
+                                                                      Button.onClick (fun _ ->
+                                                                          dispatch (ConfirmClub club.Id))
+                                                                      Button.content (
+                                                                          Grid.create
+                                                                              [ Grid.columnDefinitions
+                                                                                    "Auto, *, Auto, Auto"
+                                                                                Grid.children
+                                                                                    [ Border.create
+                                                                                          [ Grid.column 0
+                                                                                            Border.width 36.0
+                                                                                            Border.height 36.0
+                                                                                            Border.cornerRadius 18.0
+                                                                                            Border.background
+                                                                                                Theme.AccentLight
+                                                                                            Border.margin (
+                                                                                                0.0,
+                                                                                                0.0,
+                                                                                                14.0,
+                                                                                                0.0
+                                                                                            )
+                                                                                            Border.verticalAlignment
+                                                                                                VerticalAlignment.Center
+                                                                                            Border.child (
+                                                                                                TextBlock.create
+                                                                                                    [ TextBlock.text (
+                                                                                                          string
+                                                                                                              club.Name[0]
+                                                                                                      )
+                                                                                                      TextBlock.fontSize
+                                                                                                          14.0
+                                                                                                      TextBlock.fontWeight
+                                                                                                          FontWeight.Black
+                                                                                                      TextBlock.foreground
+                                                                                                          Theme.Accent
+                                                                                                      TextBlock.horizontalAlignment
+                                                                                                          HorizontalAlignment.Center
+                                                                                                      TextBlock.verticalAlignment
+                                                                                                          VerticalAlignment.Center ]
+                                                                                            ) ]
+                                                                                      StackPanel.create
+                                                                                          [ Grid.column 1
+                                                                                            StackPanel.verticalAlignment
+                                                                                                VerticalAlignment.Center
+                                                                                            StackPanel.children
+                                                                                                [ TextBlock.create
+                                                                                                      [ TextBlock.text
+                                                                                                            club.Name
+                                                                                                        TextBlock.fontWeight
+                                                                                                            FontWeight.SemiBold
+                                                                                                        TextBlock.fontSize
+                                                                                                            14.0
+                                                                                                        TextBlock.foreground
+                                                                                                            Theme.TextMain ] ] ]
+                                                                                      StackPanel.create
+                                                                                          [ Grid.column 2
+                                                                                            StackPanel.orientation
+                                                                                                Orientation.Horizontal
+                                                                                            StackPanel.spacing 4.0
+                                                                                            StackPanel.verticalAlignment
+                                                                                                VerticalAlignment.Center
+                                                                                            StackPanel.margin (
+                                                                                                0.0,
+                                                                                                0.0,
+                                                                                                16.0,
+                                                                                                0.0
+                                                                                            )
+                                                                                            StackPanel.children
+                                                                                                [ Icons.iconSm
+                                                                                                      PlayerIcon.skill
+                                                                                                      Theme.Warning
+                                                                                                  TextBlock.create
+                                                                                                      [ TextBlock.text (
+                                                                                                            string
+                                                                                                                club.Reputation
+                                                                                                        )
+                                                                                                        TextBlock.fontSize
+                                                                                                            12.0
+                                                                                                        TextBlock.fontWeight
+                                                                                                            FontWeight.Bold
+                                                                                                        TextBlock.foreground
+                                                                                                            Theme.TextMuted
+                                                                                                        TextBlock.verticalAlignment
+                                                                                                            VerticalAlignment.Center ] ] ]
+                                                                                      Border.create
+                                                                                          [ Grid.column 3
+                                                                                            Border.verticalAlignment
+                                                                                                VerticalAlignment.Center
+                                                                                            Border.child (
+                                                                                                Icons.iconMd
+                                                                                                    Nav.next
+                                                                                                    Theme.TextMuted
+                                                                                            ) ] ] ]
+                                                                      ) ] ] ]
+                                            ) ]
+                                  ) ]
 
-
-                            DockPanel.create
-                                [ DockPanel.children
-                                      [ Button.create
-                                            [ Button.content "← Back"
-                                              Button.onClick (fun _ -> dispatch (GoToSetupStep CountrySelection)) ]
-                                        if state.SetupManagerName.Length > 2 then
-                                            Button.create
-                                                [ Button.dock Dock.Right
-                                                  Button.content "CONFIRM & CREATE GAME"
-                                                  Button.background Theme.Accent
-                                                  Button.foreground Theme.BgSidebar
-                                                  Button.fontWeight FontWeight.Bold
-                                                  Button.padding (30.0, 15.0)
-                                                  Button.onClick (fun _ -> dispatch StartNewGame) ] ] ] ] ]
+                            navRow None None ] ]
             )

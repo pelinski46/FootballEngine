@@ -49,6 +49,8 @@ module MatchContext =
             EventsRev: MatchEvent list
             HomePositions: Map<PlayerId, float * float>
             AwayPositions: Map<PlayerId, float * float>
+            HomeBasePositions: Map<PlayerId, float * float>
+            AwayBasePositions: Map<PlayerId, float * float>
         }
 
     /// Pre-computed spatial data. Positions are indexed by PlayerId so they

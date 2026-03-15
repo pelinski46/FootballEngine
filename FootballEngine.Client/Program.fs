@@ -15,7 +15,9 @@ open FootballEngine.Pages.Home
 open FootballEngine.Pages.Setup.Setup
 open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
+open FootballEngine.Pages.Transfers
 open FootballEngine.Test.MatchEngineTests
+open Material.Icons.Avalonia
 
 module Views =
     open AppState
@@ -40,7 +42,7 @@ module Views =
                                 | Tactics -> tacticView state dispatch
                                 | Training -> failwith "todo"
                                 | Scouting -> failwith "todo"
-                                | Transfers -> failwith "todo"
+                                | Transfers -> transfersView state dispatch
                                 | Finances -> failwith "todo"
                                 | Settings -> failwith "todo"
                                 | MatchLab -> MatchLabView.view state dispatch ] ] ] ]
@@ -58,7 +60,11 @@ type MainWindow() as this =
 
 type App() =
     inherit Application()
-    override this.Initialize() = this.Styles.Add(FluentTheme())
+
+    override this.Initialize() =
+        this.Styles.Add(FluentTheme())
+        this.Styles.Add(MaterialIconStyles(null))
+
 
     override this.OnFrameworkInitializationCompleted() =
         match this.ApplicationLifetime with
@@ -69,5 +75,8 @@ module Program =
     [<EntryPoint>]
     let main args =
         Db.initTables ()
-        runAll () |> ignore
-        AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)
+
+        match args with
+        | [| "--test" |] -> runAll ()
+
+        | _ -> AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)
