@@ -1,7 +1,6 @@
 namespace FootballEngine.Domain
 
 open System
-open FootballEngine.DomainTypes
 
 type GameState =
     { CurrentDate: DateTime
@@ -9,10 +8,7 @@ type GameState =
       Clubs: Map<ClubId, Club>
       Players: Map<PlayerId, Player>
       Competitions: Map<CompetitionId, Competition>
-      Fixtures: Map<MatchId, MatchFixture>
-
-      KnockoutTies: Map<int, KnockoutTie>
+      Countries: Map<CountryCode, Country>
       UserClubId: ClubId
       ManagerName: string
-      PrimaryCountry: CountryCode
-      Countries: Map<CountryCode, Country> }
+      PrimaryCountry: CountryCode }

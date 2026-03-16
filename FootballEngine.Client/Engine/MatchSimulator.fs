@@ -3,9 +3,10 @@ namespace FootballEngine
 open System
 open System.Collections.Generic
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 open FSharp.Stats.Distributions
-open MatchContext
+
+open FootballEngine.MatchStateOps
 open MatchStats
 
 module MatchSimulator =
@@ -289,7 +290,7 @@ module MatchSimulator =
 
     let private maxSubs = 3
 
-    let private processSubstitution (clubId: ClubId) (ctx: MatchContext) (second: int) (s: MatchState) =
+    let private processSubstitution (clubId: ClubId) (second: int) (s: MatchState) =
         let isHome = clubId = s.Home.Id
         let ts = side isHome s
         let club = if isHome then s.Home else s.Away
@@ -412,7 +413,6 @@ module MatchSimulator =
 
     let private dispatch
         (homeClubId: int)
-        (ctx: MatchContext)
         (queue: EventQueue)
         (second: int)
         (event: ScheduledEvent)
@@ -446,7 +446,7 @@ module MatchSimulator =
         | ShotAttempt attacker -> tryShot attacker s
         | CardCheck(player, clubId, _) -> processCard player clubId second s
         | InjuryCheck(player, clubId) -> processInjury player clubId second s
-        | SubstitutionCheck clubId -> processSubstitution clubId ctx second s
+        | SubstitutionCheck clubId -> processSubstitution clubId second s
         | MatchEnd -> s
 
     // ── Context builder ──────────────────────────────────────────────────────
@@ -533,7 +533,7 @@ module MatchSimulator =
           HomeBasePositions = ctx.HomePositions
           AwayBasePositions = ctx.AwayPositions }
 
-    let private runEventLoop (homeClubId: int) (ctx: MatchContext) (initState: MatchState) =
+    let private runEventLoop (homeClubId: int) (initState: MatchState) =
         let queue = buildInitialQueue initState.Home.Id initState.Away.Id
         let mutable s = initState
         let snapshots = List<MatchState>()
@@ -548,7 +548,7 @@ module MatchSimulator =
                 s <- { s with Second = pr }
                 queue.Clear()
             | _ ->
-                s <- dispatch homeClubId ctx queue pr ev s
+                s <- dispatch homeClubId queue pr ev s
 
                 match ev with
                 | Duel
@@ -561,7 +561,7 @@ module MatchSimulator =
         let ctx, homePlayers, awayPlayers = buildContext home away
 
         let final, snapshots =
-            runEventLoop home.Id ctx (buildInitState home homePlayers away awayPlayers ctx)
+            runEventLoop home.Id (buildInitState home homePlayers away awayPlayers ctx)
 
         { Final = final; Snapshots = snapshots }
 

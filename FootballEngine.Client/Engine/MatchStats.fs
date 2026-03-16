@@ -2,9 +2,9 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 open FSharp.Stats.Distributions
-open MatchContext
+
 
 module MatchStats =
 

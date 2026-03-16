@@ -11,7 +11,7 @@ module Theme =
 
     let TextMain = "#f1f5f9"
     let TextMuted = "#64748b"
-    let TextSub = "#94a3b8"
+    let TextSub = "#dddddd"
 
     let Accent = "#10b981"
     let AccentAlt = "#3b82f6"

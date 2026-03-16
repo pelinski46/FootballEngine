@@ -4,8 +4,9 @@ open Avalonia.Controls
 open Avalonia.FuncUI.DSL
 open Avalonia.Layout
 open Avalonia.Media
-open FootballEngine.AppState
 open FootballEngine
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Icons
 open Material.Icons
 

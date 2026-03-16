@@ -1,7 +1,5 @@
 namespace FootballEngine.Domain
 
-open FootballEngine.DomainTypes
-
 type FormationSlot =
     { Index: int
       Role: Position
@@ -28,14 +26,9 @@ type Club =
       Players: Player list
       CurrentLineup: ClubLineup option
       Budget: decimal
-      Morale: int
-      Wins: int
-      Draws: int
-      Losses: int
-      GoalsFor: int
-      GoalsAgainst: int }
+      Morale: int }
 
-module Formation =
+module ClubFormation =
     let all =
         [ F442
           F442Diamond

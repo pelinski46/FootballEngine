@@ -9,12 +9,11 @@ open Avalonia.FuncUI.DSL
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
-open FootballEngine.AppState
+open FootballEngine.AppTypes
+open FootballEngine.AppMsgs
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
 open FootballEngine.Components
 open FootballEngine.Icons
-
 
 module Tactics =
 
@@ -86,7 +85,6 @@ module Tactics =
                                     Rectangle.radiusX 2.0
                                     Rectangle.radiusY 2.0
                                     Rectangle.margin (0.0, 0.0, 12.0, 0.0) ]
-
                               UI.positionBadge p.Position col
                               |> fun b ->
                                   Border.create
@@ -94,7 +92,6 @@ module Tactics =
                                         Border.margin (0.0, 0.0, 12.0, 0.0)
                                         Border.verticalAlignment VerticalAlignment.Center
                                         Border.child b ]
-
                               StackPanel.create
                                   [ Grid.column 2
                                     StackPanel.verticalAlignment VerticalAlignment.Center
@@ -109,7 +106,6 @@ module Tactics =
                                               [ TextBlock.text $"CA {p.CurrentSkill}"
                                                 TextBlock.foreground Theme.TextMuted
                                                 TextBlock.fontSize 10.0 ] ] ]
-
                               StackPanel.create
                                   [ Grid.column 3
                                     StackPanel.verticalAlignment VerticalAlignment.Center
@@ -202,7 +198,6 @@ module Tactics =
                                                     TextBlock.foreground "#ffffff"
                                                     TextBlock.horizontalAlignment HorizontalAlignment.Center
                                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-
                               Border.create
                                   [ Border.background (if isEmpty then "#ffffff08" else nodeCol)
                                     Border.borderBrush (if isEmpty then "#ffffff18" else nodeCol)
@@ -249,7 +244,7 @@ module Tactics =
                         [ Border.padding (16.0, 12.0)
                           Border.child (
                               ComboBox.create
-                                  [ ComboBox.dataItems FormationData.availableFormations
+                                  [ ComboBox.dataItems ClubFormation.all
                                     ComboBox.selectedItem currentFormation
                                     ComboBox.onSelectedItemChanged (fun obj ->
                                         if obj <> null then
@@ -347,12 +342,10 @@ module Tactics =
                                                 Border.margin (0.0, 4.0) ]
                                           teamStats starterIds state.GameState ] ]
                           ) ]
-
                     Border.create
                         [ Grid.column 1
                           Border.padding (20.0, 16.0)
                           Border.child (pitchContainer state dispatch) ]
-
                     Border.create
                         [ Grid.column 2
                           Border.background Theme.BgSidebar
@@ -364,7 +357,6 @@ module Tactics =
                                     DockPanel.children
                                         [ UI.sectionHeaderWithBadge UI.squad "BENCH" benchPlayers.Length
                                           |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
-
                                           ScrollViewer.create
                                               [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                                                 ScrollViewer.verticalAlignment VerticalAlignment.Stretch

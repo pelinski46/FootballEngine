@@ -1,10 +1,16 @@
-namespace FootballEngine.DomainTypes
+namespace FootballEngine.Domain
 
 type PlayerId = int
 type ClubId = int
 type MatchId = int
-type LeagueId = int
+type CompetitionId = int
 type CountryCode = string
+
+type Round =
+    | GroupStage of groupIndex: int
+    | KnockoutRound of teamsRemaining: int
+    | ThirdPlace
+    | Final
 
 type Position =
     | GK
@@ -22,10 +28,7 @@ type Position =
     | AML
     | ST
 
-
-
 type Formation =
-
     | F442
     | F442Diamond
     | F433
@@ -35,11 +38,9 @@ type Formation =
     | F4231
     | F4312
     | F4321
-
     | F352
     | F343
     | F3421
-
     | F532
     | F541
     | F523

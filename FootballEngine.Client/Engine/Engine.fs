@@ -1,44 +1,49 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
 open MatchSimulator
 
-/// Public API consumed by AppState. Delegates to focused sub-modules.
-/// This file should stay thin — only orchestration, no logic.
 module Engine =
 
-    // Re-export so call sites don't need to change their open statements.
     let createPlayer = GameGenerator.createPlayer
     let generateNewGame = GameGenerator.generateNewGame
 
-    // ------------------------------------------------------------------ //
-    //  Single-fixture simulation                                           //
-    // ------------------------------------------------------------------ //
-
-    let private updateClub (c: Club) myScore oppScore =
+    let updateStanding (standing: LeagueStanding) myScore oppScore =
         if myScore > oppScore then
-            { c with
-                Wins = c.Wins + 1
-                GoalsFor = c.GoalsFor + myScore
-                GoalsAgainst = c.GoalsAgainst + oppScore }
+            { standing with
+                Won = standing.Won + 1
+                GoalsFor = standing.GoalsFor + myScore
+                GoalsAgainst = standing.GoalsAgainst + oppScore
+                Points = standing.Points + 3
+                Played = standing.Played + 1 }
         elif myScore < oppScore then
-            { c with
-                Losses = c.Losses + 1
-                GoalsFor = c.GoalsFor + myScore
-                GoalsAgainst = c.GoalsAgainst + oppScore }
+            { standing with
+                Lost = standing.Lost + 1
+                GoalsFor = standing.GoalsFor + myScore
+                GoalsAgainst = standing.GoalsAgainst + oppScore
+                Played = standing.Played + 1 }
         else
-            { c with
-                Draws = c.Draws + 1
-                GoalsFor = c.GoalsFor + myScore
-                GoalsAgainst = c.GoalsAgainst + oppScore }
+            { standing with
+                Drawn = standing.Drawn + 1
+                GoalsFor = standing.GoalsFor + myScore
+                GoalsAgainst = standing.GoalsAgainst + oppScore
+                Points = standing.Points + 1
+                Played = standing.Played + 1 }
 
-    /// Returns Ok with updated fixture + clubs, or Error with a SimulationError
-    /// describing exactly what was missing (no lineup, incomplete lineup, etc.).
+    let private defaultStanding (clubId: ClubId) =
+        { ClubId = clubId
+          Played = 0
+          Won = 0
+          Drawn = 0
+          Lost = 0
+          GoalsFor = 0
+          GoalsAgainst = 0
+          Points = 0 }
+
     let simulateFixture
         (fixture: MatchFixture)
         (clubs: Map<ClubId, Club>)
-        : Result<MatchFixture * Club * Club, SimulationError> =
+        : Result<MatchFixture * int * int, SimulationError> =
 
         let home = clubs[fixture.HomeClubId]
         let away = clubs[fixture.AwayClubId]
@@ -52,26 +57,26 @@ module Engine =
                     AwayScore = Some aScore
                     Events = events }
 
-            updatedFixture, updateClub home hScore aScore, updateClub away aScore hScore)
-
-    // ------------------------------------------------------------------ //
-    //  Batch simulation                                                    //
-    // ------------------------------------------------------------------ //
+            updatedFixture, hScore, aScore)
 
     type BatchResult =
-        {
-            GameState: GameState
-            Logs: string list
-            /// Fixtures that failed to simulate and why.
-            Errors: (MatchId * SimulationError) list
-        }
+        { GameState: GameState
+          Logs: string list
+          Errors: (MatchId * SimulationError) list }
 
-    /// Simulates all given fixtures in parallel.
-    /// Failed fixtures are collected in BatchResult.Errors and skipped
-    /// rather than aborting the whole batch.
     let simulateFixtures (gameState: GameState) (fixtures: (MatchId * MatchFixture) list) : BatchResult =
-        let results =
+        let unplayed =
             fixtures
+            |> List.filter (fun (id, _) ->
+                gameState.Competitions
+                |> Map.exists (fun _ comp ->
+                    comp.Fixtures
+                    |> Map.tryFind id
+                    |> Option.map (fun f -> not f.Played)
+                    |> Option.defaultValue false))
+
+        let results =
+            unplayed
             |> List.toArray
             |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
 
@@ -83,24 +88,41 @@ module Engine =
                     { acc with
                         Errors = (id, e) :: acc.Errors }
 
-                | Ok(fixture, home, away) ->
-                    let h = fixture.HomeScore |> Option.defaultValue 0
-                    let a = fixture.AwayScore |> Option.defaultValue 0
-                    let log = $"⚽ {home.Name} {h}-{a} {away.Name}"
+                | Ok(fixture, hScore, aScore) ->
+                    let home = acc.GameState.Clubs[fixture.HomeClubId]
+                    let away = acc.GameState.Clubs[fixture.AwayClubId]
+                    let log = $"⚽ {home.Name} {hScore}-{aScore} {away.Name}"
+
+                    let updatedComps =
+                        acc.GameState.Competitions
+                        |> Map.map (fun _ comp ->
+                            if not (Map.containsKey id comp.Fixtures) then
+                                comp
+                            else
+                                let homeStanding =
+                                    comp.Standings
+                                    |> Map.tryFind fixture.HomeClubId
+                                    |> Option.defaultWith (fun () -> defaultStanding fixture.HomeClubId)
+
+                                let awayStanding =
+                                    comp.Standings
+                                    |> Map.tryFind fixture.AwayClubId
+                                    |> Option.defaultWith (fun () -> defaultStanding fixture.AwayClubId)
+
+                                { comp with
+                                    Fixtures = comp.Fixtures |> Map.add id fixture
+                                    Standings =
+                                        comp.Standings
+                                        |> Map.add fixture.HomeClubId (updateStanding homeStanding hScore aScore)
+                                        |> Map.add fixture.AwayClubId (updateStanding awayStanding aScore hScore) })
 
                     { acc with
-                        GameState =
-                            { acc.GameState with
-                                Fixtures = acc.GameState.Fixtures |> Map.add id fixture
-                                Clubs = acc.GameState.Clubs |> Map.add home.Id home |> Map.add away.Id away }
+                        BatchResult.GameState.Competitions = updatedComps
                         Logs = log :: acc.Logs })
             { GameState = gameState
               Logs = []
               Errors = [] }
 
-    // ------------------------------------------------------------------ //
-    //  Season helpers                                                      //
-    // ------------------------------------------------------------------ //
-
     let isSeasonOver (gameState: GameState) =
-        gameState.Fixtures |> Map.forall (fun _ f -> f.Played)
+        gameState.Competitions
+        |> Map.forall (fun _ comp -> comp.Fixtures |> Map.forall (fun _ f -> f.Played))

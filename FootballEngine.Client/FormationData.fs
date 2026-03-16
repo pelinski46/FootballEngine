@@ -1,7 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 
 module FormationData =
     let private createSlot index pos x y =
@@ -192,6 +192,3 @@ module FormationData =
               createSlot 8 AML 0.20 0.20
               createSlot 9 ST 0.50 0.15
               createSlot 10 AMR 0.80 0.20 ]
-
-
-    let availableFormations = Formation.all

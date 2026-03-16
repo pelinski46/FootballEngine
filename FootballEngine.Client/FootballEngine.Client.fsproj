@@ -9,22 +9,36 @@
     <ItemGroup>
         <Compile Include="Domain\DomainTypes.fs"/>
         <Compile Include="Domain\Country.fs"/>
-        <Compile Include="Domain\Competition.fs"/>
-        <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Player.fs"/>
         <Compile Include="Domain\Club.fs"/>
+        <Compile Include="Domain\Match.fs"/>
+        <Compile Include="Domain\Competition.fs"/>
+        <Compile Include="Domain\MatchContext.fs"/>
         <Compile Include="Domain\GameState.fs"/>
-        <Compile Include="GameData.fs"/>
+        <Compile Include="GameData\CountryData.fs"/>
+        <Compile Include="GameData\Arg.fs"/>
+        <Compile Include="GameData\Eng.fs"/>
+        <Compile Include="GameData\Esp.fs"/>
+        <Compile Include="GameData\Bra.fs"/>
+        <Compile Include="GameData\Conmebol.fs"/>
+        <Compile Include="GameData\Uefa.fs"/>
+        <Compile Include="GameData\DataRegistry.fs"/>
         <Compile Include="FormationData.fs"/>
         <Compile Include="Lineup.fs"/>
         <Compile Include="AI\ManagerAI.fs"/>
-        <Compile Include="Engine\MatchContext.fs"/>
+        <Compile Include="Engine\MatchContextOps.fs"/>
         <Compile Include="Engine\MatchStats.fs"/>
         <Compile Include="Engine\MatchSimulator.fs"/>
         <Compile Include="Engine\GameGenerator.fs"/>
         <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database.fs"/>
-        <Compile Include="AppState.fs"/>
+        <Compile Include="AppState\Types.fs"/>
+        <Compile Include="AppState\Msg.fs"/>
+        <Compile Include="AppState\UpdateSetup.fs"/>
+        <Compile Include="AppState\UpdateSim.fs"/>
+        <Compile Include="AppState\UpdateTransfer.fs"/>
+        <Compile Include="AppState\UpdateMatchLab.fs"/>
+        <Compile Include="AppState\AppState.fs"/>
         <Compile Include="Views\Icons.fs"/>
         <Compile Include="Views\Theme.fs"/>
         <Compile Include="Views\Components\UI.fs"/>
@@ -39,6 +53,7 @@
         <Compile Include="Views\Pages\Transfer.fs"/>
         <Compile Include="Test.fs"/>
         <Compile Include="Program.fs"/>
+
 
     </ItemGroup>
 

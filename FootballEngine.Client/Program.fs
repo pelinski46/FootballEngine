@@ -8,6 +8,8 @@ open Avalonia.Controls
 open Avalonia.FuncUI
 open Avalonia.FuncUI.DSL
 open FootballEngine
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Components
 open FootballEngine.Components.Header
 open FootballEngine.Components.Sidebar
@@ -20,8 +22,6 @@ open FootballEngine.Test.MatchEngineTests
 open Material.Icons.Avalonia
 
 module Views =
-    open AppState
-
     let mainView (state: State) dispatch =
         DockPanel.create
             [ DockPanel.background Theme.BgMain

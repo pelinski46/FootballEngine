@@ -1,7 +1,6 @@
 namespace FootballEngine.Domain
 
 open System
-open FootballEngine.DomainTypes
 
 type MatchEventType =
     | Goal
@@ -9,7 +8,7 @@ type MatchEventType =
     | Assist
     | YellowCard
     | RedCard
-    | Injury of string
+    | Injury of description: string
     | SubstitutionIn
     | SubstitutionOut
 

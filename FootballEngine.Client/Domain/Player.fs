@@ -1,7 +1,6 @@
 namespace FootballEngine.Domain
 
 open System
-open FootballEngine.DomainTypes
 
 type PreferredFoot =
     | Left
@@ -16,8 +15,8 @@ type InjurySeverity =
 
 type PlayerStatus =
     | Available
-    | Suspended of int
-    | Injured of InjurySeverity * DateTime
+    | Suspended of matchesBanned: int
+    | Injured of InjurySeverity * until: DateTime
 
 type PhysicalStats =
     { Acceleration: int
@@ -81,14 +80,13 @@ type Player =
       Reputation: int
       Value: decimal
       Salary: decimal
-      ContractExpiry: int
-      TeamId: ClubId }
+      ContractExpiry: int }
 
 module Player =
     let age (currentDate: DateTime) (p: Player) =
-        let age = currentDate.Year - p.Birthday.Year
+        let years = currentDate.Year - p.Birthday.Year
 
-        if currentDate < p.Birthday.AddYears(age) then
-            age - 1
+        if currentDate < p.Birthday.AddYears(years) then
+            years - 1
         else
-            age
+            years

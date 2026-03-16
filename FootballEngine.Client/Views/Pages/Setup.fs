@@ -7,7 +7,8 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
-open FootballEngine.AppState
+open FootballEngine.AppTypes
+open FootballEngine.AppMsgs
 open FootballEngine.Components
 open FootballEngine.Domain
 open FootballEngine.Icons
@@ -79,13 +80,13 @@ module Setup =
                 [ DockPanel.margin (0.0, 8.0, 0.0, 0.0)
                   DockPanel.children
                       [ match backStep with
-                        | Some step -> UI.ghostButton "← Back" (fun _ -> dispatch (GoToSetupStep step))
+                        | Some step -> UI.ghostButton "← Back" (fun _ -> dispatch (SetupMsg(GoToStep step)))
                         | None -> ()
                         match nextView with
                         | Some v -> Border.create [ DockPanel.dock Dock.Right; Border.child v ]
                         | None -> () ] ]
 
-        match state.SetupStep with
+        match state.Setup.Step with
 
         | MainMenu ->
             setupContainer (
@@ -97,7 +98,7 @@ module Setup =
                                 [ UniformGrid.columns 2
                                   UniformGrid.children
                                       [ UI.menuButton "NEW CAREER" "⚽" "Start a new journey as a manager" (fun _ ->
-                                            dispatch (GoToSetupStep CountrySelection))
+                                            dispatch (SetupMsg(GoToStep CountrySelection)))
                                         UI.menuButton "LOAD GAME" "💾" "Continue your existing career" (fun _ ->
                                             dispatch SaveGame) ] ] ] ]
             )
@@ -134,17 +135,17 @@ module Setup =
                                             UI.countrySelectionCard
                                                 name
                                                 flag
-                                                (state.SetupSelectedCountry = Some code)
-                                                (state.SetupSecondaryCountries |> List.contains code)
-                                                (fun _ -> dispatch (SelectPrimaryCountry code))
-                                                (fun _ -> dispatch (ToggleSecondaryCountry code)) ] ]
+                                                (state.Setup.SelectedCountry = Some code)
+                                                (state.Setup.SecondaryCountries |> List.contains code)
+                                                (fun _ -> dispatch (SetupMsg(SelectPrimaryCountry code)))
+                                                (fun _ -> dispatch (SetupMsg(ToggleSecondaryCountry code))) ] ]
 
                             navRow
                                 (Some MainMenu)
-                                (if state.SetupSelectedCountry.IsSome then
+                                (if state.Setup.SelectedCountry.IsSome then
                                      Some(
                                          UI.primaryButton "Manager Details" (Some UI.next) (fun _ ->
-                                             dispatch (GoToSetupStep ManagerNaming))
+                                             dispatch (SetupMsg(GoToStep ManagerNaming)))
                                          :> IView
                                      )
                                  else
@@ -174,8 +175,8 @@ module Setup =
                             UI.sectionContainer
                                 "YOUR NAME"
                                 (TextBox.create
-                                    [ TextBox.text state.SetupManagerName
-                                      TextBox.onTextChanged (fun n -> dispatch (UpdateManagerName n))
+                                    [ TextBox.text state.Setup.ManagerName
+                                      TextBox.onTextChanged (fun n -> dispatch (SetupMsg(UpdateManagerName n)))
                                       TextBox.padding (16.0, 14.0)
                                       TextBox.fontSize 17.0
                                       TextBox.background Theme.BgCard
@@ -212,7 +213,7 @@ module Setup =
                                                                     TextBlock.lineSpacing 1.5 ]
                                                               TextBlock.create
                                                                   [ TextBlock.text (
-                                                                        state.SetupSelectedCountry
+                                                                        state.Setup.SelectedCountry
                                                                         |> Option.defaultValue "—"
                                                                     )
                                                                     TextBlock.fontSize 18.0
@@ -222,10 +223,10 @@ module Setup =
 
                             navRow
                                 (Some CountrySelection)
-                                (if state.SetupManagerName.Length > 2 then
+                                (if state.Setup.ManagerName.Length > 2 then
                                      Some(
                                          UI.primaryButton "Confirm & Create Game" (Some UI.success) (fun _ ->
-                                             dispatch StartNewGame)
+                                             dispatch (SetupMsg StartNewGame))
                                          :> IView
                                      )
                                  else
@@ -237,7 +238,8 @@ module Setup =
                 state.GameState.Competitions
                 |> Map.tryPick (fun _ (comp: Competition) ->
                     match comp.Type, comp.Country with
-                    | NationalLeague First, Some country when country = state.SetupSelectedCountry.Value -> Some comp
+                    | NationalLeague(LeagueLevel 0, _), Some country when country = state.Setup.SelectedCountry.Value ->
+                        Some comp
                     | _ -> None)
                 |> Option.map (fun comp -> comp.ClubIds |> List.map (fun id -> state.GameState.Clubs[id]))
                 |> Option.defaultValue []
@@ -288,7 +290,7 @@ module Setup =
                                                                       )
                                                                       Button.borderBrush Theme.Border
                                                                       Button.onClick (fun _ ->
-                                                                          dispatch (ConfirmClub club.Id))
+                                                                          dispatch (SetupMsg(ConfirmClub club.Id)))
                                                                       Button.content (
                                                                           Grid.create
                                                                               [ Grid.columnDefinitions

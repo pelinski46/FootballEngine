@@ -5,7 +5,8 @@ open Avalonia.FuncUI.DSL
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
-open FootballEngine.AppState
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Icons
 
 
@@ -88,7 +89,7 @@ module Header =
                                                 Button.cursor Avalonia.Input.Cursor.Default
                                                 Button.onClick (fun e ->
                                                     e.Handled <- true
-                                                    dispatch AdvanceDay)
+                                                    dispatch (SimMsg AdvanceDay))
                                                 Button.content (
                                                     StackPanel.create
                                                         [ StackPanel.orientation Orientation.Horizontal

@@ -2,7 +2,7 @@ namespace FootballEngine.Client.AI
 
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 
 module ManagerAI =
 
@@ -21,7 +21,7 @@ module ManagerAI =
     let pickBestFormation (club: Club) =
         let available = club.Players |> List.filter (fun p -> p.Status = Available)
 
-        Formation.all
+        ClubFormation.all
         |> List.maxBy (fun formation ->
             FormationData.getFormation formation
             |> List.sumBy (fun slot ->

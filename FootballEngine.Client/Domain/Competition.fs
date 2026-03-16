@@ -1,44 +1,65 @@
 namespace FootballEngine.Domain
 
-open FootballEngine.DomainTypes
 
-type CompetitionId = int
 
-type LeagueLevel =
-    | First
-    | Second
+type LeagueLevel = LeagueLevel of int
+
+type TiebreakerRule =
+    | GoalDifference
+    | GoalsScored
+    | HeadToHead
+    | HeadToHeadGoalDifference
+
+type PromotionRule =
+    | AutomaticPromotion of slots: int
+    | PlayoffPromotion of slots: int
+
+type RelegationRule =
+    | AutomaticRelegation of slots: int
+    | PlayoffRelegation of slots: int
+
+type LeagueRules =
+    { PointsForWin: int
+      PointsForDraw: int
+      Tiebreakers: TiebreakerRule list
+      Promotion: PromotionRule list
+      Relegation: RelegationRule list }
+
+type TieResolution =
+    | ReplayAtNeutral
+    | ExtraTimeThenPenalties
+    | AwayGoals
+    | PenaltiesOnly
+
+type LegFormat =
+    | SingleLeg of TieResolution
+    | TwoLegs of TieResolution
+
+type GroupRules =
+    { GroupCount: int
+      TeamsPerGroup: int
+      QualifyPerGroup: int
+      PointsForWin: int
+      PointsForDraw: int
+      Tiebreakers: TiebreakerRule list }
 
 type CupFormat =
-    | SingleMatch
-    | TwoLegs
-    | GroupThenKnockout of groupSize: int * teamsPerGroup: int
-    | StraightKnockout of legs: int
+    | StraightKnockout of LegFormat
+    | GroupThenKnockout of GroupRules * LegFormat
 
+type QualificationSlot =
+    | LeaguePosition of level: LeagueLevel * fromPos: int * toPos: int
+    | CupWinner of competitionName: string
+    | TitleHolder
+    | ConfederationSlot of slots: int
 
 type CompetitionType =
-    | NationalLeague of level: LeagueLevel
-    | NationalCup of format: CupFormat
-    | InternationalCup of confederation: Confederation option * format: CupFormat
-
-
-type Round =
-    | GroupStage of group: int
-    | RoundOf32
-    | RoundOf16
-    | QuarterFinal
-    | SemiFinal
-    | Final
-    | ThirdPlace
-
-
-type Competition =
-    { Id: CompetitionId
-      Name: string
-      Type: CompetitionType
-      Country: CountryCode option
-      Season: int
-      ClubIds: ClubId list
-      Settings: Map<string, string> }
+    | NationalLeague of level: LeagueLevel * rules: LeagueRules
+    | NationalCup of format: CupFormat * qualification: QualificationSlot list
+    | InternationalCup of
+        confederation: Confederation option *
+        format: CupFormat *
+        qualification: QualificationSlot list
 
 type LeagueStanding =
     { ClubId: ClubId
@@ -59,3 +80,14 @@ type KnockoutTie =
       Leg2FixtureId: MatchId option
       AggregateScore: (int * int) option
       WinnerId: ClubId option }
+
+type Competition =
+    { Id: CompetitionId
+      Name: string
+      Type: CompetitionType
+      Country: CountryCode option
+      Season: int
+      ClubIds: ClubId list
+      Fixtures: Map<MatchId, MatchFixture>
+      Standings: Map<ClubId, LeagueStanding>
+      KnockoutTies: Map<int, KnockoutTie> }

@@ -7,10 +7,11 @@ open Avalonia.FuncUI.DSL
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Domain
-open FootballEngine.AppState
 open FootballEngine.Components
-open FootballEngine.DomainTypes
+
 open FootballEngine.Icons
 
 
@@ -129,6 +130,7 @@ module Squad =
                         [ StackPanel.orientation Orientation.Horizontal
                           StackPanel.spacing 10.0
                           StackPanel.verticalAlignment VerticalAlignment.Center
+                          StackPanel.margin (8.0, 8.0, 8.0, 8.0)
                           StackPanel.children
                               [ Icons.iconMd UI.squad Theme.Accent
                                 TextBlock.create

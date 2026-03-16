@@ -1,7 +1,5 @@
 namespace FootballEngine.Domain
 
-open FootballEngine.DomainTypes
-
 type Confederation =
     | UEFA
     | CONMEBOL

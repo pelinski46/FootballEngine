@@ -10,11 +10,11 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
-open FootballEngine.AppState
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
-open FootballEngine.MatchContext
 open FootballEngine.Icons
+open FootballEngine.MatchStateOps
 
 module MatchViewer =
 
@@ -480,7 +480,7 @@ module MatchLabView =
               Button.horizontalContentAlignment HorizontalAlignment.Center
               Button.onClick (fun _ -> onClick ()) ]
 
-    let private go (delta: int) (dispatch: Msg -> unit) = dispatch (StepMatchLabSnapshot delta)
+    let private go (delta: int) (dispatch: Msg -> unit) = dispatch (MatchLabMsg(Step delta))
 
     let private toolbarNav (current: MatchState) (idx: int) (total: int) (replayKey: string) (dispatch: Msg -> unit) =
         let navButtons =
@@ -556,7 +556,7 @@ module MatchLabView =
         )
 
     let private replayControls (state: State) (replay: MatchReplay) (dispatch: Msg -> unit) : IView =
-        let idx = state.MatchLabSnapshot
+        let idx = state.MatchLab.Snapshot
 
         let current =
             replay.Snapshots |> Array.tryItem idx |> Option.defaultValue replay.Final
@@ -591,8 +591,18 @@ module MatchLabView =
                                     StackPanel.spacing 16.0
                                     StackPanel.verticalAlignment VerticalAlignment.Center
                                     StackPanel.children
-                                        [ clubPicker "Home" state.MatchLabHome clubs SelectMatchLabHome dispatch
-                                          clubPicker "Away" state.MatchLabAway clubs SelectMatchLabAway dispatch
+                                        [ clubPicker
+                                              "Home"
+                                              state.MatchLab.HomeClubId
+                                              clubs
+                                              (fun id -> MatchLabMsg(SelectHome id))
+                                              dispatch
+                                          clubPicker
+                                              "Away"
+                                              state.MatchLab.AwayClubId
+                                              clubs
+                                              (fun id -> MatchLabMsg(SelectAway id))
+                                              dispatch
                                           Button.create
                                               [ Button.content (
                                                     StackPanel.create
@@ -613,10 +623,10 @@ module MatchLabView =
                                                 Button.padding (Thickness(18.0, 8.0))
                                                 Button.cornerRadius 7.0
                                                 Button.fontWeight FontWeight.Bold
-                                                Button.onClick (fun _ -> dispatch RunMatchLab) ]
-                                          match state.MatchLabResult with
+                                                Button.onClick (fun _ -> dispatch (MatchLabMsg Run)) ]
+                                          match state.MatchLab.Result with
                                           | Some replay ->
-                                              let idx = state.MatchLabSnapshot
+                                              let idx = state.MatchLab.Snapshot
                                               let total = max 1 (replay.Snapshots.Length - 1)
 
                                               let cur =
@@ -631,7 +641,7 @@ module MatchLabView =
                                           | None -> () ] ]
                           ) ]
 
-                    match state.MatchLabResult with
+                    match state.MatchLab.Result with
                     | None ->
                         StackPanel.create
                             [ StackPanel.orientation Orientation.Vertical

@@ -7,10 +7,10 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
-open FootballEngine.AppState
+open FootballEngine.AppMsgs
+open FootballEngine.AppTypes
 open FootballEngine.Components
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
 open FootballEngine.Icons
 
 module Transfers =
@@ -33,7 +33,6 @@ module Transfers =
         | AML
         | AMR
         | ST -> "#ef4444"
-        | _ -> Theme.TextMuted
 
     let private formatValue (v: decimal) =
         if v >= 1_000_000m then $"£{v / 1_000_000m:F1}M"
@@ -363,7 +362,6 @@ module Transfers =
                                                                         TextBlock.fontWeight FontWeight.Black
                                                                         TextBlock.foreground Theme.TextMain ] ] ] ] ] ] ]
                           ) ]
-
                     ScrollViewer.create
                         [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                           ScrollViewer.content (
@@ -558,7 +556,7 @@ module Transfers =
                                         Button.background "Transparent"
                                         Button.borderThickness 0.0
                                         Button.isEnabled (page > 0)
-                                        Button.onClick (fun _ -> dispatch (TransferPageChange(page - 1))) ]
+                                        Button.onClick (fun _ -> dispatch (TransferMsg(PageChange(page - 1)))) ]
                                   TextBlock.create
                                       [ TextBlock.text $"{page + 1} / {totalPages}"
                                         TextBlock.fontSize 12.0
@@ -569,12 +567,12 @@ module Transfers =
                                         Button.background "Transparent"
                                         Button.borderThickness 0.0
                                         Button.isEnabled (page < totalPages - 1)
-                                        Button.onClick (fun _ -> dispatch (TransferPageChange(page + 1))) ] ] ]
+                                        Button.onClick (fun _ -> dispatch (TransferMsg(PageChange(page + 1)))) ] ] ]
                   ) ]
             :> IView
 
     let transfersView (state: State) (dispatch: Msg -> unit) =
-        let ts = state.TransferState
+        let ts = state.Transfer
 
         let filteredPlayers =
             ts.CachedPlayers
@@ -697,7 +695,7 @@ module Transfers =
                                             )
                                             Button.borderBrush (if isActive then Theme.Accent else "Transparent")
                                             Button.cornerRadius 0.0
-                                            Button.onClick (fun _ -> dispatch (TransferTabChange tab))
+                                            Button.onClick (fun _ -> dispatch (TransferMsg(TabChange tab)))
                                             Button.content (
                                                 StackPanel.create
                                                     [ StackPanel.orientation Orientation.Horizontal
@@ -752,7 +750,7 @@ module Transfers =
                                                             [ Grid.column 1
                                                               TextBox.text ts.SearchQuery
                                                               TextBox.onTextChanged (fun q ->
-                                                                  dispatch (TransferSearch q))
+                                                                  dispatch (TransferMsg(Search q)))
                                                               TextBox.watermark "Search players..."
                                                               TextBox.background "Transparent"
                                                               TextBox.borderThickness 0.0
@@ -777,7 +775,7 @@ module Transfers =
                                                             if isActive then Theme.Accent else Theme.Border
                                                         )
                                                         Button.borderThickness 1.0
-                                                        Button.onClick (fun _ -> dispatch (TransferFilterChange f))
+                                                        Button.onClick (fun _ -> dispatch (TransferMsg(FilterChange f)))
                                                         Button.content (
                                                             TextBlock.create
                                                                 [ TextBlock.text (positionLabel f)
@@ -810,8 +808,8 @@ module Transfers =
                                                               (getClubName p.Id)
                                                               (ts.SelectedPlayerId = Some p.Id)
                                                               (List.contains p.Id ts.WatchlistIds)
-                                                              (fun () -> dispatch (TransferPlayerSelect p.Id))
-                                                              (fun () -> dispatch (TransferWatchToggle p.Id)) ] ]
+                                                              (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
+                                                              (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
                                       ) ]
                             paginationBar ts.Page filteredPlayers.Length dispatch ] ]
                 :> IView
@@ -827,7 +825,7 @@ module Transfers =
                         p
                         (getClubName pid)
                         (List.contains pid ts.WatchlistIds)
-                        (fun () -> dispatch (TransferWatchToggle pid))
+                        (fun () -> dispatch (TransferMsg(WatchToggle pid)))
                         (fun () -> ())
                     :> IView
 
@@ -864,8 +862,8 @@ module Transfers =
                                                           (getClubName p.Id)
                                                           (ts.SelectedPlayerId = Some p.Id)
                                                           true
-                                                          (fun () -> dispatch (TransferPlayerSelect p.Id))
-                                                          (fun () -> dispatch (TransferWatchToggle p.Id)) ] ]
+                                                          (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
+                                                          (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
                                   ) ] ] ]
                 :> IView
 

@@ -9,7 +9,7 @@ open Avalonia.Media
 open Avalonia.FuncUI.DSL
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 open FootballEngine.Icons
 
 

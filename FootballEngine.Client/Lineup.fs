@@ -1,7 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.DomainTypes
+
 
 module Lineup =
 
