@@ -4,9 +4,10 @@ A proof-of-concept football management simulation built with F# and Avalonia UI.
 
 
 ## Screenshots
-![Home Board](screenshots/Home.png)
-![Tactics Board](screenshots/Tactics.png)
-![Squad Simulation](screenshots/Squad.png)
+![Home Board](screenshots/1.png)
+![Tactics Board](screenshots/2.png)
+![Squad Simulation](screenshots/3.png)
+![Match Lab Simulation](screenshots/4.png)
 
 ## About This Project
 
