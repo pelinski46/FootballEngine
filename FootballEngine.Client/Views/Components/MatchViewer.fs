@@ -14,7 +14,8 @@ open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
 open FootballEngine.Domain
 open FootballEngine.Icons
-open FootballEngine.MatchStateOps
+open FootballEngine.MatchState
+
 
 module MatchViewer =
 

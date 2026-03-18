@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Engine
 open AppTypes
 
 module AppMsgs =
@@ -15,10 +16,13 @@ module AppMsgs =
 
     type SimMsg =
         | AdvanceDay
-        | AdvanceDayDone of GameState * (MatchId * MatchFixture) list
+        | AdvanceDayDone of BatchResult * (MatchId * MatchFixture) list
         | SimulateMatch
         | SimulateNextFixture
         | SimulateAllToday
+        | AdvanceSeason
+        | SeasonAdvanceDone of summary: string list * GameState
+        | SaveGame
 
     type TransferMsg =
         | Load
@@ -37,11 +41,17 @@ module AppMsgs =
         | Run
         | Step of int
 
+    type NotificationMsg =
+        | DismissNotification of id: int
+        | DismissAll
+        | PushNotification of Notification
+
     type Msg =
         | SetupMsg of SetupMsg
         | SimMsg of SimMsg
         | TransferMsg of TransferMsg
         | MatchLabMsg of MatchLabMsg
+        | NotificationMsg of NotificationMsg
         | GameLoaded of GameState option
         | ChangePage of Page
         | SelectPlayer of PlayerId
@@ -49,5 +59,4 @@ module AppMsgs =
         | SortPlayersBy of string
         | SetTactics of Formation
         | ChangeLeague of CompetitionId
-        | SaveGame
         | SetProcessing of bool

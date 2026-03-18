@@ -1,8 +1,10 @@
 namespace FootballEngine
 
 open System
+open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Data
+open FootballEngine.Lineup
 open MatchStats
 
 module GameGenerator =
@@ -85,11 +87,7 @@ module GameGenerator =
           OneOnOne = nextNormalInt mean 3.0 1 20
           AerialReach = nextNormalInt mean 3.0 1 20 }
 
-    let private playerValue (ca: int) =
-        let x = max 0 (ca - 30) in decimal (x * x * 800)
 
-    let private playerSalary (ca: int) =
-        let x = max 0 (ca - 20) in decimal (x * x * 5 + 500)
 
     let private randomAge () = nextNormalInt 25.0 4.5 16 38
 
@@ -140,11 +138,9 @@ module GameGenerator =
           CurrentSkill = ca
           PotentialSkill = potential
           Reputation = ca * 5
-          Value = playerValue ca
-          Salary = playerSalary ca
+          Value = Player.playerValue ca
+          Salary = Player.playerSalary ca
           ContractExpiry = contractExpiry year age rnd }
-
-    // ── Fixture generation ────────────────────────────────────────────────
 
     let private makeFixture
         (firstMatchId: int)
@@ -202,7 +198,7 @@ module GameGenerator =
                  clubIds.Length + 1)
             - 1
 
-        [ for (round, h, a) in firstLeg do
+        [ for round, h, a in firstLeg do
               yield round, h, a
               yield round + rounds, a, h ]
         |> List.sortBy (fun (r, _, _) -> r)
@@ -213,10 +209,8 @@ module GameGenerator =
         (startDate: DateTime)
         (firstMatchId: int)
         : MatchFixture list * int =
-        let pairs = roundRobinPairs clubIds
-
         let fixtures =
-            pairs
+            roundRobinPairs clubIds
             |> List.mapi (fun i (roundIdx, h, a) -> makeFixture firstMatchId i compId startDate roundIdx h a)
 
         fixtures, firstMatchId + fixtures.Length
@@ -228,22 +222,18 @@ module GameGenerator =
         (startDate: DateTime)
         (firstMatchId: int)
         : MatchFixture list * int =
-        let groupCount = groupRules.GroupCount
-
         let groups =
             clubIds
-            |> List.chunkBySize (max 1 (clubIds.Length / groupCount))
-            |> List.truncate groupCount
+            |> List.chunkBySize (max 1 (clubIds.Length / groupRules.GroupCount))
+            |> List.truncate groupRules.GroupCount
 
         let mutable nextId = firstMatchId
         let mutable allFixtures = []
 
         for groupIdx, group in groups |> List.indexed do
-            let pairs = singleRoundRobinPairs group
-
-            for (roundIdx, h, a) in pairs do
+            for roundIdx, h, a in singleRoundRobinPairs group do
                 let f =
-                    { makeFixture nextId 0 compId (startDate.AddDays(float groupIdx * 1.0)) roundIdx h a with
+                    { makeFixture nextId 0 compId (startDate.AddDays(float groupIdx)) roundIdx h a with
                         Round = Some(GroupStage groupIdx) }
 
                 allFixtures <- f :: allFixtures
@@ -262,8 +252,6 @@ module GameGenerator =
         | StraightKnockout _ -> generateLeagueFixtures compId clubIds startDate firstMatchId
         | GroupThenKnockout(groupRules, _) ->
             generateGroupStageFixtures compId clubIds groupRules startDate firstMatchId
-
-    // ── Club generation ───────────────────────────────────────────────────
 
     let private budgetForLevel =
         function
@@ -304,8 +292,6 @@ module GameGenerator =
           Morale = 70 },
         players |> List.map (fun p -> p.Id, p) |> Map.ofList
 
-    // ── World accumulator ─────────────────────────────────────────────────
-
     type private WorldAcc =
         { Clubs: Map<ClubId, Club>
           Players: Map<PlayerId, Player>
@@ -320,7 +306,19 @@ module GameGenerator =
         { acc with
             Competitions = acc.Competitions |> Map.add comp.Id comp }
 
-    // ── League generation ─────────────────────────────────────────────────
+    let private toFixtureMap (fixtures: MatchFixture list) =
+        fixtures |> List.map (fun f -> f.Id, f) |> Map.ofList
+
+    let private emptyComp id name compType country season clubIds fixtures =
+        { Id = id
+          Name = name
+          Type = compType
+          Country = country
+          Season = season
+          ClubIds = clubIds
+          Fixtures = toFixtureMap fixtures
+          Standings = Map.empty
+          KnockoutTies = Map.empty }
 
     let private generateLeagues
         (rnd: Random)
@@ -354,10 +352,7 @@ module GameGenerator =
                     let club, players =
                         generateClub rnd cid entry countryData (reputationForClub entry rankPct) year counters
 
-                    let clubWithLineup =
-                        FootballEngine.Client.AI.ManagerAI.ensureLineup
-                            club
-                            (FootballEngine.Client.AI.ManagerAI.pickBestFormation club)
+                    let clubWithLineup = autoLineup club (bestFormation club)
 
                     { innerAcc with
                         Clubs = innerAcc.Clubs |> Map.add cid clubWithLineup
@@ -369,20 +364,16 @@ module GameGenerator =
 
             counters.MatchId <- nextMatchId
 
-            let comp =
-                { Id = compId
-                  Name = countryData.LeagueNames[levelIdx]
-                  Type = NationalLeague(LeagueLevel levelIdx, countryData.LeagueRules[levelIdx])
-                  Country = Some countryData.Country.Code
-                  Season = year
-                  ClubIds = leagueClubIds
-                  Fixtures = fixtures |> List.map (fun f -> f.Id, f) |> Map.ofList
-                  Standings = Map.empty
-                  KnockoutTies = Map.empty }
-
-            addCompetition comp accAfterClubs)
-
-    // ── National cups ─────────────────────────────────────────────────────
+            addCompetition
+                (emptyComp
+                    compId
+                    countryData.LeagueNames[levelIdx]
+                    (NationalLeague(LeagueLevel levelIdx, countryData.LeagueRules[levelIdx]))
+                    (Some countryData.Country.Code)
+                    year
+                    leagueClubIds
+                    fixtures)
+                accAfterClubs)
 
     let private generateNationalCups
         (year: int)
@@ -401,13 +392,18 @@ module GameGenerator =
         if leagueClubIds.IsEmpty then
             acc
         else
+            let cupName =
+                match countryData.Country.Code with
+                | "ARG" -> "Copa Argentina"
+                | "ENG" -> "FA Cup"
+                | "ESP" -> "Copa del Rey"
+                | "BRA" -> "Copa do Brasil"
+                | code -> $"Cup {code}"
 
             (acc, countryData.Cups |> List.indexed)
             ||> List.fold (fun acc (cupIdx, cupFormat) ->
                 let compId = counters.CompId
                 counters.CompId <- counters.CompId + 1
-
-                let slots = [ LeaguePosition(LeagueLevel 0, 1, leagueClubIds.Length) ]
 
                 let fixtures, nextMatchId =
                     fixturesForFormat
@@ -419,28 +415,16 @@ module GameGenerator =
 
                 counters.MatchId <- nextMatchId
 
-                let cupName =
-                    match countryData.Country.Code with
-                    | "ARG" -> "Copa Argentina"
-                    | "ENG" -> "FA Cup"
-                    | "ESP" -> "Copa del Rey"
-                    | "BRA" -> "Copa do Brasil"
-                    | code -> $"Cup {code}"
-
-                let comp =
-                    { Id = compId
-                      Name = cupName
-                      Type = NationalCup(cupFormat, slots)
-                      Country = Some countryData.Country.Code
-                      Season = year
-                      ClubIds = leagueClubIds
-                      Fixtures = fixtures |> List.map (fun f -> f.Id, f) |> Map.ofList
-                      Standings = Map.empty
-                      KnockoutTies = Map.empty }
-
-                addCompetition comp acc)
-
-    // ── International cups ────────────────────────────────────────────────
+                addCompetition
+                    (emptyComp
+                        compId
+                        cupName
+                        (NationalCup(cupFormat, [ LeaguePosition(LeagueLevel 0, 1, leagueClubIds.Length) ]))
+                        (Some countryData.Country.Code)
+                        year
+                        leagueClubIds
+                        fixtures)
+                    acc)
 
     let private resolveSlots
         (slots: QualificationSlot list)
@@ -459,11 +443,8 @@ module GameGenerator =
             competitions
             |> Map.toList
             |> List.choose (fun (_, comp) ->
-                match comp.Type with
-                | NationalCup _ ->
-                    match comp.Country with
-                    | Some code when countryInConf code -> comp.ClubIds |> List.tryHead
-                    | _ -> None
+                match comp.Type, comp.Country with
+                | NationalCup _, Some code when countryInConf code -> comp.ClubIds |> List.tryHead
                 | _ -> None)
 
         let titleHolderIds =
@@ -510,26 +491,140 @@ module GameGenerator =
         if qualifyingClubIds.IsEmpty then
             acc
         else
-
             let fixtures, nextMatchId =
                 fixturesForFormat compId qualifyingClubIds format (DateTime(year, 2, 1)) counters.MatchId
 
             counters.MatchId <- nextMatchId
 
-            let comp =
-                { Id = compId
-                  Name = name
-                  Type = compType
-                  Country = None
-                  Season = year
-                  ClubIds = qualifyingClubIds
-                  Fixtures = fixtures |> List.map (fun f -> f.Id, f) |> Map.ofList
-                  Standings = Map.empty
-                  KnockoutTies = Map.empty }
+            addCompetition (emptyComp compId name compType None year qualifyingClubIds fixtures) acc
 
-            addCompetition comp acc
+    let private applyPromotionRelegation (comps: Map<CompetitionId, Competition>) : Map<CompetitionId, Competition> =
+        let leaguesByCountry =
+            comps
+            |> Map.toList
+            |> List.choose (fun (id, comp) ->
+                match comp.Type, comp.Country with
+                | NationalLeague(LeagueLevel lvl, rules), Some code -> Some(code, lvl, id, comp, rules)
+                | _ -> None)
+            |> List.groupBy (fun (code, _, _, _, _) -> code)
 
-    // ── Entry point ───────────────────────────────────────────────────────
+        (comps, leaguesByCountry)
+        ||> List.fold (fun acc (_, byCountry) ->
+            byCountry
+            |> List.sortBy (fun (_, lvl, _, _, _) -> lvl)
+            |> List.pairwise
+            |> List.fold
+                (fun acc ((_, _, highId, highComp, highRules), (_, _, lowId, lowComp, _)) ->
+                    let n =
+                        highRules.Relegation
+                        |> List.sumBy (function
+                            | AutomaticRelegation n -> n
+                            | PlayoffRelegation n -> n)
+
+                    if n = 0 || highComp.Standings.IsEmpty || lowComp.Standings.IsEmpty then
+                        acc
+                    else
+                        let relegated =
+                            highComp.Standings
+                            |> Map.toList
+                            |> List.sortBy (fun (_, s) -> s.Points)
+                            |> List.truncate n
+                            |> List.map fst
+
+                        let promoted =
+                            lowComp.Standings
+                            |> Map.toList
+                            |> List.sortByDescending (fun (_, s) -> s.Points)
+                            |> List.truncate n
+                            |> List.map fst
+
+                        acc
+                        |> Map.add
+                            highId
+                            { highComp with
+                                ClubIds =
+                                    highComp.ClubIds
+                                    |> List.filter (fun id -> not (List.contains id relegated))
+                                    |> fun ids -> ids @ promoted }
+                        |> Map.add
+                            lowId
+                            { lowComp with
+                                ClubIds =
+                                    lowComp.ClubIds
+                                    |> List.filter (fun id -> not (List.contains id promoted))
+                                    |> fun ids -> ids @ relegated })
+                acc)
+
+    let regenerateSeasonFixtures (state: GameState) : GameState =
+        let mutable nextMatchId =
+            state.Competitions
+            |> Map.toList
+            |> List.collect (fun (_, c) -> c.Fixtures |> Map.toList |> List.map fst)
+            |> fun ids -> if ids.IsEmpty then 1 else List.max ids + 1
+
+        let comps = applyPromotionRelegation state.Competitions
+
+        let allCountryData =
+            state.Countries
+            |> Map.toList
+            |> List.map (fun (code, _) -> DataRegistry.findCountry code)
+
+        let regenerated =
+            comps
+            |> Map.map (fun _ comp ->
+                match comp.Type with
+                | NationalLeague _ ->
+                    let fixtures, next =
+                        generateLeagueFixtures comp.Id comp.ClubIds (DateTime(state.Season, 8, 1)) nextMatchId
+
+                    nextMatchId <- next
+
+                    { comp with
+                        Season = state.Season
+                        Fixtures = toFixtureMap fixtures
+                        Standings = Map.empty }
+
+                | NationalCup(fmt, _) ->
+                    let allLeagueClubs =
+                        comps
+                        |> Map.toList
+                        |> List.choose (fun (_, c) ->
+                            match c.Type, c.Country with
+                            | NationalLeague _, Some code when Some code = comp.Country -> Some c.ClubIds
+                            | _ -> None)
+                        |> List.concat
+                        |> List.distinct
+
+                    let fixtures, next =
+                        fixturesForFormat comp.Id allLeagueClubs fmt (DateTime(state.Season, 10, 1)) nextMatchId
+
+                    nextMatchId <- next
+
+                    { comp with
+                        Season = state.Season
+                        ClubIds = allLeagueClubs
+                        Fixtures = toFixtureMap fixtures
+                        Standings = Map.empty }
+
+                | InternationalCup(confOpt, fmt, slots) ->
+                    let qualifyingClubIds = resolveSlots slots confOpt allCountryData comps
+
+                    if qualifyingClubIds.IsEmpty then
+                        comp
+                    else
+                        let fixtures, next =
+                            fixturesForFormat comp.Id qualifyingClubIds fmt (DateTime(state.Season, 2, 1)) nextMatchId
+
+                        nextMatchId <- next
+
+                        { comp with
+                            Season = state.Season
+                            ClubIds = qualifyingClubIds
+                            Fixtures = toFixtureMap fixtures
+                            Standings = Map.empty })
+
+        { state with
+            Competitions = regenerated }
 
     let generateNewGame
         (rnd: Random)
@@ -550,10 +645,9 @@ module GameGenerator =
         let world =
             (emptyWorld, allCountryData)
             ||> List.fold (fun acc cd -> generateLeagues rnd year cd counters acc)
-
-        let world =
-            (world, allCountryData)
-            ||> List.fold (fun acc cd -> generateNationalCups year cd counters acc)
+            |> fun w ->
+                (w, allCountryData)
+                ||> List.fold (fun acc cd -> generateNationalCups year cd counters acc)
 
         let intlComps =
             [ "Copa Libertadores", International.CONMEBOL.libertadores

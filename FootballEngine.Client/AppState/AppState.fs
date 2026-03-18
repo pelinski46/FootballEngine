@@ -1,7 +1,6 @@
 namespace FootballEngine
 
 open System
-open System.Threading.Tasks
 open Elmish
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
@@ -26,6 +25,8 @@ module AppState =
           CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
           IsProcessing = true
           LogMessages = [ "Football Engine 2026 Initialized" ]
+          Notifications = []
+          NextNotificationId = 1
           SelectedPlayer = None
           SelectedTactics = F433
           SelectedLeagueId = 1
@@ -74,18 +75,53 @@ module AppState =
                       Y = fs.Y
                       PlayerId = None })
 
-    let init () =
-        let loadCmd =
-            Cmd.OfTask.perform (fun () -> Task.Run(fun () -> Db.loadGame ())) () GameLoaded
+    /// Reset the transfer cache so it's rebuilt on next visit.
+    /// Called after any SimMsg that mutates GameState (days/season advance).
+    let private invalidateTransferCache (state: State) =
+        { state with
+            Transfer =
+                { state.Transfer with
+                    CachedPlayers = []
+                    FilteredPlayers = [] } }
 
+    let init () =
+        let loadCmd = Cmd.OfTask.perform (fun () -> Db.loadGame ()) () GameLoaded
         initialState (emptyGameState ()), loadCmd
 
     let update (msg: Msg) (state: State) : State * Cmd<Msg> =
         match msg with
         | SetupMsg m -> UpdateSetup.handle m state
-        | SimMsg m -> UpdateSim.handle m state
+
+        | SimMsg m ->
+            let nextState, cmd = UpdateSim.handle m state
+            // Invalidate transfer cache after messages that produce a new GameState.
+            // AdvanceDay / AdvanceSeason are async — the Done variants carry the new state.
+            let invalidated =
+                match m with
+                | AdvanceDayDone _
+                | SeasonAdvanceDone _
+                | SimulateAllToday
+                | SimulateNextFixture
+                | SimulateMatch -> invalidateTransferCache nextState
+                | _ -> nextState
+
+            invalidated, cmd
+
         | TransferMsg m -> UpdateTransfer.handle m state
         | MatchLabMsg m -> UpdateMatchLab.handle m state
+
+        | NotificationMsg nm ->
+            match nm with
+            | DismissNotification id ->
+                { state with
+                    Notifications = state.Notifications |> List.filter (fun n -> n.Id <> id) },
+                Cmd.none
+            | DismissAll -> { state with Notifications = [] }, Cmd.none
+            | PushNotification note ->
+                { state with
+                    Notifications = note :: state.Notifications |> List.truncate 20
+                    NextNotificationId = state.NextNotificationId + 1 },
+                Cmd.none
 
         | GameLoaded result ->
             let gs = result |> Option.defaultValue (emptyGameState ())
@@ -136,19 +172,16 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs.Add(team.Id, updatedTeam) }
 
-            Db.saveGame newGs
+            let saveCmd =
+                Cmd.OfTask.attempt Db.saveGameAsync newGs (fun _ -> SetProcessing false)
 
             { state with
                 GameState = newGs
                 DraggedPlayer = None }
             |> addLog $"🔄 Swap made: Slot {targetIdx}",
-            Cmd.none
+            saveCmd
 
         | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
-
-        | SaveGame ->
-            Db.saveGame state.GameState
-            state |> addLog "💾 Game Saved", Cmd.none
 
         | ChangeLeague leagueId ->
             { state with
@@ -171,10 +204,12 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs |> Map.add updatedClub.Id updatedClub }
 
-            Task.Run(fun () -> Db.saveGame newGs) |> ignore
+            let saveCmd =
+                Cmd.OfTask.attempt Db.saveGameAsync newGs (fun _ -> SetProcessing false)
 
             { state with
                 GameState = newGs
                 SelectedTactics = formation },
-            Cmd.none
+            saveCmd
+
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none

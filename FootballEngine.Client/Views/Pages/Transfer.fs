@@ -613,7 +613,7 @@ module Transfers =
                     | ByCA -> compare a.CurrentSkill b.CurrentSkill
                     | ByValue -> compare a.Value b.Value
                     | ByAge -> compare a.Birthday b.Birthday
-                    | ByPosition -> compare (sprintf "%A" a.Position) (sprintf "%A" b.Position)
+                    | ByPosition -> compare $"%A{a.Position}" $"%A{b.Position}"
 
                 if ts.SortAsc then cmp else -cmp)
 

@@ -16,16 +16,12 @@ module UpdateMatchLab =
         match msg with
         | SelectHome id ->
             { state with
-                MatchLab =
-                    { state.MatchLab with
-                        HomeClubId = Some id } },
+                State.MatchLab.HomeClubId = Some id },
             Cmd.none
 
         | SelectAway id ->
             { state with
-                MatchLab =
-                    { state.MatchLab with
-                        AwayClubId = Some id } },
+                State.MatchLab.AwayClubId = Some id },
             Cmd.none
 
         | Run ->
@@ -49,7 +45,5 @@ module UpdateMatchLab =
                 |> Option.defaultValue 0
 
             { state with
-                MatchLab =
-                    { state.MatchLab with
-                        Snapshot = max 0 (min total (state.MatchLab.Snapshot + delta)) } },
+                State.MatchLab.Snapshot = max 0 (min total (state.MatchLab.Snapshot + delta)) },
             Cmd.none

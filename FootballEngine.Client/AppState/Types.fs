@@ -44,6 +44,19 @@ module AppTypes =
         | ByAge
         | ByPosition
 
+    type NotificationKind =
+        | MatchResult
+        | SeasonEnd
+        | Transfer
+        | Info
+
+    type Notification =
+        { Id: int
+          Kind: NotificationKind
+          Title: string
+          Body: string
+          IsRead: bool }
+
     type SetupState =
         { Step: SetupStep
           SelectedCountry: CountryCode option
@@ -59,6 +72,7 @@ module AppTypes =
           SelectedPlayerId: PlayerId option
           WatchlistIds: PlayerId list
           CachedPlayers: Player list
+          FilteredPlayers: Player list // pre-computed — view slices this by page
           ClubNameCache: Map<PlayerId, string>
           IsLoading: bool
           Page: int }
@@ -74,6 +88,8 @@ module AppTypes =
           CurrentPage: Page
           IsProcessing: bool
           LogMessages: string list
+          Notifications: Notification list
+          NextNotificationId: int
           SelectedPlayer: Player option
           SelectedTactics: Formation
           SelectedLeagueId: CompetitionId
@@ -98,6 +114,7 @@ module AppTypes =
           SelectedPlayerId = None
           WatchlistIds = []
           CachedPlayers = []
+          FilteredPlayers = []
           ClubNameCache = Map.empty
           IsLoading = false
           Page = 0 }

@@ -244,7 +244,7 @@ module Tactics =
                         [ Border.padding (16.0, 12.0)
                           Border.child (
                               ComboBox.create
-                                  [ ComboBox.dataItems ClubFormation.all
+                                  [ ComboBox.dataItems FormationLineUps.all
                                     ComboBox.selectedItem currentFormation
                                     ComboBox.onSelectedItemChanged (fun obj ->
                                         if obj <> null then

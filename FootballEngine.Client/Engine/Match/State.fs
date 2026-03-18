@@ -2,16 +2,16 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 
-module MatchStateOps =
+module MatchState =
 
     let flipPossession =
         function
         | Home -> Away
         | Away -> Home
 
-    let phaseFromBallZone (z: float) =
-        if z < 30.0 || z > 70.0 then BuildUp
-        elif z >= 40.0 && z <= 60.0 then Midfield
+    let phaseFromBallZone (x: float) =
+        if x < 30.0 || x > 70.0 then BuildUp
+        elif x >= 40.0 && x <= 60.0 then Midfield
         else Attack
 
     let activeIndices (players: Player[]) (sidelined: Map<PlayerId, PlayerOut>) =
@@ -30,11 +30,11 @@ module MatchStateOps =
             s.AwayScore - s.HomeScore
 
     let pressureMultiplier (isHome: bool) (s: MatchState) =
-        let clamped = float (max -2 (min 2 (goalDiff isHome s)))
-        1.1 - clamped * 0.25
+        1.1 - float (max -2 (min 2 (goalDiff isHome s))) * 0.25
 
     let addEvent (ev: MatchEvent) (s: MatchState) =
         { s with EventsRev = ev :: s.EventsRev }
+
 
     let homeSide (s: MatchState) : TeamSide =
         { Players = s.HomePlayers
@@ -54,7 +54,7 @@ module MatchStateOps =
           Yellows = s.AwayYellows
           SubsUsed = s.AwaySubsUsed }
 
-    let side (isHome: bool) (s: MatchState) : TeamSide =
+    let side (isHome: bool) (s: MatchState) =
         if isHome then homeSide s else awaySide s
 
     let withSide (isHome: bool) (ts: TeamSide) (s: MatchState) : MatchState =

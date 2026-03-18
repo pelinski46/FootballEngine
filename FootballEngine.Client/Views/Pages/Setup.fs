@@ -100,7 +100,7 @@ module Setup =
                                       [ UI.menuButton "NEW CAREER" "⚽" "Start a new journey as a manager" (fun _ ->
                                             dispatch (SetupMsg(GoToStep CountrySelection)))
                                         UI.menuButton "LOAD GAME" "💾" "Continue your existing career" (fun _ ->
-                                            dispatch SaveGame) ] ] ] ]
+                                            dispatch (SimMsg SaveGame)) ] ] ] ]
             )
 
         | CountrySelection ->

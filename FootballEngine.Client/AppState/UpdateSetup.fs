@@ -8,6 +8,9 @@ open AppMsgs
 
 module UpdateSetup =
 
+    let private saveCmd (gs: GameState) =
+        Cmd.OfTask.attempt Db.saveGameAsync gs (fun _ -> SetProcessing false)
+
     let handle (msg: SetupMsg) (state: State) : State * Cmd<Msg> =
         match msg with
         | GoToStep step -> { state with State.Setup.Step = step }, Cmd.none
@@ -46,22 +49,18 @@ module UpdateSetup =
                 let newGs =
                     generateNewGame (System.Random()) primary state.Setup.ManagerName state.Setup.SecondaryCountries
 
-                Db.saveGame newGs
-
                 { state with
                     GameState = newGs
                     State.Setup.Step = ClubSelection },
-                Cmd.none
+                saveCmd newGs
 
         | ConfirmClub clubId ->
             let newGs =
                 { state.GameState with
                     UserClubId = clubId }
 
-            Db.saveGame newGs
-
             { state with
                 GameState = newGs
                 CurrentPage = Home
                 LogMessages = [ $"Career started by {state.Setup.ManagerName}" ] },
-            Cmd.none
+            saveCmd newGs

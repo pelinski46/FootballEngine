@@ -90,3 +90,9 @@ module Player =
             years - 1
         else
             years
+
+    let playerValue (skill: int) =
+        decimal (max 0 (skill - 30) |> fun x -> x * x * 800)
+
+    let playerSalary (skill: int) =
+        decimal (max 0 (skill - 20) |> fun x -> x * x * 5 + 500)

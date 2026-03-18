@@ -7,30 +7,29 @@ module Engine =
 
     let createPlayer = GameGenerator.createPlayer
     let generateNewGame = GameGenerator.generateNewGame
+    let advanceSeason = World.advanceSeason
+    let regenerateSeasonFixtures = GameGenerator.regenerateSeasonFixtures
+    let computeSeasonSummary = World.computeSeasonSummary
 
     let updateStanding (standing: LeagueStanding) myScore oppScore =
-        if myScore > oppScore then
+        let base' =
             { standing with
-                Won = standing.Won + 1
+                Played = standing.Played + 1
                 GoalsFor = standing.GoalsFor + myScore
-                GoalsAgainst = standing.GoalsAgainst + oppScore
-                Points = standing.Points + 3
-                Played = standing.Played + 1 }
-        elif myScore < oppScore then
-            { standing with
-                Lost = standing.Lost + 1
-                GoalsFor = standing.GoalsFor + myScore
-                GoalsAgainst = standing.GoalsAgainst + oppScore
-                Played = standing.Played + 1 }
-        else
-            { standing with
-                Drawn = standing.Drawn + 1
-                GoalsFor = standing.GoalsFor + myScore
-                GoalsAgainst = standing.GoalsAgainst + oppScore
-                Points = standing.Points + 1
-                Played = standing.Played + 1 }
+                GoalsAgainst = standing.GoalsAgainst + oppScore }
 
-    let private defaultStanding (clubId: ClubId) =
+        if myScore > oppScore then
+            { base' with
+                Won = standing.Won + 1
+                Points = standing.Points + 3 }
+        elif myScore < oppScore then
+            { base' with Lost = standing.Lost + 1 }
+        else
+            { base' with
+                Drawn = standing.Drawn + 1
+                Points = standing.Points + 1 }
+
+    let private emptyStanding (clubId: ClubId) =
         { ClubId = clubId
           Played = 0
           Won = 0
@@ -40,24 +39,16 @@ module Engine =
           GoalsAgainst = 0
           Points = 0 }
 
-    let simulateFixture
-        (fixture: MatchFixture)
-        (clubs: Map<ClubId, Club>)
-        : Result<MatchFixture * int * int, SimulationError> =
-
-        let home = clubs[fixture.HomeClubId]
-        let away = clubs[fixture.AwayClubId]
-
-        trySimulateMatch home away
-        |> Result.map (fun (hScore, aScore, events) ->
-            let updatedFixture =
-                { fixture with
-                    Played = true
-                    HomeScore = Some hScore
-                    AwayScore = Some aScore
-                    Events = events }
-
-            updatedFixture, hScore, aScore)
+    let simulateFixture (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
+        trySimulateMatch clubs[fixture.HomeClubId] clubs[fixture.AwayClubId]
+        |> Result.map (fun (h, a, evs) ->
+            { fixture with
+                Played = true
+                HomeScore = Some h
+                AwayScore = Some a
+                Events = evs },
+            h,
+            a)
 
     type BatchResult =
         { GameState: GameState
@@ -75,54 +66,51 @@ module Engine =
                     |> Option.map (fun f -> not f.Played)
                     |> Option.defaultValue false))
 
-        let results =
-            unplayed
-            |> List.toArray
-            |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
-
-        results
+        unplayed
+        |> List.toArray
+        |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
         |> Array.fold
             (fun (acc: BatchResult) (id, result) ->
                 match result with
                 | Error e ->
                     { acc with
                         Errors = (id, e) :: acc.Errors }
+                | Ok(fixture, h, a) ->
+                    let stateWithMorale =
+                        World.updateMorale h a fixture.HomeClubId fixture.AwayClubId acc.GameState
 
-                | Ok(fixture, hScore, aScore) ->
-                    let home = acc.GameState.Clubs[fixture.HomeClubId]
-                    let away = acc.GameState.Clubs[fixture.AwayClubId]
-                    let log = $"⚽ {home.Name} {hScore}-{aScore} {away.Name}"
+                    let home = stateWithMorale.Clubs[fixture.HomeClubId]
+                    let away = stateWithMorale.Clubs[fixture.AwayClubId]
 
                     let updatedComps =
                         acc.GameState.Competitions
                         |> Map.map (fun _ comp ->
-                            if not (Map.containsKey id comp.Fixtures) then
-                                comp
-                            else
-                                let homeStanding =
+                            match comp.Fixtures |> Map.tryFind id with
+                            | None
+                            | Some { Played = true } -> comp
+                            | _ ->
+                                let hs =
                                     comp.Standings
                                     |> Map.tryFind fixture.HomeClubId
-                                    |> Option.defaultWith (fun () -> defaultStanding fixture.HomeClubId)
+                                    |> Option.defaultWith (fun () -> emptyStanding fixture.HomeClubId)
 
-                                let awayStanding =
+                                let as' =
                                     comp.Standings
                                     |> Map.tryFind fixture.AwayClubId
-                                    |> Option.defaultWith (fun () -> defaultStanding fixture.AwayClubId)
+                                    |> Option.defaultWith (fun () -> emptyStanding fixture.AwayClubId)
 
                                 { comp with
                                     Fixtures = comp.Fixtures |> Map.add id fixture
                                     Standings =
                                         comp.Standings
-                                        |> Map.add fixture.HomeClubId (updateStanding homeStanding hScore aScore)
-                                        |> Map.add fixture.AwayClubId (updateStanding awayStanding aScore hScore) })
+                                        |> Map.add fixture.HomeClubId (updateStanding hs h a)
+                                        |> Map.add fixture.AwayClubId (updateStanding as' a h) })
 
                     { acc with
-                        BatchResult.GameState.Competitions = updatedComps
-                        Logs = log :: acc.Logs })
+                        GameState =
+                            { stateWithMorale with
+                                Competitions = updatedComps }
+                        Logs = $"{home.Name} {h}-{a} {away.Name}" :: acc.Logs })
             { GameState = gameState
               Logs = []
               Errors = [] }
-
-    let isSeasonOver (gameState: GameState) =
-        gameState.Competitions
-        |> Map.forall (fun _ comp -> comp.Fixtures |> Map.forall (fun _ f -> f.Played))

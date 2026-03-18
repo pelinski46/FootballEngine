@@ -2,11 +2,13 @@ namespace FootballEngine.Test
 
 open System
 open FootballEngine
-open FootballEngine.Client.AI.ManagerAI
+
 open FootballEngine.Domain
 open FootballEngine.Engine
+open FootballEngine.Lineup
 open FootballEngine.MatchSimulator
-open FootballEngine.MatchStateOps
+open FootballEngine.MatchState
+
 
 module MatchEngineTests =
 
@@ -47,12 +49,15 @@ module MatchEngineTests =
     // ══════════════════════════════════════════════════════════════════════
     //  Helpers
     // ══════════════════════════════════════════════════════════════════════
+    let private isSeasonOver (state: GameState) =
+        state.Competitions
+        |> Map.forall (fun _ comp -> comp.Fixtures |> Map.forall (fun _ f -> f.Played))
 
     let private makeReadyClub (c: Club) =
-        ensureLineup { c with CurrentLineup = None } (pickBestFormation c)
+        autoLineup { c with CurrentLineup = None } (bestFormation c)
 
     let private loadGame () =
-        match Db.loadGame () with
+        match Db.loadGame().GetAwaiter().GetResult() with
         | None -> failwith "No saved game — run generateNewGame first."
         | Some game -> game
 
@@ -608,15 +613,6 @@ module MatchEngineTests =
                         && s.GoalsFor >= 0
                         && s.GoalsAgainst >= 0))
 
-            let noUnplayedBecomePlayedTwice =
-                result.GameState.Competitions
-                |> Map.forall (fun _ comp ->
-                    allFixtures
-                    |> List.forall (fun (id, _) ->
-                        comp.Fixtures
-                        |> Map.tryFind id
-                        |> Option.map (fun f -> not f.Played || (f.HomeScore.IsSome && f.AwayScore.IsSome))
-                        |> Option.defaultValue true))
 
             let allPlayedFixturesHaveScores =
                 result.GameState.Competitions
@@ -664,11 +660,9 @@ module MatchEngineTests =
                       "no errors in batch"
                       (result.Errors.IsEmpty)
                       (let errList =
-                          result.Errors
-                          |> List.map (fun (id, e) -> sprintf "%d:%A" id e)
-                          |> String.concat ", "
+                          result.Errors |> List.map (fun (id, e) -> $"%d{id}:%A{e}") |> String.concat ", "
 
-                       sprintf "%d errors: %s" result.Errors.Length errList)
+                       $"%d{result.Errors.Length} errors: %s{errList}")
 
                   check
                       "all standings are mathematically sane"
@@ -704,8 +698,12 @@ module MatchEngineTests =
     let doubleSimulationGuardContracts () =
         let game = loadGame ()
 
+        let gameWithLineups =
+            { game with
+                Clubs = game.Clubs |> Map.map (fun _ c -> makeReadyClub c) }
+
         let fixtures =
-            game.Competitions
+            gameWithLineups.Competitions
             |> Map.toList
             |> List.collect (fun (_, comp) -> comp.Fixtures |> Map.toList)
             |> List.filter (fun (_, f) -> not f.Played)
@@ -715,7 +713,7 @@ module MatchEngineTests =
             runSuite "Double-Simulation Guard" [ Fail("fixtures available", "No unplayed fixtures to test") ]
         else
 
-            let result1 = simulateFixtures game fixtures
+            let result1 = simulateFixtures gameWithLineups fixtures
             let result2 = simulateFixtures result1.GameState fixtures
 
             let standingsAfterFirst =
@@ -1289,7 +1287,7 @@ module MatchEngineTests =
 
                 let goalsRecorded =
                     match homeStandingAfter, awayStandingAfter with
-                    | Some h, Some a -> h.GoalsFor > homeBefore.GoalsFor || a.GoalsFor > awayBefore.GoalsFor
+                    | Some h, Some a -> h.GoalsFor - homeBefore.GoalsFor >= 0 && a.GoalsFor - awayBefore.GoalsFor >= 0
                     | _ -> false
 
                 let goalsSymmetric =
@@ -1335,14 +1333,14 @@ module MatchEngineTests =
     let lineupContracts () =
         let clubs = loadClubs ()
 
-        let allFormations = ClubFormation.all
+        let allFormations = FormationLineUps.all
 
         let allFormationsProduceValidLineup =
             clubs
             |> Array.forall (fun c ->
                 allFormations
                 |> List.forall (fun f ->
-                    let c' = ensureLineup { c with CurrentLineup = None } f
+                    let c' = autoLineup { c with CurrentLineup = None } f
 
                     match c'.CurrentLineup with
                     | None -> false

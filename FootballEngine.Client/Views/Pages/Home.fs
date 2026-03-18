@@ -3,10 +3,12 @@ namespace FootballEngine.Pages
 open Avalonia.Controls
 open Avalonia.Controls.Primitives
 open Avalonia.FuncUI.DSL
+open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
 open FootballEngine.AppTypes
+open FootballEngine.AppMsgs
 open FootballEngine.Domain
 open FootballEngine.Components
 open FootballEngine.UpdateSim
@@ -260,6 +262,139 @@ module Home =
                     UI.iconStatCard "MORALE" $"{userTeam.Morale}%%" PlayerIcon.morale ""
                     |> fun c -> Border.create [ Grid.column 6; Border.child c ] ] ]
 
+    let private notificationKindColor =
+        function
+        | MatchResult -> Theme.Accent
+        | SeasonEnd -> Theme.Warning
+        | Transfer -> Theme.AccentAlt
+        | Info -> Theme.TextMuted
+
+    let private notificationRow (note: Notification) dispatch =
+        let color = notificationKindColor note.Kind
+
+        Border.create
+            [ Border.padding (12.0, 10.0)
+              Border.borderBrush Theme.Border
+              Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+              Border.background (color + "0A")
+              Border.child (
+                  Grid.create
+                      [ Grid.columnDefinitions "4, *, Auto"
+                        Grid.children
+                            [ Border.create
+                                  [ Grid.column 0
+                                    Border.width 3.0
+                                    Border.cornerRadius 2.0
+                                    Border.background color
+                                    Border.margin (0.0, 0.0, 10.0, 0.0)
+                                    Border.verticalAlignment VerticalAlignment.Stretch ]
+
+                              StackPanel.create
+                                  [ Grid.column 1
+                                    StackPanel.spacing 2.0
+                                    StackPanel.children
+                                        [ TextBlock.create
+                                              [ TextBlock.text note.Title
+                                                TextBlock.fontSize 12.0
+                                                TextBlock.fontWeight FontWeight.SemiBold
+                                                TextBlock.foreground Theme.TextMain
+                                                TextBlock.textWrapping TextWrapping.Wrap ]
+                                          if note.Body <> "" then
+                                              TextBlock.create
+                                                  [ TextBlock.text note.Body
+                                                    TextBlock.fontSize 11.0
+                                                    TextBlock.foreground Theme.TextMuted
+                                                    TextBlock.textWrapping TextWrapping.Wrap ] ] ]
+
+                              Button.create
+                                  [ Grid.column 2
+                                    Button.background "Transparent"
+                                    Button.borderThickness 0.0
+                                    Button.padding (4.0, 0.0)
+                                    Button.verticalAlignment VerticalAlignment.Top
+                                    Button.cursor Avalonia.Input.Cursor.Default
+                                    Button.onClick (fun _ -> dispatch (NotificationMsg(DismissNotification note.Id)))
+                                    Button.content (
+                                        TextBlock.create
+                                            [ TextBlock.text "✕"
+                                              TextBlock.fontSize 10.0
+                                              TextBlock.foreground Theme.TextMuted ]
+                                    ) ] ] ]
+              ) ]
+
+    let private notificationsPanel (notes: Notification list) dispatch =
+        Border.create
+            [ Border.background Theme.BgSidebar
+              Border.cornerRadius 10.0
+              Border.borderBrush Theme.Border
+              Border.borderThickness 1.0
+              Border.clipToBounds true
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.spacing 0.0
+                        StackPanel.children
+                            [ Border.create
+                                  [ Border.padding (14.0, 10.0)
+                                    Border.borderBrush Theme.Border
+                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                                    Border.child (
+                                        DockPanel.create
+                                            [ DockPanel.lastChildFill false
+                                              DockPanel.children
+                                                  [ StackPanel.create
+                                                        [ DockPanel.dock Dock.Left
+                                                          StackPanel.orientation Orientation.Horizontal
+                                                          StackPanel.spacing 6.0
+                                                          StackPanel.children
+                                                              [ Icons.iconSm UI.info Theme.Accent
+                                                                TextBlock.create
+                                                                    [ TextBlock.text "NOTIFICATIONS"
+                                                                      TextBlock.fontSize 10.0
+                                                                      TextBlock.fontWeight FontWeight.Black
+                                                                      TextBlock.foreground Theme.TextMuted
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ]
+                                                                if not notes.IsEmpty then
+                                                                    UI.countBadge notes.Length ] ]
+
+                                                    if not notes.IsEmpty then
+                                                        Button.create
+                                                            [ DockPanel.dock Dock.Right
+                                                              Button.background "Transparent"
+                                                              Button.borderThickness 0.0
+                                                              Button.padding (4.0, 2.0)
+                                                              Button.cursor Avalonia.Input.Cursor.Default
+                                                              Button.onClick (fun _ ->
+                                                                  dispatch (NotificationMsg DismissAll))
+                                                              Button.content (
+                                                                  TextBlock.create
+                                                                      [ TextBlock.text "Clear all"
+                                                                        TextBlock.fontSize 10.0
+                                                                        TextBlock.foreground Theme.TextMuted ]
+                                                              ) ] ] ]
+                                    ) ]
+
+                              if notes.IsEmpty then
+                                  Border.create
+                                      [ Border.padding (14.0, 16.0)
+                                        Border.child (
+                                            TextBlock.create
+                                                [ TextBlock.text "No notifications"
+                                                  TextBlock.fontSize 12.0
+                                                  TextBlock.foreground Theme.TextMuted ]
+                                        ) ]
+                              else
+                                  ScrollViewer.create
+                                      [ ScrollViewer.maxHeight 260.0
+                                        ScrollViewer.content (
+                                            StackPanel.create
+                                                [ StackPanel.spacing 0.0
+                                                  StackPanel.children
+                                                      [ for note in notes do
+                                                            notificationRow note dispatch ] ]
+                                        ) ] ] ]
+              ) ]
+
     let private upcomingFixtureRow (fixture: MatchId * MatchFixture) (gs: GameState) =
         let _, f = fixture
         let isHome = f.HomeClubId = gs.UserClubId
@@ -439,46 +574,6 @@ module Home =
                               else
                                   for r in results do
                                       recentResultRow r ] ]
-              ) ]
-
-    let private inboxPanel (messages: string list) =
-        Border.create
-            [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.clipToBounds true
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 0.0
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.padding (14.0, 10.0)
-                                    Border.borderBrush Theme.Border
-                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                    Border.child (
-                                        StackPanel.create
-                                            [ StackPanel.orientation Orientation.Horizontal
-                                              StackPanel.spacing 6.0
-                                              StackPanel.children
-                                                  [ Icons.iconSm UI.info Theme.Accent
-                                                    TextBlock.create
-                                                        [ TextBlock.text "INBOX & NEWS"
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                    ) ]
-                              ScrollViewer.create
-                                  [ ScrollViewer.maxHeight 200.0
-                                    ScrollViewer.content (
-                                        StackPanel.create
-                                            [ StackPanel.spacing 4.0
-                                              StackPanel.margin (8.0, 6.0)
-                                              StackPanel.children
-                                                  [ for msg in messages do
-                                                        UI.iconRow UI.info msg ] ]
-                                    ) ] ] ]
               ) ]
 
     let private competitionPicker
@@ -677,19 +772,7 @@ module Home =
                                                                                             VerticalAlignment.Center ]
                                                                                   TextBlock.create
                                                                                       [ Grid.column 3
-                                                                                        TextBlock.text (
-                                                                                            match
-                                                                                                gs.Competitions.TryFind
-                                                                                                    selectedId
-                                                                                            with
-                                                                                            | Some comp ->
-                                                                                                let s =
-                                                                                                    comp.Standings.TryFind
-                                                                                                        row.Pos
-
-                                                                                                ""
-                                                                                            | None -> ""
-                                                                                        )
+                                                                                        TextBlock.text ""
                                                                                         TextBlock.width 36.0
                                                                                         TextBlock.textAlignment
                                                                                             TextAlignment.Right ]
@@ -701,12 +784,8 @@ module Home =
                                                                                         TextBlock.fontSize 12.0
                                                                                         TextBlock.fontWeight
                                                                                             FontWeight.Bold
-                                                                                        TextBlock.foreground (
-                                                                                            if row.IsUser then
-                                                                                                Theme.TextMain
-                                                                                            else
-                                                                                                Theme.TextMain
-                                                                                        )
+                                                                                        TextBlock.foreground
+                                                                                            Theme.TextMain
                                                                                         TextBlock.width 36.0
                                                                                         TextBlock.textAlignment
                                                                                             TextAlignment.Right
@@ -716,7 +795,12 @@ module Home =
                                         ) ] ] ]
               ) ]
 
-    let homeView (state: State) (selectedLeagueId: CompetitionId) (onLeagueChange: CompetitionId -> unit) =
+    let homeView
+        (state: State)
+        (selectedLeagueId: CompetitionId)
+        (onLeagueChange: CompetitionId -> unit)
+        dispatch
+        : IView =
         let gs = state.GameState
         let userTeam = gs.Clubs[gs.UserClubId]
 
@@ -765,5 +849,6 @@ module Home =
                                               [ Grid.column 2
                                                 StackPanel.spacing 16.0
                                                 StackPanel.children
-                                                    [ upcomingPanel upcomingFixtures gs; inboxPanel state.LogMessages ] ] ] ] ] ]
+                                                    [ upcomingPanel upcomingFixtures gs
+                                                      notificationsPanel state.Notifications dispatch ] ] ] ] ] ]
               ) ]

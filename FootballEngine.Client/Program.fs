@@ -35,8 +35,11 @@ module Views =
                                 match state.CurrentPage with
                                 | Setup -> setupView state dispatch
                                 | Home ->
-                                    homeView state state.SelectedLeagueId (fun leagueId ->
-                                        dispatch (ChangeLeague leagueId))
+                                    homeView
+                                        state
+                                        state.SelectedLeagueId
+                                        (fun leagueId -> dispatch (ChangeLeague leagueId))
+                                        dispatch
                                 | Inbox -> failwith "todo"
                                 | Squad -> squadView state dispatch
                                 | Tactics -> tacticView state dispatch
@@ -65,7 +68,6 @@ type App() =
         this.Styles.Add(FluentTheme())
         this.Styles.Add(MaterialIconStyles(null))
 
-
     override this.OnFrameworkInitializationCompleted() =
         match this.ApplicationLifetime with
         | :? IClassicDesktopStyleApplicationLifetime as desktop -> desktop.MainWindow <- MainWindow()
@@ -74,9 +76,8 @@ type App() =
 module Program =
     [<EntryPoint>]
     let main args =
-        Db.initTables ()
+        Db.initTables () |> Async.AwaitTask |> Async.RunSynchronously
 
         match args with
         | [| "--test" |] -> runAll ()
-
         | _ -> AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)
