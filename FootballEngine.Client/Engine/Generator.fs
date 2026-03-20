@@ -492,7 +492,7 @@ module GameGenerator =
             acc
         else
             let fixtures, nextMatchId =
-                fixturesForFormat compId qualifyingClubIds format (DateTime(year, 2, 1)) counters.MatchId
+                fixturesForFormat compId qualifyingClubIds format (DateTime(year, 9, 1)) counters.MatchId
 
             counters.MatchId <- nextMatchId
 
@@ -613,7 +613,7 @@ module GameGenerator =
                         comp
                     else
                         let fixtures, next =
-                            fixturesForFormat comp.Id qualifyingClubIds fmt (DateTime(state.Season, 2, 1)) nextMatchId
+                            fixturesForFormat comp.Id qualifyingClubIds fmt (DateTime(state.Season, 9, 1)) nextMatchId
 
                         nextMatchId <- next
 

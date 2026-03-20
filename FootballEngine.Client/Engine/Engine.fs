@@ -83,7 +83,7 @@ module Engine =
                     let away = stateWithMorale.Clubs[fixture.AwayClubId]
 
                     let updatedComps =
-                        acc.GameState.Competitions
+                        stateWithMorale.Competitions
                         |> Map.map (fun _ comp ->
                             match comp.Fixtures |> Map.tryFind id with
                             | None

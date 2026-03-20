@@ -18,7 +18,7 @@ open FootballEngine.Pages.Setup.Setup
 open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
 open FootballEngine.Pages.Transfers
-open FootballEngine.Test.MatchEngineTests
+
 open Material.Icons.Avalonia
 
 module Views =
@@ -77,7 +77,4 @@ module Program =
     [<EntryPoint>]
     let main args =
         Db.initTables () |> Async.AwaitTask |> Async.RunSynchronously
-
-        match args with
-        | [| "--test" |] -> runAll ()
-        | _ -> AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)
+        AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)

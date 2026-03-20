@@ -57,19 +57,18 @@
         <Compile Include="Views\Pages\Squad.fs"/>
         <Compile Include="Views\Pages\Tactic.fs"/>
         <Compile Include="Views\Pages\Transfer.fs"/>
-        <Compile Include="Test.fs"/>
         <Compile Include="Program.fs"/>
 
 
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia.Desktop" Version="11.3.11"/>
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.12"/>
         <PackageReference Include="Avalonia.FuncUI" Version="1.5.2"/>
         <PackageReference Include="Avalonia.FuncUI.Elmish" Version="1.5.2"/>
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11"/>
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12"/>
         <PackageReference Include="Elmish" Version="5.0.2"/>
-        <PackageReference Update="FSharp.Core" Version="10.0.102"/>
+        <PackageReference Update="FSharp.Core" Version="10.1.201"/>
         <PackageReference Include="FSharp.Stats" Version="0.6.0"/>
         <PackageReference Include="Material.Icons.Avalonia" Version="3.0.0"/>
         <PackageReference Include="sqlite-net-pcl" Version="1.9.172"/>
