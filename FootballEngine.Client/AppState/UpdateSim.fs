@@ -38,6 +38,18 @@ module UpdateSim =
         allFixtures gs
         |> List.filter (fun (_, f) -> f.ScheduledDate.Date = gs.CurrentDate.Date && not f.Played)
 
+    // Jump directly to the next date that has unplayed fixtures instead of
+    // iterating day by day — reduces SimulateSeason loop from ~300 to ~40 iterations.
+    let private nextUnplayedDate (gs: GameState) =
+        gs.Competitions
+        |> Map.toSeq
+        |> Seq.collect (fun (_, comp) ->
+            comp.Fixtures
+            |> Map.toSeq
+            |> Seq.choose (fun (_, f) -> if not f.Played then Some f.ScheduledDate.Date else None))
+        |> Seq.sort
+        |> Seq.tryHead
+
     let getUserNextFixture (gs: GameState) =
         allFixtures gs
         |> List.tryPick (fun (id, f) ->
@@ -88,6 +100,27 @@ module UpdateSim =
             |> List.tryFindIndex (fun (id, _) -> id = userClubId)
             |> Option.map (fun idx -> $"Season ended - finished {idx + 1}/{ranked.Length}"))
         |> Option.toList
+
+    let private userLeagueChangeNotification
+        (prevGs: GameState)
+        (newGs: GameState)
+        (userClubId: ClubId)
+        : (string * string) option =
+        let levelOf (gs: GameState) =
+            gs.Competitions
+            |> Map.toList
+            |> List.tryPick (fun (_, comp) ->
+                match comp.Type, comp.Country with
+                | NationalLeague(LeagueLevel lvl, _), Some _ when List.contains userClubId comp.ClubIds ->
+                    Some(lvl, comp.Name)
+                | _ -> None)
+
+        match levelOf prevGs, levelOf newGs with
+        | Some(oldLvl, _), Some(newLvl, newLeague) when newLvl < oldLvl ->
+            Some("🎉 Promoted!", $"Your club has been promoted to {newLeague}")
+        | Some(oldLvl, _), Some(newLvl, newLeague) when newLvl > oldLvl ->
+            Some("😰 Relegated", $"Your club has been relegated to {newLeague}")
+        | _ -> None
 
     let private userMatchNotification (gs: GameState) (fixture: MatchFixture) (hScore: int) (aScore: int) =
         let involvesUser =
@@ -145,15 +178,12 @@ module UpdateSim =
                 | _ -> acc)
             state
 
-    // Save helper that never touches IsProcessing on success — only resets on failure.
-    // This prevents a failed save from leaving the button stuck in "SIMULATING...".
     let private saveCmd gs =
         Cmd.OfTask.attempt saveGameAsync gs (fun _ -> SetProcessing false)
 
     let rec handle (msg: SimMsg) (state: State) : State * Cmd<Msg> =
         match msg with
         | AdvanceDay ->
-            // Guard: ignore if already processing — prevents double-dispatch from rapid clicks.
             if state.IsProcessing then
                 state, Cmd.none
             else
@@ -172,30 +202,31 @@ module UpdateSim =
                     (SimMsg << AdvanceDayDone)
 
         | AdvanceDayDone(result, fixtures) ->
-            let errorLogs =
-                result.Errors |> List.map (fun (id, e) -> $"Fixture {id} skipped: {e}")
+            if not result.Errors.IsEmpty then
+                let errorMsg =
+                    result.Errors |> List.map (fun (_, e) -> string e) |> String.concat ", "
 
-            let logs =
-                if result.Logs.IsEmpty && result.Errors.IsEmpty then
-                    []
-                else
-                    $"{result.Logs.Length} matches played" :: result.Logs @ errorLogs
-
-            let nextState =
-                { state with
-                    GameState = result.GameState
-                    // Only clear IsProcessing when there is NO season advance pending.
-                    // AdvanceSeason will own IsProcessing from here until SeasonAdvanceDone.
-                    IsProcessing = isSeasonComplete result.GameState
-                    LogMessages = logs @ state.LogMessages |> List.truncate 30 }
-                |> applyUserMatchNotif result.GameState fixtures
-
-            // If the season just finished, chain directly into AdvanceSeason without saving
-            // first — avoids two concurrent writes and a second IsProcessing flip.
-            if isSeasonComplete result.GameState then
-                nextState, Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
+                { state with IsProcessing = false }
+                |> pushNotification MatchResult "Simulation Error" errorMsg,
+                Cmd.none
             else
-                { nextState with IsProcessing = false }, saveCmd result.GameState
+                let logs =
+                    if result.Logs.IsEmpty then
+                        []
+                    else
+                        $"{result.Logs.Length} matches played" :: result.Logs
+
+                let nextState =
+                    { state with
+                        GameState = result.GameState
+                        IsProcessing = isSeasonComplete result.GameState
+                        LogMessages = logs @ state.LogMessages |> List.truncate 30 }
+                    |> applyUserMatchNotif result.GameState fixtures
+
+                if isSeasonComplete result.GameState then
+                    nextState, Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
+                else
+                    { nextState with IsProcessing = false }, saveCmd result.GameState
 
         | SimulateAllToday ->
             let fixtures = getTodayFixtures state.GameState
@@ -237,6 +268,49 @@ module UpdateSim =
 
         | SimulateMatch -> handle SimulateNextFixture state
 
+        | SimulateSeason ->
+            if state.IsProcessing then
+                state, Cmd.none
+            else
+                { state with IsProcessing = true },
+                Cmd.OfTask.perform
+                    (fun () ->
+                        Task.Run(fun () ->
+                            let mutable gs = state.GameState
+
+                            let totalUnplayed =
+                                gs.Competitions
+                                |> Map.toSeq
+                                |> Seq.sumBy (fun (_, comp) ->
+                                    comp.Fixtures |> Map.filter (fun _ f -> not f.Played) |> Map.count)
+
+                            let mutable remaining = totalUnplayed
+
+                            while remaining > 0 do
+                                match nextUnplayedDate gs with
+                                | None ->
+                                    gs <-
+                                        { gs with
+                                            CurrentDate = gs.CurrentDate.AddDays(1.0) }
+                                | Some date ->
+                                    gs <- { gs with CurrentDate = date }
+                                    let result = simulateFixtures gs (getTodayFixtures gs)
+                                    remaining <- remaining - result.Logs.Length - result.Errors.Length
+                                    gs <- result.GameState
+
+                            let summary = computeSeasonSummary gs
+                            let rng = Random()
+
+                            let newGs =
+                                gs
+                                |> advanceSeason rng
+                                |> regenerateSeasonFixtures
+                                |> World.applyLeagueConsequences
+
+                            summary, newGs))
+                    ()
+                    (SimMsg << SeasonAdvanceDone)
+
         | AdvanceSeason ->
             if state.IsProcessing then
                 state, Cmd.none
@@ -247,7 +321,13 @@ module UpdateSim =
                         Task.Run(fun () ->
                             let rng = Random()
                             let summary = computeSeasonSummary state.GameState
-                            let newGs = state.GameState |> advanceSeason rng |> regenerateSeasonFixtures
+
+                            let newGs =
+                                state.GameState
+                                |> advanceSeason rng
+                                |> regenerateSeasonFixtures
+                                |> World.applyLeagueConsequences
+
                             summary, newGs))
                     ()
                     (SimMsg << SeasonAdvanceDone)
@@ -259,11 +339,18 @@ module UpdateSim =
             let messages = $"Season {newGs.Season} begins" :: userLine @ summary
             let seasonBody = userLine |> String.concat " · "
 
-            { state with
-                GameState = newGs
-                IsProcessing = false
-                LogMessages = messages @ state.LogMessages |> List.truncate 50 }
-            |> pushNotification SeasonEnd $"⚽ Season {newGs.Season - 1} Complete" seasonBody,
-            saveCmd newGs
+            let stateWithSeason =
+                { state with
+                    GameState = newGs
+                    IsProcessing = false
+                    LogMessages = messages @ state.LogMessages |> List.truncate 50 }
+                |> pushNotification SeasonEnd $"⚽ Season {newGs.Season - 1} Complete" seasonBody
+
+            let finalState =
+                match userLeagueChangeNotification state.GameState newGs newGs.UserClubId with
+                | Some(title, body) -> stateWithSeason |> pushNotification SeasonEnd title body
+                | None -> stateWithSeason
+
+            finalState, saveCmd newGs
 
         | SaveGame -> state, saveCmd state.GameState

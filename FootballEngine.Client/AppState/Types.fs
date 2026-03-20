@@ -63,6 +63,18 @@ module AppTypes =
           SecondaryCountries: CountryCode list
           ManagerName: string }
 
+    type NegotiationStep =
+        | MakingOffer
+        | OfferRejected of reason: string
+        | NegotiatingContract of offeredSalary: decimal * offeredYears: int
+        | ContractRejected
+        | NegotiationComplete
+
+    type ActiveNegotiation =
+        { PlayerId: PlayerId
+          OfferedFee: decimal
+          Step: NegotiationStep }
+
     type TransferState =
         { ActiveTab: TransferTab
           SearchQuery: string
@@ -72,10 +84,14 @@ module AppTypes =
           SelectedPlayerId: PlayerId option
           WatchlistIds: PlayerId list
           CachedPlayers: Player list
-          FilteredPlayers: Player list // pre-computed — view slices this by page
+          FilteredPlayers: Player list
           ClubNameCache: Map<PlayerId, string>
           IsLoading: bool
-          Page: int }
+          Page: int
+          OutgoingOffers: TransferOffer list
+          TransferHistory: TransferRecord list
+          NextOfferId: int
+          ActiveNegotiation: ActiveNegotiation option }
 
     type MatchLabState =
         { HomeClubId: ClubId option
@@ -117,7 +133,11 @@ module AppTypes =
           FilteredPlayers = []
           ClubNameCache = Map.empty
           IsLoading = false
-          Page = 0 }
+          Page = 0
+          OutgoingOffers = []
+          TransferHistory = []
+          NextOfferId = 1
+          ActiveNegotiation = None }
 
     let initMatchLabState =
         { HomeClubId = None

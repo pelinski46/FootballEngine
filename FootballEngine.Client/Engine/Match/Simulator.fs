@@ -19,8 +19,6 @@ module MatchSimulator =
 
     let private raise' e = raise (SimulationException e)
 
-    // ── Fatigue ───────────────────────────────────────────────────────────
-
     let private fatigue (p: Player) (pressing: bool) =
         let base' = (100 - p.Physical.Stamina) / 20
         let workRate = p.Mental.WorkRate / 15
@@ -36,8 +34,6 @@ module MatchSimulator =
         s
         |> withSide true (drain (homeSide s) (ballX > 70.0))
         |> withSide false (drain (awaySide s) (ballX < 30.0))
-
-    // ── Event dispatch ────────────────────────────────────────────────────
 
     type private Queue = PriorityQueue<ScheduledEvent, int>
 
@@ -71,7 +67,6 @@ module MatchSimulator =
         | InjuryCheck(p, clubId) -> processInjury p clubId second s
         | SubstitutionCheck clubId -> processSubstitution clubId second s
         | MatchEnd -> s
-
 
     let private toCoords slotX slotY isHome =
         if isHome then
@@ -129,6 +124,23 @@ module MatchSimulator =
           HomeBasePositions = ctx.HomePositions
           AwayBasePositions = ctx.AwayPositions }
 
+    let private runLoopFast (homeId: ClubId) (init: MatchState) =
+        let q = initQueue init.Home.Id init.Away.Id
+        let mutable s = init
+
+        while q.Count > 0 do
+            let mutable ev = Unchecked.defaultof<_>
+            let mutable pr = 0
+            q.TryDequeue(&ev, &pr) |> ignore
+
+            match ev with
+            | MatchEnd ->
+                s <- { s with Second = pr }
+                q.Clear()
+            | _ -> s <- dispatch homeId q pr ev s
+
+        s
+
     let private runLoop (homeId: ClubId) (init: MatchState) =
         let q = initQueue init.Home.Id init.Away.Id
         let mutable s = init
@@ -153,28 +165,38 @@ module MatchSimulator =
 
         s, snapshots.ToArray()
 
-    let private run (home: Club) (away: Club) =
-        let homeData = extractLineup home true
-        let awayData = extractLineup away false
+    let private buildContext (homeData: (Player * float * float)[]) (awayData: (Player * float * float)[]) =
+        { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
+          AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
 
+    let private validateLineups (home: Club) (homeData: 'a[]) (away: Club) (awayData: 'a[]) =
         if homeData.Length <> 11 then
             raise' (IncompleteLineup(home.Name, homeData.Length))
 
         if awayData.Length <> 11 then
             raise' (IncompleteLineup(away.Name, awayData.Length))
 
-        let ctx =
-            { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
-              AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
+    let private runFast (home: Club) (away: Club) =
+        let homeData = extractLineup home true
+        let awayData = extractLineup away false
+        validateLineups home homeData away awayData
+        let ctx = buildContext homeData awayData
+        let hp = homeData |> Array.map (fun (p, _, _) -> p)
+        let ap = awayData |> Array.map (fun (p, _, _) -> p)
+        let final = runLoopFast home.Id (initState home hp away ap ctx)
+        final.HomeScore, final.AwayScore, final.EventsRev
 
+    let private run (home: Club) (away: Club) =
+        let homeData = extractLineup home true
+        let awayData = extractLineup away false
+        validateLineups home homeData away awayData
+        let ctx = buildContext homeData awayData
         let hp = homeData |> Array.map (fun (p, _, _) -> p)
         let ap = awayData |> Array.map (fun (p, _, _) -> p)
         let final, snapshots = runLoop home.Id (initState home hp away ap ctx)
         { Final = final; Snapshots = snapshots }
 
-    let simulate (home: Club) (away: Club) : int * int * MatchEvent list =
-        let r = run home away
-        r.Final.HomeScore, r.Final.AwayScore, r.Final.EventsRev
+    let simulate (home: Club) (away: Club) : int * int * MatchEvent list = runFast home away
 
     let trySimulateMatch (home: Club) (away: Club) : Result<int * int * MatchEvent list, SimulationError> =
         try

@@ -119,5 +119,41 @@ module Header =
                                                                       TextBlock.verticalAlignment
                                                                           VerticalAlignment.Center ] ] ]
                                                 ) ]
-                                          |> View.withKey (if isProcessing then "btn-processing" else "btn-ready") ] ] ] ]
+                                          |> View.withKey (if isProcessing then "btn-processing" else "btn-ready")
+
+                                          Button.create
+                                              [ Button.isEnabled (not isProcessing)
+                                                Button.background (if isProcessing then Theme.BgCard else Theme.BgCard)
+                                                Button.borderThickness 1.0
+                                                Button.borderBrush (if isProcessing then Theme.Border else Theme.Border)
+                                                Button.padding (16.0, 8.0)
+                                                Button.cornerRadius 8.0
+                                                Button.onClick (fun e ->
+                                                    e.Handled <- true
+                                                    dispatch (SimMsg SimulateSeason))
+                                                Button.content (
+                                                    StackPanel.create
+                                                        [ StackPanel.orientation Orientation.Horizontal
+                                                          StackPanel.spacing 6.0
+                                                          StackPanel.children
+                                                              [ Icons.iconSm
+                                                                    UI.refresh
+                                                                    (if isProcessing then
+                                                                         Theme.TextMuted
+                                                                     else
+                                                                         Theme.TextSub)
+                                                                TextBlock.create
+                                                                    [ TextBlock.text "SIM SEASON"
+                                                                      TextBlock.fontSize 12.0
+                                                                      TextBlock.fontWeight FontWeight.Bold
+                                                                      TextBlock.foreground (
+                                                                          if isProcessing then
+                                                                              Theme.TextMuted
+                                                                          else
+                                                                              Theme.TextSub
+                                                                      )
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ] ] ]
+                                                ) ]
+                                          |> View.withKey (if isProcessing then "sim-season-off" else "sim-season-on") ] ] ] ]
               ) ]

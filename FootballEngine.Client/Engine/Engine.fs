@@ -55,62 +55,89 @@ module Engine =
           Logs: string list
           Errors: (MatchId * SimulationError) list }
 
+    type private MatchOutcome =
+        { FixtureId: MatchId
+          Fixture: MatchFixture
+          HomeScore: int
+          AwayScore: int }
+
+    let private applyOutcomes
+        (fixtureToComp: Map<MatchId, CompetitionId>)
+        (outcomes: MatchOutcome[])
+        (gs: GameState)
+        : GameState =
+
+        let updatedComps =
+            (gs.Competitions, outcomes)
+            ||> Array.fold (fun comps o ->
+                match Map.tryFind o.FixtureId fixtureToComp with
+                | None -> comps
+                | Some compId ->
+                    let comp = comps[compId]
+
+                    let hs =
+                        comp.Standings
+                        |> Map.tryFind o.Fixture.HomeClubId
+                        |> Option.defaultWith (fun () -> emptyStanding o.Fixture.HomeClubId)
+
+                    let as' =
+                        comp.Standings
+                        |> Map.tryFind o.Fixture.AwayClubId
+                        |> Option.defaultWith (fun () -> emptyStanding o.Fixture.AwayClubId)
+
+                    comps
+                    |> Map.add
+                        compId
+                        { comp with
+                            Fixtures = comp.Fixtures |> Map.add o.FixtureId o.Fixture
+                            Standings =
+                                comp.Standings
+                                |> Map.add o.Fixture.HomeClubId (updateStanding hs o.HomeScore o.AwayScore)
+                                |> Map.add o.Fixture.AwayClubId (updateStanding as' o.AwayScore o.HomeScore) })
+
+        let gsWithComps = { gs with Competitions = updatedComps }
+
+        (gsWithComps, outcomes)
+        ||> Array.fold (fun acc o ->
+            World.updateMorale o.HomeScore o.AwayScore o.Fixture.HomeClubId o.Fixture.AwayClubId acc)
+
     let simulateFixtures (gameState: GameState) (fixtures: (MatchId * MatchFixture) list) : BatchResult =
-        let unplayed =
+        let fixtureToComp =
+            gameState.Competitions
+            |> Map.toList
+            |> List.collect (fun (compId, comp) ->
+                comp.Fixtures |> Map.toList |> List.map (fun (fid, _) -> fid, compId))
+            |> Map.ofList
+
+        let simResults =
             fixtures
-            |> List.filter (fun (id, _) ->
-                gameState.Competitions
-                |> Map.exists (fun _ comp ->
-                    comp.Fixtures
-                    |> Map.tryFind id
-                    |> Option.map (fun f -> not f.Played)
-                    |> Option.defaultValue false))
+            |> List.toArray
+            |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
 
-        unplayed
-        |> List.toArray
-        |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
-        |> Array.fold
-            (fun (acc: BatchResult) (id, result) ->
-                match result with
-                | Error e ->
-                    { acc with
-                        Errors = (id, e) :: acc.Errors }
-                | Ok(fixture, h, a) ->
-                    let stateWithMorale =
-                        World.updateMorale h a fixture.HomeClubId fixture.AwayClubId acc.GameState
+        let outcomes, errors, logs =
+            simResults
+            |> Array.fold
+                (fun (outs, errs, ls) (id, result) ->
+                    match result with
+                    | Error e -> outs, (id, e) :: errs, ls
+                    | Ok(fixture, h, a) ->
+                        let home = gameState.Clubs[fixture.HomeClubId]
+                        let away = gameState.Clubs[fixture.AwayClubId]
 
-                    let home = stateWithMorale.Clubs[fixture.HomeClubId]
-                    let away = stateWithMorale.Clubs[fixture.AwayClubId]
+                        let out =
+                            { FixtureId = id
+                              Fixture = fixture
+                              HomeScore = h
+                              AwayScore = a }
 
-                    let updatedComps =
-                        stateWithMorale.Competitions
-                        |> Map.map (fun _ comp ->
-                            match comp.Fixtures |> Map.tryFind id with
-                            | None
-                            | Some { Played = true } -> comp
-                            | _ ->
-                                let hs =
-                                    comp.Standings
-                                    |> Map.tryFind fixture.HomeClubId
-                                    |> Option.defaultWith (fun () -> emptyStanding fixture.HomeClubId)
+                        out :: outs, errs, $"{home.Name} {h}-{a} {away.Name}" :: ls)
+                ([], [], [])
 
-                                let as' =
-                                    comp.Standings
-                                    |> Map.tryFind fixture.AwayClubId
-                                    |> Option.defaultWith (fun () -> emptyStanding fixture.AwayClubId)
-
-                                { comp with
-                                    Fixtures = comp.Fixtures |> Map.add id fixture
-                                    Standings =
-                                        comp.Standings
-                                        |> Map.add fixture.HomeClubId (updateStanding hs h a)
-                                        |> Map.add fixture.AwayClubId (updateStanding as' a h) })
-
-                    { acc with
-                        GameState =
-                            { stateWithMorale with
-                                Competitions = updatedComps }
-                        Logs = $"{home.Name} {h}-{a} {away.Name}" :: acc.Logs })
+        if errors.IsEmpty then
+            { GameState = applyOutcomes fixtureToComp (List.toArray outcomes) gameState
+              Logs = logs
+              Errors = [] }
+        else
             { GameState = gameState
               Logs = []
-              Errors = [] }
+              Errors = errors }

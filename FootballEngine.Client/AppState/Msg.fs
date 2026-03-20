@@ -23,6 +23,7 @@ module AppMsgs =
         | AdvanceSeason
         | SeasonAdvanceDone of summary: string list * GameState
         | SaveGame
+        | SimulateSeason
 
     type TransferMsg =
         | Load
@@ -34,6 +35,13 @@ module AppMsgs =
         | PlayerSelect of PlayerId
         | WatchToggle of PlayerId
         | PageChange of int
+        | MakeOffer of playerId: PlayerId * fee: decimal
+        | UpdateOfferedFee of fee: decimal
+        | SubmitOffer
+        | OfferCounterSalary of salary: decimal * years: int
+        | AcceptContract
+        | WithdrawOffer of offerId: int
+        | ClearNegotiation
 
     type MatchLabMsg =
         | SelectHome of ClubId

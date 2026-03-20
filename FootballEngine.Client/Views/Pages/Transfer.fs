@@ -11,11 +11,13 @@ open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
 open FootballEngine.Components
 open FootballEngine.Domain
+open FootballEngine.Domain.TransferNegotiation
 open FootballEngine.Icons
 
 module Transfers =
 
     let private pageSize = 100
+    let roundToNearest (step: decimal) (v: decimal) = System.Math.Round(v / step) * step
 
     let private positionColor (pos: Position) =
         match pos with
@@ -38,6 +40,8 @@ module Transfers =
         if v >= 1_000_000m then $"£{v / 1_000_000m:F1}M"
         elif v >= 1_000m then $"£{v / 1_000m:F0}K"
         else $"£{v:F0}"
+
+    let private formatSalary (v: decimal) = $"{formatValue v}/wk"
 
     let private positionLabel (f: TransferFilter) =
         match f with
@@ -250,202 +254,449 @@ module Transfers =
                     for label, value in stats do
                         statBar label value color ] ]
 
+    // ── Negotiation panel ────────────────────────────────────────────────
+
+    let private sectionLabel (text: string) =
+        TextBlock.create
+            [ TextBlock.text (text.ToUpperInvariant())
+              TextBlock.fontSize 9.0
+              TextBlock.fontWeight FontWeight.Bold
+              TextBlock.foreground Theme.TextMuted
+              TextBlock.lineSpacing 1.5
+              TextBlock.margin (0.0, 0.0, 0.0, 6.0) ]
+
+    let private infoRow (label: string) (value: string) (valueColor: string) =
+        Grid.create
+            [ Grid.columnDefinitions "*, Auto"
+              Grid.margin (0.0, 4.0)
+              Grid.children
+                  [ TextBlock.create
+                        [ Grid.column 0
+                          TextBlock.text label
+                          TextBlock.fontSize 12.0
+                          TextBlock.foreground Theme.TextMuted
+                          TextBlock.verticalAlignment VerticalAlignment.Center ]
+                    TextBlock.create
+                        [ Grid.column 1
+                          TextBlock.text value
+                          TextBlock.fontSize 12.0
+                          TextBlock.fontWeight FontWeight.SemiBold
+                          TextBlock.foreground valueColor
+                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+
+    let private feeSlider (fee: decimal) (minFee: decimal) (maxFee: decimal) (dispatch: Msg -> unit) =
+        StackPanel.create
+            [ StackPanel.spacing 6.0
+              StackPanel.children
+                  [ Grid.create
+                        [ Grid.columnDefinitions "*, Auto"
+                          Grid.children
+                              [ sectionLabel "Transfer Fee" |> fun x -> x :> IView
+                                TextBlock.create
+                                    [ Grid.column 1
+                                      TextBlock.text (formatValue fee)
+                                      TextBlock.fontSize 14.0
+                                      TextBlock.fontWeight FontWeight.Black
+                                      TextBlock.foreground Theme.Accent
+                                      TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                    Slider.create
+                        [ Slider.minimum (float minFee)
+                          Slider.maximum (float maxFee)
+                          Slider.value (float fee)
+                          Slider.onValueChanged (fun v ->
+                              dispatch (TransferMsg(UpdateOfferedFee(decimal v |> roundToNearest 1000m))))
+                          Slider.margin (0.0, 0.0, 0.0, 4.0) ]
+                    Grid.create
+                        [ Grid.columnDefinitions "*, *"
+                          Grid.children
+                              [ TextBlock.create
+                                    [ Grid.column 0
+                                      TextBlock.text (formatValue minFee)
+                                      TextBlock.fontSize 10.0
+                                      TextBlock.foreground Theme.TextMuted ]
+                                TextBlock.create
+                                    [ Grid.column 1
+                                      TextBlock.text (formatValue maxFee)
+                                      TextBlock.fontSize 10.0
+                                      TextBlock.foreground Theme.TextMuted
+                                      TextBlock.horizontalAlignment HorizontalAlignment.Right ] ] ] ] ]
+
+    let private statusBanner (color: string) (icon: Material.Icons.MaterialIconKind) (text: string) =
+        Border.create
+            [ Border.background (color + "18")
+              Border.borderBrush (color + "55")
+              Border.borderThickness 1.0
+              Border.cornerRadius 8.0
+              Border.padding (12.0, 10.0)
+              Border.margin (0.0, 0.0, 0.0, 12.0)
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.orientation Orientation.Horizontal
+                        StackPanel.spacing 8.0
+                        StackPanel.children
+                            [ Icons.iconMd icon color
+                              TextBlock.create
+                                  [ TextBlock.text text
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.foreground color
+                                    TextBlock.verticalAlignment VerticalAlignment.Center
+                                    TextBlock.textWrapping TextWrapping.Wrap ] ] ]
+              ) ]
+
+    let private negotiationPanel (p: Player) (buyer: Club) (neg: ActiveNegotiation) (dispatch: Msg -> unit) =
+        let minFee = p.Value * 0.5m
+        let maxFee = p.Value * 2.0m
+
+        let stepContent =
+            match neg.Step with
+            | MakingOffer ->
+                let canAffordIt = canAfford buyer neg.OfferedFee (suggestedSalary p)
+
+                StackPanel.create
+                    [ StackPanel.spacing 12.0
+                      StackPanel.children
+                          [ feeSlider neg.OfferedFee minFee maxFee dispatch
+                            infoRow "Market Value" (formatValue p.Value) Theme.TextSub
+                            infoRow "Your Budget" (formatValue buyer.Budget) Theme.Accent
+                            infoRow "Est. Salary" (formatSalary (suggestedSalary p)) Theme.TextSub
+                            Border.create
+                                [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
+                            if not canAffordIt then
+                                statusBanner Theme.Danger UI.warning "Insufficient budget for this offer"
+                            Grid.create
+                                [ Grid.columnDefinitions "*, Auto"
+                                  Grid.margin 8.0
+                                  Grid.children
+                                      [ UI.ghostButton "Cancel" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                        Border.create
+                                            [ Grid.column 1
+                                              Border.child (
+                                                  UI.primaryButton "Submit Offer" (Some Club.transfer) (fun _ ->
+                                                      dispatch (TransferMsg SubmitOffer))
+                                              ) ] ] ] ] ]
+                :> IView
+
+            | OfferRejected reason ->
+                StackPanel.create
+                    [ StackPanel.spacing 12.0
+                      StackPanel.children
+                          [ statusBanner Theme.Danger UI.error reason
+                            infoRow "Offered Fee" (formatValue neg.OfferedFee) Theme.Danger
+                            infoRow "Market Value" (formatValue p.Value) Theme.TextSub
+                            Grid.create
+                                [ Grid.columnDefinitions "*, Auto"
+                                  Grid.margin 8.0
+                                  Grid.children
+                                      [ UI.ghostButton "Give Up" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                        Border.create
+                                            [ Grid.column 1
+                                              Border.child (
+                                                  UI.primaryButton "Try Higher Fee" (Some UI.add) (fun _ ->
+                                                      let higher = min maxFee (neg.OfferedFee * 1.15m)
+                                                      dispatch (TransferMsg(UpdateOfferedFee higher))
+                                                      dispatch (TransferMsg SubmitOffer))
+                                              ) ] ] ] ] ]
+                :> IView
+
+            | NegotiatingContract(salary, years) ->
+                StackPanel.create
+                    [ StackPanel.spacing 12.0
+                      StackPanel.children
+                          [ statusBanner Theme.Accent UI.success "Club accepted! Now negotiate with the player."
+                            infoRow "Transfer Fee" (formatValue neg.OfferedFee) Theme.Accent
+                            infoRow "Contract Length" $"{years} years" Theme.TextSub
+                            infoRow "Offered Salary" (formatSalary salary) Theme.TextSub
+                            infoRow "Current Salary" (formatSalary p.Salary) Theme.TextMuted
+                            Border.create
+                                [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
+                            sectionLabel "Adjust Salary Offer"
+                            Slider.create
+                                [ Slider.minimum (float p.Salary * 0.9)
+                                  Slider.maximum (float p.Salary * 2.5)
+                                  Slider.value (float salary)
+                                  Slider.onValueChanged (fun v ->
+                                      dispatch (
+                                          TransferMsg(OfferCounterSalary(decimal v |> roundToNearest 10m, years))
+                                      )) ]
+                            Grid.create
+                                [ Grid.columnDefinitions "*, Auto"
+                                  Grid.margin 8.0
+                                  Grid.children
+                                      [ UI.ghostButton "Withdraw" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                        Border.create
+                                            [ Grid.column 1
+                                              Border.child (
+                                                  UI.primaryButton "Offer Contract" (Some PlayerIcon.contract) (fun _ ->
+                                                      dispatch (TransferMsg AcceptContract))
+                                              ) ] ] ] ] ]
+                :> IView
+
+            | ContractRejected ->
+                StackPanel.create
+                    [ StackPanel.spacing 12.0
+                      StackPanel.children
+                          [ statusBanner
+                                Theme.Danger
+                                UI.error
+                                "Player rejected the contract. Try offering a higher salary."
+                            infoRow "Transfer Fee Paid" (formatValue neg.OfferedFee) Theme.TextSub
+                            infoRow "Salary Offered" (formatSalary (suggestedSalary p)) Theme.Danger
+                            Grid.create
+                                [ Grid.columnDefinitions "*, Auto"
+                                  Grid.margin 8.0
+                                  Grid.children
+                                      [ UI.ghostButton "Abandon" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                        Border.create
+                                            [ Grid.column 1
+                                              Border.child (
+                                                  UI.primaryButton "Improve Offer" (Some UI.add) (fun _ ->
+                                                      let better = suggestedSalary p * 1.2m
+                                                      dispatch (TransferMsg(OfferCounterSalary(better, 3)))
+                                                      dispatch (TransferMsg AcceptContract))
+                                              ) ] ] ] ] ]
+                :> IView
+
+            | NegotiationComplete ->
+                StackPanel.create
+                    [ StackPanel.spacing 12.0
+                      StackPanel.children
+                          [ statusBanner Theme.Accent UI.success $"{p.Name} has joined your club!"
+                            infoRow "Transfer Fee" (formatValue neg.OfferedFee) Theme.Accent
+                            UI.primaryButton "Done" (Some UI.success) (fun _ -> dispatch (TransferMsg ClearNegotiation)) ] ]
+                :> IView
+
+        Border.create
+            [ Border.background Theme.BgCard
+              Border.borderBrush (Theme.Accent + "44")
+              Border.borderThickness 1.0
+              Border.cornerRadius 10.0
+              Border.margin (0.0, 12.0, 0.0, 0.0)
+              Border.padding (16.0, 14.0)
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.spacing 10.0
+                        StackPanel.verticalAlignment VerticalAlignment.Stretch
+                        StackPanel.children
+                            [ Grid.create
+                                  [ Grid.columnDefinitions "Auto, *"
+                                    Grid.children
+                                        [ Icons.iconMd Club.transfer Theme.Accent
+                                          TextBlock.create
+                                              [ Grid.column 1
+                                                TextBlock.text "Transfer Negotiation"
+                                                TextBlock.fontSize 13.0
+                                                TextBlock.fontWeight FontWeight.Bold
+                                                TextBlock.foreground Theme.TextMain
+                                                TextBlock.margin (8.0, 0.0, 0.0, 0.0)
+                                                TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                              stepContent ] ]
+              ) ]
+
+    // ── Player detail panel ──────────────────────────────────────────────
+
     let private playerDetailPanel
         (p: Player)
         (clubName: string)
         (isWatched: bool)
-        (onWatch: unit -> unit)
-        (onOffer: unit -> unit)
+        (buyer: Club)
+        (activeNeg: ActiveNegotiation option)
+        (dispatch: Msg -> unit)
         =
         let posColor = positionColor p.Position
 
-        StackPanel.create
-            [ StackPanel.spacing 0.0
-              StackPanel.children
-                  [ Border.create
-                        [ Border.background Theme.BgCard
-                          Border.padding (20.0, 20.0, 20.0, 16.0)
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                          Border.child (
-                              StackPanel.create
-                                  [ StackPanel.spacing 14.0
-                                    StackPanel.children
-                                        [ Grid.create
-                                              [ Grid.columnDefinitions "Auto, *"
-                                                Grid.children
-                                                    [ Border.create
-                                                          [ Grid.column 0
-                                                            Border.margin (0.0, 0.0, 14.0, 0.0)
-                                                            Border.child (playerAvatar p.Name p.Position 52.0) ]
-                                                      StackPanel.create
-                                                          [ Grid.column 1
-                                                            StackPanel.verticalAlignment VerticalAlignment.Center
-                                                            StackPanel.spacing 4.0
-                                                            StackPanel.children
-                                                                [ TextBlock.create
-                                                                      [ TextBlock.text p.Name
-                                                                        TextBlock.fontSize 16.0
-                                                                        TextBlock.fontWeight FontWeight.Black
-                                                                        TextBlock.foreground Theme.TextMain ]
-                                                                  StackPanel.create
-                                                                      [ StackPanel.orientation Orientation.Horizontal
-                                                                        StackPanel.spacing 8.0
-                                                                        StackPanel.children
-                                                                            [ Border.create
-                                                                                  [ Border.background (posColor + "22")
-                                                                                    Border.borderBrush (posColor + "55")
-                                                                                    Border.borderThickness 1.0
-                                                                                    Border.cornerRadius 4.0
-                                                                                    Border.padding (6.0, 2.0)
-                                                                                    Border.child (
-                                                                                        TextBlock.create
-                                                                                            [ TextBlock.text
-                                                                                                  $"%A{p.Position}"
-                                                                                              TextBlock.fontSize 10.0
-                                                                                              TextBlock.fontWeight
-                                                                                                  FontWeight.Black
-                                                                                              TextBlock.foreground
-                                                                                                  posColor ]
-                                                                                    ) ]
-                                                                              TextBlock.create
-                                                                                  [ TextBlock.text clubName
-                                                                                    TextBlock.fontSize 11.0
-                                                                                    TextBlock.foreground Theme.TextMuted ] ] ] ] ] ] ]
-                                          Grid.create
-                                              [ Grid.columnDefinitions "*, *, *"
-                                                Grid.children
-                                                    [ StackPanel.create
-                                                          [ Grid.column 0
-                                                            StackPanel.spacing 2.0
-                                                            StackPanel.children
-                                                                [ TextBlock.create
-                                                                      [ TextBlock.text "CA / PA"
-                                                                        TextBlock.fontSize 9.0
-                                                                        TextBlock.fontWeight FontWeight.Bold
-                                                                        TextBlock.foreground Theme.TextMuted
-                                                                        TextBlock.lineSpacing 1.0 ]
-                                                                  TextBlock.create
-                                                                      [ TextBlock.text
-                                                                            $"{p.CurrentSkill} / {p.PotentialSkill}"
-                                                                        TextBlock.fontSize 15.0
-                                                                        TextBlock.fontWeight FontWeight.Black
-                                                                        TextBlock.foreground Theme.Accent ] ] ]
-                                                      StackPanel.create
-                                                          [ Grid.column 1
-                                                            StackPanel.spacing 2.0
-                                                            StackPanel.children
-                                                                [ TextBlock.create
-                                                                      [ TextBlock.text "VALUE"
-                                                                        TextBlock.fontSize 9.0
-                                                                        TextBlock.fontWeight FontWeight.Bold
-                                                                        TextBlock.foreground Theme.TextMuted
-                                                                        TextBlock.lineSpacing 1.0 ]
-                                                                  TextBlock.create
-                                                                      [ TextBlock.text (formatValue p.Value)
-                                                                        TextBlock.fontSize 15.0
-                                                                        TextBlock.fontWeight FontWeight.Black
-                                                                        TextBlock.foreground Theme.TextMain ] ] ]
-                                                      StackPanel.create
-                                                          [ Grid.column 2
-                                                            StackPanel.spacing 2.0
-                                                            StackPanel.children
-                                                                [ TextBlock.create
-                                                                      [ TextBlock.text "WAGE"
-                                                                        TextBlock.fontSize 9.0
-                                                                        TextBlock.fontWeight FontWeight.Bold
-                                                                        TextBlock.foreground Theme.TextMuted
-                                                                        TextBlock.lineSpacing 1.0 ]
-                                                                  TextBlock.create
-                                                                      [ TextBlock.text (formatValue p.Salary)
-                                                                        TextBlock.fontSize 15.0
-                                                                        TextBlock.fontWeight FontWeight.Black
-                                                                        TextBlock.foreground Theme.TextMain ] ] ] ] ] ] ]
-                          ) ]
-                    ScrollViewer.create
-                        [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                          ScrollViewer.content (
-                              StackPanel.create
-                                  [ StackPanel.margin (20.0, 16.0)
-                                    StackPanel.spacing 0.0
-                                    StackPanel.children
-                                        [ statGroup
-                                              "Technical"
-                                              [ "Finishing", p.Technical.Finishing
-                                                "Dribbling", p.Technical.Dribbling
-                                                "Passing", p.Technical.Passing
-                                                "Ball Control", p.Technical.BallControl
-                                                "Tackling", p.Technical.Tackling
-                                                "Marking", p.Technical.Marking ]
-                                              Theme.AccentAlt
-                                          statGroup
-                                              "Physical"
-                                              [ "Pace", p.Physical.Pace
-                                                "Stamina", p.Physical.Stamina
-                                                "Strength", p.Physical.Strength
-                                                "Agility", p.Physical.Agility ]
-                                              Theme.Accent
-                                          statGroup
-                                              "Mental"
-                                              [ "Vision", p.Mental.Vision
-                                                "Composure", p.Mental.Composure
-                                                "Positioning", p.Mental.Positioning
-                                                "Work Rate", p.Mental.WorkRate ]
-                                              Theme.Warning
-                                          StackPanel.create
-                                              [ StackPanel.margin (0.0, 8.0, 0.0, 0.0)
-                                                StackPanel.spacing 8.0
-                                                StackPanel.children
-                                                    [ Button.create
-                                                          [ Button.horizontalAlignment HorizontalAlignment.Stretch
-                                                            Button.background (
-                                                                if isWatched then
-                                                                    Theme.Warning + "22"
-                                                                else
-                                                                    "Transparent"
-                                                            )
-                                                            Button.borderBrush (
-                                                                if isWatched then Theme.Warning else Theme.Border
-                                                            )
-                                                            Button.borderThickness 1.0
-                                                            Button.cornerRadius 8.0
-                                                            Button.padding (0.0, 10.0)
-                                                            Button.onClick (fun _ -> onWatch ())
-                                                            Button.content (
-                                                                StackPanel.create
-                                                                    [ StackPanel.orientation Orientation.Horizontal
-                                                                      StackPanel.spacing 6.0
-                                                                      StackPanel.horizontalAlignment
-                                                                          HorizontalAlignment.Center
-                                                                      StackPanel.children
-                                                                          [ Icons.iconSm
-                                                                                PlayerIcon.skill
-                                                                                (if isWatched then
-                                                                                     Theme.Warning
-                                                                                 else
-                                                                                     Theme.TextMuted)
-                                                                            TextBlock.create
-                                                                                [ TextBlock.text (
-                                                                                      if isWatched then
-                                                                                          "On Watchlist"
-                                                                                      else
-                                                                                          "Add to Watchlist"
-                                                                                  )
-                                                                                  TextBlock.fontSize 12.0
-                                                                                  TextBlock.fontWeight
-                                                                                      FontWeight.SemiBold
-                                                                                  TextBlock.foreground (
-                                                                                      if isWatched then
-                                                                                          Theme.Warning
-                                                                                      else
-                                                                                          Theme.TextMuted
-                                                                                  )
-                                                                                  TextBlock.verticalAlignment
-                                                                                      VerticalAlignment.Center ] ] ]
-                                                            ) ]
-                                                      UI.primaryButton "Make Offer" (Some Club.transfer) (fun _ ->
-                                                          onOffer ()) ] ] ] ]
-                          ) ] ] ]
+        let header =
+            Border.create
+                [ Border.background Theme.BgCard
+                  Border.padding (20.0, 20.0, 20.0, 16.0)
+                  Border.borderBrush Theme.Border
+                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                  Border.child (
+                      StackPanel.create
+                          [ StackPanel.spacing 14.0
+                            StackPanel.children
+                                [ Grid.create
+                                      [ Grid.columnDefinitions "Auto, *"
+                                        Grid.children
+                                            [ Border.create
+                                                  [ Grid.column 0
+                                                    Border.margin (0.0, 0.0, 14.0, 0.0)
+                                                    Border.child (playerAvatar p.Name p.Position 52.0) ]
+                                              StackPanel.create
+                                                  [ Grid.column 1
+                                                    StackPanel.verticalAlignment VerticalAlignment.Center
+                                                    StackPanel.spacing 4.0
+                                                    StackPanel.children
+                                                        [ TextBlock.create
+                                                              [ TextBlock.text p.Name
+                                                                TextBlock.fontSize 16.0
+                                                                TextBlock.fontWeight FontWeight.Black
+                                                                TextBlock.foreground Theme.TextMain ]
+                                                          StackPanel.create
+                                                              [ StackPanel.orientation Orientation.Horizontal
+                                                                StackPanel.spacing 8.0
+                                                                StackPanel.children
+                                                                    [ Border.create
+                                                                          [ Border.background (posColor + "22")
+                                                                            Border.borderBrush (posColor + "55")
+                                                                            Border.borderThickness 1.0
+                                                                            Border.cornerRadius 4.0
+                                                                            Border.padding (6.0, 2.0)
+                                                                            Border.child (
+                                                                                TextBlock.create
+                                                                                    [ TextBlock.text $"%A{p.Position}"
+                                                                                      TextBlock.fontSize 10.0
+                                                                                      TextBlock.fontWeight
+                                                                                          FontWeight.Black
+                                                                                      TextBlock.foreground posColor ]
+                                                                            ) ]
+                                                                      TextBlock.create
+                                                                          [ TextBlock.text clubName
+                                                                            TextBlock.fontSize 11.0
+                                                                            TextBlock.foreground Theme.TextMuted ] ] ] ] ] ] ]
+                                  Grid.create
+                                      [ Grid.columnDefinitions "*, *, *"
+                                        Grid.children
+                                            [ StackPanel.create
+                                                  [ Grid.column 0
+                                                    StackPanel.spacing 2.0
+                                                    StackPanel.children
+                                                        [ TextBlock.create
+                                                              [ TextBlock.text "CA / PA"
+                                                                TextBlock.fontSize 9.0
+                                                                TextBlock.fontWeight FontWeight.Bold
+                                                                TextBlock.foreground Theme.TextMuted
+                                                                TextBlock.lineSpacing 1.0 ]
+                                                          TextBlock.create
+                                                              [ TextBlock.text $"{p.CurrentSkill} / {p.PotentialSkill}"
+                                                                TextBlock.fontSize 15.0
+                                                                TextBlock.fontWeight FontWeight.Black
+                                                                TextBlock.foreground Theme.Accent ] ] ]
+                                              StackPanel.create
+                                                  [ Grid.column 1
+                                                    StackPanel.spacing 2.0
+                                                    StackPanel.children
+                                                        [ TextBlock.create
+                                                              [ TextBlock.text "VALUE"
+                                                                TextBlock.fontSize 9.0
+                                                                TextBlock.fontWeight FontWeight.Bold
+                                                                TextBlock.foreground Theme.TextMuted
+                                                                TextBlock.lineSpacing 1.0 ]
+                                                          TextBlock.create
+                                                              [ TextBlock.text (formatValue p.Value)
+                                                                TextBlock.fontSize 15.0
+                                                                TextBlock.fontWeight FontWeight.Black
+                                                                TextBlock.foreground Theme.TextMain ] ] ]
+                                              StackPanel.create
+                                                  [ Grid.column 2
+                                                    StackPanel.spacing 2.0
+                                                    StackPanel.children
+                                                        [ TextBlock.create
+                                                              [ TextBlock.text "WAGE"
+                                                                TextBlock.fontSize 9.0
+                                                                TextBlock.fontWeight FontWeight.Bold
+                                                                TextBlock.foreground Theme.TextMuted
+                                                                TextBlock.lineSpacing 1.0 ]
+                                                          TextBlock.create
+                                                              [ TextBlock.text (formatSalary p.Salary)
+                                                                TextBlock.fontSize 15.0
+                                                                TextBlock.fontWeight FontWeight.Black
+                                                                TextBlock.foreground Theme.TextMain ] ] ] ] ] ] ]
+                  ) ]
+
+        let body =
+            ScrollViewer.create
+                [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                  ScrollViewer.content (
+                      StackPanel.create
+                          [ StackPanel.margin (20.0, 16.0)
+                            StackPanel.spacing 0.0
+                            StackPanel.children
+                                [ statGroup
+                                      "Technical"
+                                      [ "Finishing", p.Technical.Finishing
+                                        "Dribbling", p.Technical.Dribbling
+                                        "Passing", p.Technical.Passing
+                                        "Ball Control", p.Technical.BallControl
+                                        "Tackling", p.Technical.Tackling
+                                        "Marking", p.Technical.Marking ]
+                                      Theme.AccentAlt
+                                  statGroup
+                                      "Physical"
+                                      [ "Pace", p.Physical.Pace
+                                        "Stamina", p.Physical.Stamina
+                                        "Strength", p.Physical.Strength
+                                        "Agility", p.Physical.Agility ]
+                                      Theme.Accent
+                                  statGroup
+                                      "Mental"
+                                      [ "Vision", p.Mental.Vision
+                                        "Composure", p.Mental.Composure
+                                        "Positioning", p.Mental.Positioning
+                                        "Work Rate", p.Mental.WorkRate ]
+                                      Theme.Warning
+
+                                  match activeNeg with
+                                  | Some neg when neg.PlayerId = p.Id -> negotiationPanel p buyer neg dispatch
+                                  | _ ->
+                                      StackPanel.create
+                                          [ StackPanel.margin (0.0, 8.0, 0.0, 0.0)
+                                            StackPanel.spacing 8.0
+                                            StackPanel.children
+                                                [ Button.create
+                                                      [ Button.horizontalAlignment HorizontalAlignment.Stretch
+                                                        Button.background (
+                                                            if isWatched then Theme.Warning + "22" else "Transparent"
+                                                        )
+                                                        Button.borderBrush (
+                                                            if isWatched then Theme.Warning else Theme.Border
+                                                        )
+                                                        Button.borderThickness 1.0
+                                                        Button.cornerRadius 8.0
+                                                        Button.padding (0.0, 10.0)
+                                                        Button.onClick (fun _ ->
+                                                            dispatch (TransferMsg(WatchToggle p.Id)))
+                                                        Button.content (
+                                                            StackPanel.create
+                                                                [ StackPanel.orientation Orientation.Horizontal
+                                                                  StackPanel.spacing 6.0
+                                                                  StackPanel.horizontalAlignment
+                                                                      HorizontalAlignment.Center
+                                                                  StackPanel.children
+                                                                      [ Icons.iconSm
+                                                                            PlayerIcon.skill
+                                                                            (if isWatched then
+                                                                                 Theme.Warning
+                                                                             else
+                                                                                 Theme.TextMuted)
+                                                                        TextBlock.create
+                                                                            [ TextBlock.text (
+                                                                                  if isWatched then
+                                                                                      "On Watchlist"
+                                                                                  else
+                                                                                      "Add to Watchlist"
+                                                                              )
+                                                                              TextBlock.fontSize 12.0
+                                                                              TextBlock.fontWeight FontWeight.SemiBold
+                                                                              TextBlock.foreground (
+                                                                                  if isWatched then
+                                                                                      Theme.Warning
+                                                                                  else
+                                                                                      Theme.TextMuted
+                                                                              )
+                                                                              TextBlock.verticalAlignment
+                                                                                  VerticalAlignment.Center ] ] ]
+                                                        ) ]
+                                                  UI.primaryButton "Make Offer" (Some Club.transfer) (fun _ ->
+                                                      dispatch (TransferMsg(MakeOffer(p.Id, suggestedFee p)))) ] ] ] ]
+                  ) ]
+
+        Grid.create
+            [ Grid.rowDefinitions "Auto, *"
+              Grid.children
+                  [ Border.create [ Grid.row 0; Border.child header ]
+                    Border.create [ Grid.row 1; Border.child body ] ] ]
+
+    // ── Static panels ────────────────────────────────────────────────────
 
     let private marketTableHeader () =
         Border.create
@@ -571,63 +822,152 @@ module Transfers =
                   ) ]
             :> IView
 
+    // ── Outgoing offers tab ──────────────────────────────────────────────
+
+    let private offerStatusLabel (status: OfferStatus) =
+        match status with
+        | Pending -> "Pending", Theme.Warning
+        | AcceptedByClub -> "Club Accepted", Theme.Accent
+        | RejectedByClub -> "Rejected", Theme.Danger
+        | ContractOffered _ -> "Negotiating", Theme.AccentAlt
+        | ContractRejectedByPlayer -> "Player Refused", Theme.Danger
+        | Completed -> "Completed", Theme.Accent
+        | Withdrawn -> "Withdrawn", Theme.TextMuted
+
+    let private offerRow
+        (offer: TransferOffer)
+        (players: Map<PlayerId, Player>)
+        (clubs: Map<ClubId, Club>)
+        (dispatch: Msg -> unit)
+        =
+        let playerName =
+            players
+            |> Map.tryFind offer.PlayerId
+            |> Option.map _.Name
+            |> Option.defaultValue "Unknown"
+
+        let sellerName =
+            clubs
+            |> Map.tryFind offer.SellerClubId
+            |> Option.map _.Name
+            |> Option.defaultValue "Unknown"
+
+        let label, color = offerStatusLabel offer.Status
+
+        Border.create
+            [ Border.padding (16.0, 12.0)
+              Border.borderBrush Theme.Border
+              Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+              Border.child (
+                  Grid.create
+                      [ Grid.columnDefinitions "*, Auto, Auto, Auto"
+                        Grid.margin 12.0
+                        Grid.children
+                            [ StackPanel.create
+                                  [ Grid.column 0
+                                    StackPanel.verticalAlignment VerticalAlignment.Center
+                                    StackPanel.spacing 2.0
+                                    StackPanel.children
+                                        [ TextBlock.create
+                                              [ TextBlock.text playerName
+                                                TextBlock.fontSize 13.0
+                                                TextBlock.fontWeight FontWeight.SemiBold
+                                                TextBlock.foreground Theme.TextMain ]
+                                          TextBlock.create
+                                              [ TextBlock.text sellerName
+                                                TextBlock.fontSize 11.0
+                                                TextBlock.foreground Theme.TextMuted ] ] ]
+                              TextBlock.create
+                                  [ Grid.column 1
+                                    TextBlock.text (formatValue offer.Fee)
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.foreground Theme.TextSub
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              Border.create
+                                  [ Grid.column 2
+                                    Border.background (color + "18")
+                                    Border.borderBrush (color + "55")
+                                    Border.borderThickness 1.0
+                                    Border.cornerRadius 4.0
+                                    Border.padding (6.0, 3.0)
+                                    Border.verticalAlignment VerticalAlignment.Center
+                                    Border.child (
+                                        TextBlock.create
+                                            [ TextBlock.text label
+                                              TextBlock.fontSize 10.0
+                                              TextBlock.fontWeight FontWeight.Bold
+                                              TextBlock.foreground color ]
+                                    ) ]
+                              if offer.Status <> Completed && offer.Status <> Withdrawn then
+                                  Button.create
+                                      [ Grid.column 3
+                                        Button.padding (6.0, 4.0)
+                                        Button.background "Transparent"
+                                        Button.borderBrush Theme.Border
+                                        Button.borderThickness 1.0
+                                        Button.cornerRadius 6.0
+                                        Button.verticalAlignment VerticalAlignment.Center
+                                        Button.onClick (fun _ -> dispatch (TransferMsg(WithdrawOffer offer.Id)))
+                                        Button.content (Icons.iconSm UI.close Theme.Danger) ] ] ]
+              ) ]
+
+    // ── Transfer history tab ─────────────────────────────────────────────
+
+    let private historyRow (r: TransferRecord) =
+        Border.create
+            [ Border.padding (16.0, 12.0)
+              Border.borderBrush Theme.Border
+              Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+              Border.child (
+                  Grid.create
+                      [ Grid.columnDefinitions "*, Auto, Auto"
+                        Grid.margin 12.0
+                        Grid.children
+                            [ StackPanel.create
+                                  [ Grid.column 0
+                                    StackPanel.verticalAlignment VerticalAlignment.Center
+                                    StackPanel.spacing 2.0
+                                    StackPanel.children
+                                        [ TextBlock.create
+                                              [ TextBlock.text r.PlayerName
+                                                TextBlock.fontSize 13.0
+                                                TextBlock.fontWeight FontWeight.SemiBold
+                                                TextBlock.foreground Theme.TextMain ]
+                                          TextBlock.create
+                                              [ TextBlock.text $"{r.FromClubName} → {r.ToClubName}"
+                                                TextBlock.fontSize 11.0
+                                                TextBlock.foreground Theme.TextMuted ] ] ]
+                              TextBlock.create
+                                  [ Grid.column 1
+                                    TextBlock.text (formatValue r.Fee)
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.foreground Theme.Accent
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ Grid.column 2
+                                    TextBlock.text $"Season {r.Season}"
+                                    TextBlock.fontSize 11.0
+                                    TextBlock.foreground Theme.TextMuted
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+              ) ]
+
+    // ── Root view ────────────────────────────────────────────────────────
+
     let transfersView (state: State) (dispatch: Msg -> unit) =
         let ts = state.Transfer
-
-        let filteredPlayers =
-            ts.CachedPlayers
-            |> List.filter (fun p ->
-                let matchesSearch =
-                    ts.SearchQuery = ""
-                    || p.Name.ToLowerInvariant().Contains(ts.SearchQuery.ToLowerInvariant())
-
-                let matchesPos =
-                    match ts.PositionFilter with
-                    | AllPositions -> true
-                    | Goalkeepers -> p.Position = GK
-                    | Defenders ->
-                        match p.Position with
-                        | DC
-                        | DL
-                        | DR
-                        | WBL
-                        | WBR -> true
-                        | _ -> false
-                    | Midfielders ->
-                        match p.Position with
-                        | DM
-                        | MC
-                        | ML
-                        | MR
-                        | AMC
-                        | AML
-                        | AMR -> true
-                        | _ -> false
-                    | Attackers -> p.Position = ST
-
-                matchesSearch && matchesPos)
-            |> List.sortWith (fun a b ->
-                let cmp =
-                    match ts.SortBy with
-                    | ByName -> compare a.Name b.Name
-                    | ByCA -> compare a.CurrentSkill b.CurrentSkill
-                    | ByValue -> compare a.Value b.Value
-                    | ByAge -> compare a.Birthday b.Birthday
-                    | ByPosition -> compare $"%A{a.Position}" $"%A{b.Position}"
-
-                if ts.SortAsc then cmp else -cmp)
+        let gs = state.GameState
 
         let pagedPlayers =
-            filteredPlayers |> List.skip (ts.Page * pageSize) |> List.truncate pageSize
+            ts.FilteredPlayers |> List.skip (ts.Page * pageSize) |> List.truncate pageSize
 
         let getClubName (pid: PlayerId) =
             ts.ClubNameCache |> Map.tryFind pid |> Option.defaultValue "Unknown"
 
-        let userBudget =
-            state.GameState.Clubs
-            |> Map.tryFind state.GameState.UserClubId
-            |> Option.map _.Budget
-            |> Option.defaultValue 0m
+        let buyer = gs.Clubs[gs.UserClubId]
+
+        let userBudget = buyer.Budget
 
         let topBar =
             Border.create
@@ -811,7 +1151,7 @@ module Transfers =
                                                               (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
                                                               (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
                                       ) ]
-                            paginationBar ts.Page filteredPlayers.Length dispatch ] ]
+                            paginationBar ts.Page ts.FilteredPlayers.Length dispatch ] ]
                 :> IView
 
         let detailPanel =
@@ -825,13 +1165,14 @@ module Transfers =
                         p
                         (getClubName pid)
                         (List.contains pid ts.WatchlistIds)
-                        (fun () -> dispatch (TransferMsg(WatchToggle pid)))
-                        (fun () -> ())
+                        buyer
+                        ts.ActiveNegotiation
+                        dispatch
                     :> IView
 
         let marketContent =
             Grid.create
-                [ Grid.columnDefinitions "*, 280"
+                [ Grid.columnDefinitions "*, 300"
                   Grid.children
                       [ Border.create
                             [ Grid.column 0
@@ -848,22 +1189,105 @@ module Transfers =
             | ids ->
                 let watched = ts.CachedPlayers |> List.filter (fun p -> List.contains p.Id ids)
 
+                Grid.create
+                    [ Grid.columnDefinitions "*, 300"
+                      Grid.children
+                          [ Border.create
+                                [ Grid.column 0
+                                  Border.borderBrush Theme.Border
+                                  Border.borderThickness (0.0, 0.0, 1.0, 0.0)
+                                  Border.child (
+                                      StackPanel.create
+                                          [ StackPanel.children
+                                                [ marketTableHeader ()
+                                                  ScrollViewer.create
+                                                      [ ScrollViewer.verticalScrollBarVisibility
+                                                            ScrollBarVisibility.Auto
+                                                        ScrollViewer.content (
+                                                            StackPanel.create
+                                                                [ StackPanel.children
+                                                                      [ for p in watched do
+                                                                            playerRow
+                                                                                p
+                                                                                (getClubName p.Id)
+                                                                                (ts.SelectedPlayerId = Some p.Id)
+                                                                                true
+                                                                                (fun () ->
+                                                                                    dispatch (
+                                                                                        TransferMsg(PlayerSelect p.Id)
+                                                                                    ))
+                                                                                (fun () ->
+                                                                                    dispatch (
+                                                                                        TransferMsg(WatchToggle p.Id)
+                                                                                    )) ] ]
+                                                        ) ] ] ]
+                                  ) ]
+                            Border.create [ Grid.column 1; Border.child detailPanel ] ] ]
+                :> IView
+
+        let outgoingContent =
+            let active = ts.OutgoingOffers |> List.filter (fun o -> o.Status <> Withdrawn)
+
+            if active.IsEmpty then
+                emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here" :> IView
+            else
                 StackPanel.create
                     [ StackPanel.children
-                          [ marketTableHeader ()
+                          [ Border.create
+                                [ Border.padding (16.0, 8.0)
+                                  Border.background Theme.BgSidebar
+                                  Border.borderBrush Theme.Border
+                                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                                  Border.child (
+                                      Grid.create
+                                          [ Grid.columnDefinitions "*, Auto, 100, 32"
+                                            Grid.margin 12.0
+                                            Grid.children
+                                                [ TextBlock.create
+                                                      [ Grid.column 0
+                                                        TextBlock.text "PLAYER"
+                                                        TextBlock.fontSize 10.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.foreground Theme.TextMuted
+                                                        TextBlock.lineSpacing 1.0 ]
+                                                  TextBlock.create
+                                                      [ Grid.column 1
+                                                        TextBlock.text "FEE"
+                                                        TextBlock.fontSize 10.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.foreground Theme.TextMuted
+                                                        TextBlock.lineSpacing 1.0 ]
+                                                  TextBlock.create
+                                                      [ Grid.column 2
+                                                        TextBlock.text "STATUS"
+                                                        TextBlock.fontSize 10.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.foreground Theme.TextMuted
+                                                        TextBlock.lineSpacing 1.0 ] ] ]
+                                  ) ]
                             ScrollViewer.create
                                 [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                                   ScrollViewer.content (
                                       StackPanel.create
                                           [ StackPanel.children
-                                                [ for p in watched do
-                                                      playerRow
-                                                          p
-                                                          (getClubName p.Id)
-                                                          (ts.SelectedPlayerId = Some p.Id)
-                                                          true
-                                                          (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
-                                                          (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
+                                                [ for o in active do
+                                                      offerRow o gs.Players gs.Clubs dispatch ] ]
+                                  ) ] ] ]
+                :> IView
+
+        let historyContent =
+            if ts.TransferHistory.IsEmpty then
+                emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here" :> IView
+            else
+                StackPanel.create
+                    [ StackPanel.children
+                          [ ScrollViewer.create
+                                [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                  ScrollViewer.content (
+                                      StackPanel.create
+                                          [ StackPanel.children
+                                                [ for r in ts.TransferHistory do
+                                                      historyRow r ] ]
                                   ) ] ] ]
                 :> IView
 
@@ -873,10 +1297,8 @@ module Transfers =
             | MyWatchlist -> watchlistContent
             | IncomingOffers ->
                 emptyState UI.add "No incoming offers" "Other clubs haven't made any offers yet" :> IView
-            | OutgoingOffers ->
-                emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here" :> IView
-            | TransferHistory ->
-                emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here" :> IView
+            | OutgoingOffers -> outgoingContent
+            | TransferHistory -> historyContent
 
         Grid.create
             [ Grid.background Theme.BgMain

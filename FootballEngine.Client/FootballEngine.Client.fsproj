@@ -15,6 +15,7 @@
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\MatchContext.fs"/>
         <Compile Include="Domain\GameState.fs"/>
+        <Compile Include="Domain\Transfer.fs"/>
         <Compile Include="GameData\CountryData.fs"/>
         <Compile Include="GameData\Arg.fs"/>
         <Compile Include="GameData\Eng.fs"/>

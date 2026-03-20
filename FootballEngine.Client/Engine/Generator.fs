@@ -527,14 +527,14 @@ module GameGenerator =
                         let relegated =
                             highComp.Standings
                             |> Map.toList
-                            |> List.sortBy (fun (_, s) -> s.Points)
+                            |> List.sortBy (fun (_, s) -> s.Points, s.Won, s.GoalsFor - s.GoalsAgainst)
                             |> List.truncate n
                             |> List.map fst
 
                         let promoted =
                             lowComp.Standings
                             |> Map.toList
-                            |> List.sortByDescending (fun (_, s) -> s.Points)
+                            |> List.sortByDescending (fun (_, s) -> s.Points, s.Won, s.GoalsFor - s.GoalsAgainst)
                             |> List.truncate n
                             |> List.map fst
 
