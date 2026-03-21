@@ -21,9 +21,10 @@ module AppMsgs =
         | SimulateNextFixture
         | SimulateAllToday
         | AdvanceSeason
-        | SeasonAdvanceDone of summary: string list * GameState
+        | SeasonAdvanceDone of summary: string list * seasonFinalGs: GameState * newGs: GameState
         | SaveGame
         | SimulateSeason
+        | SimulateSeasonFailed of string
 
     type TransferMsg =
         | Load
@@ -68,3 +69,30 @@ module AppMsgs =
         | SetTactics of Formation
         | ChangeLeague of CompetitionId
         | SetProcessing of bool
+        | NoOp
+
+module SimHelpers =
+    let primaryLeagueId (gs: GameState) =
+        gs.Competitions
+        |> Map.tryFindKey (fun _ comp ->
+            match comp.Type, comp.Country with
+            | NationalLeague(LeagueLevel 0, _), Some c when c = gs.PrimaryCountry -> true
+            | _ -> false)
+        |> Option.defaultWith (fun () ->
+            gs.Competitions
+            |> Map.tryFindKey (fun _ comp ->
+                match comp.Type with
+                | NationalLeague _ -> true
+                | _ -> false)
+            |> Option.defaultValue 1)
+
+    let saveCmd (gs: GameState) : Elmish.Cmd<AppMsgs.Msg> =
+        Elmish.Cmd.OfTask.either Db.saveGameAsync gs (fun () -> AppMsgs.NoOp) (fun ex ->
+            AppMsgs.NotificationMsg(
+                AppMsgs.PushNotification
+                    { Id = 0
+                      Kind = Info
+                      Title = "Save failed"
+                      Body = ex.Message
+                      IsRead = false }
+            ))

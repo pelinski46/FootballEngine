@@ -126,9 +126,12 @@ module AppState =
         | GameLoaded result ->
             let gs = result |> Option.defaultValue (emptyGameState ())
 
+            let leagueId = SimHelpers.primaryLeagueId gs
+
             { state with
                 GameState = gs
                 CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
+                SelectedLeagueId = leagueId
                 IsProcessing = false },
             Cmd.none
 
@@ -172,8 +175,7 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs.Add(team.Id, updatedTeam) }
 
-            let saveCmd =
-                Cmd.OfTask.attempt Db.saveGameAsync newGs (fun _ -> SetProcessing false)
+            let saveCmd = SimHelpers.saveCmd newGs
 
             { state with
                 GameState = newGs
@@ -204,8 +206,7 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs |> Map.add updatedClub.Id updatedClub }
 
-            let saveCmd =
-                Cmd.OfTask.attempt Db.saveGameAsync newGs (fun _ -> SetProcessing false)
+            let saveCmd = SimHelpers.saveCmd newGs
 
             { state with
                 GameState = newGs
@@ -213,3 +214,4 @@ module AppState =
             saveCmd
 
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none
+        | NoOp -> state, Cmd.none

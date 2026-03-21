@@ -15,6 +15,14 @@ module Header =
     let header (state: State) dispatch =
 
         let isProcessing = state.IsProcessing
+        // Mutable flag to prevent double-dispatch on fast double-click,
+        // before Elmish re-renders with IsProcessing = true.
+        let mutable dispatched = false
+
+        let guardedDispatch msg =
+            if not dispatched then
+                dispatched <- true
+                dispatch msg
 
         let clubName =
             state.GameState.Clubs
@@ -89,7 +97,7 @@ module Header =
                                                 Button.cursor Avalonia.Input.Cursor.Default
                                                 Button.onClick (fun e ->
                                                     e.Handled <- true
-                                                    dispatch (SimMsg AdvanceDay))
+                                                    guardedDispatch (SimMsg AdvanceDay))
                                                 Button.content (
                                                     StackPanel.create
                                                         [ StackPanel.orientation Orientation.Horizontal
@@ -130,7 +138,7 @@ module Header =
                                                 Button.cornerRadius 8.0
                                                 Button.onClick (fun e ->
                                                     e.Handled <- true
-                                                    dispatch (SimMsg SimulateSeason))
+                                                    guardedDispatch (SimMsg SimulateSeason))
                                                 Button.content (
                                                     StackPanel.create
                                                         [ StackPanel.orientation Orientation.Horizontal

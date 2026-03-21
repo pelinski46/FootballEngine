@@ -202,6 +202,15 @@ module World =
         let avg = club.Players |> List.averageBy (fun x -> float x.CurrentSkill) |> int
         p.CurrentSkill >= avg - 5
 
+    let private isEssential (club: Club) (p: Player) =
+        // GK is always essential if the club has fewer than 2 GKs
+        let gkCount =
+            club.Players
+            |> List.filter (fun x -> x.Position = GK && x.Status = Available)
+            |> List.length
+
+        (p.Position = GK && gkCount <= 2) || isKeyPlayer club p
+
     let processContracts (rng: Random) (state: GameState) : GameState =
         let expiring =
             state.Players
@@ -211,7 +220,7 @@ module World =
         (state, expiring)
         ||> List.fold (fun acc (id, p) ->
             let newExpiry =
-                if isKeyPlayer acc.Clubs[p.ClubId] p then
+                if isEssential acc.Clubs[p.ClubId] p then
                     state.Season + rng.Next(2, 5)
                 else
                     state.Season
@@ -231,8 +240,16 @@ module World =
         |> List.truncate 3
         |> List.sumBy _.CurrentSkill
 
+    let private hasNoGk (club: Club) =
+        club.Players
+        |> List.exists (fun p -> p.Position = GK && p.Status = Available)
+        |> not
+
     let private weakestPositionGroup (club: Club) =
-        positionGroups |> List.minBy (squadStrengthByGroup club)
+        if hasNoGk club then
+            [ GK ]
+        else
+            positionGroups |> List.minBy (squadStrengthByGroup club)
 
     let private isFreeAgent (season: int) (p: Player) = p.ContractExpiry <= season
 

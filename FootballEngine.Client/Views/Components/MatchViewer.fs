@@ -28,55 +28,105 @@ module MatchViewer =
     let private positionLabel (p: Position) = $"%A{p}"
     let private toCanvas (x: float, y: float) = x * PitchW / 100.0, y * PitchH / 100.0
 
-    let private playerOpacity c =
-        0.60 + (float (max 0 (min 100 c)) / 250.0)
-
     let private conditionColor c =
         if c >= 75 then Theme.Success
         elif c >= 50 then Theme.Warning
         else Theme.Danger
 
-    let private drawPlayer (x: float) (y: float) (label: string) (teamColor: string) (condition: int) : IView =
-        let opacity = playerOpacity condition
-        let r = 15.0
+    let private shortName (p: Player) =
+        let parts = p.Name.Split(' ')
+
+        if parts.Length >= 2 then
+            $"{parts[0][0]}. {parts[parts.Length - 1]}"
+        else
+            p.Name
+
+    let private skillColor skill =
+        if skill >= 75 then Theme.Accent
+        elif skill >= 55 then Theme.Warning
+        else Theme.Danger
+
+    let private drawPlayer (x: float) (y: float) (p: Player) (teamColor: string) (condition: int) : IView =
+        let r = 18.0
         let d = r * 2.0
+        let condColor = conditionColor condition
+        let skColor = skillColor p.CurrentSkill
+        let abbrev = positionLabel p.Position
+        let name = shortName p
+        let skill = string p.CurrentSkill
 
         Canvas.create
-            [ Canvas.left (x - r - 2.0)
-              Canvas.top (y - r - 2.0)
+            [ Canvas.left (x - r - 4.0)
+              Canvas.top (y - r - 14.0)
               Canvas.children
-                  [ Ellipse.create
-                        [ Ellipse.width (d + 6.0)
+                  [ // Condition glow
+                    Ellipse.create
+                        [ Ellipse.width (d + 10.0)
+                          Ellipse.height (d + 10.0)
+                          Ellipse.fill (condColor + "30") ]
+                    // Team fill
+                    Ellipse.create
+                        [ Canvas.left 2.0
+                          Canvas.top 2.0
+                          Ellipse.width (d + 6.0)
                           Ellipse.height (d + 6.0)
-                          Ellipse.fill teamColor
-                          Ellipse.opacity (opacity * 0.20) ]
+                          Ellipse.fill (teamColor + "DD") ]
+                    // Inner circle darker
                     Ellipse.create
-                        [ Canvas.left 1.0
-                          Canvas.top 1.0
-                          Ellipse.width (d + 2.0)
-                          Ellipse.height (d + 2.0)
-                          Ellipse.fill "transparent"
-                          Ellipse.stroke (conditionColor condition)
-                          Ellipse.strokeThickness 2.0
-                          Ellipse.opacity (opacity * 0.9) ]
-                    Ellipse.create
-                        [ Canvas.left 3.0
-                          Canvas.top 3.0
+                        [ Canvas.left 5.0
+                          Canvas.top 5.0
                           Ellipse.width d
                           Ellipse.height d
-                          Ellipse.fill teamColor
-                          Ellipse.opacity opacity ]
+                          Ellipse.fill (teamColor + "FF") ]
+                    // Condition ring
+                    Ellipse.create
+                        [ Canvas.left 2.0
+                          Canvas.top 2.0
+                          Ellipse.width (d + 6.0)
+                          Ellipse.height (d + 6.0)
+                          Ellipse.fill "transparent"
+                          Ellipse.stroke condColor
+                          Ellipse.strokeThickness 2.0 ]
+                    // Position abbreviation
                     TextBlock.create
-                        [ Canvas.left 3.0
-                          Canvas.top 3.0
-                          TextBlock.text label
-                          TextBlock.foreground Theme.TextMain
-                          TextBlock.fontSize 7.5
+                        [ Canvas.left 5.0
+                          Canvas.top 5.0
+                          TextBlock.text abbrev
+                          TextBlock.foreground "#FFFFFF"
+                          TextBlock.fontSize 6.5
                           TextBlock.width d
-                          TextBlock.height d
+                          TextBlock.height (d * 0.5)
                           TextBlock.textAlignment TextAlignment.Center
-                          TextBlock.verticalAlignment VerticalAlignment.Center
-                          TextBlock.fontWeight FontWeight.Bold ] ] ]
+                          TextBlock.verticalAlignment VerticalAlignment.Bottom
+                          TextBlock.fontWeight FontWeight.Black ]
+                    // Skill number
+                    TextBlock.create
+                        [ Canvas.left 5.0
+                          Canvas.top (5.0 + d * 0.5)
+                          TextBlock.text skill
+                          TextBlock.foreground skColor
+                          TextBlock.fontSize 8.0
+                          TextBlock.width d
+                          TextBlock.height (d * 0.5)
+                          TextBlock.textAlignment TextAlignment.Center
+                          TextBlock.verticalAlignment VerticalAlignment.Top
+                          TextBlock.fontWeight FontWeight.Black ]
+                    // Name tag below circle
+                    Border.create
+                        [ Canvas.left -4.0
+                          Canvas.top (d + 10.0)
+                          Border.background (Theme.BgMain + "CC")
+                          Border.cornerRadius 3.0
+                          Border.padding (Thickness(3.0, 1.0))
+                          Border.child (
+                              TextBlock.create
+                                  [ TextBlock.text name
+                                    TextBlock.foreground "#FFFFFFCC"
+                                    TextBlock.fontSize 6.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.textAlignment TextAlignment.Center
+                                    TextBlock.width (d + 8.0) ]
+                          ) ] ] ]
 
     let private drawTeam
         (players: Player[])
@@ -92,31 +142,31 @@ module MatchViewer =
             else
                 let cx, cy = toCanvas (positionOf positions p)
                 let cond = conditions |> Array.tryItem i |> Option.defaultValue 100
-                Some(drawPlayer cx cy (positionLabel p.Position) color cond))
+                Some(drawPlayer cx cy p color cond))
         |> Array.choose id
         |> Array.toList
 
     let private drawBall (bx: float) (by: float) : IView list =
         [ Ellipse.create
-              [ Canvas.left (bx - 9.0)
-                Canvas.top (by + 3.0)
-                Ellipse.width 18.0
-                Ellipse.height 6.0
-                Ellipse.fill "#00000060" ]
+              [ Canvas.left (bx - 10.0)
+                Canvas.top (by + 5.0)
+                Ellipse.width 20.0
+                Ellipse.height 7.0
+                Ellipse.fill "#00000055" ]
           Ellipse.create
-              [ Canvas.left (bx - 7.0)
-                Canvas.top (by - 7.0)
-                Ellipse.width 14.0
-                Ellipse.height 14.0
-                Ellipse.fill Theme.TextMain
-                Ellipse.stroke "#AAAAAA"
+              [ Canvas.left (bx - 8.0)
+                Canvas.top (by - 8.0)
+                Ellipse.width 16.0
+                Ellipse.height 16.0
+                Ellipse.fill "#F8F8F8"
+                Ellipse.stroke "#CCCCCC"
                 Ellipse.strokeThickness 1.0 ]
           Ellipse.create
               [ Canvas.left (bx - 4.0)
-                Canvas.top (by - 5.5)
+                Canvas.top (by - 6.0)
                 Ellipse.width 5.0
                 Ellipse.height 4.0
-                Ellipse.fill "#FFFFFF99" ] ]
+                Ellipse.fill "#FFFFFFBB" ] ]
 
     let private pitchMarkings () : IView list =
         let w, h = PitchW, PitchH
@@ -174,11 +224,11 @@ module MatchViewer =
         Border.create
             [ Canvas.left left
               Canvas.top top
-              Border.background (Theme.BgMain + "DD")
-              Border.borderBrush Theme.Border
+              Border.background (Theme.BgMain + "E0")
+              Border.borderBrush (Theme.Border + "88")
               Border.borderThickness (Thickness 1.0)
-              Border.cornerRadius 10.0
-              Border.padding (Thickness(12.0, 6.0))
+              Border.cornerRadius 8.0
+              Border.padding (Thickness(10.0, 5.0))
               Border.child child ]
 
     let private possessionOverlay (s: MatchState) : IView =
@@ -190,66 +240,124 @@ module MatchViewer =
         hudPill 10.0 10.0
         <| StackPanel.create
             [ StackPanel.orientation Orientation.Horizontal
-              StackPanel.spacing 7.0
+              StackPanel.spacing 6.0
               StackPanel.children
-                  [ Icons.iconSm UI.simulate color
-                    Ellipse.create
-                        [ Ellipse.width 9.0
-                          Ellipse.height 9.0
+                  [ Ellipse.create
+                        [ Ellipse.width 8.0
+                          Ellipse.height 8.0
                           Ellipse.fill color
                           Ellipse.verticalAlignment VerticalAlignment.Center ]
                     TextBlock.create
-                        [ TextBlock.text name
+                        [ TextBlock.text (name.ToUpper())
                           TextBlock.foreground color
-                          TextBlock.fontSize 12.0
+                          TextBlock.fontSize 10.0
+                          TextBlock.fontWeight FontWeight.Black
+                          TextBlock.verticalAlignment VerticalAlignment.Center ]
+                    TextBlock.create
+                        [ TextBlock.text "IN POSSESSION"
+                          TextBlock.foreground (Theme.TextMuted)
+                          TextBlock.fontSize 9.0
+                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+
+    let private scoreOverlay (s: MatchState) : IView =
+        hudPill (PitchW / 2.0 - 75.0) 10.0
+        <| StackPanel.create
+            [ StackPanel.orientation Orientation.Horizontal
+              StackPanel.spacing 8.0
+              StackPanel.children
+                  [ TextBlock.create
+                        [ TextBlock.text s.Home.Name
+                          TextBlock.foreground Theme.AccentAlt
+                          TextBlock.fontSize 11.0
+                          TextBlock.fontWeight FontWeight.SemiBold
+                          TextBlock.verticalAlignment VerticalAlignment.Center ]
+                    TextBlock.create
+                        [ TextBlock.text $"{s.HomeScore} – {s.AwayScore}"
+                          TextBlock.foreground Theme.TextMain
+                          TextBlock.fontSize 15.0
+                          TextBlock.fontWeight FontWeight.Black
+                          TextBlock.verticalAlignment VerticalAlignment.Center ]
+                    TextBlock.create
+                        [ TextBlock.text s.Away.Name
+                          TextBlock.foreground Theme.Danger
+                          TextBlock.fontSize 11.0
                           TextBlock.fontWeight FontWeight.SemiBold
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
+    let private minuteOverlay (s: MatchState) : IView =
+        hudPill (PitchW - 72.0) 10.0
+        <| StackPanel.create
+            [ StackPanel.orientation Orientation.Horizontal
+              StackPanel.spacing 4.0
+              StackPanel.children
+                  [ Icons.iconSm UI.calendar Theme.Warning
+                    TextBlock.create
+                        [ TextBlock.text $"{s.Second / 60}'"
+                          TextBlock.foreground Theme.Warning
+                          TextBlock.fontSize 11.0
+                          TextBlock.fontWeight FontWeight.Black
+                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+
     let private momentumBar (s: MatchState) : IView =
-        let barW, barH = 200.0, 6.0
-        let homeW = ((s.Momentum + 10.0) / 20.0) * barW
+        let barW = 240.0
+        let homeW = ((s.Momentum + 10.0) / 20.0) * barW |> max 4.0 |> min (barW - 4.0)
         let awayW = barW - homeW
 
-        let teamLabel name align =
-            TextBlock.create
-                [ TextBlock.text name
-                  TextBlock.foreground Theme.TextMuted
-                  TextBlock.fontSize 9.0
-                  TextBlock.width (barW / 2.0)
-                  TextBlock.textAlignment align ]
-
-        let bar (color: string) left width =
-            Rectangle.create
-                [ Canvas.left left
-                  Canvas.top 0.0
-                  Rectangle.width (max 3.0 width)
-                  Rectangle.height barH
-                  Rectangle.fill color
-                  Rectangle.radiusX 3.0
-                  Rectangle.radiusY 3.0 ]
-
-        hudPill (PitchW / 2.0 - 122.0) (PitchH - 44.0)
+        hudPill (PitchW / 2.0 - 135.0) (PitchH - 42.0)
         <| StackPanel.create
             [ StackPanel.orientation Orientation.Vertical
-              StackPanel.spacing 4.0
+              StackPanel.spacing 3.0
               StackPanel.children
                   [ StackPanel.create
                         [ StackPanel.orientation Orientation.Horizontal
                           StackPanel.children
-                              [ teamLabel s.Home.Name TextAlignment.Left
-                                teamLabel s.Away.Name TextAlignment.Right ] ]
+                              [ TextBlock.create
+                                    [ TextBlock.text (s.Home.Name.ToUpper())
+                                      TextBlock.foreground Theme.AccentAlt
+                                      TextBlock.fontSize 8.0
+                                      TextBlock.fontWeight FontWeight.Black
+                                      TextBlock.width (barW / 2.0)
+                                      TextBlock.textAlignment TextAlignment.Left ]
+                                TextBlock.create
+                                    [ TextBlock.text "MOMENTUM"
+                                      TextBlock.foreground Theme.TextMuted
+                                      TextBlock.fontSize 8.0
+                                      TextBlock.fontWeight FontWeight.Bold
+                                      TextBlock.width (barW / 2.0)
+                                      TextBlock.textAlignment TextAlignment.Center ]
+                                TextBlock.create
+                                    [ TextBlock.text (s.Away.Name.ToUpper())
+                                      TextBlock.foreground Theme.Danger
+                                      TextBlock.fontSize 8.0
+                                      TextBlock.fontWeight FontWeight.Black
+                                      TextBlock.width (barW / 2.0)
+                                      TextBlock.textAlignment TextAlignment.Right ] ] ]
                     Border.create
                         [ Border.width barW
-                          Border.height barH
+                          Border.height 5.0
                           Border.cornerRadius 3.0
                           Border.background Theme.BgHover
                           Border.child (
                               Canvas.create
                                   [ Canvas.width barW
-                                    Canvas.height barH
+                                    Canvas.height 5.0
                                     Canvas.children
-                                        [ bar Theme.AccentAlt 0.0 homeW
-                                          bar Theme.Danger (barW - (max 3.0 awayW)) awayW ] ]
+                                        [ Rectangle.create
+                                              [ Canvas.left 0.0
+                                                Canvas.top 0.0
+                                                Rectangle.width homeW
+                                                Rectangle.height 5.0
+                                                Rectangle.fill Theme.AccentAlt
+                                                Rectangle.radiusX 3.0
+                                                Rectangle.radiusY 3.0 ]
+                                          Rectangle.create
+                                              [ Canvas.left (barW - awayW)
+                                                Canvas.top 0.0
+                                                Rectangle.width awayW
+                                                Rectangle.height 5.0
+                                                Rectangle.fill Theme.Danger
+                                                Rectangle.radiusX 3.0
+                                                Rectangle.radiusY 3.0 ] ] ]
                           ) ] ] ]
 
     let view (s: MatchState) : IView =
@@ -259,6 +367,7 @@ module MatchViewer =
             [ Viewbox.stretch Stretch.Uniform
               Viewbox.horizontalAlignment HorizontalAlignment.Stretch
               Viewbox.verticalAlignment VerticalAlignment.Stretch
+              Viewbox.margin (8.0, 12.0, 8.0, 12.0)
               Viewbox.child (
                   Canvas.create
                       [ Canvas.width PitchW
@@ -277,6 +386,8 @@ module MatchViewer =
                                   drawTeam s.AwayPlayers s.AwayConditions s.AwayPositions s.AwaySidelined Theme.Danger
                               yield! drawBall bcx bcy
                               possessionOverlay s
+                              scoreOverlay s
+                              minuteOverlay s
                               momentumBar s ] ]
               ) ]
 
@@ -295,16 +406,22 @@ module MatchLabView =
               StackPanel.spacing 4.0
               StackPanel.children
                   [ TextBlock.create
-                        [ TextBlock.text label
+                        [ TextBlock.text (label.ToUpper())
                           TextBlock.foreground Theme.TextMuted
-                          TextBlock.fontSize 10.0
-                          TextBlock.fontWeight FontWeight.SemiBold ]
+                          TextBlock.fontSize 9.0
+                          TextBlock.fontWeight FontWeight.Black
+                          TextBlock.lineSpacing 0.8 ]
                     ComboBox.create
                         [ ComboBox.width 200.0
+                          ComboBox.background Theme.BgCard
+                          ComboBox.borderBrush Theme.Border
                           ComboBox.dataItems clubs
                           ComboBox.itemTemplate (
                               DataTemplateView<Club>.create (fun c ->
-                                  TextBlock.create [ TextBlock.text c.Name; TextBlock.foreground Theme.TextMain ])
+                                  TextBlock.create
+                                      [ TextBlock.text c.Name
+                                        TextBlock.foreground Theme.TextMain
+                                        TextBlock.fontSize 12.0 ])
                           )
                           ComboBox.selectedItem (
                               selected
@@ -317,19 +434,19 @@ module MatchLabView =
                                   | :? Club as c -> dispatch (msg c.Id)
                                   | _ -> ()) ] ] ]
 
-    let private eventMeta =
+    let private eventTypeMeta =
         function
-        | Goal -> Icons.iconMd MatchEvent.goal Theme.Accent, Theme.Accent, "Goal"
-        | OwnGoal -> Icons.iconMd MatchEvent.ownGoal Theme.Danger, Theme.Danger, "Own Goal"
-        | Assist -> Icons.iconMd MatchEvent.assist Theme.Accent, Theme.Accent, "Assist"
-        | YellowCard -> Icons.iconMd MatchEvent.yellowCard Theme.Warning, Theme.Warning, "Yellow"
-        | RedCard -> Icons.iconMd MatchEvent.redCard Theme.Danger, Theme.Danger, "Red Card"
-        | Injury _ -> Icons.iconMd MatchEvent.injury Theme.Danger, Theme.Danger, "Injury"
-        | SubstitutionIn -> Icons.iconMd MatchEvent.subOn Theme.TextSub, Theme.TextSub, "Sub On"
-        | SubstitutionOut -> Icons.iconMd MatchEvent.subOff Theme.TextSub, Theme.TextSub, "Sub Off"
+        | Goal -> MatchEvent.goal, Theme.Success, "GOAL"
+        | OwnGoal -> MatchEvent.ownGoal, Theme.Danger, "OWN GOAL"
+        | Assist -> MatchEvent.assist, Theme.AccentAlt, "ASSIST"
+        | YellowCard -> MatchEvent.yellowCard, Theme.Warning, "YELLOW"
+        | RedCard -> MatchEvent.redCard, Theme.Danger, "RED CARD"
+        | Injury _ -> MatchEvent.injury, Theme.Danger, "INJURY"
+        | SubstitutionIn -> MatchEvent.subOn, Theme.TextSub, "SUB ON"
+        | SubstitutionOut -> MatchEvent.subOff, Theme.TextSub, "SUB OFF"
 
     let private eventRow (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) (ev: MatchEvent) : IView =
-        let icon, color, label = eventMeta ev.Type
+        let iconKind, color, label = eventTypeMeta ev.Type
 
         let clubName =
             clubs |> Map.tryFind ev.ClubId |> Option.map _.Name |> Option.defaultValue "?"
@@ -340,58 +457,67 @@ module MatchLabView =
             |> Option.map _.Name
             |> Option.defaultValue ""
 
+        let minute = ev.Second / 60
+
         Border.create
-            [ Border.padding (Thickness(8.0, 6.0))
+            [ Border.padding (Thickness(10.0, 7.0))
               Border.cornerRadius 6.0
-              Border.margin (Thickness(0.0, 1.5))
+              Border.margin (Thickness(0.0, 1.0))
               Border.background Theme.BgCard
+              Border.borderBrush (color + "33")
+              Border.borderThickness (Thickness(2.0, 0.0, 0.0, 0.0))
               Border.child (
                   Grid.create
-                      [ Grid.columnDefinitions "Auto,Auto,*"
-                        Grid.rowDefinitions "Auto,Auto"
+                      [ Grid.columnDefinitions "38, *, Auto"
                         Grid.children
                             [ Border.create
                                   [ Grid.column 0
-                                    Grid.rowSpan 2
-                                    Border.background Theme.BgHover
+                                    Border.background (color + "20")
                                     Border.cornerRadius 4.0
-                                    Border.padding (Thickness(6.0, 2.0))
+                                    Border.width 32.0
                                     Border.margin (Thickness(0.0, 0.0, 8.0, 0.0))
                                     Border.verticalAlignment VerticalAlignment.Center
                                     Border.child (
                                         TextBlock.create
-                                            [ TextBlock.text $"{ev.Second / 60}'"
-                                              TextBlock.foreground Theme.TextMuted
+                                            [ TextBlock.text $"{minute}'"
+                                              TextBlock.foreground color
                                               TextBlock.fontSize 10.0
-                                              TextBlock.fontWeight FontWeight.SemiBold ]
+                                              TextBlock.fontWeight FontWeight.Black
+                                              TextBlock.textAlignment TextAlignment.Center
+                                              TextBlock.padding (Thickness(0.0, 3.0)) ]
                                     ) ]
-                              Grid.create
-                                  [ Grid.column 1
-                                    Grid.row 0
-                                    Grid.margin (Thickness(0.0, 0.0, 6.0, 0.0))
-                                    Grid.children [ icon ] ]
                               StackPanel.create
-                                  [ Grid.column 2
-                                    Grid.row 0
-                                    StackPanel.orientation Orientation.Horizontal
-                                    StackPanel.spacing 5.0
-                                    StackPanel.children
-                                        [ TextBlock.create
-                                              [ TextBlock.text label
-                                                TextBlock.foreground color
-                                                TextBlock.fontSize 11.0
-                                                TextBlock.fontWeight FontWeight.SemiBold ]
-                                          TextBlock.create
-                                              [ TextBlock.text $"· {clubName}"
-                                                TextBlock.foreground Theme.TextMuted
-                                                TextBlock.fontSize 11.0 ] ] ]
-                              TextBlock.create
                                   [ Grid.column 1
-                                    Grid.columnSpan 2
-                                    Grid.row 1
-                                    TextBlock.text playerName
-                                    TextBlock.foreground Theme.TextSub
-                                    TextBlock.fontSize 10.0 ] ] ]
+                                    StackPanel.orientation Orientation.Vertical
+                                    StackPanel.spacing 1.0
+                                    StackPanel.children
+                                        [ StackPanel.create
+                                              [ StackPanel.orientation Orientation.Horizontal
+                                                StackPanel.spacing 5.0
+                                                StackPanel.children
+                                                    [ Icons.iconSm iconKind color
+                                                      TextBlock.create
+                                                          [ TextBlock.text label
+                                                            TextBlock.foreground color
+                                                            TextBlock.fontSize 10.0
+                                                            TextBlock.fontWeight FontWeight.Black ] ] ]
+                                          TextBlock.create
+                                              [ TextBlock.text playerName
+                                                TextBlock.foreground Theme.TextMain
+                                                TextBlock.fontSize 11.0
+                                                TextBlock.fontWeight FontWeight.SemiBold ] ] ]
+                              Border.create
+                                  [ Grid.column 2
+                                    Border.background Theme.BgHover
+                                    Border.cornerRadius 4.0
+                                    Border.padding (Thickness(5.0, 2.0))
+                                    Border.verticalAlignment VerticalAlignment.Center
+                                    Border.child (
+                                        TextBlock.create
+                                            [ TextBlock.text clubName
+                                              TextBlock.foreground Theme.TextMuted
+                                              TextBlock.fontSize 9.0 ]
+                                    ) ] ] ]
               ) ]
 
     let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
@@ -410,39 +536,42 @@ module MatchLabView =
                 | SubstitutionOut -> true)
 
         DockPanel.create
-            [ DockPanel.width 260.0
+            [ DockPanel.width 270.0
               DockPanel.lastChildFill true
               DockPanel.background Theme.BgSidebar
               DockPanel.children
                   [ Border.create
                         [ DockPanel.dock Dock.Top
-                          Border.padding (Thickness(12.0, 12.0, 12.0, 8.0))
+                          Border.padding (Thickness(12.0, 10.0))
                           Border.borderBrush Theme.Border
                           Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
                           Border.child (
                               StackPanel.create
                                   [ StackPanel.orientation Orientation.Horizontal
-                                    StackPanel.spacing 6.0
+                                    StackPanel.spacing 8.0
+                                    StackPanel.verticalAlignment VerticalAlignment.Center
                                     StackPanel.children
                                         [ TextBlock.create
-                                              [ TextBlock.text "Events"
-                                                TextBlock.foreground Theme.TextSub
-                                                TextBlock.fontSize 11.0
-                                                TextBlock.fontWeight FontWeight.SemiBold ]
+                                              [ TextBlock.text "MATCH EVENTS"
+                                                TextBlock.foreground Theme.TextMuted
+                                                TextBlock.fontSize 9.0
+                                                TextBlock.fontWeight FontWeight.Black
+                                                TextBlock.lineSpacing 0.8
+                                                TextBlock.verticalAlignment VerticalAlignment.Center ]
                                           Border.create
                                               [ Border.background Theme.AccentLight
-                                                Border.cornerRadius 8.0
-                                                Border.padding (Thickness(6.0, 1.0))
+                                                Border.cornerRadius 10.0
+                                                Border.padding (Thickness(7.0, 2.0))
                                                 Border.child (
                                                     TextBlock.create
                                                         [ TextBlock.text $"{relevant.Length}"
                                                           TextBlock.foreground Theme.Accent
                                                           TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Bold ]
+                                                          TextBlock.fontWeight FontWeight.Black ]
                                                 ) ] ] ]
                           ) ]
                     ScrollViewer.create
-                        [ ScrollViewer.padding (Thickness 10.0)
+                        [ ScrollViewer.padding (Thickness(10.0, 8.0))
                           ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                           ScrollViewer.content (
                               StackPanel.create
@@ -450,40 +579,86 @@ module MatchLabView =
                                     StackPanel.children (
                                         if relevant.IsEmpty then
                                             [ TextBlock.create
-                                                  [ TextBlock.text "No events yet"
+                                                  [ TextBlock.text "No events recorded"
                                                     TextBlock.foreground Theme.TextMuted
                                                     TextBlock.fontSize 11.0
-                                                    TextBlock.margin (Thickness(0.0, 8.0)) ]
+                                                    TextBlock.margin (Thickness(0.0, 12.0)) ]
                                               :> IView ]
                                         else
                                             [ yield! relevant |> List.map (eventRow clubs players)
-                                              Border.create [ Border.height 30.0 ] ]
+                                              Border.create [ Border.height 24.0 ] ]
                                     ) ]
                           ) ] ] ]
 
     let private vSep () : IView =
         Border.create
             [ Border.width 1.0
-              Border.height 28.0
+              Border.height 22.0
               Border.background Theme.Border
               Border.verticalAlignment VerticalAlignment.Center ]
 
-    let private navBtn (icon: IView) (enabled: bool) (onClick: unit -> unit) : IView =
+    let private navBtn (iconKind: Material.Icons.MaterialIconKind) (enabled: bool) (onClick: unit -> unit) : IView =
         Button.create
-            [ Button.content icon
-              Button.width 32.0
-              Button.height 30.0
+            [ Button.width 28.0
+              Button.height 28.0
               Button.padding (Thickness 0.0)
-              Button.background Theme.BgHover
+              Button.background (if enabled then Theme.BgHover else "transparent")
               Button.foreground (if enabled then Theme.TextMain else Theme.TextMuted)
               Button.cornerRadius 5.0
               Button.isEnabled enabled
               Button.horizontalContentAlignment HorizontalAlignment.Center
+              Button.content (Icons.iconMd iconKind (if enabled then Theme.TextMain else Theme.TextMuted))
               Button.onClick (fun _ -> onClick ()) ]
 
     let private go (delta: int) (dispatch: Msg -> unit) = dispatch (MatchLabMsg(Step delta))
 
-    let private toolbarNav (current: MatchState) (idx: int) (total: int) (replayKey: string) (dispatch: Msg -> unit) =
+    let private finalScorePill (replay: MatchReplay) : IView =
+        Border.create
+            [ Border.background Theme.BgCard
+              Border.cornerRadius 8.0
+              Border.borderBrush Theme.Border
+              Border.borderThickness (Thickness 1.0)
+              Border.padding (Thickness(14.0, 6.0))
+              Border.verticalAlignment VerticalAlignment.Center
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.orientation Orientation.Horizontal
+                        StackPanel.spacing 8.0
+                        StackPanel.children
+                            [ TextBlock.create
+                                  [ TextBlock.text "FT"
+                                    TextBlock.foreground Theme.TextMuted
+                                    TextBlock.fontSize 9.0
+                                    TextBlock.fontWeight FontWeight.Black
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text replay.Final.Home.Name
+                                    TextBlock.foreground Theme.AccentAlt
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text $"{replay.Final.HomeScore} – {replay.Final.AwayScore}"
+                                    TextBlock.foreground Theme.TextMain
+                                    TextBlock.fontSize 16.0
+                                    TextBlock.fontWeight FontWeight.Black
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text replay.Final.Away.Name
+                                    TextBlock.foreground Theme.Danger
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+              ) ]
+
+    let private toolbarNav
+        (current: MatchState)
+        (replay: MatchReplay)
+        (idx: int)
+        (total: int)
+        (replayKey: string)
+        (dispatch: Msg -> unit)
+        =
         let navButtons =
             [ Nav.skipFirst, -total, idx > 0
               Nav.rewind, -10, idx > 0
@@ -497,56 +672,28 @@ module MatchLabView =
             fun _ ->
                 StackPanel.create
                     [ StackPanel.orientation Orientation.Horizontal
-                      StackPanel.spacing 6.0
+                      StackPanel.spacing 4.0
                       StackPanel.verticalAlignment VerticalAlignment.Center
                       StackPanel.children
                           [ vSep ()
-                            Icons.iconMd UI.calendar Theme.Warning
-                            TextBlock.create
-                                [ TextBlock.text $"{current.Second / 60}:{current.Second % 60:D2}"
-                                  TextBlock.foreground Theme.Warning
-                                  TextBlock.fontSize 12.0
-                                  TextBlock.fontWeight FontWeight.Bold
-                                  TextBlock.verticalAlignment VerticalAlignment.Center ]
-                            TextBlock.create
-                                [ TextBlock.text current.Home.Name
-                                  TextBlock.foreground Theme.AccentAlt
-                                  TextBlock.fontSize 13.0
-                                  TextBlock.fontWeight FontWeight.SemiBold
-                                  TextBlock.verticalAlignment VerticalAlignment.Center ]
-                            TextBlock.create
-                                [ TextBlock.text $"{current.HomeScore} – {current.AwayScore}"
-                                  TextBlock.foreground Theme.TextMain
-                                  TextBlock.fontSize 16.0
-                                  TextBlock.fontWeight FontWeight.Black
-                                  TextBlock.verticalAlignment VerticalAlignment.Center ]
-                            TextBlock.create
-                                [ TextBlock.text current.Away.Name
-                                  TextBlock.foreground Theme.Danger
-                                  TextBlock.fontSize 13.0
-                                  TextBlock.fontWeight FontWeight.SemiBold
-                                  TextBlock.verticalAlignment VerticalAlignment.Center ]
+                            finalScorePill replay
                             vSep ()
-                            // Nav buttons generados desde la lista
                             yield!
                                 navButtons
                                 |> List.mapi (fun i (iconKind, delta, enabled) ->
-                                    // Insertar counter entre prev y next
-                                    let btn =
-                                        navBtn (Icons.iconMd iconKind Theme.TextMain) enabled (fun () ->
-                                            go delta dispatch)
+                                    let btn = navBtn iconKind enabled (fun () -> go delta dispatch)
 
                                     if i = 2 then
                                         [ btn
                                           Border.create
                                               [ Border.background Theme.BgCard
                                                 Border.cornerRadius 4.0
-                                                Border.padding (Thickness(8.0, 4.0))
+                                                Border.padding (Thickness(8.0, 3.0))
                                                 Border.verticalAlignment VerticalAlignment.Center
                                                 Border.child (
                                                     TextBlock.create
                                                         [ TextBlock.text $"{idx} / {total}"
-                                                          TextBlock.foreground Theme.TextMuted
+                                                          TextBlock.foreground Theme.TextSub
                                                           TextBlock.fontSize 10.0
                                                           TextBlock.fontWeight FontWeight.SemiBold ]
                                                 ) ]
@@ -582,7 +729,7 @@ module MatchLabView =
               DockPanel.children
                   [ Border.create
                         [ DockPanel.dock Dock.Top
-                          Border.background Theme.BgCard
+                          Border.background Theme.BgSidebar
                           Border.borderBrush Theme.Border
                           Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
                           Border.padding (Thickness(16.0, 10.0))
@@ -598,6 +745,18 @@ module MatchLabView =
                                               clubs
                                               (fun id -> MatchLabMsg(SelectHome id))
                                               dispatch
+                                          Border.create
+                                              [ Border.background Theme.BgCard
+                                                Border.cornerRadius 20.0
+                                                Border.padding (Thickness(10.0, 4.0))
+                                                Border.verticalAlignment VerticalAlignment.Bottom
+                                                Border.child (
+                                                    TextBlock.create
+                                                        [ TextBlock.text "VS"
+                                                          TextBlock.foreground Theme.TextMuted
+                                                          TextBlock.fontSize 10.0
+                                                          TextBlock.fontWeight FontWeight.Black ]
+                                                ) ]
                                           clubPicker
                                               "Away"
                                               state.MatchLab.AwayClubId
@@ -605,26 +764,27 @@ module MatchLabView =
                                               (fun id -> MatchLabMsg(SelectAway id))
                                               dispatch
                                           Button.create
-                                              [ Button.content (
+                                              [ Button.verticalAlignment VerticalAlignment.Bottom
+                                                Button.background Theme.Accent
+                                                Button.foreground Theme.BgMain
+                                                Button.padding (Thickness(18.0, 8.0))
+                                                Button.cornerRadius 7.0
+                                                Button.fontWeight FontWeight.Black
+                                                Button.onClick (fun _ -> dispatch (MatchLabMsg Run))
+                                                Button.content (
                                                     StackPanel.create
                                                         [ StackPanel.orientation Orientation.Horizontal
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
                                                               [ Icons.iconMd UI.simulate Theme.BgMain
                                                                 TextBlock.create
-                                                                    [ TextBlock.text "Simulate"
+                                                                    [ TextBlock.text "SIMULATE"
                                                                       TextBlock.foreground Theme.BgMain
-                                                                      TextBlock.fontWeight FontWeight.Bold
+                                                                      TextBlock.fontSize 11.0
+                                                                      TextBlock.fontWeight FontWeight.Black
                                                                       TextBlock.verticalAlignment
                                                                           VerticalAlignment.Center ] ] ]
-                                                )
-                                                Button.verticalAlignment VerticalAlignment.Bottom
-                                                Button.background Theme.Accent
-                                                Button.foreground Theme.BgMain
-                                                Button.padding (Thickness(18.0, 8.0))
-                                                Button.cornerRadius 7.0
-                                                Button.fontWeight FontWeight.Bold
-                                                Button.onClick (fun _ -> dispatch (MatchLabMsg Run)) ]
+                                                ) ]
                                           match state.MatchLab.Result with
                                           | Some replay ->
                                               let idx = state.MatchLab.Snapshot
@@ -638,7 +798,7 @@ module MatchLabView =
                                               let replayKey =
                                                   $"{replay.Snapshots.Length}-{replay.Final.HomeScore}-{replay.Final.AwayScore}"
 
-                                              toolbarNav cur idx total replayKey dispatch
+                                              toolbarNav cur replay idx total replayKey dispatch
                                           | None -> () ] ]
                           ) ]
 
@@ -654,7 +814,7 @@ module MatchLabView =
                                     TextBlock.create
                                         [ TextBlock.text "Select two clubs and simulate a match"
                                           TextBlock.foreground Theme.TextMuted
-                                          TextBlock.fontSize 16.0
+                                          TextBlock.fontSize 15.0
                                           TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
                         :> IView
                     | Some replay -> replayControls state replay dispatch ] ]

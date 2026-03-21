@@ -144,3 +144,19 @@ module AppTypes =
           AwayClubId = None
           Result = None
           Snapshot = 0 }
+
+    let addLog msg (state: State) =
+        { state with
+            LogMessages = msg :: state.LogMessages |> List.truncate 30 }
+
+    let pushNotification kind title body (state: State) =
+        let note =
+            { Id = state.NextNotificationId
+              Kind = kind
+              Title = title
+              Body = body
+              IsRead = false }
+
+        { state with
+            Notifications = note :: state.Notifications |> List.truncate 20
+            NextNotificationId = state.NextNotificationId + 1 }

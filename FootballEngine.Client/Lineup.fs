@@ -44,10 +44,23 @@ module Lineup =
                 |> Option.map _.CurrentSkill
                 |> Option.defaultValue 0))
 
+    let private countActiveSlots (club: Club) (lu: ClubLineup) =
+        lu.Slots
+        |> List.filter (fun s ->
+            s.PlayerId
+            |> Option.map (fun pid -> club.Players |> List.exists (fun p -> p.Id = pid && p.Status = Available))
+            |> Option.defaultValue false)
+        |> List.length
+
     let autoLineup (club: Club) (formation: Formation) : Club =
-        match club.CurrentLineup with
-        | Some _ -> club
-        | None ->
+        let needsRegen =
+            match club.CurrentLineup with
+            | None -> true
+            | Some lu -> countActiveSlots club lu < 11
+
+        if not needsRegen then
+            club
+        else
             let slots = FormationData.getFormation formation
             let bench = available club
 

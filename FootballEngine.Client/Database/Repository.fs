@@ -56,6 +56,7 @@ module Db =
 
                     conn.DeleteAll<CompetitionClubEntity>() |> ignore
                     conn.DeleteAll<LeagueStandingEntity>() |> ignore
+                    conn.DeleteAll<MatchFixtureEntity>() |> ignore
 
                     for KeyValue(_, comp) in state.Competitions do
                         conn.InsertOrReplace(toCompetitionEntity comp) |> ignore
@@ -69,7 +70,7 @@ module Db =
                             |> ignore
 
                         for KeyValue(_, fixture) in comp.Fixtures do
-                            conn.InsertOrReplace(toFixtureEntity fixture) |> ignore
+                            conn.Insert(toFixtureEntity fixture) |> ignore
 
                         for KeyValue(_, standing) in comp.Standings do
                             conn.Insert(toStandingEntity comp.Id standing) |> ignore

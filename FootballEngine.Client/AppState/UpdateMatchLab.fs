@@ -8,9 +8,7 @@ open FootballEngine.MatchSimulator
 
 module UpdateMatchLab =
 
-    let private addLog msg (state: State) =
-        { state with
-            LogMessages = msg :: state.LogMessages |> List.truncate 30 }
+    let private addLog = AppTypes.addLog
 
     let handle (msg: MatchLabMsg) (state: State) : State * Cmd<Msg> =
         match msg with

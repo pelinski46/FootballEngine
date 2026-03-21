@@ -112,17 +112,7 @@ module UpdateTransfer =
         { t with
             TransferHistory = record :: t.TransferHistory }
 
-    let private pushNotification kind title body (state: State) =
-        let note =
-            { Id = state.NextNotificationId
-              Kind = kind
-              Title = title
-              Body = body
-              IsRead = false }
-
-        { state with
-            Notifications = note :: state.Notifications |> List.truncate 20
-            NextNotificationId = state.NextNotificationId + 1 }
+    let private pushNotification = AppTypes.pushNotification
 
     let handle (msg: TransferMsg) (state: State) : State * Cmd<Msg> =
         let gs = state.GameState
@@ -321,7 +311,7 @@ module UpdateTransfer =
                                     "Transfer Complete"
                                     $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}"
 
-                            nextState, Cmd.OfTask.attempt Db.saveGameAsync newGs (fun _ -> SetProcessing false)
+                            nextState, SimHelpers.saveCmd newGs
 
                         | _ -> state, Cmd.none
                 | _ -> state, Cmd.none

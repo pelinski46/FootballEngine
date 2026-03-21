@@ -11,6 +11,17 @@ module Engine =
     let regenerateSeasonFixtures = GameGenerator.regenerateSeasonFixtures
     let computeSeasonSummary = World.computeSeasonSummary
 
+    let private ensureLineup (userClubId: ClubId) (club: Club) =
+        let isComplete =
+            club.CurrentLineup
+            |> Option.map (fun lu -> lu.Slots |> List.filter (fun s -> s.PlayerId.IsSome) |> List.length = 11)
+            |> Option.defaultValue false
+
+        if isComplete || club.Id = userClubId then
+            club
+        else
+            Lineup.autoLineup club (Lineup.bestFormation club)
+
     let updateStanding (standing: LeagueStanding) myScore oppScore =
         let base' =
             { standing with
@@ -41,6 +52,20 @@ module Engine =
 
     let simulateFixture (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
         trySimulateMatch clubs[fixture.HomeClubId] clubs[fixture.AwayClubId]
+        |> Result.map (fun (h, a, evs) ->
+            { fixture with
+                Played = true
+                HomeScore = Some h
+                AwayScore = Some a
+                Events = evs },
+            h,
+            a)
+
+    let private simulateFixtureWithFallback (userClubId: ClubId) (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
+        let home = clubs[fixture.HomeClubId] |> ensureLineup userClubId
+        let away = clubs[fixture.AwayClubId] |> ensureLineup userClubId
+
+        trySimulateMatch home away
         |> Result.map (fun (h, a, evs) ->
             { fixture with
                 Played = true
@@ -109,10 +134,20 @@ module Engine =
                 comp.Fixtures |> Map.toList |> List.map (fun (fid, _) -> fid, compId))
             |> Map.ofList
 
-        let simResults =
+        let unplayed =
             fixtures
+            |> List.filter (fun (id, _) ->
+                gameState.Competitions
+                |> Map.exists (fun _ comp ->
+                    match comp.Fixtures |> Map.tryFind id with
+                    | Some f -> not f.Played
+                    | None -> false))
+
+        let simResults =
+            unplayed
             |> List.toArray
-            |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gameState.Clubs)
+            |> Array.Parallel.map (fun (id, fixture) ->
+                id, simulateFixtureWithFallback gameState.UserClubId fixture gameState.Clubs)
 
         let outcomes, errors, logs =
             simResults

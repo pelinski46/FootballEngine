@@ -8,8 +8,7 @@ open AppMsgs
 
 module UpdateSetup =
 
-    let private saveCmd (gs: GameState) =
-        Cmd.OfTask.attempt Db.saveGameAsync gs (fun _ -> SetProcessing false)
+    let private saveCmd = SimHelpers.saveCmd
 
     let handle (msg: SetupMsg) (state: State) : State * Cmd<Msg> =
         match msg with
