@@ -185,11 +185,11 @@ module HomePresenter =
                 | _ -> None)
 
         [ if not leagues.IsEmpty then
-              "LEAGUES", UI.league, leagues
+              "LEAGUES", IconName.league, leagues
           if not cups.IsEmpty then
               "CUPS", Club.stadium, cups
           if not international.IsEmpty then
-              "INTERNATIONAL", UI.league, international ]
+              "INTERNATIONAL", IconName.league, international ]
 
 
 module Home =
@@ -239,7 +239,7 @@ module Home =
                                   (match pos, total with
                                    | Some p, Some t -> $"{p} / {t}"
                                    | _ -> "—")
-                                  UI.league
+                                  IconName.league
                                   (match standing with
                                    | Some s -> $"{s.Points} pts"
                                    | _ -> "")
@@ -346,7 +346,7 @@ module Home =
                                                           StackPanel.orientation Orientation.Horizontal
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
-                                                              [ Icons.iconSm UI.info Theme.Accent
+                                                              [ Icons.iconSm IconName.info Theme.Accent
                                                                 TextBlock.create
                                                                     [ TextBlock.text "NOTIFICATIONS"
                                                                       TextBlock.fontSize 10.0
@@ -464,7 +464,7 @@ module Home =
                                             [ StackPanel.orientation Orientation.Horizontal
                                               StackPanel.spacing 6.0
                                               StackPanel.children
-                                                  [ Icons.iconSm UI.calendar Theme.Accent
+                                                  [ Icons.iconSm IconName.calendar Theme.Accent
                                                     TextBlock.create
                                                         [ TextBlock.text "UPCOMING FIXTURES"
                                                           TextBlock.fontSize 10.0

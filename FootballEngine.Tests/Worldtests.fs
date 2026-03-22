@@ -19,7 +19,7 @@ let gameStateIntegrityTests =
 
               Expect.isTrue
                   (game.Clubs
-                   |> Map.forall (fun _ c -> c.Players |> List.forall (fun p -> Set.contains p.Id allPlayerIds)))
+                   |> Map.forall (fun _ c -> c.PlayerIds |> List.forall (fun pid -> Set.contains pid allPlayerIds)))
                   "club references unknown player"
           }
           test "all players reference valid ClubId" {
@@ -27,7 +27,7 @@ let gameStateIntegrityTests =
               let allClubIds = game.Clubs |> Map.toList |> List.map fst |> Set.ofList
 
               Expect.isTrue
-                  (game.Players |> Map.forall (fun _ p -> Set.contains p.ClubId allClubIds))
+                  (game.Players |> Map.forall (fun _ p -> Set.contains (playerClubId p) allClubIds))
                   "player references unknown club"
           }
           test "no player appears in two clubs" {
@@ -36,7 +36,7 @@ let gameStateIntegrityTests =
               let allRefs =
                   game.Clubs
                   |> Map.toList
-                  |> List.collect (fun (_, c) -> c.Players |> List.map (fun p -> p.Id, c.Id))
+                  |> List.collect (fun (_, c) -> c.PlayerIds |> List.map (fun pid -> pid, c.Id))
 
               let grouped = allRefs |> List.groupBy fst
               Expect.isTrue (grouped |> List.forall (fun (_, refs) -> refs.Length = 1)) "player found in multiple clubs"
@@ -167,11 +167,11 @@ let playerDataTests =
           }
           test "all Value >= 0" {
               let game = loadGame ()
-              Expect.isTrue (game.Players |> Map.forall (fun _ p -> p.Value >= 0m)) "player has negative value"
+              Expect.isTrue (game.Players |> Map.forall (fun _ p -> playerValue p >= 0m)) "player has negative value"
           }
           test "all Salary >= 0" {
               let game = loadGame ()
-              Expect.isTrue (game.Players |> Map.forall (fun _ p -> p.Salary >= 0m)) "player has negative salary"
+              Expect.isTrue (game.Players |> Map.forall (fun _ p -> playerSalary p >= 0m)) "player has negative salary"
           }
           test "all technical stats in [1, 20]" {
               let game = loadGame ()
@@ -275,16 +275,22 @@ let playerDataTests =
 
               Expect.isTrue
                   (game.Clubs
-                   |> Map.forall (fun _ c -> c.Players |> List.exists (fun p -> p.Position = GK)))
+                   |> Map.forall (fun _ c ->
+                       c.PlayerIds
+                       |> List.exists (fun pid ->
+                           game.Players |> Map.tryFind pid |> Option.exists (fun p -> p.Position = GK))))
                   "club has no goalkeeper"
           }
           test "all club budgets >= 0" {
               let game = loadGame ()
               Expect.isTrue (game.Clubs |> Map.forall (fun _ c -> c.Budget >= 0m)) "club has negative budget"
           }
-          test "all clubs have at least 1 player" {
+          test "all clubs have at least 11 players" {
               let game = loadGame ()
-              Expect.isTrue (game.Clubs |> Map.forall (fun _ c -> c.Players.Length > 0)) "club has no players"
+
+              Expect.isTrue
+                  (game.Clubs |> Map.forall (fun _ c -> c.PlayerIds.Length >= 11))
+                  "club has fewer than 11 players — cannot fill a lineup"
           }
           test "all club morale in [0, 100]" {
               let game = loadGame ()
@@ -318,8 +324,8 @@ let playerDataTests =
                   (players
                    |> List.forall (fun p ->
                        game.Clubs
-                       |> Map.tryFind p.ClubId
-                       |> Option.map (fun c -> c.Players |> List.exists (fun cp -> cp.Id = p.Id))
+                       |> Map.tryFind (playerClubId p)
+                       |> Option.map (fun c -> c.PlayerIds |> List.exists (fun pid -> pid = p.Id))
                        |> Option.defaultValue false))
                   "player.ClubId does not match roster"
           } ]
@@ -404,20 +410,26 @@ let lineupTests =
     testList
         "Lineup & Formation Contracts"
         [ test "all formations produce 11-slot lineup" {
-              let clubs = loadClubs ()
+              let clubs, players = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
                        FormationLineUps.all
                        |> List.forall (fun f ->
-                           match (autoLineup { c with CurrentLineup = None } f).CurrentLineup with
+                           match
+                               (autoLineup
+                                   { c with CurrentLineup = None }
+                                   (c.PlayerIds |> List.choose (fun pid -> players |> Map.tryFind pid))
+                                   f)
+                                   .CurrentLineup
+                           with
                            | None -> false
                            | Some lu -> lu.Slots.Length = 11)))
                   "formation produced <11 slots"
           }
           test "lineup has exactly 11 filled slots" {
-              let clubs = loadClubs ()
+              let clubs, _players = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -428,7 +440,7 @@ let lineupTests =
                   "lineup does not have 11 filled players"
           }
           test "all lineup players belong to the club" {
-              let clubs = loadClubs ()
+              let clubs, _players = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -436,14 +448,14 @@ let lineupTests =
                        match c.CurrentLineup with
                        | None -> true
                        | Some lu ->
-                           let clubIds = c.Players |> List.map _.Id |> Set.ofList
+                           let clubIds = c.PlayerIds |> Set.ofList
 
                            lu.Slots
                            |> List.forall (fun s -> s.PlayerId |> Option.forall (fun pid -> Set.contains pid clubIds))))
                   "lineup references foreign player"
           }
           test "lineup always has a GK" {
-              let clubs = loadClubs ()
+              let clubs, _players = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -454,7 +466,7 @@ let lineupTests =
                   "lineup has no goalkeeper"
           }
           test "all lineup slot positions in [0, 1]" {
-              let clubs = loadClubs ()
+              let clubs, _players = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -467,7 +479,7 @@ let lineupTests =
                   "slot position out of [0,1]"
           }
           test "no player appears twice in a lineup" {
-              let clubs = loadClubs ()
+              let clubs, _players = loadClubs ()
 
               Expect.isTrue
                   (clubs

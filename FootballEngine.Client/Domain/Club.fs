@@ -23,7 +23,7 @@ type Club =
       Name: string
       Nationality: CountryCode
       Reputation: int
-      Players: Player list
+      PlayerIds: PlayerId list
       CurrentLineup: ClubLineup option
       Budget: decimal
       Morale: int }

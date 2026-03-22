@@ -61,9 +61,9 @@ module Transfers =
 
     let private tabIcon (t: TransferTab) =
         match t with
-        | MarketSearch -> UI.search
+        | MarketSearch -> IconName.search
         | MyWatchlist -> PlayerIcon.skill
-        | IncomingOffers -> UI.add
+        | IncomingOffers -> IconName.add
         | OutgoingOffers -> Club.transfer
         | TransferHistory -> PlayerIcon.contract
 
@@ -179,7 +179,7 @@ module Transfers =
                                           caBar p.CurrentSkill ] ]
                               TextBlock.create
                                   [ Grid.column 4
-                                    TextBlock.text (formatValue p.Value)
+                                    TextBlock.text (formatValue (Player.playerValue p.CurrentSkill))
                                     TextBlock.fontSize 12.0
                                     TextBlock.fontWeight FontWeight.SemiBold
                                     TextBlock.foreground Theme.TextSub
@@ -344,8 +344,8 @@ module Transfers =
               ) ]
 
     let private negotiationPanel (p: Player) (buyer: Club) (neg: ActiveNegotiation) (dispatch: Msg -> unit) =
-        let minFee = p.Value * 0.5m
-        let maxFee = p.Value * 2.0m
+        let minFee = Player.playerValue p.CurrentSkill * 0.5m
+        let maxFee = Player.playerValue p.CurrentSkill * 2.0m
 
         let stepContent =
             match neg.Step with
@@ -356,13 +356,13 @@ module Transfers =
                     [ StackPanel.spacing 12.0
                       StackPanel.children
                           [ feeSlider neg.OfferedFee minFee maxFee dispatch
-                            infoRow "Market Value" (formatValue p.Value) Theme.TextSub
+                            infoRow "Market Value" (formatValue (Player.playerValue p.CurrentSkill)) Theme.TextSub
                             infoRow "Your Budget" (formatValue buyer.Budget) Theme.Accent
                             infoRow "Est. Salary" (formatSalary (suggestedSalary p)) Theme.TextSub
                             Border.create
                                 [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
                             if not canAffordIt then
-                                statusBanner Theme.Danger UI.warning "Insufficient budget for this offer"
+                                statusBanner Theme.Danger IconName.warning "Insufficient budget for this offer"
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
@@ -380,9 +380,9 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Danger UI.error reason
+                          [ statusBanner Theme.Danger IconName.error reason
                             infoRow "Offered Fee" (formatValue neg.OfferedFee) Theme.Danger
-                            infoRow "Market Value" (formatValue p.Value) Theme.TextSub
+                            infoRow "Market Value" (formatValue (Player.playerValue p.CurrentSkill)) Theme.TextSub
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
@@ -391,7 +391,7 @@ module Transfers =
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
-                                                  UI.primaryButton "Try Higher Fee" (Some UI.add) (fun _ ->
+                                                  UI.primaryButton "Try Higher Fee" (Some IconName.add) (fun _ ->
                                                       let higher = min maxFee (neg.OfferedFee * 1.15m)
                                                       dispatch (TransferMsg(UpdateOfferedFee higher))
                                                       dispatch (TransferMsg SubmitOffer))
@@ -399,20 +399,25 @@ module Transfers =
                 :> IView
 
             | NegotiatingContract(salary, years) ->
+                let currentSalary =
+                    match p.Affiliation with
+                    | Contracted(_, c) -> c.Salary
+                    | _ -> 0m
+
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Accent UI.success "Club accepted! Now negotiate with the player."
+                          [ statusBanner Theme.Accent IconName.success "Club accepted! Now negotiate with the player."
                             infoRow "Transfer Fee" (formatValue neg.OfferedFee) Theme.Accent
                             infoRow "Contract Length" $"{years} years" Theme.TextSub
                             infoRow "Offered Salary" (formatSalary salary) Theme.TextSub
-                            infoRow "Current Salary" (formatSalary p.Salary) Theme.TextMuted
+                            infoRow "Current Salary" (formatSalary currentSalary) Theme.TextMuted
                             Border.create
                                 [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
                             sectionLabel "Adjust Salary Offer"
                             Slider.create
-                                [ Slider.minimum (float p.Salary * 0.9)
-                                  Slider.maximum (float p.Salary * 2.5)
+                                [ Slider.minimum (float currentSalary * 0.9)
+                                  Slider.maximum (float currentSalary * 2.5)
                                   Slider.value (float salary)
                                   Slider.onValueChanged (fun v ->
                                       dispatch (
@@ -437,7 +442,7 @@ module Transfers =
                       StackPanel.children
                           [ statusBanner
                                 Theme.Danger
-                                UI.error
+                                IconName.error
                                 "Player rejected the contract. Try offering a higher salary."
                             infoRow "Transfer Fee Paid" (formatValue neg.OfferedFee) Theme.TextSub
                             infoRow "Salary Offered" (formatSalary (suggestedSalary p)) Theme.Danger
@@ -449,7 +454,7 @@ module Transfers =
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
-                                                  UI.primaryButton "Improve Offer" (Some UI.add) (fun _ ->
+                                                  UI.primaryButton "Improve Offer" (Some IconName.add) (fun _ ->
                                                       let better = suggestedSalary p * 1.2m
                                                       dispatch (TransferMsg(OfferCounterSalary(better, 3)))
                                                       dispatch (TransferMsg AcceptContract))
@@ -460,9 +465,10 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Accent UI.success $"{p.Name} has joined your club!"
+                          [ statusBanner Theme.Accent IconName.success $"{p.Name} has joined your club!"
                             infoRow "Transfer Fee" (formatValue neg.OfferedFee) Theme.Accent
-                            UI.primaryButton "Done" (Some UI.success) (fun _ -> dispatch (TransferMsg ClearNegotiation)) ] ]
+                            UI.primaryButton "Done" (Some IconName.success) (fun _ ->
+                                dispatch (TransferMsg ClearNegotiation)) ] ]
                 :> IView
 
         Border.create
@@ -582,7 +588,9 @@ module Transfers =
                                                                 TextBlock.foreground Theme.TextMuted
                                                                 TextBlock.lineSpacing 1.0 ]
                                                           TextBlock.create
-                                                              [ TextBlock.text (formatValue p.Value)
+                                                              [ TextBlock.text (
+                                                                    formatValue (Player.playerValue p.CurrentSkill)
+                                                                )
                                                                 TextBlock.fontSize 15.0
                                                                 TextBlock.fontWeight FontWeight.Black
                                                                 TextBlock.foreground Theme.TextMain ] ] ]
@@ -597,7 +605,13 @@ module Transfers =
                                                                 TextBlock.foreground Theme.TextMuted
                                                                 TextBlock.lineSpacing 1.0 ]
                                                           TextBlock.create
-                                                              [ TextBlock.text (formatSalary p.Salary)
+                                                              [ TextBlock.text (
+                                                                    formatSalary (
+                                                                        match p.Affiliation with
+                                                                        | Contracted(_, c) -> c.Salary
+                                                                        | _ -> 0m
+                                                                    )
+                                                                )
                                                                 TextBlock.fontSize 15.0
                                                                 TextBlock.fontWeight FontWeight.Black
                                                                 TextBlock.foreground Theme.TextMain ] ] ] ] ] ] ]
@@ -777,7 +791,7 @@ module Transfers =
                         StackPanel.children
                             [ Border.create
                                   [ Border.horizontalAlignment HorizontalAlignment.Center
-                                    Border.child (Icons.icon UI.refresh 36.0 Theme.Accent) ]
+                                    Border.child (Icons.icon IconName.refresh 36.0 Theme.Accent) ]
                               TextBlock.create
                                   [ TextBlock.text "Loading transfer market..."
                                     TextBlock.fontSize 14.0
@@ -807,7 +821,9 @@ module Transfers =
                                         Button.background "Transparent"
                                         Button.borderThickness 0.0
                                         Button.isEnabled (page > 0)
-                                        Button.onClick (fun _ -> dispatch (TransferMsg(PageChange(page - 1)))) ]
+                                        Button.onClick (fun e ->
+                                            e.Handled <- true
+                                            dispatch (TransferMsg(PageChange(page - 1)))) ]
                                   TextBlock.create
                                       [ TextBlock.text $"{page + 1} / {totalPages}"
                                         TextBlock.fontSize 12.0
@@ -818,8 +834,11 @@ module Transfers =
                                         Button.background "Transparent"
                                         Button.borderThickness 0.0
                                         Button.isEnabled (page < totalPages - 1)
-                                        Button.onClick (fun _ -> dispatch (TransferMsg(PageChange(page + 1)))) ] ] ]
+                                        Button.onClick (fun e ->
+                                            e.Handled <- true
+                                            dispatch (TransferMsg(PageChange(page + 1)))) ] ] ]
                   ) ]
+            |> View.withKey $"{page}"
             :> IView
 
     // ── Outgoing offers tab ──────────────────────────────────────────────
@@ -909,7 +928,7 @@ module Transfers =
                                         Button.cornerRadius 6.0
                                         Button.verticalAlignment VerticalAlignment.Center
                                         Button.onClick (fun _ -> dispatch (TransferMsg(WithdrawOffer offer.Id)))
-                                        Button.content (Icons.iconSm UI.close Theme.Danger) ] ] ]
+                                        Button.content (Icons.iconSm IconName.close Theme.Danger) ] ] ]
               ) ]
 
     // ── Transfer history tab ─────────────────────────────────────────────
@@ -1085,7 +1104,9 @@ module Transfers =
                                                             [ Grid.column 0
                                                               Border.padding (10.0, 0.0, 4.0, 0.0)
                                                               Border.verticalAlignment VerticalAlignment.Center
-                                                              Border.child (Icons.iconSm UI.search Theme.TextMuted) ]
+                                                              Border.child (
+                                                                  Icons.iconSm IconName.search Theme.TextMuted
+                                                              ) ]
                                                         TextBox.create
                                                             [ Grid.column 1
                                                               TextBox.text ts.SearchQuery
@@ -1131,14 +1152,18 @@ module Transfers =
             if ts.IsLoading then
                 loadingState () :> IView
             else
-                StackPanel.create
-                    [ StackPanel.children
-                          [ marketTableHeader ()
+                Grid.create
+                    [ Grid.rowDefinitions "Auto, *, Auto"
+                      Grid.children
+                          [ marketTableHeader () |> fun h -> Border.create [ Grid.row 0; Border.child h ]
+
                             if pagedPlayers.IsEmpty then
-                                emptyState UI.search "No players found" "Try adjusting your search or filters"
+                                emptyState IconName.search "No players found" "Try adjusting your search or filters"
+                                |> fun e -> Border.create [ Grid.row 1; Border.child e ]
                             else
                                 ScrollViewer.create
-                                    [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                    [ Grid.row 1
+                                      ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
                                       ScrollViewer.content (
                                           StackPanel.create
                                               [ StackPanel.children
@@ -1151,7 +1176,9 @@ module Transfers =
                                                               (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
                                                               (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
                                       ) ]
-                            paginationBar ts.Page ts.FilteredPlayers.Length dispatch ] ]
+
+                            paginationBar ts.Page ts.FilteredPlayers.Length dispatch
+                            |> fun p -> Border.create [ Grid.row 2; Border.child p ] ] ]
                 :> IView
 
         let detailPanel =
@@ -1159,7 +1186,7 @@ module Transfers =
             | None -> emptyState PlayerIcon.position "No player selected" "Click a player to view details" :> IView
             | Some pid ->
                 match ts.CachedPlayers |> List.tryFind (fun p -> p.Id = pid) with
-                | None -> emptyState UI.error "Player not found" "" :> IView
+                | None -> emptyState IconName.error "Player not found" "" :> IView
                 | Some p ->
                     playerDetailPanel
                         p
@@ -1296,7 +1323,7 @@ module Transfers =
             | MarketSearch -> marketContent :> IView
             | MyWatchlist -> watchlistContent
             | IncomingOffers ->
-                emptyState UI.add "No incoming offers" "Other clubs haven't made any offers yet" :> IView
+                emptyState IconName.add "No incoming offers" "Other clubs haven't made any offers yet" :> IView
             | OutgoingOffers -> outgoingContent
             | TransferHistory -> historyContent
 

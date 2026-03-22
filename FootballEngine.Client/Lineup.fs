@@ -22,16 +22,16 @@ module FormationLineUps =
 
 
 module Lineup =
-    let private available (club: Club) =
-        club.Players |> List.filter (fun p -> p.Status = Available)
+    let private available (players: Player list) =
+        players |> List.filter (fun p -> p.Status = Available)
 
     let bestForPosition (players: Player list) (pos: Position) : Player option =
         match players |> List.filter (fun p -> p.Position = pos) with
         | [] -> players |> List.sortByDescending _.CurrentSkill |> List.tryHead
         | exact -> exact |> List.sortByDescending _.CurrentSkill |> List.tryHead
 
-    let bestFormation (club: Club) : Formation =
-        let bench = available club
+    let bestFormation (players: Player list) : Formation =
+        let bench = available players
 
         FormationLineUps.all
         |> List.maxBy (fun formation ->
@@ -44,25 +44,25 @@ module Lineup =
                 |> Option.map _.CurrentSkill
                 |> Option.defaultValue 0))
 
-    let private countActiveSlots (club: Club) (lu: ClubLineup) =
+    let private countActiveSlots (players: Player list) (lu: ClubLineup) =
         lu.Slots
         |> List.filter (fun s ->
             s.PlayerId
-            |> Option.map (fun pid -> club.Players |> List.exists (fun p -> p.Id = pid && p.Status = Available))
+            |> Option.map (fun pid -> players |> List.exists (fun p -> p.Id = pid && p.Status = Available))
             |> Option.defaultValue false)
         |> List.length
 
-    let autoLineup (club: Club) (formation: Formation) : Club =
+    let autoLineup (club: Club) (players: Player list) (formation: Formation) : Club =
         let needsRegen =
             match club.CurrentLineup with
             | None -> true
-            | Some lu -> countActiveSlots club lu < 11
+            | Some lu -> countActiveSlots players lu < 11
 
         if not needsRegen then
             club
         else
             let slots = FormationData.getFormation formation
-            let bench = available club
+            let bench = available players
 
             let rec assign (remaining: FormationSlot list) (pool: Player list) (acc: LineupSlot list) =
                 match remaining with

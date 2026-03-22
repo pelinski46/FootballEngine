@@ -290,7 +290,7 @@ module MatchViewer =
             [ StackPanel.orientation Orientation.Horizontal
               StackPanel.spacing 4.0
               StackPanel.children
-                  [ Icons.iconSm UI.calendar Theme.Warning
+                  [ Icons.iconSm IconName.calendar Theme.Warning
                     TextBlock.create
                         [ TextBlock.text $"{s.Second / 60}'"
                           TextBlock.foreground Theme.Warning
@@ -776,7 +776,7 @@ module MatchLabView =
                                                         [ StackPanel.orientation Orientation.Horizontal
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
-                                                              [ Icons.iconMd UI.simulate Theme.BgMain
+                                                              [ Icons.iconMd IconName.simulate Theme.BgMain
                                                                 TextBlock.create
                                                                     [ TextBlock.text "SIMULATE"
                                                                       TextBlock.foreground Theme.BgMain

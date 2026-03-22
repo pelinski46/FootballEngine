@@ -23,20 +23,26 @@ module SquadPresenter =
           TotalWages: string
           SquadSize: string }
 
-    let getTeamStats (team: Club) =
-        let totalValue = team.Players |> List.sumBy _.Value
-        let totalWages = team.Players |> List.sumBy _.Salary
+    let getTeamStats (players: Player list) =
+        let totalValue = players |> List.sumBy (fun p -> Player.playerValue p.CurrentSkill)
+
+        let totalWages =
+            players
+            |> List.sumBy (fun p ->
+                match p.Affiliation with
+                | Contracted(_, c) -> c.Salary
+                | _ -> 0m)
 
         let avgSkill =
-            if team.Players.IsEmpty then
+            if players.IsEmpty then
                 0.0
             else
-                team.Players |> List.averageBy (fun p -> float p.CurrentSkill)
+                players |> List.averageBy (fun p -> float p.CurrentSkill)
 
         { TotalValue = $"€{int (totalValue / 1_000_000m)}M"
           AvgSkill = $"%.0f{avgSkill}"
           TotalWages = $"€{int (totalWages / 1_000m)}K/pw"
-          SquadSize = string team.Players.Length }
+          SquadSize = string players.Length }
 
     let private positionLine (pos: Position) =
         match pos with
@@ -55,27 +61,25 @@ module SquadPresenter =
         | AML -> 2, "MIDFIELDERS"
         | ST -> 3, "ATTACKERS"
 
-    let getSortedPlayers (team: Club) (currentDate: DateTime) (sortKey: string) =
+    let getSortedPlayers (players: Player list) (currentDate: DateTime) (sortKey: string) =
         match sortKey with
-        | "name" -> team.Players |> List.sortBy _.Name
-        | "skill" -> team.Players |> List.sortByDescending _.CurrentSkill
-        | "age" -> team.Players |> List.sortBy (fun p -> Player.age currentDate p)
-        | "value" -> team.Players |> List.sortByDescending _.Value
-        | _ ->
-            team.Players
-            |> List.sortBy (fun p -> fst (positionLine p.Position), -p.CurrentSkill)
+        | "name" -> players |> List.sortBy _.Name
+        | "skill" -> players |> List.sortByDescending _.CurrentSkill
+        | "age" -> players |> List.sortBy (fun p -> Player.age currentDate p)
+        | "value" -> players |> List.sortByDescending (fun p -> Player.playerValue p.CurrentSkill)
+        | _ -> players |> List.sortBy (fun p -> fst (positionLine p.Position), -p.CurrentSkill)
 
-    let getGroupedPlayers (team: Club) (currentDate: DateTime) (sortKey: string) =
+    let getGroupedPlayers (players: Player list) (currentDate: DateTime) (sortKey: string) =
         match sortKey with
         | "name"
         | "skill"
         | "age"
-        | "value" -> [ None, getSortedPlayers team currentDate sortKey ]
+        | "value" -> [ None, getSortedPlayers players currentDate sortKey ]
         | _ ->
-            team.Players
+            players
             |> List.groupBy (fun p -> positionLine p.Position)
             |> List.sortBy fst
-            |> List.map (fun ((_, label), players) -> Some label, players |> List.sortByDescending _.CurrentSkill)
+            |> List.map (fun ((_, label), ps) -> Some label, ps |> List.sortByDescending _.CurrentSkill)
 
 
 module Squad =
@@ -123,7 +127,7 @@ module Squad =
                                 UI.iconToggleButton "Value" PlayerIcon.value (a = "value") (fun _ ->
                                     dispatch (SortPlayersBy "value"))
 
-                                UI.iconToggleButton "Name" UI.sort (a = "name") (fun _ ->
+                                UI.iconToggleButton "Name" IconName.sort (a = "name") (fun _ ->
                                     dispatch (SortPlayersBy "name")) ] ]
 
                     StackPanel.create
@@ -132,7 +136,7 @@ module Squad =
                           StackPanel.verticalAlignment VerticalAlignment.Center
                           StackPanel.margin (8.0, 8.0, 8.0, 8.0)
                           StackPanel.children
-                              [ Icons.iconMd UI.squad Theme.Accent
+                              [ Icons.iconMd IconName.squad Theme.Accent
                                 TextBlock.create
                                     [ TextBlock.text "First Team"
                                       TextBlock.fontSize 18.0
@@ -142,11 +146,12 @@ module Squad =
                                 UI.countBadge squadCount ] ] ] ]
 
     let squadView (state: State) dispatch =
-        let userTeam = state.GameState.Clubs[state.GameState.UserClubId]
-        let stats = SquadPresenter.getTeamStats userTeam
+        let gs = state.GameState
+        let squad = GameState.getSquad gs.UserClubId gs
+        let stats = SquadPresenter.getTeamStats squad
 
         let groups =
-            SquadPresenter.getGroupedPlayers userTeam state.GameState.CurrentDate state.PlayerSortBy
+            SquadPresenter.getGroupedPlayers squad gs.CurrentDate state.PlayerSortBy
 
         Grid.create
             [ Grid.columnDefinitions "*, 420"
@@ -163,12 +168,12 @@ module Squad =
                                       UniformGrid.margin (0.0, 0.0, 0.0, 16.0)
                                       UniformGrid.horizontalAlignment HorizontalAlignment.Stretch
                                       UniformGrid.children
-                                          [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize UI.squad ""
+                                          [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize IconName.squad ""
                                             UI.iconStatCard "TEAM VALUE" stats.TotalValue PlayerIcon.value "Market"
                                             UI.iconStatCard "AVG SKILL" stats.AvgSkill PlayerIcon.skill "CA"
                                             UI.iconStatCard "WAGE BILL" stats.TotalWages Club.finances "Weekly" ] ]
 
-                                (sectionHeader userTeam.Players.Length dispatch state)
+                                (sectionHeader squad.Length dispatch state)
                                 |> fun h -> Border.create [ Grid.row 1; Border.child h ]
 
                                 PlayerView.tableHeader ()
@@ -194,7 +199,7 @@ module Squad =
 
                                                               PlayerView.row
                                                                   player
-                                                                  state.GameState.CurrentDate
+                                                                  gs.CurrentDate
                                                                   isSelected
                                                                   (state.DraggedPlayer = Some player.Id)
                                                                   (fun () -> dispatch (SelectPlayer player.Id))
@@ -203,4 +208,4 @@ module Squad =
 
                     Grid.create
                         [ Grid.column 1
-                          Grid.children [ PlayerView.detail state.SelectedPlayer state.GameState.CurrentDate ] ] ] ]
+                          Grid.children [ PlayerView.detail state.SelectedPlayer gs.CurrentDate ] ] ] ]

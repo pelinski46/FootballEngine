@@ -72,7 +72,7 @@ module Header =
                                                         [ StackPanel.orientation Orientation.Horizontal
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
-                                                              [ Icons.iconSm UI.calendar Theme.TextMuted
+                                                              [ Icons.iconSm IconName.calendar Theme.TextMuted
                                                                 TextBlock.create
                                                                     [ TextBlock.text (
                                                                           state.GameState.CurrentDate
@@ -97,14 +97,14 @@ module Header =
                                                 Button.cursor Avalonia.Input.Cursor.Default
                                                 Button.onClick (fun e ->
                                                     e.Handled <- true
-                                                    guardedDispatch (SimMsg AdvanceDay))
+                                                    guardedDispatch (SimMsg(Advance 1)))
                                                 Button.content (
                                                     StackPanel.create
                                                         [ StackPanel.orientation Orientation.Horizontal
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
                                                               [ Icons.iconSm
-                                                                    (if isProcessing then UI.refresh else Nav.next)
+                                                                    (if isProcessing then IconName.refresh else Nav.next)
                                                                     (if isProcessing then
                                                                          Theme.TextMuted
                                                                      else
@@ -145,7 +145,7 @@ module Header =
                                                           StackPanel.spacing 6.0
                                                           StackPanel.children
                                                               [ Icons.iconSm
-                                                                    UI.refresh
+                                                                    IconName.refresh
                                                                     (if isProcessing then
                                                                          Theme.TextMuted
                                                                      else

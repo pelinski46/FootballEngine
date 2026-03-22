@@ -14,6 +14,7 @@ open FootballEngine.Components
 open FootballEngine.Components.Header
 open FootballEngine.Components.Sidebar
 open FootballEngine.Pages.Home
+open FootballEngine.Pages.Loading.LoadingPage
 open FootballEngine.Pages.Setup.Setup
 open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
@@ -33,6 +34,7 @@ module Views =
                               [ header state dispatch
                                 |> fun h -> Border.create [ Border.dock Dock.Top; Border.child h ]
                                 match state.CurrentPage with
+                                | Loading -> loadingView ()
                                 | Setup -> setupView state dispatch
                                 | Home ->
                                     homeView

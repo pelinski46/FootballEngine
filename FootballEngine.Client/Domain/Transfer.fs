@@ -35,11 +35,17 @@ module TransferNegotiation =
 
     let private playerWillAccept (club: Club) (p: Player) (salary: decimal) =
         let isBetterClub = club.Reputation >= p.Reputation - 500
-        let isFairSalary = salary >= p.Salary * 0.9m
+
+        let currentSalary =
+            match p.Affiliation with
+            | Contracted(_, c) -> c.Salary
+            | _ -> 0m
+
+        let isFairSalary = salary >= currentSalary * 0.9m
         isBetterClub && isFairSalary
 
     let clubResponse (buyer: Club) (seller: Club) (p: Player) (fee: decimal) : OfferStatus =
-        let isEnoughFee = fee >= p.Value * minAcceptableMultiplier
+        let isEnoughFee = fee >= Player.playerValue p.CurrentSkill * minAcceptableMultiplier
 
         let buyerReputationOk =
             buyer.Reputation >= seller.Reputation - reputationGapThreshold
@@ -55,9 +61,8 @@ module TransferNegotiation =
         else
             ContractRejectedByPlayer
 
-    let suggestedFee (p: Player) = p.Value
-
-    let suggestedSalary (p: Player) = p.Salary
+    let suggestedFee (p: Player) = Player.playerValue p.CurrentSkill
+    let suggestedSalary (p: Player) = Player.playerSalary p.CurrentSkill
 
     let canAfford (buyer: Club) (fee: decimal) (salary: decimal) =
         buyer.Budget >= fee * clubBudgetSafetyFactor && buyer.Budget >= salary * 12m

@@ -14,8 +14,8 @@
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\MatchContext.fs"/>
-        <Compile Include="Domain\GameState.fs"/>
         <Compile Include="Domain\Transfer.fs"/>
+        <Compile Include="Domain\GameState.fs"/>
         <Compile Include="GameData\CountryData.fs"/>
         <Compile Include="GameData\Arg.fs"/>
         <Compile Include="GameData\Eng.fs"/>
@@ -28,9 +28,10 @@
         <Compile Include="Lineup.fs"/>
         <Compile Include="Engine\Match\Stats.fs"/>
         <Compile Include="Engine\Match\State.fs"/>
+        <Compile Include="Engine\Match\Pitch.fs"/>
         <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\MatchManager.fs"/>
-        <Compile Include="Engine\Match\Pitch.fs"/>
+        <Compile Include="Engine\Match\MatchPlayer.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
         <Compile Include="Engine\Generator.fs"/>
         <Compile Include="Engine\World.fs"/>
@@ -53,6 +54,7 @@
         <Compile Include="Views\Components\Header.fs"/>
         <Compile Include="Views\Components\FootballPitch.fs"/>
         <Compile Include="Views\Components\MatchViewer.fs"/>
+        <Compile Include="Views\Pages\Loading.fs"/>
         <Compile Include="Views\Pages\Setup.fs"/>
         <Compile Include="Views\Pages\Home.fs"/>
         <Compile Include="Views\Pages\Squad.fs"/>

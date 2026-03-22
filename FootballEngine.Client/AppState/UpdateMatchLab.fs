@@ -25,7 +25,9 @@ module UpdateMatchLab =
         | Run ->
             match state.MatchLab.HomeClubId, state.MatchLab.AwayClubId with
             | Some hId, Some aId ->
-                match trySimulateMatchFull state.GameState.Clubs[hId] state.GameState.Clubs[aId] with
+                match
+                    trySimulateMatchFull state.GameState.Clubs[hId] state.GameState.Clubs[aId] state.GameState.Players
+                with
                 | Ok replay ->
                     { state with
                         MatchLab =

@@ -12,7 +12,10 @@ module UpdateTransfer =
     let private buildClubNameCache (gs: GameState) : Map<PlayerId, string> =
         gs.Players
         |> Map.toSeq
-        |> Seq.choose (fun (_, p) -> gs.Clubs |> Map.tryFind p.ClubId |> Option.map (fun c -> p.Id, c.Name))
+        |> Seq.choose (fun (_, p) ->
+            match p.Affiliation with
+            | Contracted(clubId, _) -> gs.Clubs |> Map.tryFind clubId |> Option.map (fun c -> p.Id, c.Name)
+            | _ -> None)
         |> Map.ofSeq
 
     let private matchesFilter (filter: TransferFilter) (p: Player) =
@@ -29,8 +32,8 @@ module UpdateTransfer =
         | ByName, false -> players |> List.sortByDescending _.Name
         | ByCA, true -> players |> List.sortBy _.CurrentSkill
         | ByCA, false -> players |> List.sortByDescending _.CurrentSkill
-        | ByValue, true -> players |> List.sortBy _.Value
-        | ByValue, false -> players |> List.sortByDescending _.Value
+        | ByValue, true -> players |> List.sortBy (fun p -> Player.playerValue p.CurrentSkill)
+        | ByValue, false -> players |> List.sortByDescending (fun p -> Player.playerValue p.CurrentSkill)
         | ByAge, true -> players |> List.sortByDescending _.Birthday
         | ByAge, false -> players |> List.sortBy _.Birthday
         | ByPosition, true -> players |> List.sortBy _.Position
@@ -58,7 +61,11 @@ module UpdateTransfer =
                 gs.Players
                 |> Map.toList
                 |> List.map snd
-                |> List.filter (fun p -> p.ClubId <> gs.UserClubId)
+                |> List.filter (fun p ->
+                    match p.Affiliation with
+                    | Contracted(clubId, _) -> clubId <> gs.UserClubId
+                    | FreeAgent -> true
+                    | _ -> false)
 
             players, clubNameCache)
 
@@ -73,9 +80,12 @@ module UpdateTransfer =
         : GameState =
         let moved =
             { p with
-                ClubId = buyer.Id
-                Salary = salary
-                ContractExpiry = gs.Season + years
+                Affiliation =
+                    Contracted(
+                        buyer.Id,
+                        { Salary = salary
+                          ExpiryYear = gs.Season + years }
+                    )
                 Morale = min 100 (p.Morale + 10) }
 
         { gs with
@@ -86,12 +96,12 @@ module UpdateTransfer =
                     buyer.Id
                     { buyer with
                         Budget = buyer.Budget - fee
-                        Players = moved :: (buyer.Players |> List.filter (fun x -> x.Id <> p.Id)) }
+                        PlayerIds = moved.Id :: (buyer.PlayerIds |> List.filter ((<>) moved.Id)) }
                 |> Map.add
                     seller.Id
                     { seller with
                         Budget = seller.Budget + fee
-                        Players = seller.Players |> List.filter (fun x -> x.Id <> p.Id) } }
+                        PlayerIds = seller.PlayerIds |> List.filter ((<>) p.Id) } }
 
     let private recordTransfer
         (p: Player)
@@ -101,16 +111,15 @@ module UpdateTransfer =
         (season: int)
         (t: TransferState)
         =
-        let record =
-            { PlayerId = p.Id
-              PlayerName = p.Name
-              FromClubName = seller.Name
-              ToClubName = buyer.Name
-              Fee = fee
-              Season = season }
-
         { t with
-            TransferHistory = record :: t.TransferHistory }
+            TransferHistory =
+                { PlayerId = p.Id
+                  PlayerName = p.Name
+                  FromClubName = seller.Name
+                  ToClubName = buyer.Name
+                  Fee = fee
+                  Season = season }
+                :: t.TransferHistory }
 
     let private pushNotification = AppTypes.pushNotification
 
@@ -176,24 +185,21 @@ module UpdateTransfer =
         | PageChange p -> { state with State.Transfer.Page = p }, Cmd.none
 
         | MakeOffer(playerId, fee) ->
-            let negotiation =
-                { PlayerId = playerId
-                  OfferedFee = fee
-                  Step = MakingOffer }
-
             { state with
                 Transfer =
                     { t with
-                        ActiveNegotiation = Some negotiation
+                        ActiveNegotiation =
+                            Some
+                                { PlayerId = playerId
+                                  OfferedFee = fee
+                                  Step = MakingOffer }
                         ActiveTab = MarketSearch } },
             Cmd.none
 
         | UpdateOfferedFee fee ->
-            let updated =
-                t.ActiveNegotiation |> Option.map (fun n -> { n with OfferedFee = fee })
-
             { state with
-                State.Transfer.ActiveNegotiation = updated },
+                State.Transfer.ActiveNegotiation =
+                    t.ActiveNegotiation |> Option.map (fun n -> { n with OfferedFee = fee }) },
             Cmd.none
 
         | SubmitOffer ->
@@ -204,65 +210,57 @@ module UpdateTransfer =
                 | None -> state, Cmd.none
                 | Some p ->
                     let buyer = gs.Clubs[gs.UserClubId]
-                    let seller = gs.Clubs[p.ClubId]
 
-                    if not (canAfford buyer neg.OfferedFee (suggestedSalary p)) then
-                        let updated =
-                            { neg with
-                                Step = OfferRejected "Insufficient budget" }
-
-                        { state with
-                            State.Transfer.ActiveNegotiation = Some updated },
-                        Cmd.none
-                    else
-                        let response = clubResponse buyer seller p neg.OfferedFee
-
-                        match response with
-                        | RejectedByClub ->
-                            let updated =
-                                { neg with
-                                    Step = OfferRejected $"{seller.Name} rejected the offer" }
-
+                    match GameState.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+                    | None -> state, Cmd.none
+                    | Some seller ->
+                        if not (canAfford buyer neg.OfferedFee (suggestedSalary p)) then
                             { state with
-                                State.Transfer.ActiveNegotiation = Some updated },
+                                State.Transfer.ActiveNegotiation =
+                                    Some
+                                        { neg with
+                                            Step = OfferRejected "Insufficient budget" } },
                             Cmd.none
+                        else
+                            match clubResponse buyer seller p neg.OfferedFee with
+                            | RejectedByClub ->
+                                { state with
+                                    State.Transfer.ActiveNegotiation =
+                                        Some
+                                            { neg with
+                                                Step = OfferRejected $"{seller.Name} rejected the offer" } },
+                                Cmd.none
 
-                        | AcceptedByClub ->
-                            let salary = suggestedSalary p
+                            | AcceptedByClub ->
+                                let offer =
+                                    { Id = t.NextOfferId
+                                      PlayerId = p.Id
+                                      SellerClubId = seller.Id
+                                      Fee = neg.OfferedFee
+                                      Status = AcceptedByClub
+                                      CreatedOnDate = gs.CurrentDate }
 
-                            let updated =
-                                { neg with
-                                    Step = NegotiatingContract(salary, 3) }
+                                { state with
+                                    Transfer =
+                                        { t with
+                                            ActiveNegotiation =
+                                                Some
+                                                    { neg with
+                                                        Step = NegotiatingContract(suggestedSalary p, 3) }
+                                            OutgoingOffers = offer :: t.OutgoingOffers
+                                            NextOfferId = t.NextOfferId + 1 } },
+                                Cmd.none
 
-                            let offer =
-                                { Id = t.NextOfferId
-                                  PlayerId = p.Id
-                                  SellerClubId = seller.Id
-                                  Fee = neg.OfferedFee
-                                  Status = AcceptedByClub
-                                  CreatedOnDate = gs.CurrentDate }
-
-                            { state with
-                                Transfer =
-                                    { t with
-                                        ActiveNegotiation = Some updated
-                                        OutgoingOffers = offer :: t.OutgoingOffers
-                                        NextOfferId = t.NextOfferId + 1 } },
-                            Cmd.none
-
-                        | _ -> state, Cmd.none
+                            | _ -> state, Cmd.none
 
         | OfferCounterSalary(salary, years) ->
-            match t.ActiveNegotiation with
-            | None -> state, Cmd.none
-            | Some neg ->
-                let updated =
-                    { neg with
-                        Step = NegotiatingContract(salary, years) }
-
-                { state with
-                    State.Transfer.ActiveNegotiation = Some updated },
-                Cmd.none
+            { state with
+                State.Transfer.ActiveNegotiation =
+                    t.ActiveNegotiation
+                    |> Option.map (fun n ->
+                        { n with
+                            Step = NegotiatingContract(salary, years) }) },
+            Cmd.none
 
         | AcceptContract ->
             match t.ActiveNegotiation with
@@ -274,53 +272,46 @@ module UpdateTransfer =
                     | None -> state, Cmd.none
                     | Some p ->
                         let buyer = gs.Clubs[gs.UserClubId]
-                        let seller = gs.Clubs[p.ClubId]
-                        let playerResp = playerResponse buyer p salary
 
-                        match playerResp with
-                        | ContractRejectedByPlayer ->
-                            let updated = { neg with Step = ContractRejected }
+                        match GameState.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+                        | None -> state, Cmd.none
+                        | Some seller ->
+                            match playerResponse buyer p salary with
+                            | ContractRejectedByPlayer ->
+                                { state with
+                                    State.Transfer.ActiveNegotiation = Some { neg with Step = ContractRejected } },
+                                Cmd.none
 
-                            { state with
-                                State.Transfer.ActiveNegotiation = Some updated },
-                            Cmd.none
+                            | ContractOffered _ ->
+                                let newGs = applyTransferToGameState buyer seller p neg.OfferedFee salary years gs
 
-                        | ContractOffered _ ->
-                            let newGs = applyTransferToGameState buyer seller p neg.OfferedFee salary years gs
+                                let updatedTransfer =
+                                    { t with
+                                        ActiveNegotiation = Some { neg with Step = NegotiationComplete }
+                                        OutgoingOffers =
+                                            t.OutgoingOffers
+                                            |> List.map (fun o ->
+                                                if o.PlayerId = p.Id then
+                                                    { o with Status = Completed }
+                                                else
+                                                    o)
+                                        CachedPlayers = t.CachedPlayers |> List.filter (fun x -> x.Id <> p.Id)
+                                        FilteredPlayers = t.FilteredPlayers |> List.filter (fun x -> x.Id <> p.Id) }
+                                    |> recordTransfer p buyer seller neg.OfferedFee gs.Season
 
-                            let updatedTransfer =
-                                { t with
-                                    ActiveNegotiation = Some { neg with Step = NegotiationComplete }
-                                    OutgoingOffers =
-                                        t.OutgoingOffers
-                                        |> List.map (fun o ->
-                                            if o.PlayerId = p.Id then
-                                                { o with Status = Completed }
-                                            else
-                                                o)
-                                    CachedPlayers = t.CachedPlayers |> List.filter (fun x -> x.Id <> p.Id)
-                                    FilteredPlayers = t.FilteredPlayers |> List.filter (fun x -> x.Id <> p.Id) }
-                                |> recordTransfer p buyer seller neg.OfferedFee gs.Season
-
-                            let nextState =
                                 { state with
                                     GameState = newGs
                                     Transfer = updatedTransfer }
                                 |> pushNotification
                                     Transfer
                                     "Transfer Complete"
-                                    $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}"
+                                    $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}",
+                                SimHelpers.saveCmd newGs
 
-                            nextState, SimHelpers.saveCmd newGs
-
-                        | _ -> state, Cmd.none
+                            | _ -> state, Cmd.none
                 | _ -> state, Cmd.none
 
         | WithdrawOffer offerId ->
-            let updated =
-                t.OutgoingOffers
-                |> List.map (fun o -> if o.Id = offerId then { o with Status = Withdrawn } else o)
-
             let clearNeg =
                 t.ActiveNegotiation
                 |> Option.bind (fun n ->
@@ -332,7 +323,9 @@ module UpdateTransfer =
             { state with
                 Transfer =
                     { t with
-                        OutgoingOffers = updated
+                        OutgoingOffers =
+                            t.OutgoingOffers
+                            |> List.map (fun o -> if o.Id = offerId then { o with Status = Withdrawn } else o)
                         ActiveNegotiation = clearNeg } },
             Cmd.none
 

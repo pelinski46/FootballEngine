@@ -22,7 +22,7 @@ module AppState =
 
     let private initialState (gs: GameState) : State =
         { GameState = gs
-          CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
+          CurrentPage = Loading
           IsProcessing = true
           LogMessages = [ "Football Engine 2026 Initialized" ]
           Notifications = []
@@ -75,8 +75,6 @@ module AppState =
                       Y = fs.Y
                       PlayerId = None })
 
-    /// Reset the transfer cache so it's rebuilt on next visit.
-    /// Called after any SimMsg that mutates GameState (days/season advance).
     let private invalidateTransferCache (state: State) =
         { state with
             Transfer =
@@ -94,15 +92,12 @@ module AppState =
 
         | SimMsg m ->
             let nextState, cmd = UpdateSim.handle m state
-            // Invalidate transfer cache after messages that produce a new GameState.
-            // AdvanceDay / AdvanceSeason are async — the Done variants carry the new state.
+
             let invalidated =
                 match m with
-                | AdvanceDayDone _
+                | AdvanceDone _
                 | SeasonAdvanceDone _
-                | SimulateAllToday
-                | SimulateNextFixture
-                | SimulateMatch -> invalidateTransferCache nextState
+                | SimulateNextFixture -> invalidateTransferCache nextState
                 | _ -> nextState
 
             invalidated, cmd
@@ -125,7 +120,6 @@ module AppState =
 
         | GameLoaded result ->
             let gs = result |> Option.defaultValue (emptyGameState ())
-
             let leagueId = SimHelpers.primaryLeagueId gs
 
             { state with
@@ -175,13 +169,11 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs.Add(team.Id, updatedTeam) }
 
-            let saveCmd = SimHelpers.saveCmd newGs
-
             { state with
                 GameState = newGs
                 DraggedPlayer = None }
             |> addLog $"🔄 Swap made: Slot {targetIdx}",
-            saveCmd
+            SimHelpers.saveCmd newGs
 
         | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
 
@@ -206,12 +198,10 @@ module AppState =
                 { state.GameState with
                     Clubs = state.GameState.Clubs |> Map.add updatedClub.Id updatedClub }
 
-            let saveCmd = SimHelpers.saveCmd newGs
-
             { state with
                 GameState = newGs
                 SelectedTactics = formation },
-            saveCmd
+            SimHelpers.saveCmd newGs
 
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none
         | NoOp -> state, Cmd.none

@@ -42,7 +42,7 @@ module Nav =
     let pause = MaterialIconKind.Pause
     let stop = MaterialIconKind.Stop
 
-module UI =
+module IconName =
     let home = MaterialIconKind.HomeOutline
     let squad = MaterialIconKind.AccountGroupOutline
     let tactics = MaterialIconKind.FootballPitch

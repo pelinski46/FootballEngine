@@ -544,7 +544,8 @@ module PlayerView =
                                                                             Theme.moraleColor p.Morale
                                                                         ) ]
                                                                   TextBlock.create
-                                                                      [ TextBlock.text $"·  {p.ContractExpiry}"
+                                                                      [ TextBlock.text
+                                                                            $"·  {(GameState.contractOf p |> Option.map _.ExpiryYear |> Option.defaultValue 0)}"
                                                                         TextBlock.fontSize 10.0
                                                                         TextBlock.foreground Theme.TextMuted ] ] ] ] ]
                                           StackPanel.create
@@ -596,7 +597,7 @@ module PlayerView =
 
                               TextBlock.create
                                   [ Grid.column 4
-                                    TextBlock.text $"€{int (p.Value / 1_000_000m)}M"
+                                    TextBlock.text $"${int (Player.playerValue p.CurrentSkill / 1_000_000m)}M"
                                     TextBlock.fontSize 11.0
                                     TextBlock.foreground Theme.TextMuted
                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
@@ -738,7 +739,7 @@ module PlayerView =
                             StackPanel.horizontalAlignment HorizontalAlignment.Center
                             StackPanel.spacing 8.0
                             StackPanel.children
-                                [ Icons.iconXl Icons.UI.squad Theme.TextMuted
+                                [ Icons.iconXl Icons.IconName.squad Theme.TextMuted
                                   TextBlock.create
                                       [ TextBlock.text "Select a player"
                                         TextBlock.foreground Theme.TextMuted
@@ -790,7 +791,9 @@ module PlayerView =
                                                                     UI.statMiniCard
                                                                         PlayerIcon.contract
                                                                         "CONTRACT"
-                                                                        (string p.ContractExpiry)
+                                                                        (GameState.contractOf p
+                                                                         |> Option.map (_.ExpiryYear >> string)
+                                                                         |> Option.defaultValue "—")
                                                                         Theme.Accent ] ]
 
                                                         Grid.create

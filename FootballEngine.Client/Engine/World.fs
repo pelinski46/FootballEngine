@@ -4,6 +4,7 @@ open System
 open FootballEngine.Data
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
+open FootballEngine.Lineup
 open MatchStats
 
 module World =
@@ -104,30 +105,26 @@ module World =
         let delta = skillDelta a p.CurrentSkill p.PotentialSkill
         let newCA = clamp 1 200 (p.CurrentSkill + delta)
 
+        let updatedAffiliation =
+            match p.Affiliation with
+            | Contracted(clubId, c) when newCA > p.CurrentSkill ->
+                Contracted(
+                    clubId,
+                    { c with
+                        Salary = Player.playerSalary newCA }
+                )
+            | other -> other
+
         let updated =
             { p with
                 CurrentSkill = newCA
-                Value = Player.playerValue newCA
-                Salary =
-                    if newCA > p.CurrentSkill then
-                        Player.playerSalary newCA
-                    else
-                        p.Salary }
+                Affiliation = updatedAffiliation }
 
         developStats rng delta p.Position updated
 
     let developAllPlayers (rng: Random) (state: GameState) : GameState =
-        let updated = state.Players |> Map.map (fun _ p -> developPlayer rng state.Season p)
-
         { state with
-            Players = updated
-            Clubs =
-                state.Clubs
-                |> Map.map (fun _ c ->
-                    { c with
-                        Players =
-                            c.Players
-                            |> List.map (fun p -> updated |> Map.tryFind p.Id |> Option.defaultValue p) }) }
+            Players = state.Players |> Map.map (fun _ p -> developPlayer rng state.Season p) }
 
     let updateMorale
         (homeScore: int)
@@ -163,11 +160,11 @@ module World =
             Players =
                 state.Players
                 |> Map.map (fun _ p ->
-                    if p.ClubId = homeId || p.ClubId = awayId then
+                    match GameState.clubOf p with
+                    | Some cid when cid = homeId || cid = awayId ->
                         { p with
-                            Morale = clamp 0 100 (p.Morale + playerDelta p.ClubId) }
-                    else
-                        p) }
+                            Morale = clamp 0 100 (p.Morale + playerDelta cid) }
+                    | _ -> p) }
 
     let private baseRevenue (rep: int) : decimal =
         decimal (rep / 100 |> fun r -> r * r * 10_000 + 500_000)
@@ -198,63 +195,73 @@ module World =
                     { c with
                         Budget = c.Budget + baseRevenue c.Reputation + leagueFinishBonus id state.Competitions }) }
 
-    let private isKeyPlayer (club: Club) (p: Player) =
-        let avg = club.Players |> List.averageBy (fun x -> float x.CurrentSkill) |> int
+    let private getSquad (clubId: ClubId) (state: GameState) : Player list = GameState.getSquad clubId state
+
+    let private isKeyPlayer (squad: Player list) (p: Player) =
+        let avg = squad |> List.averageBy (fun x -> float x.CurrentSkill) |> int
         p.CurrentSkill >= avg - 5
 
-    let private isEssential (club: Club) (p: Player) =
-        // GK is always essential if the club has fewer than 2 GKs
+    let private isEssential (squad: Player list) (p: Player) =
         let gkCount =
-            club.Players
+            squad
             |> List.filter (fun x -> x.Position = GK && x.Status = Available)
             |> List.length
 
-        (p.Position = GK && gkCount <= 2) || isKeyPlayer club p
+        (p.Position = GK && gkCount <= 2) || isKeyPlayer squad p
 
     let processContracts (rng: Random) (state: GameState) : GameState =
         let expiring =
             state.Players
             |> Map.toList
-            |> List.filter (fun (_, p) -> p.ContractExpiry <= state.Season && p.ClubId <> state.UserClubId)
+            |> List.choose (fun (id, p) ->
+                match p.Affiliation with
+                | Contracted(clubId, c) when c.ExpiryYear <= state.Season && clubId <> state.UserClubId ->
+                    Some(id, p, clubId, c)
+                | _ -> None)
 
         (state, expiring)
-        ||> List.fold (fun acc (id, p) ->
+        ||> List.fold (fun acc (id, p, clubId, c) ->
+            let squad = getSquad clubId acc
+
             let newExpiry =
-                if isEssential acc.Clubs[p.ClubId] p then
+                if isEssential squad p then
                     state.Season + rng.Next(2, 5)
                 else
                     state.Season
 
+            let newAffiliation = Contracted(clubId, { c with ExpiryYear = newExpiry })
+
             { acc with
-                Players = acc.Players |> Map.add id { p with ContractExpiry = newExpiry } })
+                Players = acc.Players |> Map.add id { p with Affiliation = newAffiliation } })
 
     // ── AI Transfer market ────────────────────────────────────────────────
 
     let private positionGroups =
         [ [ GK ]; [ DC; DL; DR; WBL; WBR; DM ]; [ ML; MC; MR; AML; AMR; AMC ]; [ ST ] ]
 
-    let private squadStrengthByGroup (club: Club) (group: Position list) =
-        club.Players
+    let private squadStrengthByGroup (squad: Player list) (group: Position list) =
+        squad
         |> List.filter (fun p -> List.contains p.Position group && p.Status = Available)
         |> List.sortByDescending _.CurrentSkill
         |> List.truncate 3
         |> List.sumBy _.CurrentSkill
 
-    let private hasNoGk (club: Club) =
-        club.Players
-        |> List.exists (fun p -> p.Position = GK && p.Status = Available)
-        |> not
+    let private hasNoGk (squad: Player list) =
+        squad |> List.exists (fun p -> p.Position = GK && p.Status = Available) |> not
 
-    let private weakestPositionGroup (club: Club) =
-        if hasNoGk club then
+    let private weakestPositionGroup (squad: Player list) =
+        if hasNoGk squad then
             [ GK ]
         else
-            positionGroups |> List.minBy (squadStrengthByGroup club)
+            positionGroups |> List.minBy (squadStrengthByGroup squad)
 
-    let private isFreeAgent (season: int) (p: Player) = p.ContractExpiry <= season
+    let private isFreeAgent (p: Player) = p.Affiliation = FreeAgent
 
     let private isTransferTarget (season: int) (p: Player) =
-        isFreeAgent season p || p.ContractExpiry = season + 1
+        match p.Affiliation with
+        | FreeAgent -> true
+        | Contracted(_, c) -> c.ExpiryYear <= season + 1
+        | _ -> false
 
     let private applyTransfer
         (buyerId: ClubId)
@@ -270,9 +277,12 @@ module World =
 
         let moved =
             { p with
-                ClubId = buyerId
-                Salary = salary
-                ContractExpiry = state.Season + years
+                Affiliation =
+                    Contracted(
+                        buyerId,
+                        { Salary = salary
+                          ExpiryYear = state.Season + years }
+                    )
                 Morale = clamp 0 100 (p.Morale + 5) }
 
         { state with
@@ -283,54 +293,62 @@ module World =
                     buyerId
                     { buyer with
                         Budget = buyer.Budget - fee
-                        Players = moved :: (buyer.Players |> List.filter (fun x -> x.Id <> p.Id)) }
+                        PlayerIds = moved.Id :: (buyer.PlayerIds |> List.filter ((<>) moved.Id)) }
                 |> Map.add
                     sellerId
                     { seller with
                         Budget = seller.Budget + fee
-                        Players = seller.Players |> List.filter (fun x -> x.Id <> p.Id) } }
+                        PlayerIds = seller.PlayerIds |> List.filter ((<>) p.Id) } }
 
     let private tryAiSignFreeAgent (buyerId: ClubId) (p: Player) (state: GameState) : GameState =
         let buyer = state.Clubs[buyerId]
         let salary = suggestedSalary p
 
         if canAfford buyer 0m salary then
-            applyTransfer buyerId p.ClubId p 0m salary 3 state
+            applyTransfer buyerId buyerId p 0m salary 3 state
         else
             state
 
     let private tryAiBuyPlayer (rng: Random) (buyerId: ClubId) (p: Player) (state: GameState) : GameState =
         let buyer = state.Clubs[buyerId]
-        let seller = state.Clubs[p.ClubId]
-        let fee = p.Value * (0.9m + decimal (rng.NextDouble() * 0.2))
+
+        let fee =
+            Player.playerValue p.CurrentSkill * (0.9m + decimal (rng.NextDouble() * 0.2))
+
         let salary = suggestedSalary p
 
-        if not (canAfford buyer fee salary) then
-            state
-        else
-            match clubResponse buyer seller p fee with
-            | AcceptedByClub ->
-                match playerResponse buyer p salary with
-                | ContractOffered(s, y) -> applyTransfer buyerId p.ClubId p fee s y state
+        match GameState.clubOf p with
+        | None -> state
+        | Some sellerId ->
+            let seller = state.Clubs[sellerId]
+
+            if not (canAfford buyer fee salary) then
+                state
+            else
+                match clubResponse buyer seller p fee with
+                | AcceptedByClub ->
+                    match playerResponse buyer p salary with
+                    | ContractOffered(s, y) -> applyTransfer buyerId sellerId p fee s y state
+                    | _ -> state
                 | _ -> state
-            | _ -> state
 
     let private runClubTransfers (rng: Random) (buyerId: ClubId) (state: GameState) : GameState =
-        let neededPositions = weakestPositionGroup state.Clubs[buyerId]
+        let squad = getSquad buyerId state
+        let neededPositions = weakestPositionGroup squad
 
         let candidates =
             state.Players
-            |> Map.toList
-            |> List.map snd
-            |> List.filter (fun p ->
-                p.ClubId <> buyerId
+            |> Map.values
+            |> Seq.filter (fun p ->
+                GameState.clubOf p <> Some buyerId
                 && List.contains p.Position neededPositions
                 && p.Status = Available
                 && isTransferTarget state.Season p)
-            |> List.sortByDescending _.CurrentSkill
-            |> List.truncate 3
+            |> Seq.sortByDescending _.CurrentSkill
+            |> Seq.truncate 3
+            |> List.ofSeq
 
-        let freeAgents, forSale = candidates |> List.partition (isFreeAgent state.Season)
+        let freeAgents, forSale = candidates |> List.partition isFreeAgent
 
         let stateAfterFree =
             (state, freeAgents |> List.truncate 2)
@@ -347,7 +365,6 @@ module World =
         |> List.sortBy (fun _ -> rng.Next())
         |> List.fold (fun acc id -> runClubTransfers rng id acc) state
 
-
     let private budgetForLevel =
         function
         | 0 -> 50_000_000m
@@ -356,12 +373,11 @@ module World =
 
     let private reputationDeltaForLevel =
         function
-        | 0 -> 300 // promoted to top flight — reputation boost
-        | 1 -> 0 // second tier — neutral
-        | _ -> -200 // lower leagues — slight reputation drop
+        | 0 -> 300
+        | 1 -> 0
+        | _ -> -200
 
     let applyLeagueConsequences (state: GameState) : GameState =
-        // Build a map: clubId -> league level they're in after promotion/relegation
         let clubLevel =
             state.Competitions
             |> Map.toList
@@ -379,7 +395,7 @@ module World =
                     match Map.tryFind id clubLevel with
                     | None -> club
                     | Some lvl ->
-                        let budgetBonus = budgetForLevel lvl * 0.3m // 30% of tier budget as injection
+                        let budgetBonus = budgetForLevel lvl * 0.3m
                         let repDelta = reputationDeltaForLevel lvl
 
                         { club with
@@ -428,7 +444,7 @@ module World =
                     |> Map.add
                         clubId
                         { acc.Clubs[clubId] with
-                            Players = p :: acc.Clubs[clubId].Players } })
+                            PlayerIds = p.Id :: acc.Clubs[clubId].PlayerIds } })
 
     let private resetConditions (state: GameState) : GameState =
         { state with
@@ -507,7 +523,8 @@ module World =
                     if id = state.UserClubId then
                         club
                     else
-                        Lineup.autoLineup club (Lineup.bestFormation club)) }
+                        let squad = getSquad id state
+                        autoLineup club squad (bestFormation squad)) }
 
     let advanceSeason (rng: Random) (state: GameState) : GameState =
         state

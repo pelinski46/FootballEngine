@@ -15,16 +15,13 @@ module AppMsgs =
         | StartNewGame
 
     type SimMsg =
-        | AdvanceDay
-        | AdvanceDayDone of BatchResult * (MatchId * MatchFixture) list
-        | SimulateMatch
+        | Advance of days: int
+        | AdvanceDone of DayResult
         | SimulateNextFixture
-        | SimulateAllToday
         | AdvanceSeason
-        | SeasonAdvanceDone of summary: string list * seasonFinalGs: GameState * newGs: GameState
+        | SeasonAdvanceDone of Result<SeasonResult, SeasonError>
         | SaveGame
         | SimulateSeason
-        | SimulateSeasonFailed of string
 
     type TransferMsg =
         | Load

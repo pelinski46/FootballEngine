@@ -5,6 +5,7 @@ open FootballEngine.Domain
 module AppTypes =
 
     type Page =
+        | Loading
         | Setup
         | Home
         | Inbox

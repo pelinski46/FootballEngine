@@ -6,6 +6,23 @@ open FootballEngine.Database.Serializers
 
 module Mappers =
 
+    let private affiliationFromEntity (e: PlayerEntity) : PlayerAffiliation =
+        if e.ClubId <= 0 then
+            FreeAgent
+        else
+            Contracted(
+                e.ClubId,
+                { Salary = e.Salary
+                  ExpiryYear = e.ContractExpiry }
+            )
+
+    let private affiliationToEntity (a: PlayerAffiliation) : int * decimal * int =
+        match a with
+        | Contracted(clubId, c) -> clubId, c.Salary, c.ExpiryYear
+        | FreeAgent -> 0, 0m, 0
+        | YouthProspect clubId -> clubId, 0m, 0
+        | Retired -> 0, 0m, 0
+
     let toPlayerEntity (p: Player) : PlayerEntity =
         let statusType, statusInt, statusDate =
             match p.Status with
@@ -21,8 +38,10 @@ module Mappers =
 
                 "Injured", severityInt, dt
 
+        let clubId, salary, contractExpiry = affiliationToEntity p.Affiliation
+
         { Id = p.Id
-          ClubId = p.ClubId
+          ClubId = clubId
           Name = p.Name
           Birthday = p.Birthday
           Nationality = p.Nationality
@@ -70,9 +89,9 @@ module Mappers =
           CurrentSkill = p.CurrentSkill
           PotentialSkill = p.PotentialSkill
           Reputation = p.Reputation
-          Value = p.Value
-          Salary = p.Salary
-          ContractExpiry = p.ContractExpiry }
+          Value = Player.playerValue p.CurrentSkill
+          Salary = salary
+          ContractExpiry = contractExpiry }
 
     let toPlayerDomain (e: PlayerEntity) : Player =
         let status =
@@ -90,7 +109,6 @@ module Mappers =
             | _ -> Available
 
         { Id = e.Id
-          ClubId = e.ClubId
           Name = e.Name
           Birthday = e.Birthday
           Nationality = e.Nationality
@@ -140,9 +158,7 @@ module Mappers =
           CurrentSkill = e.CurrentSkill
           PotentialSkill = e.PotentialSkill
           Reputation = e.Reputation
-          Value = e.Value
-          Salary = e.Salary
-          ContractExpiry = e.ContractExpiry }
+          Affiliation = affiliationFromEntity e }
 
     let toClubEntity (c: Club) : ClubEntity =
         { Id = c.Id
@@ -157,8 +173,15 @@ module Mappers =
         (lineupSlots: LineupSlotEntity list)
         (ce: ClubEntity)
         : ClubId * Club =
-        let squad =
-            players |> Map.values |> Seq.filter (fun p -> p.ClubId = ce.Id) |> List.ofSeq
+        let playerIds =
+            players
+            |> Map.values
+            |> Seq.choose (fun p ->
+                match p.Affiliation with
+                | Contracted(clubId, _) when clubId = ce.Id -> Some p.Id
+                | YouthProspect clubId when clubId = ce.Id -> Some p.Id
+                | _ -> None)
+            |> List.ofSeq
 
         let slots =
             lineupSlots
@@ -186,7 +209,7 @@ module Mappers =
           Name = ce.Name
           Nationality = ce.Nationality
           Reputation = ce.Reputation
-          Players = squad
+          PlayerIds = playerIds
           CurrentLineup = lineup
           Budget = ce.Budget
           Morale = ce.Morale }

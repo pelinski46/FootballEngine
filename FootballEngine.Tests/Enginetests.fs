@@ -12,6 +12,11 @@ let private unplayedFixtures (game: GameState) limit =
     |> List.filter (fun (_, f) -> not f.Played)
     |> List.truncate limit
 
+let private advanceToSimulate (game: GameState) (fixtures: (MatchId * MatchFixture) list) : DayResult =
+    let maxDate = fixtures |> List.map (fun (_, f) -> f.ScheduledDate) |> List.max
+    let days = int (maxDate.Date - game.CurrentDate.Date).TotalDays + 1
+    advanceDays days game
+
 let batchTests =
     testList
         "Batch & Standings Contracts"
@@ -23,16 +28,14 @@ let batchTests =
               if fixtures.IsEmpty then
                   failtest "No unplayed fixtures found — start a new game"
 
-              let result = simulateFixtures game fixtures
-              let simulated = fixtures.Length - result.Errors.Length
-              Expect.isTrue (simulated > 0) "all fixtures failed to simulate"
-              Expect.isEmpty result.Errors $"%d{result.Errors.Length} errors"
-              Expect.equal result.Logs.Length simulated "log count doesn't match simulated count"
+              let result = advanceToSimulate game fixtures
+              Expect.isTrue (result.Logs.Length > 0) "no fixtures were simulated"
+              Expect.isTrue (result.PlayedFixtures.Length > 0) "no played fixtures recorded"
 
           testCase "standings are mathematically sane"
           <| fun () ->
               let game = loadGame ()
-              let result = simulateFixtures game (unplayedFixtures game 20)
+              let result = advanceToSimulate game (unplayedFixtures game 20)
 
               let sane =
                   result.GameState.Competitions
@@ -53,7 +56,7 @@ let batchTests =
           testCase "all played fixtures have scores"
           <| fun () ->
               let game = loadGame ()
-              let result = simulateFixtures game (unplayedFixtures game 20)
+              let result = advanceToSimulate game (unplayedFixtures game 20)
 
               Expect.isTrue
                   (result.GameState.Competitions
@@ -65,7 +68,7 @@ let batchTests =
           testCase "Played never exceeds 2*(clubs-1)"
           <| fun () ->
               let game = loadGame ()
-              let result = simulateFixtures game (unplayedFixtures game 20)
+              let result = advanceToSimulate game (unplayedFixtures game 20)
 
               Expect.isTrue
                   (result.GameState.Competitions
@@ -76,7 +79,7 @@ let batchTests =
           testCase "GoalsFor = GoalsAgainst across all standings"
           <| fun () ->
               let game = loadGame ()
-              let result = simulateFixtures game (unplayedFixtures game 20)
+              let result = advanceToSimulate game (unplayedFixtures game 20)
 
               let symmetric =
                   result.GameState.Competitions
@@ -99,15 +102,15 @@ let doubleSimGuardTests =
 
               let gameWithLineups =
                   { game with
-                      Clubs = game.Clubs |> Map.map (fun _ c -> makeReadyClub c) }
+                      Clubs = game.Clubs |> Map.map (fun _ -> makeReadyClub game) }
 
               let fixtures = unplayedFixtures gameWithLineups 5
 
               if fixtures.IsEmpty then
                   failtest "No unplayed fixtures to test"
 
-              let result1 = simulateFixtures gameWithLineups fixtures
-              let result2 = simulateFixtures result1.GameState fixtures
+              let result1 = advanceToSimulate gameWithLineups fixtures
+              let result2 = advanceToSimulate result1.GameState fixtures
 
               let collectStandings (gs: GameState) =
                   gs.Competitions
@@ -130,8 +133,8 @@ let doubleSimGuardTests =
               let maxPts2 = standingsAfter2 |> List.map (snd >> _.Points) |> List.max
               Expect.isTrue unchanged "standings changed — fixture was processed twice"
               Expect.equal maxPts2 maxPts1 "points doubled — alreadyPlayed guard is not working"
-              Expect.isEmpty result2.Logs "second batch added log entries for already-played fixtures"
-              Expect.isEmpty result2.Errors "second batch produced unexpected errors" ]
+              Expect.isEmpty result2.Logs "second advance added log entries for already-played fixtures"
+              Expect.isEmpty result2.PlayedFixtures "second advance replayed already-played fixtures" ]
 
 let standingUpdateTests =
     testList
@@ -139,12 +142,21 @@ let standingUpdateTests =
         [ testCase "standing arithmetic is correct for one fixture"
           <| fun () ->
               let game = loadGame ()
-              let unplayed = unplayedFixtures game 1
+
+              let unplayed =
+                  game.Competitions
+                  |> Map.toList
+                  |> List.collect (fun (_, comp) -> comp.Fixtures |> Map.toList)
+                  |> List.filter (fun (_, f) -> not f.Played)
+                  |> List.sortBy (fun (_, f) -> f.ScheduledDate)
 
               if unplayed.IsEmpty then
                   failtest "No unplayed fixture to use"
 
               let fixtureId, fixture = unplayed[0]
+
+              let days = int (fixture.ScheduledDate.Date - game.CurrentDate.Date).TotalDays + 1
+              let result = advanceDays days game
 
               let comp =
                   game.Competitions
@@ -155,8 +167,6 @@ let standingUpdateTests =
               match comp with
               | None -> failtest "Could not find competition for fixture"
               | Some comp ->
-                  let result = simulateFixtures game unplayed
-
                   let homeAfter =
                       result.GameState.Competitions
                       |> Map.toList

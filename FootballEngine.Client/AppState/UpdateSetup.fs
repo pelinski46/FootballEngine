@@ -2,9 +2,9 @@ namespace FootballEngine
 
 open Elmish
 open FootballEngine.Domain
-open FootballEngine.Engine
 open AppTypes
 open AppMsgs
+open FootballEngine.GameGenerator
 
 module UpdateSetup =
 

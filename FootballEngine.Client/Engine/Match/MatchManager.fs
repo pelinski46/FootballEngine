@@ -46,7 +46,12 @@ module MatchManager =
         |> Array.sortBy (fun i -> ts.Conditions[i])
         |> Array.tryHead
 
-    let private pickIncoming (club: Club) (ts: TeamSide) (preferred: Position list) : Player option =
+    let private pickIncoming
+        (squadPlayers: Player list)
+        (club: Club)
+        (ts: TeamSide)
+        (preferred: Position list)
+        : Player option =
         let startingIds =
             club.CurrentLineup
             |> Option.map (fun lu -> lu.Slots |> List.choose _.PlayerId |> Set.ofList)
@@ -55,7 +60,7 @@ module MatchManager =
         let onPitchIds = ts.Players |> Array.map _.Id |> Set.ofArray
 
         let bench =
-            club.Players
+            squadPlayers
             |> List.filter (fun p ->
                 not (Set.contains p.Id startingIds)
                 && not (Set.contains p.Id onPitchIds)
@@ -68,7 +73,7 @@ module MatchManager =
         |> List.tryHead
         |> Option.orElseWith (fun () -> bench |> List.sortByDescending _.CurrentSkill |> List.tryHead)
 
-    let processSubstitution (clubId: ClubId) (second: int) (s: MatchState) : MatchState =
+    let processSubstitution (squadPlayers: Player list) (clubId: ClubId) (second: int) (s: MatchState) : MatchState =
         let isHome = clubId = s.Home.Id
         let ts = side isHome s
         let club = if isHome then s.Home else s.Away
@@ -84,7 +89,7 @@ module MatchManager =
             | Some outIdx ->
                 let playerOut = ts.Players[outIdx]
 
-                match pickIncoming club ts (preferredPositions sit) with
+                match pickIncoming squadPlayers club ts (preferredPositions sit) with
                 | None -> s
                 | Some incoming ->
                     let pos =

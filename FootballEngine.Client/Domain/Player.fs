@@ -18,6 +18,14 @@ type PlayerStatus =
     | Suspended of matchesBanned: int
     | Injured of InjurySeverity * until: DateTime
 
+type ContractInfo = { Salary: decimal; ExpiryYear: int }
+
+type PlayerAffiliation =
+    | Contracted of clubId: ClubId * contract: ContractInfo
+    | FreeAgent
+    | YouthProspect of clubId: ClubId
+    | Retired
+
 type PhysicalStats =
     { Acceleration: int
       Pace: int
@@ -59,7 +67,6 @@ type GoalkeeperStats =
 
 type Player =
     { Id: PlayerId
-      ClubId: ClubId
       Name: string
       Birthday: DateTime
       Nationality: CountryCode
@@ -78,9 +85,7 @@ type Player =
       CurrentSkill: int
       PotentialSkill: int
       Reputation: int
-      Value: decimal
-      Salary: decimal
-      ContractExpiry: int }
+      Affiliation: PlayerAffiliation }
 
 module Player =
     let age (currentDate: DateTime) (p: Player) =

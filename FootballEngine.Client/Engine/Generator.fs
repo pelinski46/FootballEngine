@@ -87,8 +87,6 @@ module GameGenerator =
           OneOnOne = nextNormalInt mean 3.0 1 20
           AerialReach = nextNormalInt mean 3.0 1 20 }
 
-
-
     let private randomAge () = nextNormalInt 25.0 4.5 16 38
 
     let private contractExpiry (year: int) (age: int) (rnd: Random) =
@@ -119,7 +117,6 @@ module GameGenerator =
         let l = countryData.Names.LastNames
 
         { Id = id
-          ClubId = clubId
           Name = $"{f[rnd.Next(f.Length)]} {l[rnd.Next(l.Length)]}"
           Birthday = DateTime(year - age, rnd.Next(1, 13), rnd.Next(1, 29))
           Nationality = countryData.Country.Code
@@ -138,9 +135,12 @@ module GameGenerator =
           CurrentSkill = ca
           PotentialSkill = potential
           Reputation = ca * 5
-          Value = Player.playerValue ca
-          Salary = Player.playerSalary ca
-          ContractExpiry = contractExpiry year age rnd }
+          Affiliation =
+            Contracted(
+                clubId,
+                { Salary = Player.playerSalary ca
+                  ExpiryYear = contractExpiry year age rnd }
+            ) }
 
     let private makeFixture
         (firstMatchId: int)
@@ -282,15 +282,19 @@ module GameGenerator =
                 counters.PlayerId <- counters.PlayerId + 1
                 p)
 
-        { Id = clubId
-          Name = entry.Name
-          Nationality = countryData.Country.Code
-          Reputation = reputation
-          Players = players
-          CurrentLineup = None
-          Budget = budgetForLevel entry.LeagueLevel
-          Morale = 70 },
-        players |> List.map (fun p -> p.Id, p) |> Map.ofList
+        let club =
+            { Id = clubId
+              Name = entry.Name
+              Nationality = countryData.Country.Code
+              Reputation = reputation
+              PlayerIds = players |> List.map _.Id
+              CurrentLineup = None
+              Budget = budgetForLevel entry.LeagueLevel
+              Morale = 70 }
+
+        let clubWithLineup = autoLineup club players (bestFormation players)
+
+        clubWithLineup, players |> List.map (fun p -> p.Id, p) |> Map.ofList
 
     type private WorldAcc =
         { Clubs: Map<ClubId, Club>
@@ -352,10 +356,8 @@ module GameGenerator =
                     let club, players =
                         generateClub rnd cid entry countryData (reputationForClub entry rankPct) year counters
 
-                    let clubWithLineup = autoLineup club (bestFormation club)
-
                     { innerAcc with
-                        Clubs = innerAcc.Clubs |> Map.add cid clubWithLineup
+                        Clubs = innerAcc.Clubs |> Map.add cid club
                         Players = Map.foldBack Map.add players innerAcc.Players },
                     ids @ [ cid ])
 

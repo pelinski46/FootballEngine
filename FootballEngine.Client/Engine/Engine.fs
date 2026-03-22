@@ -1,26 +1,22 @@
 namespace FootballEngine
 
+open System
 open FootballEngine.Domain
 open MatchSimulator
 
 module Engine =
 
-    let createPlayer = GameGenerator.createPlayer
-    let generateNewGame = GameGenerator.generateNewGame
-    let advanceSeason = World.advanceSeason
-    let regenerateSeasonFixtures = GameGenerator.regenerateSeasonFixtures
-    let computeSeasonSummary = World.computeSeasonSummary
-
-    let private ensureLineup (userClubId: ClubId) (club: Club) =
+    let private ensureLineup (players: Map<PlayerId, Player>) (club: Club) =
         let isComplete =
             club.CurrentLineup
             |> Option.map (fun lu -> lu.Slots |> List.filter (fun s -> s.PlayerId.IsSome) |> List.length = 11)
             |> Option.defaultValue false
 
-        if isComplete || club.Id = userClubId then
+        if isComplete then
             club
         else
-            Lineup.autoLineup club (Lineup.bestFormation club)
+            let squad = club.PlayerIds |> List.choose players.TryFind
+            Lineup.autoLineup club squad (Lineup.bestFormation squad)
 
     let updateStanding (standing: LeagueStanding) myScore oppScore =
         let base' =
@@ -50,8 +46,11 @@ module Engine =
           GoalsAgainst = 0
           Points = 0 }
 
-    let simulateFixture (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
-        trySimulateMatch clubs[fixture.HomeClubId] clubs[fixture.AwayClubId]
+    let simulateFixture (fixture: MatchFixture) (gs: GameState) =
+        let home = gs.Clubs[fixture.HomeClubId] |> ensureLineup gs.Players
+        let away = gs.Clubs[fixture.AwayClubId] |> ensureLineup gs.Players
+
+        trySimulateMatch home away gs.Players
         |> Result.map (fun (h, a, evs) ->
             { fixture with
                 Played = true
@@ -60,25 +59,6 @@ module Engine =
                 Events = evs },
             h,
             a)
-
-    let private simulateFixtureWithFallback (userClubId: ClubId) (fixture: MatchFixture) (clubs: Map<ClubId, Club>) =
-        let home = clubs[fixture.HomeClubId] |> ensureLineup userClubId
-        let away = clubs[fixture.AwayClubId] |> ensureLineup userClubId
-
-        trySimulateMatch home away
-        |> Result.map (fun (h, a, evs) ->
-            { fixture with
-                Played = true
-                HomeScore = Some h
-                AwayScore = Some a
-                Events = evs },
-            h,
-            a)
-
-    type BatchResult =
-        { GameState: GameState
-          Logs: string list
-          Errors: (MatchId * SimulationError) list }
 
     type private MatchOutcome =
         { FixtureId: MatchId
@@ -91,7 +71,6 @@ module Engine =
         (outcomes: MatchOutcome[])
         (gs: GameState)
         : GameState =
-
         let updatedComps =
             (gs.Competitions, outcomes)
             ||> Array.fold (fun comps o ->
@@ -120,59 +99,167 @@ module Engine =
                                 |> Map.add o.Fixture.HomeClubId (updateStanding hs o.HomeScore o.AwayScore)
                                 |> Map.add o.Fixture.AwayClubId (updateStanding as' o.AwayScore o.HomeScore) })
 
-        let gsWithComps = { gs with Competitions = updatedComps }
-
-        (gsWithComps, outcomes)
+        ({ gs with Competitions = updatedComps }, outcomes)
         ||> Array.fold (fun acc o ->
             World.updateMorale o.HomeScore o.AwayScore o.Fixture.HomeClubId o.Fixture.AwayClubId acc)
 
-    let simulateFixtures (gameState: GameState) (fixtures: (MatchId * MatchFixture) list) : BatchResult =
-        let fixtureToComp =
-            gameState.Competitions
-            |> Map.toList
-            |> List.collect (fun (compId, comp) ->
-                comp.Fixtures |> Map.toList |> List.map (fun (fid, _) -> fid, compId))
-            |> Map.ofList
+    let private fixtureToCompMap (gs: GameState) =
+        gs.Competitions
+        |> Map.toList
+        |> List.collect (fun (compId, comp) -> comp.Fixtures |> Map.toList |> List.map (fun (fid, _) -> fid, compId))
+        |> Map.ofList
 
-        let unplayed =
-            fixtures
-            |> List.filter (fun (id, _) ->
-                gameState.Competitions
-                |> Map.exists (fun _ comp ->
-                    match comp.Fixtures |> Map.tryFind id with
-                    | Some f -> not f.Played
-                    | None -> false))
+    let private simulateFixtureList (gs: GameState) (fixtures: (MatchId * MatchFixture) list) =
+        fixtures
+        |> List.toArray
+        |> Array.Parallel.map (fun (id, fixture) -> id, simulateFixture fixture gs)
+        |> Array.fold
+            (fun (outs, errs, ls) (id, result) ->
+                match result with
+                | Error e -> outs, (id, e) :: errs, ls
+                | Ok(fixture, h, a) ->
+                    { FixtureId = id
+                      Fixture = fixture
+                      HomeScore = h
+                      AwayScore = a }
+                    :: outs,
+                    errs,
+                    $"{gs.Clubs[fixture.HomeClubId].Name} {h}-{a} {gs.Clubs[fixture.AwayClubId].Name}"
+                    :: ls)
+            ([], [], [])
 
-        let simResults =
-            unplayed
-            |> List.toArray
-            |> Array.Parallel.map (fun (id, fixture) ->
-                id, simulateFixtureWithFallback gameState.UserClubId fixture gameState.Clubs)
+    type DayResult =
+        { GameState: GameState
+          PlayedFixtures: (MatchId * MatchFixture) list
+          Logs: string list
+          SeasonComplete: bool }
 
-        let outcomes, errors, logs =
-            simResults
-            |> Array.fold
-                (fun (outs, errs, ls) (id, result) ->
-                    match result with
-                    | Error e -> outs, (id, e) :: errs, ls
-                    | Ok(fixture, h, a) ->
-                        let home = gameState.Clubs[fixture.HomeClubId]
-                        let away = gameState.Clubs[fixture.AwayClubId]
+    let private isSeasonComplete (gs: GameState) =
+        let hasUnplayed (comp: Competition) =
+            comp.Fixtures |> Map.exists (fun _ f -> not f.Played)
 
-                        let out =
-                            { FixtureId = id
-                              Fixture = fixture
-                              HomeScore = h
-                              AwayScore = a }
+        gs.Competitions
+        |> Map.tryFindKey (fun _ comp ->
+            match comp.Type, comp.Country with
+            | NationalLeague(LeagueLevel 0, _), Some c when c = gs.PrimaryCountry -> true
+            | _ -> false)
+        |> Option.map (fun id ->
+            not (hasUnplayed gs.Competitions[id])
+            && gs.Competitions
+               |> Map.forall (fun _ comp ->
+                   match comp.Type with
+                   | NationalLeague _ -> not (hasUnplayed comp)
+                   | _ -> true))
+        |> Option.defaultValue false
 
-                        out :: outs, errs, $"{home.Name} {h}-{a} {away.Name}" :: ls)
-                ([], [], [])
+    let private advanceSingleDay (gs: GameState) : DayResult =
+        let gs =
+            { gs with
+                CurrentDate = gs.CurrentDate.AddDays(1.0) }
 
-        if errors.IsEmpty then
-            { GameState = applyOutcomes fixtureToComp (List.toArray outcomes) gameState
-              Logs = logs
-              Errors = [] }
-        else
-            { GameState = gameState
+        let todayFixtures =
+            gs.Competitions
+            |> Map.toSeq
+            |> Seq.collect (fun (_, comp) ->
+                comp.Fixtures
+                |> Map.toSeq
+                |> Seq.filter (fun (_, f) -> f.ScheduledDate.Date = gs.CurrentDate.Date && not f.Played))
+            |> List.ofSeq
+
+        if todayFixtures.IsEmpty then
+            { GameState = gs
+              PlayedFixtures = []
               Logs = []
-              Errors = errors }
+              SeasonComplete = isSeasonComplete gs }
+        else
+            let outcomes, errors, logs = simulateFixtureList gs todayFixtures
+
+            let newGs =
+                if errors.IsEmpty then
+                    applyOutcomes (fixtureToCompMap gs) (List.toArray outcomes) gs
+                else
+                    gs
+
+            { GameState = newGs
+              PlayedFixtures = todayFixtures
+              Logs =
+                if errors.IsEmpty then
+                    logs
+                else
+                    errors |> List.map (fun (id, e) -> $"Fixture {id} failed: {e}")
+              SeasonComplete = isSeasonComplete newGs }
+
+    let advanceDays (days: int) (gs: GameState) : DayResult =
+        let rec loop remaining current =
+            if remaining = 0 then
+                current
+            else
+                let next = advanceSingleDay current.GameState
+
+                let merged =
+                    { next with
+                        PlayedFixtures = current.PlayedFixtures @ next.PlayedFixtures
+                        Logs = current.Logs @ next.Logs }
+
+                if merged.SeasonComplete then
+                    merged
+                else
+                    loop (remaining - 1) merged
+
+        loop
+            days
+            { GameState = gs
+              PlayedFixtures = []
+              Logs = []
+              SeasonComplete = false }
+
+    type SeasonResult =
+        { Summary: string list
+          SeasonFinalGs: GameState
+          NewGs: GameState }
+
+    type SeasonError =
+        | NoFixturesToPlay
+        | SimulationErrors of string
+
+    let private runSeasonPipeline (gs: GameState) =
+        gs
+        |> World.advanceSeason (Random())
+        |> GameGenerator.regenerateSeasonFixtures
+        |> World.applyLeagueConsequences
+
+    let advanceSeason (gs: GameState) : SeasonResult =
+        { Summary = World.computeSeasonSummary gs
+          SeasonFinalGs = gs
+          NewGs = runSeasonPipeline gs }
+
+    let simulateAndAdvanceSeason (gs: GameState) : Result<SeasonResult, SeasonError> =
+        let allUnplayed =
+            gs.Competitions
+            |> Map.toSeq
+            |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq |> Seq.filter (fun (_, f) -> not f.Played))
+            |> List.ofSeq
+
+        if allUnplayed.IsEmpty then
+            Error NoFixturesToPlay
+        else
+            let outcomes, errors, _logs = simulateFixtureList gs allUnplayed
+
+            if not errors.IsEmpty then
+                errors
+                |> List.map (fun (_, e) -> string e)
+                |> String.concat ", "
+                |> SimulationErrors
+                |> Error
+            else
+                let lastMatchDate =
+                    allUnplayed |> List.map (fun (_, f) -> f.ScheduledDate) |> List.max
+
+                let finalGs =
+                    { applyOutcomes (fixtureToCompMap gs) (List.toArray outcomes) gs with
+                        CurrentDate = lastMatchDate }
+
+                Ok
+                    { Summary = World.computeSeasonSummary finalGs
+                      SeasonFinalGs = finalGs
+                      NewGs = runSeasonPipeline finalGs }

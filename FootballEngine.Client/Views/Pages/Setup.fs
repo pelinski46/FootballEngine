@@ -144,7 +144,7 @@ module Setup =
                                 (Some MainMenu)
                                 (if state.Setup.SelectedCountry.IsSome then
                                      Some(
-                                         UI.primaryButton "Manager Details" (Some UI.next) (fun _ ->
+                                         UI.primaryButton "Manager Details" (Some IconName.next) (fun _ ->
                                              dispatch (SetupMsg(GoToStep ManagerNaming)))
                                          :> IView
                                      )
@@ -199,7 +199,7 @@ module Setup =
                                                         Border.padding 10.0
                                                         Border.margin (0.0, 0.0, 14.0, 0.0)
                                                         Border.verticalAlignment VerticalAlignment.Center
-                                                        Border.child (Icons.iconLg UI.league Theme.Accent) ]
+                                                        Border.child (Icons.iconLg IconName.league Theme.Accent) ]
                                                   StackPanel.create
                                                       [ Grid.column 1
                                                         StackPanel.verticalAlignment VerticalAlignment.Center
@@ -225,7 +225,7 @@ module Setup =
                                 (Some CountrySelection)
                                 (if state.Setup.ManagerName.Length > 2 then
                                      Some(
-                                         UI.primaryButton "Confirm & Create Game" (Some UI.success) (fun _ ->
+                                         UI.primaryButton "Confirm & Create Game" (Some IconName.success) (fun _ ->
                                              dispatch (SetupMsg StartNewGame))
                                          :> IView
                                      )

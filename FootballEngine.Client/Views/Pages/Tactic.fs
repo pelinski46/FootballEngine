@@ -239,7 +239,7 @@ module Tactics =
         StackPanel.create
             [ StackPanel.spacing 0.0
               StackPanel.children
-                  [ UI.sectionHeader UI.tactics "FORMATION"
+                  [ UI.sectionHeader IconName.tactics "FORMATION"
                     Border.create
                         [ Border.padding (16.0, 12.0)
                           Border.child (
@@ -270,7 +270,7 @@ module Tactics =
         StackPanel.create
             [ StackPanel.spacing 0.0
               StackPanel.children
-                  [ UI.sectionHeader UI.info "SQUAD OVERVIEW"
+                  [ UI.sectionHeader IconName.info "SQUAD OVERVIEW"
                     Border.create
                         [ Border.padding (16.0, 14.0)
                           Border.child (
@@ -315,7 +315,7 @@ module Tactics =
             |> Set.ofList
 
         let benchPlayers =
-            myTeam.Players
+            GameState.getSquad state.GameState.UserClubId state.GameState
             |> List.filter (fun p -> not (starterIds.Contains p.Id))
             |> List.sortBy (fun p -> positionSortKey p.Position, p.CurrentSkill * -1)
 
@@ -355,7 +355,7 @@ module Tactics =
                               DockPanel.create
                                   [ DockPanel.lastChildFill true
                                     DockPanel.children
-                                        [ UI.sectionHeaderWithBadge UI.squad "BENCH" benchPlayers.Length
+                                        [ UI.sectionHeaderWithBadge IconName.squad "BENCH" benchPlayers.Length
                                           |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
                                           ScrollViewer.create
                                               [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
