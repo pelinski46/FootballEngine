@@ -18,6 +18,24 @@ type ClubLineup =
       TeamTactics: string
       Slots: LineupSlot list }
 
+type CupObjective =
+    | WinDomesticCup
+    | WinContinentalCup
+    | WinChampionsLeague
+
+type LeagueObjective =
+    | Survival
+    | MidTable
+    | TopHalf
+    | TopFour
+    | WinLeague
+
+type BoardObjective =
+    | LeagueObjective of LeagueObjective
+    | CupObjective of CupObjective
+    | Promotion
+    | Relegation
+
 type Club =
     { Id: ClubId
       Name: string
@@ -26,4 +44,5 @@ type Club =
       PlayerIds: PlayerId list
       CurrentLineup: ClubLineup option
       Budget: decimal
-      Morale: int }
+      Morale: int
+      BoardObjective: BoardObjective }

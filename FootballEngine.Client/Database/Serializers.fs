@@ -68,8 +68,8 @@ module Serializers =
 
     let roundToString =
         function
-        | GroupStage g -> $"GroupStage:{g}"
-        | KnockoutRound teams -> $"KnockoutRound:{teams}"
+        | GroupStage groupIndex -> $"GroupStage:{groupIndex}"
+        | KnockoutRound teamsRemaining -> $"KnockoutRound:{teamsRemaining}"
         | ThirdPlace -> "ThirdPlace"
         | Final -> "Final"
 
@@ -101,6 +101,98 @@ module Serializers =
         | "OFC" -> OFC
         | _ -> UEFA
 
+    let staffRoleToString =
+        function
+        | HeadCoach -> "HeadCoach"
+        | AssistantManager -> "AssistantManager"
+        | FirstTeamCoach -> "FirstTeamCoach"
+        | GoalkeeperCoach -> "GoalkeeperCoach"
+        | FitnessCoach -> "FitnessCoach"
+        | HeadOfYouthDevelopment -> "HeadOfYouthDevelopment"
+        | Scout -> "Scout"
+        | Physio -> "Physio"
+        | SportsScientist -> "SportsScientist"
+        | PerformanceAnalyst -> "PerformanceAnalyst"
+        | RecruitmentAnalyst -> "RecruitmentAnalyst"
+        | LoanManager -> "LoanManager"
+
+    let parseStaffRole (s: string) : StaffRole =
+        match s with
+        | "HeadCoach" -> HeadCoach
+        | "AssistantManager" -> AssistantManager
+        | "FirstTeamCoach" -> FirstTeamCoach
+        | "GoalkeeperCoach" -> GoalkeeperCoach
+        | "FitnessCoach" -> FitnessCoach
+        | "HeadOfYouthDevelopment" -> HeadOfYouthDevelopment
+        | "Scout" -> Scout
+        | "Physio" -> Physio
+        | "SportsScientist" -> SportsScientist
+        | "PerformanceAnalyst" -> PerformanceAnalyst
+        | "RecruitmentAnalyst" -> RecruitmentAnalyst
+        | _ -> LoanManager
+
+    let coachingBadgeToString =
+        function
+        | NoneBadge -> "None"
+        | NationalC -> "NationalC"
+        | NationalB -> "NationalB"
+        | NationalA -> "NationalA"
+        | ProLicense -> "ProLicense"
+        | ContinentalPro -> "ContinentalPro"
+
+    let parseCoachingBadge (s: string) : CoachingBadge =
+        match s with
+        | "NationalC" -> NationalC
+        | "NationalB" -> NationalB
+        | "NationalA" -> NationalA
+        | "ProLicense" -> ProLicense
+        | "ContinentalPro" -> ContinentalPro
+        | _ -> NoneBadge
+
+    let staffStatusToString =
+        function
+        | Active -> "Active"
+        | UnderPressure -> "UnderPressure"
+        | Sacked -> "Sacked"
+        | Resigned -> "Resigned"
+        | ContractExpired -> "ContractExpired"
+        | Unemployed -> "Unemployed"
+
+    let parseStaffStatus (s: string) : StaffStatus =
+        match s with
+        | "Active" -> Active
+        | "UnderPressure" -> UnderPressure
+        | "Sacked" -> Sacked
+        | "Resigned" -> Resigned
+        | "ContractExpired" -> ContractExpired
+        | _ -> Unemployed
+
+    let boardObjectiveToString =
+        function
+        | LeagueObjective Survival -> "League:Survival"
+        | LeagueObjective MidTable -> "League:MidTable"
+        | LeagueObjective TopHalf -> "League:TopHalf"
+        | LeagueObjective TopFour -> "League:TopFour"
+        | LeagueObjective WinLeague -> "League:WinLeague"
+        | CupObjective WinDomesticCup -> "Cup:Domestic"
+        | CupObjective WinContinentalCup -> "Cup:Continental"
+        | CupObjective WinChampionsLeague -> "Cup:Champions"
+        | Promotion -> "Promotion"
+        | Relegation -> "Relegation"
+
+    let parseBoardObjective (s: string) : BoardObjective =
+        match s with
+        | "League:Survival" -> LeagueObjective Survival
+        | "League:MidTable" -> LeagueObjective MidTable
+        | "League:TopHalf" -> LeagueObjective TopHalf
+        | "League:TopFour" -> LeagueObjective TopFour
+        | "League:WinLeague" -> LeagueObjective WinLeague
+        | "Cup:Domestic" -> CupObjective WinDomesticCup
+        | "Cup:Continental" -> CupObjective WinContinentalCup
+        | "Cup:Champions" -> CupObjective WinChampionsLeague
+        | "Promotion" -> Promotion
+        | _ -> Relegation
+
     let private tieResolutionToString =
         function
         | ReplayAtNeutral -> "ReplayAtNeutral"
@@ -117,8 +209,8 @@ module Serializers =
 
     let private legFormatToString =
         function
-        | SingleLeg r -> $"SingleLeg:{tieResolutionToString r}"
-        | TwoLegs r -> $"TwoLegs:{tieResolutionToString r}"
+        | SingleLeg resolution -> $"SingleLeg:{tieResolutionToString resolution}"
+        | TwoLegs resolution -> $"TwoLegs:{tieResolutionToString resolution}"
 
     let private parseLegFormat (s: string) : LegFormat =
         if s.StartsWith("SingleLeg:") then
@@ -146,24 +238,25 @@ module Serializers =
         else
             s.Split(sep) |> Array.map f |> List.ofArray
 
-    let private leagueRulesToString (r: LeagueRules) =
-        let tbs = r.Tiebreakers |> List.map tiebreakerToString |> String.concat ","
+    let private leagueRulesToString (rules: LeagueRules) =
+        let tiebreakers =
+            rules.Tiebreakers |> List.map tiebreakerToString |> String.concat ","
 
-        let pros =
-            r.Promotion
+        let promotions =
+            rules.Promotion
             |> List.map (function
                 | AutomaticPromotion n -> $"AP:{n}"
                 | PlayoffPromotion n -> $"PP:{n}")
             |> String.concat ","
 
-        let rels =
-            r.Relegation
+        let relegations =
+            rules.Relegation
             |> List.map (function
                 | AutomaticRelegation n -> $"AR:{n}"
                 | PlayoffRelegation n -> $"PR:{n}")
             |> String.concat ","
 
-        $"{r.PointsForWin}|{r.PointsForDraw}|{tbs}|{pros}|{rels}"
+        $"{rules.PointsForWin}|{rules.PointsForDraw}|{tiebreakers}|{promotions}|{relegations}"
 
     let private parseLeagueRules (s: string) : LeagueRules =
         let parts = s.Split('|')
@@ -190,9 +283,11 @@ module Serializers =
           Promotion = parseList ',' parsePromotion parts[3]
           Relegation = parseList ',' parseRelegation parts[4] }
 
-    let private groupRulesToString (g: GroupRules) =
-        let tbs = g.Tiebreakers |> List.map tiebreakerToString |> String.concat ","
-        $"{g.GroupCount};{g.TeamsPerGroup};{g.QualifyPerGroup};{g.PointsForWin};{g.PointsForDraw};{tbs}"
+    let private groupRulesToString (rules: GroupRules) =
+        let tiebreakers =
+            rules.Tiebreakers |> List.map tiebreakerToString |> String.concat ","
+
+        $"{rules.GroupCount};{rules.TeamsPerGroup};{rules.QualifyPerGroup};{rules.PointsForWin};{rules.PointsForDraw};{tiebreakers}"
 
     let private parseGroupRules (s: string) : GroupRules =
         let parts = s.Split(';')
@@ -206,8 +301,9 @@ module Serializers =
 
     let private cupFormatToString =
         function
-        | StraightKnockout leg -> $"SK:{legFormatToString leg}"
-        | GroupThenKnockout(grp, leg) -> $"GTK:{groupRulesToString grp}~{legFormatToString leg}"
+        | StraightKnockout legFormat -> $"SK:{legFormatToString legFormat}"
+        | GroupThenKnockout(groupRules, legFormat) ->
+            $"GTK:{groupRulesToString groupRules}~{legFormatToString legFormat}"
 
     let private parseCupFormat (s: string) : CupFormat =
         if s.StartsWith("GTK:") then
@@ -219,7 +315,7 @@ module Serializers =
 
     let private qualificationSlotToString =
         function
-        | LeaguePosition(LeagueLevel lvl, from, too) -> $"LP:{lvl}:{from}:{too}"
+        | LeaguePosition(LeagueLevel lvl, fromPos, toPos) -> $"LP:{lvl}:{fromPos}:{toPos}"
         | CupWinner name -> $"CW:{name}"
         | TitleHolder -> "TH"
         | ConfederationSlot n -> $"CS:{n}"
@@ -235,18 +331,18 @@ module Serializers =
         else
             ConfederationSlot(int (s.Substring(3)))
 
-    let competitionTypeToStrings (ct: CompetitionType) : string * string * string =
-        match ct with
+    let competitionTypeToStrings (competitionType: CompetitionType) : string * string * string =
+        match competitionType with
         | NationalLeague(LeagueLevel lvl, rules) -> "NationalLeague", $"{lvl}", leagueRulesToString rules
-        | NationalCup(fmt, slots) ->
+        | NationalCup(format, slots) ->
             let slotStr = slots |> List.map qualificationSlotToString |> String.concat ","
-            "NationalCup", cupFormatToString fmt, slotStr
-        | InternationalCup(confOpt, fmt, slots) ->
+            "NationalCup", cupFormatToString format, slotStr
+        | InternationalCup(confOpt, format, slots) ->
             let confStr = confOpt |> Option.map confederationToString |> Option.defaultValue ""
             let slotStr = slots |> List.map qualificationSlotToString |> String.concat ","
-            "InternationalCup", $"{cupFormatToString fmt}~{confStr}", slotStr
+            "InternationalCup", $"{cupFormatToString format}~{confStr}", slotStr
 
-    let parseCompetitionType (tag: string) (p1: string) (p2: string) : CompetitionType =
+    let parseCompetitionType (tag: string) (param1: string) (param2: string) : CompetitionType =
         let defaultLeague =
             NationalLeague(
                 LeagueLevel 0,
@@ -258,13 +354,13 @@ module Serializers =
             )
 
         match tag with
-        | "NationalLeague" -> NationalLeague(LeagueLevel(int p1), parseLeagueRules p2)
-        | "NationalCup" -> NationalCup(parseCupFormat p1, parseList ',' parseQualificationSlot p2)
+        | "NationalLeague" -> NationalLeague(LeagueLevel(int param1), parseLeagueRules param2)
+        | "NationalCup" -> NationalCup(parseCupFormat param1, parseList ',' parseQualificationSlot param2)
         | "InternationalCup" ->
-            let idx = p1.LastIndexOf('~')
+            let idx = param1.LastIndexOf('~')
 
             let conf =
-                let s = p1[idx + 1 ..] in if s = "" then None else Some(parseConfederation s)
+                let s = param1[idx + 1 ..] in if s = "" then None else Some(parseConfederation s)
 
-            InternationalCup(conf, parseCupFormat p1[.. idx - 1], parseList ',' parseQualificationSlot p2)
+            InternationalCup(conf, parseCupFormat param1[.. idx - 1], parseList ',' parseQualificationSlot param2)
         | _ -> defaultLeague

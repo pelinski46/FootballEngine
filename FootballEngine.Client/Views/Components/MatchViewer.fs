@@ -59,11 +59,7 @@ module MatchViewer =
             [ Canvas.left (x - r - 4.0)
               Canvas.top (y - r - 14.0)
               Canvas.children
-                  [ // Condition glow
-                    Ellipse.create
-                        [ Ellipse.width (d + 10.0)
-                          Ellipse.height (d + 10.0)
-                          Ellipse.fill (condColor + "30") ]
+                  [
                     // Team fill
                     Ellipse.create
                         [ Canvas.left 2.0
@@ -71,13 +67,7 @@ module MatchViewer =
                           Ellipse.width (d + 6.0)
                           Ellipse.height (d + 6.0)
                           Ellipse.fill (teamColor + "DD") ]
-                    // Inner circle darker
-                    Ellipse.create
-                        [ Canvas.left 5.0
-                          Canvas.top 5.0
-                          Ellipse.width d
-                          Ellipse.height d
-                          Ellipse.fill (teamColor + "FF") ]
+
                     // Condition ring
                     Ellipse.create
                         [ Canvas.left 2.0
@@ -391,48 +381,65 @@ module MatchViewer =
                               momentumBar s ] ]
               ) ]
 
+module MatchDayView =
 
-module MatchLabView =
+    let private vSep () : IView =
+        Border.create
+            [ Border.width 1.0
+              Border.height 22.0
+              Border.background Theme.Border
+              Border.verticalAlignment VerticalAlignment.Center ]
 
-    let private clubPicker
-        (label: string)
-        (selected: ClubId option)
-        (clubs: Club list)
-        (msg: ClubId -> Msg)
-        (dispatch: Msg -> unit)
-        =
-        StackPanel.create
-            [ StackPanel.orientation Orientation.Vertical
-              StackPanel.spacing 4.0
-              StackPanel.children
-                  [ TextBlock.create
-                        [ TextBlock.text (label.ToUpper())
-                          TextBlock.foreground Theme.TextMuted
-                          TextBlock.fontSize 9.0
-                          TextBlock.fontWeight FontWeight.Black
-                          TextBlock.lineSpacing 0.8 ]
-                    ComboBox.create
-                        [ ComboBox.width 200.0
-                          ComboBox.background Theme.BgCard
-                          ComboBox.borderBrush Theme.Border
-                          ComboBox.dataItems clubs
-                          ComboBox.itemTemplate (
-                              DataTemplateView<Club>.create (fun c ->
-                                  TextBlock.create
-                                      [ TextBlock.text c.Name
-                                        TextBlock.foreground Theme.TextMain
-                                        TextBlock.fontSize 12.0 ])
-                          )
-                          ComboBox.selectedItem (
-                              selected
-                              |> Option.bind (fun id -> clubs |> List.tryFind (fun c -> c.Id = id))
-                              |> Option.toObj
-                          )
-                          ComboBox.onSelectionChanged (fun e ->
-                              if e.AddedItems.Count > 0 then
-                                  match e.AddedItems[0] with
-                                  | :? Club as c -> dispatch (msg c.Id)
-                                  | _ -> ()) ] ] ]
+    let private navBtn (iconKind: Material.Icons.MaterialIconKind) (enabled: bool) (onClick: unit -> unit) : IView =
+        Button.create
+            [ Button.width 28.0
+              Button.height 28.0
+              Button.padding (Thickness 0.0)
+              Button.background (if enabled then Theme.BgHover else "transparent")
+              Button.cornerRadius 5.0
+              Button.isEnabled enabled
+              Button.horizontalContentAlignment HorizontalAlignment.Center
+              Button.content (Icons.iconMd iconKind (if enabled then Theme.TextMain else Theme.TextMuted))
+              Button.onClick (fun _ -> onClick ()) ]
+
+    let private finalScorePill (replay: MatchReplay) : IView =
+        Border.create
+            [ Border.background Theme.BgCard
+              Border.cornerRadius 8.0
+              Border.borderBrush Theme.Border
+              Border.borderThickness (Thickness 1.0)
+              Border.padding (Thickness(14.0, 6.0))
+              Border.verticalAlignment VerticalAlignment.Center
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.orientation Orientation.Horizontal
+                        StackPanel.spacing 8.0
+                        StackPanel.children
+                            [ TextBlock.create
+                                  [ TextBlock.text "FT"
+                                    TextBlock.foreground Theme.TextMuted
+                                    TextBlock.fontSize 9.0
+                                    TextBlock.fontWeight FontWeight.Black
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text replay.Final.Home.Name
+                                    TextBlock.foreground Theme.AccentAlt
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text $"{replay.Final.HomeScore} – {replay.Final.AwayScore}"
+                                    TextBlock.foreground Theme.TextMain
+                                    TextBlock.fontSize 16.0
+                                    TextBlock.fontWeight FontWeight.Black
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                              TextBlock.create
+                                  [ TextBlock.text replay.Final.Away.Name
+                                    TextBlock.foreground Theme.Danger
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.SemiBold
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+              ) ]
 
     let private eventTypeMeta =
         function
@@ -442,8 +449,8 @@ module MatchLabView =
         | YellowCard -> MatchEvent.yellowCard, Theme.Warning, "YELLOW"
         | RedCard -> MatchEvent.redCard, Theme.Danger, "RED CARD"
         | Injury _ -> MatchEvent.injury, Theme.Danger, "INJURY"
-        | SubstitutionIn -> MatchEvent.subOn, Theme.TextSub, "SUB ON"
-        | SubstitutionOut -> MatchEvent.subOff, Theme.TextSub, "SUB OFF"
+        | SubstitutionIn -> MatchEvent.subOn, Theme.Success, "SUB ON"
+        | SubstitutionOut -> MatchEvent.subOff, Theme.Danger, "SUB OFF"
 
     let private eventRow (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) (ev: MatchEvent) : IView =
         let iconKind, color, label = eventTypeMeta ev.Type
@@ -556,7 +563,6 @@ module MatchLabView =
                                                 TextBlock.foreground Theme.TextMuted
                                                 TextBlock.fontSize 9.0
                                                 TextBlock.fontWeight FontWeight.Black
-                                                TextBlock.lineSpacing 0.8
                                                 TextBlock.verticalAlignment VerticalAlignment.Center ]
                                           Border.create
                                               [ Border.background Theme.AccentLight
@@ -590,74 +596,13 @@ module MatchLabView =
                                     ) ]
                           ) ] ] ]
 
-    let private vSep () : IView =
-        Border.create
-            [ Border.width 1.0
-              Border.height 22.0
-              Border.background Theme.Border
-              Border.verticalAlignment VerticalAlignment.Center ]
-
-    let private navBtn (iconKind: Material.Icons.MaterialIconKind) (enabled: bool) (onClick: unit -> unit) : IView =
-        Button.create
-            [ Button.width 28.0
-              Button.height 28.0
-              Button.padding (Thickness 0.0)
-              Button.background (if enabled then Theme.BgHover else "transparent")
-              Button.foreground (if enabled then Theme.TextMain else Theme.TextMuted)
-              Button.cornerRadius 5.0
-              Button.isEnabled enabled
-              Button.horizontalContentAlignment HorizontalAlignment.Center
-              Button.content (Icons.iconMd iconKind (if enabled then Theme.TextMain else Theme.TextMuted))
-              Button.onClick (fun _ -> onClick ()) ]
-
-    let private go (delta: int) (dispatch: Msg -> unit) = dispatch (MatchLabMsg(Step delta))
-
-    let private finalScorePill (replay: MatchReplay) : IView =
-        Border.create
-            [ Border.background Theme.BgCard
-              Border.cornerRadius 8.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness (Thickness 1.0)
-              Border.padding (Thickness(14.0, 6.0))
-              Border.verticalAlignment VerticalAlignment.Center
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.orientation Orientation.Horizontal
-                        StackPanel.spacing 8.0
-                        StackPanel.children
-                            [ TextBlock.create
-                                  [ TextBlock.text "FT"
-                                    TextBlock.foreground Theme.TextMuted
-                                    TextBlock.fontSize 9.0
-                                    TextBlock.fontWeight FontWeight.Black
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text replay.Final.Home.Name
-                                    TextBlock.foreground Theme.AccentAlt
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.fontWeight FontWeight.SemiBold
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text $"{replay.Final.HomeScore} – {replay.Final.AwayScore}"
-                                    TextBlock.foreground Theme.TextMain
-                                    TextBlock.fontSize 16.0
-                                    TextBlock.fontWeight FontWeight.Black
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text replay.Final.Away.Name
-                                    TextBlock.foreground Theme.Danger
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.fontWeight FontWeight.SemiBold
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-              ) ]
-
-    let private toolbarNav
-        (current: MatchState)
-        (replay: MatchReplay)
+    let private toolbar
         (idx: int)
         (total: int)
         (replayKey: string)
-        (dispatch: Msg -> unit)
+        (replay: MatchReplay)
+        (step: int -> unit)
+        (onClose: unit -> unit)
         =
         let navButtons =
             [ Nav.skipFirst, -total, idx > 0
@@ -668,7 +613,7 @@ module MatchLabView =
               Nav.skipLast, +total, idx < total ]
 
         Component.create (
-            $"toolbar-nav-{replayKey}-{idx}",
+            $"matchday-toolbar-{replayKey}-{idx}",
             fun _ ->
                 StackPanel.create
                     [ StackPanel.orientation Orientation.Horizontal
@@ -681,7 +626,7 @@ module MatchLabView =
                             yield!
                                 navButtons
                                 |> List.mapi (fun i (iconKind, delta, enabled) ->
-                                    let btn = navBtn iconKind enabled (fun () -> go delta dispatch)
+                                    let btn = navBtn iconKind enabled (fun () -> step delta)
 
                                     if i = 2 then
                                         [ btn
@@ -700,121 +645,89 @@ module MatchLabView =
                                           :> IView ]
                                     else
                                         [ btn ])
-                                |> List.concat ] ]
+                                |> List.concat
+                            vSep ()
+                            Button.create
+                                [ Button.background Theme.Accent
+                                  Button.foreground Theme.BgMain
+                                  Button.padding (Thickness(16.0, 6.0))
+                                  Button.cornerRadius 7.0
+                                  Button.fontWeight FontWeight.Bold
+                                  Button.onClick (fun _ -> onClose ())
+                                  Button.content (
+                                      StackPanel.create
+                                          [ StackPanel.orientation Orientation.Horizontal
+                                            StackPanel.spacing 6.0
+                                            StackPanel.children
+                                                [ Icons.iconSm Nav.next Theme.BgMain
+                                                  TextBlock.create
+                                                      [ TextBlock.text "BACK TO GAME"
+                                                        TextBlock.foreground Theme.BgMain
+                                                        TextBlock.fontSize 11.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                                  ) ] ] ]
         )
 
-    let private replayControls (state: State) (replay: MatchReplay) (dispatch: Msg -> unit) : IView =
-        let idx = state.MatchLab.Snapshot
+    let view (state: State) (dispatch: Msg -> unit) : IView =
+        match state.ActiveMatchReplay with
+        | None ->
+            StackPanel.create
+                [ StackPanel.horizontalAlignment HorizontalAlignment.Center
+                  StackPanel.verticalAlignment VerticalAlignment.Center
+                  StackPanel.children
+                      [ TextBlock.create
+                            [ TextBlock.text "No match to display"
+                              TextBlock.foreground Theme.TextMuted
+                              TextBlock.fontSize 15.0 ] ] ]
+            :> IView
+        | Some replay ->
+            let idx = state.ActiveMatchSnapshot
+            let total = max 1 (replay.Snapshots.Length - 1)
 
-        let current =
-            replay.Snapshots |> Array.tryItem idx |> Option.defaultValue replay.Final
+            let current =
+                replay.Snapshots |> Array.tryItem idx |> Option.defaultValue replay.Final
 
-        DockPanel.create
-            [ DockPanel.lastChildFill true
-              DockPanel.children
-                  [ Border.create
-                        [ DockPanel.dock Dock.Right
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (Thickness(1.0, 0.0, 0.0, 0.0))
-                          Border.child (eventLog replay state.GameState.Clubs state.GameState.Players) ]
-                    MatchViewer.view current ] ]
-        :> IView
+            let replayKey =
+                $"{replay.Snapshots.Length}-{replay.Final.HomeScore}-{replay.Final.AwayScore}"
 
-    let view (state: State) (dispatch: Msg -> unit) =
-        let clubs =
-            state.GameState.Clubs |> Map.toList |> List.map snd |> List.sortBy _.Name
-
-        DockPanel.create
-            [ DockPanel.background Theme.BgMain
-              DockPanel.children
-                  [ Border.create
-                        [ DockPanel.dock Dock.Top
-                          Border.background Theme.BgSidebar
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
-                          Border.padding (Thickness(16.0, 10.0))
-                          Border.child (
-                              StackPanel.create
-                                  [ StackPanel.orientation Orientation.Horizontal
-                                    StackPanel.spacing 16.0
-                                    StackPanel.verticalAlignment VerticalAlignment.Center
-                                    StackPanel.children
-                                        [ clubPicker
-                                              "Home"
-                                              state.MatchLab.HomeClubId
-                                              clubs
-                                              (fun id -> MatchLabMsg(SelectHome id))
-                                              dispatch
-                                          Border.create
-                                              [ Border.background Theme.BgCard
-                                                Border.cornerRadius 20.0
-                                                Border.padding (Thickness(10.0, 4.0))
-                                                Border.verticalAlignment VerticalAlignment.Bottom
-                                                Border.child (
-                                                    TextBlock.create
-                                                        [ TextBlock.text "VS"
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Black ]
-                                                ) ]
-                                          clubPicker
-                                              "Away"
-                                              state.MatchLab.AwayClubId
-                                              clubs
-                                              (fun id -> MatchLabMsg(SelectAway id))
-                                              dispatch
-                                          Button.create
-                                              [ Button.verticalAlignment VerticalAlignment.Bottom
-                                                Button.background Theme.Accent
-                                                Button.foreground Theme.BgMain
-                                                Button.padding (Thickness(18.0, 8.0))
-                                                Button.cornerRadius 7.0
-                                                Button.fontWeight FontWeight.Black
-                                                Button.onClick (fun _ -> dispatch (MatchLabMsg Run))
-                                                Button.content (
-                                                    StackPanel.create
-                                                        [ StackPanel.orientation Orientation.Horizontal
-                                                          StackPanel.spacing 6.0
-                                                          StackPanel.children
-                                                              [ Icons.iconMd IconName.simulate Theme.BgMain
-                                                                TextBlock.create
-                                                                    [ TextBlock.text "SIMULATE"
-                                                                      TextBlock.foreground Theme.BgMain
-                                                                      TextBlock.fontSize 11.0
-                                                                      TextBlock.fontWeight FontWeight.Black
-                                                                      TextBlock.verticalAlignment
-                                                                          VerticalAlignment.Center ] ] ]
-                                                ) ]
-                                          match state.MatchLab.Result with
-                                          | Some replay ->
-                                              let idx = state.MatchLab.Snapshot
-                                              let total = max 1 (replay.Snapshots.Length - 1)
-
-                                              let cur =
-                                                  replay.Snapshots
-                                                  |> Array.tryItem idx
-                                                  |> Option.defaultValue replay.Final
-
-                                              let replayKey =
-                                                  $"{replay.Snapshots.Length}-{replay.Final.HomeScore}-{replay.Final.AwayScore}"
-
-                                              toolbarNav cur replay idx total replayKey dispatch
-                                          | None -> () ] ]
-                          ) ]
-
-                    match state.MatchLab.Result with
-                    | None ->
-                        StackPanel.create
-                            [ StackPanel.orientation Orientation.Vertical
-                              StackPanel.spacing 12.0
-                              StackPanel.horizontalAlignment HorizontalAlignment.Center
-                              StackPanel.verticalAlignment VerticalAlignment.Center
-                              StackPanel.children
-                                  [ Icons.iconXl MatchEvent.goal Theme.TextMuted
-                                    TextBlock.create
-                                        [ TextBlock.text "Select two clubs and simulate a match"
-                                          TextBlock.foreground Theme.TextMuted
-                                          TextBlock.fontSize 15.0
-                                          TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
-                        :> IView
-                    | Some replay -> replayControls state replay dispatch ] ]
+            DockPanel.create
+                [ DockPanel.background Theme.BgMain
+                  DockPanel.children
+                      [ Border.create
+                            [ DockPanel.dock Dock.Top
+                              Border.background Theme.BgSidebar
+                              Border.borderBrush Theme.Border
+                              Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
+                              Border.padding (Thickness(16.0, 10.0))
+                              Border.child (
+                                  StackPanel.create
+                                      [ StackPanel.orientation Orientation.Horizontal
+                                        StackPanel.spacing 12.0
+                                        StackPanel.verticalAlignment VerticalAlignment.Center
+                                        StackPanel.children
+                                            [ Icons.iconSm IconName.simulate Theme.TextMuted
+                                              TextBlock.create
+                                                  [ TextBlock.text "MATCH DAY"
+                                                    TextBlock.foreground Theme.TextMuted
+                                                    TextBlock.fontSize 9.0
+                                                    TextBlock.fontWeight FontWeight.Black
+                                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                                              toolbar
+                                                  idx
+                                                  total
+                                                  replayKey
+                                                  replay
+                                                  (fun delta -> dispatch (StepActiveMatch delta))
+                                                  (fun () -> dispatch CloseActiveMatch) ] ]
+                              ) ]
+                        DockPanel.create
+                            [ DockPanel.lastChildFill true
+                              DockPanel.children
+                                  [ Border.create
+                                        [ DockPanel.dock Dock.Right
+                                          Border.borderBrush Theme.Border
+                                          Border.borderThickness (Thickness(1.0, 0.0, 0.0, 0.0))
+                                          Border.child (eventLog replay state.GameState.Clubs state.GameState.Players) ]
+                                    MatchViewer.view current ] ] ] ]
+            :> IView

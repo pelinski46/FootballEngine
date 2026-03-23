@@ -9,8 +9,9 @@
     <ItemGroup>
         <Compile Include="Domain\DomainTypes.fs"/>
         <Compile Include="Domain\Country.fs"/>
-        <Compile Include="Domain\Player.fs"/>
         <Compile Include="Domain\Club.fs"/>
+        <Compile Include="Domain\Player.fs"/>
+        <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\MatchContext.fs"/>
@@ -26,14 +27,20 @@
         <Compile Include="GameData\DataRegistry.fs"/>
         <Compile Include="FormationData.fs"/>
         <Compile Include="Lineup.fs"/>
-        <Compile Include="Engine\Match\Stats.fs"/>
+        <Compile Include="Engine\Stats.fs"/>
+        <Compile Include="Engine\Match\MatchCalc.fs"/>
         <Compile Include="Engine\Match\State.fs"/>
         <Compile Include="Engine\Match\Pitch.fs"/>
         <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\MatchManager.fs"/>
         <Compile Include="Engine\Match\MatchPlayer.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
-        <Compile Include="Engine\Generator.fs"/>
+        <Compile Include="Engine\WorldGeneration\PlayerGen.fs"/>
+        <Compile Include="Engine\WorldGeneration\StaffGen.fs"/>
+        <Compile Include="Engine\WorldGeneration\ClubGen.fs"/>
+        <Compile Include="Engine\WorldGeneration\FixtureGen.fs"/>
+        <Compile Include="Engine\WorldGeneration\WorldGen.fs"/>
+        <Compile Include="Engine\WorldGeneration\SeasonGen.fs"/>
         <Compile Include="Engine\World.fs"/>
         <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database\Entities.fs"/>
@@ -45,7 +52,6 @@
         <Compile Include="AppState\UpdateSetup.fs"/>
         <Compile Include="AppState\UpdateSim.fs"/>
         <Compile Include="AppState\UpdateTransfer.fs"/>
-        <Compile Include="AppState\UpdateMatchLab.fs"/>
         <Compile Include="AppState\AppState.fs"/>
         <Compile Include="Views\Icons.fs"/>
         <Compile Include="Views\Theme.fs"/>

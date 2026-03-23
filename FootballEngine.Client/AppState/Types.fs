@@ -16,7 +16,7 @@ module AppTypes =
         | Transfers
         | Finances
         | Settings
-        | MatchLab
+        | Match
 
     type SetupStep =
         | MainMenu
@@ -114,7 +114,8 @@ module AppTypes =
           PlayerSortBy: string
           Setup: SetupState
           Transfer: TransferState
-          MatchLab: MatchLabState }
+          ActiveMatchReplay: MatchReplay option
+          ActiveMatchSnapshot: int }
 
     let initSetupState =
         { Step = MainMenu

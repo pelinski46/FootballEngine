@@ -7,10 +7,11 @@ type GameState =
       Season: int
       Clubs: Map<ClubId, Club>
       Players: Map<PlayerId, Player>
+      Staff: Map<StaffId, Staff>
       Competitions: Map<CompetitionId, Competition>
       Countries: Map<CountryCode, Country>
       UserClubId: ClubId
-      ManagerName: string
+      UserStaffId: StaffId
       PrimaryCountry: CountryCode }
 
 module GameState =
@@ -21,12 +22,28 @@ module GameState =
         |> Option.map (fun club -> club.PlayerIds |> List.choose gs.Players.TryFind)
         |> Option.defaultValue []
 
+    let getStaff (clubId: ClubId) (gs: GameState) : Staff list =
+        gs.Staff
+        |> Map.values
+        |> Seq.filter (fun s -> s.Contract |> Option.map _.ClubId = Some clubId)
+        |> List.ofSeq
+
+    let headCoach (clubId: ClubId) (gs: GameState) : Staff option =
+        getStaff clubId gs |> List.tryFind (fun s -> s.Role = HeadCoach)
+
     let freeAgents (gs: GameState) : Player seq =
         gs.Players |> Map.values |> Seq.filter (fun p -> p.Affiliation = FreeAgent)
+
+    let unemployedStaff (gs: GameState) : Staff seq =
+        gs.Staff |> Map.values |> Seq.filter (fun s -> s.Status = Unemployed)
 
     let updatePlayer (p: Player) (gs: GameState) : GameState =
         { gs with
             Players = gs.Players |> Map.add p.Id p }
+
+    let updateStaff (s: Staff) (gs: GameState) : GameState =
+        { gs with
+            Staff = gs.Staff |> Map.add s.Id s }
 
     let clubOf (p: Player) : ClubId option =
         match p.Affiliation with
@@ -39,3 +56,17 @@ module GameState =
         match p.Affiliation with
         | Contracted(_, contract) -> Some contract
         | _ -> None
+
+    let userManager (gs: GameState) : Staff option = gs.Staff |> Map.tryFind gs.UserStaffId
+
+    let userManagerName (gs: GameState) : string =
+        userManager gs |> Option.map _.Name |> Option.defaultValue ""
+
+    let getUserNextFixture (gs: GameState) : (MatchId * MatchFixture) option =
+        gs.Competitions
+        |> Map.toSeq
+        |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
+        |> Seq.filter (fun (_, f: MatchFixture) ->
+            not f.Played && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId))
+        |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
+        |> Seq.tryHead

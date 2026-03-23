@@ -11,8 +11,8 @@ open FootballEngine.AppTypes
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
 open FootballEngine.Components
-open FootballEngine.UpdateSim
 open FootballEngine.Icons
+
 
 module HomePresenter =
 
@@ -30,7 +30,7 @@ module HomePresenter =
           UserWon: bool option }
 
     let getNextMatch (state: GameState) =
-        match getUserNextFixture state with
+        match GameState.getUserNextFixture state with
         | None -> None
         | Some(_, fixture) ->
             let userTeam = state.Clubs[state.UserClubId]
@@ -48,7 +48,7 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f) ->
+        |> Seq.filter (fun (_, f: MatchFixture) ->
             not f.Played
             && (f.HomeClubId = state.UserClubId || f.AwayClubId = state.UserClubId))
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
@@ -59,7 +59,8 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f) -> f.Played && (f.HomeClubId = state.UserClubId || f.AwayClubId = state.UserClubId))
+        |> Seq.filter (fun (_, f: MatchFixture) ->
+            f.Played && (f.HomeClubId = state.UserClubId || f.AwayClubId = state.UserClubId))
         |> Seq.sortByDescending (fun (_, f) -> f.ScheduledDate)
         |> Seq.truncate count
         |> Seq.choose (fun (_, f) ->
@@ -100,14 +101,6 @@ module HomePresenter =
             | _ -> None)
         |> List.ofSeq
 
-    let private getPosColor (leagueId: int) (pos: int) =
-        match leagueId, pos with
-        | 1, p when p <= 4 -> Theme.Success
-        | 1, p when p >= 18 -> Theme.Danger
-        | 2, p when p <= 2 -> Theme.Success
-        | 2, p when p <= 6 -> Theme.Warning
-        | _ -> Theme.TextMuted
-
     let private emptyStanding clubId =
         { ClubId = clubId
           Played = 0
@@ -117,6 +110,14 @@ module HomePresenter =
           GoalsFor = 0
           GoalsAgainst = 0
           Points = 0 }
+
+    let private getPosColor (leagueId: int) (pos: int) =
+        match leagueId, pos with
+        | 1, p when p <= 4 -> Theme.Success
+        | 1, p when p >= 18 -> Theme.Danger
+        | 2, p when p <= 2 -> Theme.Success
+        | 2, p when p <= 6 -> Theme.Warning
+        | _ -> Theme.TextMuted
 
     let getUserStanding (state: GameState) (leagueId: CompetitionId) =
         state.Competitions.TryFind leagueId
@@ -193,6 +194,32 @@ module HomePresenter =
 
 
 module Home =
+
+    let private panelHeader (iconKind: Material.Icons.MaterialIconKind) (label: string) (extra: IView option) =
+        Border.create
+            [ Border.padding (14.0, 10.0)
+              Border.borderBrush Theme.Border
+              Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+              Border.child (
+                  DockPanel.create
+                      [ DockPanel.lastChildFill false
+                        DockPanel.children
+                            [ match extra with
+                              | Some v -> Border.create [ DockPanel.dock Dock.Right; Border.child v ]
+                              | None -> ()
+                              StackPanel.create
+                                  [ StackPanel.orientation Orientation.Horizontal
+                                    StackPanel.spacing 6.0
+                                    StackPanel.children
+                                        [ Icons.iconSm iconKind Theme.Accent
+                                          TextBlock.create
+                                              [ TextBlock.text label
+                                                TextBlock.fontSize 10.0
+                                                TextBlock.fontWeight FontWeight.Black
+                                                TextBlock.foreground Theme.TextMuted
+                                                TextBlock.verticalAlignment VerticalAlignment.Center ] ] ] ] ]
+              ) ]
+        :> IView
 
     let private resultDot (userWon: bool option) =
         let color =
@@ -323,77 +350,72 @@ module Home =
               ) ]
 
     let private notificationsPanel (notes: Notification list) dispatch =
-        Border.create
-            [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.clipToBounds true
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 0.0
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.padding (14.0, 10.0)
-                                    Border.borderBrush Theme.Border
-                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                    Border.child (
-                                        DockPanel.create
-                                            [ DockPanel.lastChildFill false
-                                              DockPanel.children
-                                                  [ StackPanel.create
-                                                        [ DockPanel.dock Dock.Left
-                                                          StackPanel.orientation Orientation.Horizontal
-                                                          StackPanel.spacing 6.0
-                                                          StackPanel.children
-                                                              [ Icons.iconSm IconName.info Theme.Accent
-                                                                TextBlock.create
-                                                                    [ TextBlock.text "NOTIFICATIONS"
-                                                                      TextBlock.fontSize 10.0
-                                                                      TextBlock.fontWeight FontWeight.Black
-                                                                      TextBlock.foreground Theme.TextMuted
-                                                                      TextBlock.verticalAlignment
-                                                                          VerticalAlignment.Center ]
-                                                                if not notes.IsEmpty then
-                                                                    UI.countBadge notes.Length ] ]
+        let clearAllButton =
+            Button.create
+                [ Button.background "Transparent"
+                  Button.borderThickness 0.0
+                  Button.padding (4.0, 2.0)
+                  Button.cursor Avalonia.Input.Cursor.Default
+                  Button.onClick (fun _ -> dispatch (NotificationMsg DismissAll))
+                  Button.content (
+                      TextBlock.create
+                          [ TextBlock.text "Clear all"
+                            TextBlock.fontSize 10.0
+                            TextBlock.foreground Theme.TextMuted ]
+                  ) ]
+            :> IView
 
-                                                    if not notes.IsEmpty then
-                                                        Button.create
-                                                            [ DockPanel.dock Dock.Right
-                                                              Button.background "Transparent"
-                                                              Button.borderThickness 0.0
-                                                              Button.padding (4.0, 2.0)
-                                                              Button.cursor Avalonia.Input.Cursor.Default
-                                                              Button.onClick (fun _ ->
-                                                                  dispatch (NotificationMsg DismissAll))
-                                                              Button.content (
-                                                                  TextBlock.create
-                                                                      [ TextBlock.text "Clear all"
-                                                                        TextBlock.fontSize 10.0
-                                                                        TextBlock.foreground Theme.TextMuted ]
-                                                              ) ] ] ]
-                                    ) ]
+        let header =
+            Border.create
+                [ Border.padding (14.0, 10.0)
+                  Border.borderBrush Theme.Border
+                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                  Border.child (
+                      DockPanel.create
+                          [ DockPanel.lastChildFill false
+                            DockPanel.children
+                                [ if not notes.IsEmpty then
+                                      Border.create [ DockPanel.dock Dock.Right; Border.child clearAllButton ]
+                                  StackPanel.create
+                                      [ StackPanel.orientation Orientation.Horizontal
+                                        StackPanel.spacing 6.0
+                                        StackPanel.children
+                                            [ Icons.iconSm IconName.info Theme.Accent
+                                              TextBlock.create
+                                                  [ TextBlock.text "NOTIFICATIONS"
+                                                    TextBlock.fontSize 10.0
+                                                    TextBlock.fontWeight FontWeight.Black
+                                                    TextBlock.foreground Theme.TextMuted
+                                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
+                                              if not notes.IsEmpty then
+                                                  UI.countBadge notes.Length ] ] ] ]
+                  ) ]
+            :> IView
 
-                              if notes.IsEmpty then
-                                  Border.create
-                                      [ Border.padding (14.0, 16.0)
-                                        Border.child (
-                                            TextBlock.create
-                                                [ TextBlock.text "No notifications"
-                                                  TextBlock.fontSize 12.0
-                                                  TextBlock.foreground Theme.TextMuted ]
-                                        ) ]
-                              else
-                                  ScrollViewer.create
-                                      [ ScrollViewer.maxHeight 260.0
-                                        ScrollViewer.content (
-                                            StackPanel.create
-                                                [ StackPanel.spacing 0.0
-                                                  StackPanel.children
-                                                      [ for note in notes do
-                                                            notificationRow note dispatch ] ]
-                                        ) ] ] ]
-              ) ]
+        let body =
+            if notes.IsEmpty then
+                Border.create
+                    [ Border.padding (14.0, 16.0)
+                      Border.child (
+                          TextBlock.create
+                              [ TextBlock.text "No notifications"
+                                TextBlock.fontSize 12.0
+                                TextBlock.foreground Theme.TextMuted ]
+                      ) ]
+                :> IView
+            else
+                ScrollViewer.create
+                    [ ScrollViewer.maxHeight 260.0
+                      ScrollViewer.content (
+                          StackPanel.create
+                              [ StackPanel.spacing 0.0
+                                StackPanel.children
+                                    [ for note in notes do
+                                          notificationRow note dispatch ] ]
+                      ) ]
+                :> IView
+
+        UI.panelCard header body
 
     let private upcomingFixtureRow (fixture: MatchId * MatchFixture) (gs: GameState) =
         let _, f = fixture
@@ -445,46 +467,28 @@ module Home =
               ) ]
 
     let private upcomingPanel (fixtures: (MatchId * MatchFixture) list) (gs: GameState) =
-        Border.create
-            [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.clipToBounds true
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 0.0
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.padding (14.0, 10.0)
-                                    Border.borderBrush Theme.Border
-                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                    Border.child (
-                                        StackPanel.create
-                                            [ StackPanel.orientation Orientation.Horizontal
-                                              StackPanel.spacing 6.0
-                                              StackPanel.children
-                                                  [ Icons.iconSm IconName.calendar Theme.Accent
-                                                    TextBlock.create
-                                                        [ TextBlock.text "UPCOMING FIXTURES"
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                    ) ]
-                              if fixtures.IsEmpty then
-                                  Border.create
-                                      [ Border.padding (14.0, 16.0)
-                                        Border.child (
-                                            TextBlock.create
-                                                [ TextBlock.text "No upcoming fixtures"
-                                                  TextBlock.fontSize 12.0
-                                                  TextBlock.foreground Theme.TextMuted ]
-                                        ) ]
-                              else
-                                  for fx in fixtures do
-                                      upcomingFixtureRow fx gs ] ]
-              ) ]
+        let header = panelHeader IconName.calendar "UPCOMING FIXTURES" None
+
+        let body =
+            if fixtures.IsEmpty then
+                Border.create
+                    [ Border.padding (14.0, 16.0)
+                      Border.child (
+                          TextBlock.create
+                              [ TextBlock.text "No upcoming fixtures"
+                                TextBlock.fontSize 12.0
+                                TextBlock.foreground Theme.TextMuted ]
+                      ) ]
+                :> IView
+            else
+                StackPanel.create
+                    [ StackPanel.spacing 0.0
+                      StackPanel.children
+                          [ for fx in fixtures do
+                                upcomingFixtureRow fx gs ] ]
+                :> IView
+
+        UI.panelCard header body
 
     let private recentResultRow (r: HomePresenter.RecentResultVM) =
         let resultColor =
@@ -535,265 +539,229 @@ module Home =
               ) ]
 
     let private recentResultsPanel (results: HomePresenter.RecentResultVM list) =
-        Border.create
-            [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.clipToBounds true
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 0.0
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.padding (14.0, 10.0)
-                                    Border.borderBrush Theme.Border
-                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                    Border.child (
-                                        StackPanel.create
-                                            [ StackPanel.orientation Orientation.Horizontal
-                                              StackPanel.spacing 6.0
-                                              StackPanel.children
-                                                  [ Icons.iconSm MatchEvent.goal Theme.Accent
-                                                    TextBlock.create
-                                                        [ TextBlock.text "RECENT RESULTS"
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                    ) ]
-                              if results.IsEmpty then
-                                  Border.create
-                                      [ Border.padding (14.0, 16.0)
-                                        Border.child (
-                                            TextBlock.create
-                                                [ TextBlock.text "No results yet"
-                                                  TextBlock.fontSize 12.0
-                                                  TextBlock.foreground Theme.TextMuted ]
-                                        ) ]
-                              else
-                                  for r in results do
-                                      recentResultRow r ] ]
-              ) ]
+        let header = panelHeader MatchEvent.goal "RECENT RESULTS" None
+
+        let body =
+            if results.IsEmpty then
+                Border.create
+                    [ Border.padding (14.0, 16.0)
+                      Border.child (
+                          TextBlock.create
+                              [ TextBlock.text "No results yet"
+                                TextBlock.fontSize 12.0
+                                TextBlock.foreground Theme.TextMuted ]
+                      ) ]
+                :> IView
+            else
+                StackPanel.create
+                    [ StackPanel.spacing 0.0
+                      StackPanel.children
+                          [ for r in results do
+                                recentResultRow r ] ]
+                :> IView
+
+        UI.panelCard header body
 
     let private competitionPicker
         (groups: (string * Material.Icons.MaterialIconKind * (CompetitionId * string) list) list)
         (selectedId: CompetitionId)
         (onSelect: CompetitionId -> unit)
         =
+        let body =
+            ScrollViewer.create
+                [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                  ScrollViewer.content (
+                      StackPanel.create
+                          [ StackPanel.spacing 0.0
+                            StackPanel.children
+                                [ for label, icon, items in groups do
+                                      Border.create
+                                          [ Border.padding (12.0, 7.0)
+                                            Border.background Theme.BgCard
+                                            Border.borderBrush Theme.Border
+                                            Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                                            Border.child (
+                                                StackPanel.create
+                                                    [ StackPanel.orientation Orientation.Horizontal
+                                                      StackPanel.spacing 5.0
+                                                      StackPanel.children
+                                                          [ Icons.iconSm icon Theme.TextMuted
+                                                            TextBlock.create
+                                                                [ TextBlock.text label
+                                                                  TextBlock.fontSize 9.0
+                                                                  TextBlock.fontWeight FontWeight.Black
+                                                                  TextBlock.foreground Theme.TextMuted
+                                                                  TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                                            ) ]
+
+                                      for id, name in items do
+                                          let isActive = selectedId = id
+
+                                          Button.create
+                                              [ Button.horizontalAlignment HorizontalAlignment.Stretch
+                                                Button.padding (16.0, 9.0)
+                                                Button.background (
+                                                    if isActive then Theme.AccentLight else "Transparent"
+                                                )
+                                                Button.borderThickness (Avalonia.Thickness(3.0, 0.0, 0.0, 0.0))
+                                                Button.borderBrush (if isActive then Theme.Accent else "Transparent")
+                                                Button.cornerRadius 0.0
+                                                Button.onClick (fun _ -> onSelect id)
+                                                Button.content (
+                                                    TextBlock.create
+                                                        [ TextBlock.text name
+                                                          TextBlock.fontSize 12.0
+                                                          TextBlock.fontWeight (
+                                                              if isActive then
+                                                                  FontWeight.SemiBold
+                                                              else
+                                                                  FontWeight.Normal
+                                                          )
+                                                          TextBlock.foreground (
+                                                              if isActive then Theme.Accent else Theme.TextMain
+                                                          ) ]
+                                                ) ] ] ]
+                  ) ]
+            :> IView
+
         Border.create
             [ Border.background Theme.BgSidebar
               Border.cornerRadius 10.0
               Border.borderBrush Theme.Border
               Border.borderThickness 1.0
               Border.clipToBounds true
-              Border.child (
-                  ScrollViewer.create
-                      [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                        ScrollViewer.content (
-                            StackPanel.create
-                                [ StackPanel.spacing 0.0
-                                  StackPanel.children
-                                      [ for label, icon, items in groups do
-                                            Border.create
-                                                [ Border.padding (12.0, 7.0)
-                                                  Border.background Theme.BgCard
-                                                  Border.borderBrush Theme.Border
-                                                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                                  Border.child (
-                                                      StackPanel.create
-                                                          [ StackPanel.orientation Orientation.Horizontal
-                                                            StackPanel.spacing 5.0
-                                                            StackPanel.children
-                                                                [ Icons.iconSm icon Theme.TextMuted
-                                                                  TextBlock.create
-                                                                      [ TextBlock.text label
-                                                                        TextBlock.fontSize 9.0
-                                                                        TextBlock.fontWeight FontWeight.Black
-                                                                        TextBlock.foreground Theme.TextMuted
-                                                                        TextBlock.verticalAlignment
-                                                                            VerticalAlignment.Center ] ] ]
-                                                  ) ]
-
-                                            for id, name in items do
-                                                let isActive = selectedId = id
-
-                                                Button.create
-                                                    [ Button.horizontalAlignment HorizontalAlignment.Stretch
-                                                      Button.padding (16.0, 9.0)
-                                                      Button.background (
-                                                          if isActive then Theme.AccentLight else "Transparent"
-                                                      )
-                                                      Button.borderThickness (Avalonia.Thickness(3.0, 0.0, 0.0, 0.0))
-                                                      Button.borderBrush (
-                                                          if isActive then Theme.Accent else "Transparent"
-                                                      )
-                                                      Button.cornerRadius 0.0
-                                                      Button.onClick (fun _ -> onSelect id)
-                                                      Button.content (
-                                                          TextBlock.create
-                                                              [ TextBlock.text name
-                                                                TextBlock.fontSize 12.0
-                                                                TextBlock.fontWeight (
-                                                                    if isActive then
-                                                                        FontWeight.SemiBold
-                                                                    else
-                                                                        FontWeight.Normal
-                                                                )
-                                                                TextBlock.foreground (
-                                                                    if isActive then Theme.Accent else Theme.TextMain
-                                                                ) ]
-                                                      ) ] ] ]
-                        ) ]
-              ) ]
+              Border.child body ]
 
     let private standingsPanel (gs: GameState) (selectedId: CompetitionId) =
         let rows = HomePresenter.getTableData gs selectedId
 
-        Border.create
-            [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.clipToBounds true
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 0.0
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.padding (14.0, 10.0)
-                                    Border.background Theme.BgCard
-                                    Border.borderBrush Theme.Border
-                                    Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                    Border.child (
-                                        Grid.create
-                                            [ Grid.columnDefinitions "*, Auto, Auto, Auto"
-                                              Grid.children
-                                                  [ TextBlock.create
-                                                        [ Grid.column 0
-                                                          TextBlock.text "CLUB"
-                                                          TextBlock.fontSize 9.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted ]
-                                                    TextBlock.create
-                                                        [ Grid.column 1
-                                                          TextBlock.text "W-D-L"
-                                                          TextBlock.fontSize 9.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.width 60.0
-                                                          TextBlock.textAlignment TextAlignment.Right ]
-                                                    TextBlock.create
-                                                        [ Grid.column 2
-                                                          TextBlock.text "GD"
-                                                          TextBlock.fontSize 9.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.width 36.0
-                                                          TextBlock.textAlignment TextAlignment.Right ]
-                                                    TextBlock.create
-                                                        [ Grid.column 3
-                                                          TextBlock.text "PTS"
-                                                          TextBlock.fontSize 9.0
-                                                          TextBlock.fontWeight FontWeight.Black
-                                                          TextBlock.foreground Theme.TextMuted
-                                                          TextBlock.width 36.0
-                                                          TextBlock.textAlignment TextAlignment.Right ] ] ]
-                                    ) ]
-                              if rows.IsEmpty then
-                                  Border.create
-                                      [ Border.padding (14.0, 16.0)
-                                        Border.child (
-                                            TextBlock.create
-                                                [ TextBlock.text "No standings available"
-                                                  TextBlock.fontSize 12.0
-                                                  TextBlock.foreground Theme.TextMuted ]
-                                        ) ]
-                              else
-                                  ScrollViewer.create
-                                      [ ScrollViewer.maxHeight 440.0
-                                        ScrollViewer.content (
-                                            StackPanel.create
-                                                [ StackPanel.children
-                                                      [ for row in rows do
-                                                            Border.create
-                                                                [ Border.background (
-                                                                      if row.IsUser then
-                                                                          Theme.AccentAlt + "22"
-                                                                      else
-                                                                          "Transparent"
-                                                                  )
-                                                                  Border.borderBrush Theme.Border
-                                                                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                                                  Border.padding (14.0, 9.0)
-                                                                  Border.child (
-                                                                      Grid.create
-                                                                          [ Grid.columnDefinitions
-                                                                                "24, *, Auto, Auto, Auto"
-                                                                            Grid.children
-                                                                                [ TextBlock.create
-                                                                                      [ Grid.column 0
-                                                                                        TextBlock.text (string row.Pos)
-                                                                                        TextBlock.fontSize 11.0
-                                                                                        TextBlock.fontWeight
-                                                                                            FontWeight.Bold
-                                                                                        TextBlock.foreground
-                                                                                            row.PosColor
-                                                                                        TextBlock.verticalAlignment
-                                                                                            VerticalAlignment.Center ]
-                                                                                  TextBlock.create
-                                                                                      [ Grid.column 1
-                                                                                        TextBlock.text row.TeamName
-                                                                                        TextBlock.fontSize 12.0
-                                                                                        TextBlock.fontWeight (
-                                                                                            if row.IsUser then
-                                                                                                FontWeight.Bold
-                                                                                            else
-                                                                                                FontWeight.Normal
-                                                                                        )
-                                                                                        TextBlock.foreground (
-                                                                                            if row.IsUser then
-                                                                                                Theme.TextMain
-                                                                                            else
-                                                                                                Theme.TextSub
-                                                                                        )
-                                                                                        TextBlock.verticalAlignment
-                                                                                            VerticalAlignment.Center ]
-                                                                                  TextBlock.create
-                                                                                      [ Grid.column 2
-                                                                                        TextBlock.text row.Stats
-                                                                                        TextBlock.fontSize 11.0
-                                                                                        TextBlock.foreground
-                                                                                            Theme.TextMuted
-                                                                                        TextBlock.width 60.0
-                                                                                        TextBlock.textAlignment
-                                                                                            TextAlignment.Right
-                                                                                        TextBlock.verticalAlignment
-                                                                                            VerticalAlignment.Center ]
-                                                                                  TextBlock.create
-                                                                                      [ Grid.column 3
-                                                                                        TextBlock.text ""
-                                                                                        TextBlock.width 36.0
-                                                                                        TextBlock.textAlignment
-                                                                                            TextAlignment.Right ]
-                                                                                  TextBlock.create
-                                                                                      [ Grid.column 4
-                                                                                        TextBlock.text (
-                                                                                            string row.Points
-                                                                                        )
-                                                                                        TextBlock.fontSize 12.0
-                                                                                        TextBlock.fontWeight
-                                                                                            FontWeight.Bold
-                                                                                        TextBlock.foreground
-                                                                                            Theme.TextMain
-                                                                                        TextBlock.width 36.0
-                                                                                        TextBlock.textAlignment
-                                                                                            TextAlignment.Right
-                                                                                        TextBlock.verticalAlignment
-                                                                                            VerticalAlignment.Center ] ] ]
-                                                                  ) ] ] ]
-                                        ) ] ] ]
-              ) ]
+        let header =
+            Border.create
+                [ Border.padding (14.0, 10.0)
+                  Border.background Theme.BgCard
+                  Border.borderBrush Theme.Border
+                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                  Border.child (
+                      Grid.create
+                          [ Grid.columnDefinitions "*, Auto, Auto, Auto"
+                            Grid.children
+                                [ TextBlock.create
+                                      [ Grid.column 0
+                                        TextBlock.text "CLUB"
+                                        TextBlock.fontSize 9.0
+                                        TextBlock.fontWeight FontWeight.Black
+                                        TextBlock.foreground Theme.TextMuted ]
+                                  TextBlock.create
+                                      [ Grid.column 1
+                                        TextBlock.text "W-D-L"
+                                        TextBlock.fontSize 9.0
+                                        TextBlock.fontWeight FontWeight.Black
+                                        TextBlock.foreground Theme.TextMuted
+                                        TextBlock.width 60.0
+                                        TextBlock.textAlignment TextAlignment.Right ]
+                                  TextBlock.create
+                                      [ Grid.column 2
+                                        TextBlock.text "GD"
+                                        TextBlock.fontSize 9.0
+                                        TextBlock.fontWeight FontWeight.Black
+                                        TextBlock.foreground Theme.TextMuted
+                                        TextBlock.width 36.0
+                                        TextBlock.textAlignment TextAlignment.Right ]
+                                  TextBlock.create
+                                      [ Grid.column 3
+                                        TextBlock.text "PTS"
+                                        TextBlock.fontSize 9.0
+                                        TextBlock.fontWeight FontWeight.Black
+                                        TextBlock.foreground Theme.TextMuted
+                                        TextBlock.width 36.0
+                                        TextBlock.textAlignment TextAlignment.Right ] ] ]
+                  ) ]
+            :> IView
+
+        let body =
+            if rows.IsEmpty then
+                Border.create
+                    [ Border.padding (14.0, 16.0)
+                      Border.child (
+                          TextBlock.create
+                              [ TextBlock.text "No standings available"
+                                TextBlock.fontSize 12.0
+                                TextBlock.foreground Theme.TextMuted ]
+                      ) ]
+                :> IView
+            else
+                ScrollViewer.create
+                    [ ScrollViewer.maxHeight 440.0
+                      ScrollViewer.content (
+                          StackPanel.create
+                              [ StackPanel.children
+                                    [ for row in rows do
+                                          Border.create
+                                              [ Border.background (
+                                                    if row.IsUser then Theme.AccentAlt + "22" else "Transparent"
+                                                )
+                                                Border.borderBrush Theme.Border
+                                                Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                                                Border.padding (14.0, 9.0)
+                                                Border.child (
+                                                    Grid.create
+                                                        [ Grid.columnDefinitions "24, *, Auto, Auto, Auto"
+                                                          Grid.children
+                                                              [ TextBlock.create
+                                                                    [ Grid.column 0
+                                                                      TextBlock.text (string row.Pos)
+                                                                      TextBlock.fontSize 11.0
+                                                                      TextBlock.fontWeight FontWeight.Bold
+                                                                      TextBlock.foreground row.PosColor
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ]
+                                                                TextBlock.create
+                                                                    [ Grid.column 1
+                                                                      TextBlock.text row.TeamName
+                                                                      TextBlock.fontSize 12.0
+                                                                      TextBlock.fontWeight (
+                                                                          if row.IsUser then
+                                                                              FontWeight.Bold
+                                                                          else
+                                                                              FontWeight.Normal
+                                                                      )
+                                                                      TextBlock.foreground (
+                                                                          if row.IsUser then
+                                                                              Theme.TextMain
+                                                                          else
+                                                                              Theme.TextSub
+                                                                      )
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ]
+                                                                TextBlock.create
+                                                                    [ Grid.column 2
+                                                                      TextBlock.text row.Stats
+                                                                      TextBlock.fontSize 11.0
+                                                                      TextBlock.foreground Theme.TextMuted
+                                                                      TextBlock.width 60.0
+                                                                      TextBlock.textAlignment TextAlignment.Right
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ]
+                                                                TextBlock.create
+                                                                    [ Grid.column 3
+                                                                      TextBlock.text ""
+                                                                      TextBlock.width 36.0
+                                                                      TextBlock.textAlignment TextAlignment.Right ]
+                                                                TextBlock.create
+                                                                    [ Grid.column 4
+                                                                      TextBlock.text (string row.Points)
+                                                                      TextBlock.fontSize 12.0
+                                                                      TextBlock.fontWeight FontWeight.Bold
+                                                                      TextBlock.foreground Theme.TextMain
+                                                                      TextBlock.width 36.0
+                                                                      TextBlock.textAlignment TextAlignment.Right
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ] ] ]
+                                                ) ] ] ]
+                      ) ]
+                :> IView
+
+        UI.panelCard header body
 
     let homeView
         (state: State)

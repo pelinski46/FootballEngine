@@ -14,10 +14,11 @@ module AppState =
           Season = DateTime.Now.Year
           Clubs = Map.empty
           Players = Map.empty
+          Staff = Map.empty
           Competitions = Map.empty
           Countries = Map.empty
           UserClubId = 0
-          ManagerName = ""
+          UserStaffId = 0
           PrimaryCountry = "" }
 
     let private initialState (gs: GameState) : State =
@@ -34,7 +35,8 @@ module AppState =
           PlayerSortBy = "position"
           Setup = initSetupState
           Transfer = initTransferState
-          MatchLab = initMatchLabState }
+          ActiveMatchReplay = None
+          ActiveMatchSnapshot = 0 }
 
     let private addLog msg (state: State) =
         { state with
@@ -97,13 +99,12 @@ module AppState =
                 match m with
                 | AdvanceDone _
                 | SeasonAdvanceDone _
-                | SimulateNextFixture -> invalidateTransferCache nextState
+                | UserMatchDone _ -> invalidateTransferCache nextState
                 | _ -> nextState
 
             invalidated, cmd
 
         | TransferMsg m -> UpdateTransfer.handle m state
-        | MatchLabMsg m -> UpdateMatchLab.handle m state
 
         | NotificationMsg nm ->
             match nm with
@@ -205,3 +206,20 @@ module AppState =
 
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none
         | NoOp -> state, Cmd.none
+
+        | StepActiveMatch delta ->
+            let total =
+                state.ActiveMatchReplay
+                |> Option.map (fun r -> r.Snapshots.Length - 1)
+                |> Option.defaultValue 0
+
+            { state with
+                ActiveMatchSnapshot = max 0 (min total (state.ActiveMatchSnapshot + delta)) },
+            Cmd.none
+
+        | CloseActiveMatch ->
+            { state with
+                ActiveMatchReplay = None
+                ActiveMatchSnapshot = 0
+                CurrentPage = Home },
+            Cmd.none

@@ -67,7 +67,8 @@ type ClubEntity =
       Nationality: string
       Reputation: int
       Budget: decimal
-      Morale: int }
+      Morale: int
+      BoardObjective: string }
 
 [<CLIMutable>]
 type LineupSlotEntity =
@@ -81,6 +82,46 @@ type LineupSlotEntity =
       X: float
       Y: float
       PlayerId: int }
+
+[<CLIMutable>]
+type StaffEntity =
+    { [<PrimaryKey>]
+      Id: int
+      Name: string
+      Nationality: string
+      Birthday: DateTime
+      Role: string
+      Badge: string
+      Reputation: int
+      Status: string
+      TrophiesWon: int
+      SeasonsManaged: int
+      ContractClubId: int
+      ContractSalary: decimal
+      ContractExpiry: int
+      CoachAttacking: int
+      CoachDefending: int
+      CoachFitness: int
+      CoachGoalkeeping: int
+      CoachMental: int
+      CoachSetPieces: int
+      CoachTactical: int
+      CoachTechnical: int
+      CoachWorkingWithYoungsters: int
+      ScoutJudgingAbility: int
+      ScoutJudgingPotential: int
+      ScoutAdaptability: int
+      MedicalPhysiotherapy: int
+      MedicalSportsScience: int
+      AnalysisPerformance: int
+      AnalysisRecruitment: int
+      MentalAdaptability: int
+      MentalDetermination: int
+      MentalLevelOfDiscipline: int
+      MentalManManagement: int
+      MentalMotivating: int
+      MentalPlayerKnowledge: int
+      MentalYoungsterKnowledge: int }
 
 [<CLIMutable>]
 type CompetitionEntity =
@@ -155,5 +196,5 @@ type GameSaveMeta =
       CurrentDate: DateTime
       Season: int
       UserClubId: int
-      ManagerName: string
+      UserStaffId: int
       PrimaryCountry: string }

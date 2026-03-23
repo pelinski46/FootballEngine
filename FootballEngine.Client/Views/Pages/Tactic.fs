@@ -36,11 +36,6 @@ module Tactics =
         elif v >= 55 then Theme.Warning
         else Theme.Danger
 
-    let private positionColor (pos: Position) =
-        match pos with
-        | GK -> GkColor
-        | _ -> PlayerColor
-
     let private positionSortKey (pos: Position) =
         match pos with
         | GK -> 0
@@ -59,9 +54,8 @@ module Tactics =
         | ST -> 4
 
     let benchRow (p: Player) dispatch : IView =
-        let col = positionColor p.Position
-        let fit = p.MatchFitness
-        let fitCol = fitnessColor fit
+        let col = Theme.positionColor p.Position
+        let fitCol = fitnessColor p.MatchFitness
 
         Border.create
             [ Border.background "Transparent"
@@ -85,7 +79,7 @@ module Tactics =
                                     Rectangle.radiusX 2.0
                                     Rectangle.radiusY 2.0
                                     Rectangle.margin (0.0, 0.0, 12.0, 0.0) ]
-                              UI.positionBadge p.Position col
+                              UI.positionBadge p.Position
                               |> fun b ->
                                   Border.create
                                       [ Grid.column 1
@@ -115,12 +109,14 @@ module Tactics =
                                     StackPanel.children
                                         [ Icons.iconSm PlayerIcon.condition fitCol
                                           TextBlock.create
-                                              [ TextBlock.text $"{fit}%%"
+                                              [ TextBlock.text $"{p.MatchFitness}%%"
                                                 TextBlock.foreground fitCol
                                                 TextBlock.fontSize 11.0
                                                 TextBlock.fontWeight FontWeight.Bold
                                                 TextBlock.verticalAlignment VerticalAlignment.Center ] ] ] ] ]
               ) ]
+        |> View.withKey $"bench-{p.Id}-{p.MatchFitness}"
+        :> IView
 
     let playerNode (player: Player option) (slot: FormationSlot) (state: State) (dispatch: Msg -> unit) =
         let pIdFijo = player |> Option.map _.Id |> Option.defaultValue -1
@@ -128,7 +124,7 @@ module Tactics =
 
         let nodeCol =
             match player with
-            | Some p -> positionColor p.Position
+            | Some p -> Theme.positionColor p.Position
             | None -> "#ffffff20"
 
         let shortName =
@@ -364,4 +360,5 @@ module Tactics =
                                                     StackPanel.create [ StackPanel.children benchItems ]
                                                 ) ] ] ]
                           ) ] ] ]
+        |> View.withKey $"tactics-{currentFormation}-{starterIds.Count}"
         :> IView

@@ -28,6 +28,8 @@ type Position =
     | AML
     | ST
 
+    static member All = [ GK; DR; DC; DL; WBR; WBL; DM; MR; MC; ML; AMR; AMC; AML; ST ]
+
 type Formation =
     | F442
     | F442Diamond

@@ -4,7 +4,7 @@ open Elmish
 open FootballEngine.Domain
 open AppTypes
 open AppMsgs
-open FootballEngine.GameGenerator
+open FootballEngine.Generation.WorldGen
 
 module UpdateSetup =
 
@@ -44,22 +44,38 @@ module UpdateSetup =
         | StartNewGame ->
             match state.Setup.SelectedCountry with
             | None -> state, Cmd.none
-            | Some primary ->
-                let newGs =
-                    generateNewGame (System.Random()) primary state.Setup.ManagerName state.Setup.SecondaryCountries
+            | Some primaryCountry ->
+                let newGameState =
+                    generateNewGame primaryCountry state.Setup.ManagerName state.Setup.SecondaryCountries
 
                 { state with
-                    GameState = newGs
+                    GameState = newGameState
                     State.Setup.Step = ClubSelection },
-                saveCmd newGs
+                saveCmd newGameState
 
         | ConfirmClub clubId ->
-            let newGs =
+            let updatedStaff =
+                state.GameState.Staff
+                |> Map.tryFind state.GameState.UserStaffId
+                |> Option.map (fun manager ->
+                    { manager with
+                        Contract =
+                            Some
+                                { ClubId = clubId
+                                  Salary = 50_000m
+                                  ExpiryYear = state.GameState.Season + 3 } })
+                |> Option.map (fun manager -> state.GameState.Staff |> Map.add manager.Id manager)
+                |> Option.defaultValue state.GameState.Staff
+
+            let newGameState =
                 { state.GameState with
-                    UserClubId = clubId }
+                    UserClubId = clubId
+                    Staff = updatedStaff }
+
+            let managerName = GameState.userManagerName newGameState
 
             { state with
-                GameState = newGs
+                GameState = newGameState
                 CurrentPage = Home
-                LogMessages = [ $"Career started by {state.Setup.ManagerName}" ] },
-            saveCmd newGs
+                LogMessages = [ $"Career started by {managerName}" ] },
+            saveCmd newGameState

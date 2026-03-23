@@ -14,16 +14,6 @@ module UpdateSim =
     let private saveCmd = SimHelpers.saveCmd
     let private primaryLeagueId = SimHelpers.primaryLeagueId
 
-    let getUserNextFixture (gs: GameState) =
-        gs.Competitions
-        |> Map.toSeq
-        |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.tryPick (fun (id, f) ->
-            if not f.Played && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId) then
-                Some(id, f)
-            else
-                None)
-
     let private userMatchNotif (gs: GameState) (fixture: MatchFixture) (state: State) =
         match fixture.HomeScore, fixture.AwayScore with
         | Some h, Some a when fixture.HomeClubId = gs.UserClubId || fixture.AwayClubId = gs.UserClubId ->
@@ -141,36 +131,42 @@ module UpdateSim =
         | AdvanceDone result ->
             let nextState = applyDayResult result state
 
-            if result.SeasonComplete then
-                nextState, Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
+            let baseCmd =
+                if result.SeasonComplete then
+                    Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
+                else
+                    saveCmd result.GameState
+
+            if hasUserFixtureToday result.GameState then
+                nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateUserFixture) ]
             else
-                nextState, saveCmd result.GameState
+                nextState, baseCmd
 
-        | SimulateNextFixture ->
-            match getUserNextFixture state.GameState with
-            | None -> state |> addLog "No next fixture found", Cmd.none
-            | Some(id, fixture) ->
-                match simulateFixture fixture state.GameState with
-                | Error e -> state |> addLog $"Could not simulate fixture: {e}", Cmd.none
-                | Ok(updatedFixture, h, a) ->
-                    let home = state.GameState.Clubs[fixture.HomeClubId]
-                    let away = state.GameState.Clubs[fixture.AwayClubId]
+        | SimulateUserFixture ->
+            if state.IsProcessing then
+                state, Cmd.none
+            else
+                { state with IsProcessing = true },
+                Cmd.OfTask.perform
+                    (fun () -> Task.Run(fun () -> simulateUserFixtureForDay state.GameState))
+                    ()
+                    (SimMsg << UserMatchDone)
 
-                    let newGs =
-                        { state.GameState with
-                            Competitions =
-                                state.GameState.Competitions
-                                |> Map.map (fun _ comp ->
-                                    if comp.Fixtures.ContainsKey id then
-                                        { comp with
-                                            Fixtures = comp.Fixtures |> Map.add id updatedFixture }
-                                    else
-                                        comp) }
+        | UserMatchDone(Ok matchDay) ->
+            let nextState = applyDayResult matchDay.DayResult state
 
-                    { state with GameState = newGs }
-                    |> addLog $"{home.Name} {h}-{a} {away.Name}"
-                    |> applyMatchNotifs newGs [ id, updatedFixture ],
-                    saveCmd newGs
+            let withMatch =
+                { nextState with
+                    ActiveMatchReplay = Some matchDay.UserMatchReplay
+                    ActiveMatchSnapshot = 0
+                    CurrentPage = Match }
+
+            if matchDay.DayResult.SeasonComplete then
+                withMatch, Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd matchDay.DayResult.GameState ]
+            else
+                withMatch, saveCmd matchDay.DayResult.GameState
+
+        | UserMatchDone(Error _) -> { state with IsProcessing = false }, Cmd.none
 
         | SimulateSeason ->
             if state.IsProcessing then

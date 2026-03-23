@@ -28,3 +28,20 @@ module Theme =
         if morale > 70 then Success
         elif morale > 40 then Warning
         else Danger
+
+    let positionColor (pos: Domain.Position) =
+        match pos with
+        | Domain.GK -> Warning
+        | Domain.DC
+        | Domain.DL
+        | Domain.DR
+        | Domain.WBL
+        | Domain.WBR -> AccentAlt
+        | Domain.DM
+        | Domain.MC
+        | Domain.ML
+        | Domain.MR -> Accent
+        | Domain.AMC
+        | Domain.AML
+        | Domain.AMR
+        | Domain.ST -> Danger

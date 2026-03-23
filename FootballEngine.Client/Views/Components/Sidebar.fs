@@ -40,10 +40,7 @@ module Navigation =
             Icon = Club.finances }
           { Page = Settings
             Label = "Settings"
-            Icon = IconName.settings }
-          { Page = MatchLab
-            Label = "MatchLab"
-            Icon = IconName.simulate } ]
+            Icon = IconName.settings } ]
 
 module Sidebar =
     let private navButton (item: Navigation.NavItem) (isActive: bool) dispatch =

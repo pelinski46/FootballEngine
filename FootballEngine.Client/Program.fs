@@ -19,7 +19,6 @@ open FootballEngine.Pages.Setup.Setup
 open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
 open FootballEngine.Pages.Transfers
-
 open Material.Icons.Avalonia
 
 module Views =
@@ -50,7 +49,7 @@ module Views =
                                 | Transfers -> transfersView state dispatch
                                 | Finances -> failwith "todo"
                                 | Settings -> failwith "todo"
-                                | MatchLab -> MatchLabView.view state dispatch ] ] ] ]
+                                | Match -> MatchDayView.view state dispatch ] ] ] ]
 
 type MainWindow() as this =
     inherit HostWindow()

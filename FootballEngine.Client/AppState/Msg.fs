@@ -17,11 +17,12 @@ module AppMsgs =
     type SimMsg =
         | Advance of days: int
         | AdvanceDone of DayResult
-        | SimulateNextFixture
         | AdvanceSeason
         | SeasonAdvanceDone of Result<SeasonResult, SeasonError>
         | SaveGame
         | SimulateSeason
+        | SimulateUserFixture
+        | UserMatchDone of Result<UserMatchDayResult, string>
 
     type TransferMsg =
         | Load
@@ -41,12 +42,6 @@ module AppMsgs =
         | WithdrawOffer of offerId: int
         | ClearNegotiation
 
-    type MatchLabMsg =
-        | SelectHome of ClubId
-        | SelectAway of ClubId
-        | Run
-        | Step of int
-
     type NotificationMsg =
         | DismissNotification of id: int
         | DismissAll
@@ -56,7 +51,6 @@ module AppMsgs =
         | SetupMsg of SetupMsg
         | SimMsg of SimMsg
         | TransferMsg of TransferMsg
-        | MatchLabMsg of MatchLabMsg
         | NotificationMsg of NotificationMsg
         | GameLoaded of GameState option
         | ChangePage of Page
@@ -67,6 +61,8 @@ module AppMsgs =
         | ChangeLeague of CompetitionId
         | SetProcessing of bool
         | NoOp
+        | StepActiveMatch of delta: int
+        | CloseActiveMatch
 
 module SimHelpers =
     let primaryLeagueId (gs: GameState) =

@@ -4,8 +4,9 @@ open System
 open FootballEngine.Data
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
+open FootballEngine.Generation
 open FootballEngine.Lineup
-open MatchStats
+open FootballEngine.Stats
 
 module World =
 
@@ -16,12 +17,12 @@ module World =
         let gap = potential - skill
 
         match age with
-        | a when a <= 20 -> nextNormalInt (float (min gap 4)) 1.5 0 (min gap 5)
-        | a when a <= 24 -> nextNormalInt (float (min gap 2)) 1.5 -1 (min gap 3)
-        | a when a <= 27 -> nextNormalInt 0.5 1.0 -1 2
-        | a when a <= 30 -> nextNormalInt -0.5 1.0 -2 1
-        | a when a <= 33 -> nextNormalInt -1.5 1.0 -3 0
-        | _ -> nextNormalInt -2.5 1.0 -4 -1
+        | a when a <= 20 -> normalInt (float (min gap 4)) 1.5 0 (min gap 5)
+        | a when a <= 24 -> normalInt (float (min gap 2)) 1.5 -1 (min gap 3)
+        | a when a <= 27 -> normalInt 0.5 1.0 -1 2
+        | a when a <= 30 -> normalInt -0.5 1.0 -2 1
+        | a when a <= 33 -> normalInt -1.5 1.0 -3 0
+        | _ -> normalInt -2.5 1.0 -4 -1
 
     let private maybeStat (rng: Random) (delta: int) (stat: int) : int =
         let threshold =
@@ -426,7 +427,7 @@ module World =
                     |> Option.defaultWith (fun () -> DataRegistry.findCountry club.Nationality)
 
                 let raw =
-                    GameGenerator.createPlayer rng nextId (youthPosition rng) clubId countryData 2 state.Season
+                    PlayerGen.create nextId (youthPosition rng) clubId countryData 2 state.Season
 
                 let youth =
                     { raw with

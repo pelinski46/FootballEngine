@@ -9,13 +9,10 @@ open Avalonia.Media
 open Avalonia.FuncUI.DSL
 open FootballEngine
 open FootballEngine.Domain
-
 open FootballEngine.Icons
 
 
 module UI =
-
-    // ── Buttons ─────────────────────────────────────────────────────────────
 
     let primaryButton (label: string) (icon: Material.Icons.MaterialIconKind option) onClick =
         Button.create
@@ -76,8 +73,6 @@ module UI =
                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
               ) ]
 
-    // ── Badges ───────────────────────────────────────────────────────────────
-
     let badge (text: string) (color: string) =
         Border.create
             [ Border.background color
@@ -104,7 +99,9 @@ module UI =
                         TextBlock.foreground Theme.Accent ]
               ) ]
 
-    let positionBadge (pos: Position) (color: string) =
+    let positionBadge (pos: Position) =
+        let color = Theme.positionColor pos
+
         Border.create
             [ Border.background (color + "1a")
               Border.borderBrush (color + "55")
@@ -119,9 +116,7 @@ module UI =
                         TextBlock.foreground color ]
               ) ]
 
-    // ── Cards ────────────────────────────────────────────────────────────────
-
-    let iconStatCard (label: string) (value: string) (iconKind: Material.Icons.MaterialIconKind) (sub: string) =
+    let statCard (iconKind: Material.Icons.MaterialIconKind) (label: string) (value: string) (sub: string) =
         Border.create
             [ Border.background Theme.BgCard
               Border.cornerRadius 10.0
@@ -169,6 +164,9 @@ module UI =
                                                     TextBlock.margin (0.0, 0.0, 0.0, 2.0) ] ] ] ] ]
               ) ]
 
+    let iconStatCard (label: string) (value: string) (iconKind: Material.Icons.MaterialIconKind) (sub: string) =
+        statCard iconKind label value sub
+
     let statMiniCard (iconKind: Material.Icons.MaterialIconKind) (label: string) (value: string) (color: string) =
         Border.create
             [ Border.background Theme.BgCard
@@ -198,8 +196,6 @@ module UI =
                                     TextBlock.fontSize 22.0
                                     TextBlock.fontWeight FontWeight.Black ] ] ]
               ) ]
-
-    // ── Section headers ──────────────────────────────────────────────────────
 
     let sectionTitle (label: string) (iconKind: Material.Icons.MaterialIconKind) =
         StackPanel.create
@@ -259,7 +255,52 @@ module UI =
               ) ]
         :> IView
 
-    // ── Icon row (inbox / log lines) ─────────────────────────────────────────
+    let panelCard (header: IView) (body: IView) : IView =
+        Border.create
+            [ Border.background Theme.BgSidebar
+              Border.cornerRadius 10.0
+              Border.borderBrush Theme.Border
+              Border.borderThickness 1.0
+              Border.clipToBounds true
+              Border.child (StackPanel.create [ StackPanel.spacing 0.0; StackPanel.children [ header; body ] ]) ]
+        :> IView
+
+    let emptyState (iconKind: Material.Icons.MaterialIconKind) (title: string) (sub: string) : IView =
+        StackPanel.create
+            [ StackPanel.verticalAlignment VerticalAlignment.Center
+              StackPanel.horizontalAlignment HorizontalAlignment.Center
+              StackPanel.spacing 8.0
+              StackPanel.margin (0.0, 40.0)
+              StackPanel.children
+                  [ Icons.iconXl iconKind Theme.TextMuted
+                    TextBlock.create
+                        [ TextBlock.text title
+                          TextBlock.fontSize 14.0
+                          TextBlock.fontWeight FontWeight.SemiBold
+                          TextBlock.foreground Theme.TextMuted
+                          TextBlock.horizontalAlignment HorizontalAlignment.Center ]
+                    if sub <> "" then
+                        TextBlock.create
+                            [ TextBlock.text sub
+                              TextBlock.fontSize 11.0
+                              TextBlock.foreground Theme.TextMuted
+                              TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
+        :> IView
+
+    let loadingState () : IView =
+        StackPanel.create
+            [ StackPanel.verticalAlignment VerticalAlignment.Center
+              StackPanel.horizontalAlignment HorizontalAlignment.Center
+              StackPanel.spacing 12.0
+              StackPanel.margin (0.0, 40.0)
+              StackPanel.children
+                  [ Icons.iconXl IconName.refresh Theme.TextMuted
+                    TextBlock.create
+                        [ TextBlock.text "Loading..."
+                          TextBlock.fontSize 13.0
+                          TextBlock.foreground Theme.TextMuted
+                          TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
+        :> IView
 
     let iconRow (iconKind: Material.Icons.MaterialIconKind) (text: string) =
         Border.create
@@ -279,8 +320,6 @@ module UI =
                                     TextBlock.textWrapping TextWrapping.Wrap
                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
               ) ]
-
-    // ── Legacy (Setup / old pages) ───────────────────────────────────────────
 
     let tabButton (label: string) isActive onClick =
         Button.create
@@ -426,43 +465,6 @@ module UI =
           Button.margin (10.0, 4.0)
           Button.padding (15.0, 10.0)
           Button.horizontalAlignment HorizontalAlignment.Stretch ]
-
-    let statCard title value icon subText =
-        Border.create
-            [ Border.background Theme.BgCard
-              Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
-              Border.cornerRadius 8.0
-              Border.padding 20.0
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.children
-                            [ DockPanel.create
-                                  [ DockPanel.children
-                                        [ TextBlock.create
-                                              [ TextBlock.text icon
-                                                TextBlock.fontSize 18.0
-                                                DockPanel.dock Dock.Right ]
-                                          TextBlock.create
-                                              [ TextBlock.text title
-                                                TextBlock.foreground Theme.TextMuted
-                                                TextBlock.fontSize 10.0
-                                                TextBlock.fontWeight FontWeight.Bold ] ] ]
-                              TextBlock.create
-                                  [ TextBlock.text value
-                                    TextBlock.fontSize 24.0
-                                    TextBlock.fontWeight FontWeight.Black
-                                    TextBlock.foreground Theme.TextMain
-                                    TextBlock.margin (0.0, 5.0, 0.0, 0.0) ]
-                              if subText <> "" then
-                                  TextBlock.create
-                                      [ TextBlock.text subText
-                                        TextBlock.fontSize 10.0
-                                        TextBlock.foreground Theme.TextMuted ] ] ]
-              ) ]
-
-
-
 
 
 module PlayerView =
@@ -733,18 +735,7 @@ module PlayerView =
               Border.borderThickness (1.0, 0.0, 0.0, 0.0)
               Border.child (
                   match player with
-                  | None ->
-                      StackPanel.create
-                          [ StackPanel.verticalAlignment VerticalAlignment.Center
-                            StackPanel.horizontalAlignment HorizontalAlignment.Center
-                            StackPanel.spacing 8.0
-                            StackPanel.children
-                                [ Icons.iconXl Icons.IconName.squad Theme.TextMuted
-                                  TextBlock.create
-                                      [ TextBlock.text "Select a player"
-                                        TextBlock.foreground Theme.TextMuted
-                                        TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
-                      :> IView
+                  | None -> UI.emptyState Icons.IconName.squad "Select a player" ""
                   | Some p ->
                       Grid.create
                           [ Grid.rowDefinitions "Auto, *"
@@ -822,6 +813,7 @@ module PlayerView =
                                                       [ yield! statGroupsFor p |> List.collect renderGroup
                                                         Border.create [ Border.height 40.0 ] ] ]
                                         ) ] ] ]
+                      :> IView
               ) ]
 
 
@@ -876,7 +868,7 @@ module Display =
                                   TextBlock.foreground Theme.TextSub
                                   TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-        let nextMatchBanner (homeName: string) (awayName: string) (date: DateTime) (location: string) =
+        let nextMatchBanner (homeName: string) (awayName: string) (date: System.DateTime) (location: string) =
             Border.create
                 [ Border.cornerRadius 12.0
                   Border.margin (0.0, 0.0, 0.0, 30.0)

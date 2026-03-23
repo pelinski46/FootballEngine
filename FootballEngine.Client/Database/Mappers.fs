@@ -16,19 +16,19 @@ module Mappers =
                   ExpiryYear = e.ContractExpiry }
             )
 
-    let private affiliationToEntity (a: PlayerAffiliation) : int * decimal * int =
-        match a with
-        | Contracted(clubId, c) -> clubId, c.Salary, c.ExpiryYear
+    let private affiliationToEntity (affiliation: PlayerAffiliation) : int * decimal * int =
+        match affiliation with
+        | Contracted(clubId, contract) -> clubId, contract.Salary, contract.ExpiryYear
         | FreeAgent -> 0, 0m, 0
         | YouthProspect clubId -> clubId, 0m, 0
         | Retired -> 0, 0m, 0
 
-    let toPlayerEntity (p: Player) : PlayerEntity =
+    let toPlayerEntity (player: Player) : PlayerEntity =
         let statusType, statusInt, statusDate =
-            match p.Status with
+            match player.Status with
             | Available -> "Available", 0, DateTime.MinValue
-            | Suspended n -> "Suspended", n, DateTime.MinValue
-            | Injured(severity, dt) ->
+            | Suspended matchesBanned -> "Suspended", matchesBanned, DateTime.MinValue
+            | Injured(severity, until) ->
                 let severityInt =
                     match severity with
                     | Minor -> 0
@@ -36,60 +36,60 @@ module Mappers =
                     | Major -> 2
                     | Severe -> 3
 
-                "Injured", severityInt, dt
+                "Injured", severityInt, until
 
-        let clubId, salary, contractExpiry = affiliationToEntity p.Affiliation
+        let clubId, salary, contractExpiry = affiliationToEntity player.Affiliation
 
-        { Id = p.Id
+        { Id = player.Id
           ClubId = clubId
-          Name = p.Name
-          Birthday = p.Birthday
-          Nationality = p.Nationality
-          Position = $"%A{p.Position}"
-          PreferredFoot = $"%A{p.PreferredFoot}"
-          Height = p.Height
-          Weight = p.Weight
-          Acceleration = p.Physical.Acceleration
-          Pace = p.Physical.Pace
-          Agility = p.Physical.Agility
-          Balance = p.Physical.Balance
-          JumpingReach = p.Physical.JumpingReach
-          Stamina = p.Physical.Stamina
-          Strength = p.Physical.Strength
-          Finishing = p.Technical.Finishing
-          LongShots = p.Technical.LongShots
-          Dribbling = p.Technical.Dribbling
-          BallControl = p.Technical.BallControl
-          Passing = p.Technical.Passing
-          Crossing = p.Technical.Crossing
-          Tackling = p.Technical.Tackling
-          Marking = p.Technical.Marking
-          Heading = p.Technical.Heading
-          FreeKick = p.Technical.FreeKick
-          Penalty = p.Technical.Penalty
-          Aggression = p.Mental.Aggression
-          Composure = p.Mental.Composure
-          Vision = p.Mental.Vision
-          Positioning = p.Mental.Positioning
-          Bravery = p.Mental.Bravery
-          WorkRate = p.Mental.WorkRate
-          Concentration = p.Mental.Concentration
-          Leadership = p.Mental.Leadership
-          Reflexes = p.Goalkeeping.Reflexes
-          Handling = p.Goalkeeping.Handling
-          Kicking = p.Goalkeeping.Kicking
-          OneOnOne = p.Goalkeeping.OneOnOne
-          AerialReach = p.Goalkeeping.AerialReach
-          Condition = p.Condition
-          MatchFitness = p.MatchFitness
-          Morale = p.Morale
+          Name = player.Name
+          Birthday = player.Birthday
+          Nationality = player.Nationality
+          Position = $"%A{player.Position}"
+          PreferredFoot = $"%A{player.PreferredFoot}"
+          Height = player.Height
+          Weight = player.Weight
+          Acceleration = player.Physical.Acceleration
+          Pace = player.Physical.Pace
+          Agility = player.Physical.Agility
+          Balance = player.Physical.Balance
+          JumpingReach = player.Physical.JumpingReach
+          Stamina = player.Physical.Stamina
+          Strength = player.Physical.Strength
+          Finishing = player.Technical.Finishing
+          LongShots = player.Technical.LongShots
+          Dribbling = player.Technical.Dribbling
+          BallControl = player.Technical.BallControl
+          Passing = player.Technical.Passing
+          Crossing = player.Technical.Crossing
+          Tackling = player.Technical.Tackling
+          Marking = player.Technical.Marking
+          Heading = player.Technical.Heading
+          FreeKick = player.Technical.FreeKick
+          Penalty = player.Technical.Penalty
+          Aggression = player.Mental.Aggression
+          Composure = player.Mental.Composure
+          Vision = player.Mental.Vision
+          Positioning = player.Mental.Positioning
+          Bravery = player.Mental.Bravery
+          WorkRate = player.Mental.WorkRate
+          Concentration = player.Mental.Concentration
+          Leadership = player.Mental.Leadership
+          Reflexes = player.Goalkeeping.Reflexes
+          Handling = player.Goalkeeping.Handling
+          Kicking = player.Goalkeeping.Kicking
+          OneOnOne = player.Goalkeeping.OneOnOne
+          AerialReach = player.Goalkeeping.AerialReach
+          Condition = player.Condition
+          MatchFitness = player.MatchFitness
+          Morale = player.Morale
           StatusType = statusType
           StatusParamInt = statusInt
           StatusParamDate = statusDate
-          CurrentSkill = p.CurrentSkill
-          PotentialSkill = p.PotentialSkill
-          Reputation = p.Reputation
-          Value = Player.playerValue p.CurrentSkill
+          CurrentSkill = player.CurrentSkill
+          PotentialSkill = player.PotentialSkill
+          Reputation = player.Reputation
+          Value = Player.playerValue player.CurrentSkill
           Salary = salary
           ContractExpiry = contractExpiry }
 
@@ -160,13 +160,14 @@ module Mappers =
           Reputation = e.Reputation
           Affiliation = affiliationFromEntity e }
 
-    let toClubEntity (c: Club) : ClubEntity =
-        { Id = c.Id
-          Name = c.Name
-          Nationality = c.Nationality
-          Reputation = c.Reputation
-          Budget = c.Budget
-          Morale = c.Morale }
+    let toClubEntity (club: Club) : ClubEntity =
+        { Id = club.Id
+          Name = club.Name
+          Nationality = club.Nationality
+          Reputation = club.Reputation
+          Budget = club.Budget
+          Morale = club.Morale
+          BoardObjective = boardObjectiveToString club.BoardObjective }
 
     let toClubDomain
         (players: Map<PlayerId, Player>)
@@ -212,29 +213,125 @@ module Mappers =
           PlayerIds = playerIds
           CurrentLineup = lineup
           Budget = ce.Budget
-          Morale = ce.Morale }
+          Morale = ce.Morale
+          BoardObjective = parseBoardObjective ce.BoardObjective }
 
-    let toCompetitionEntity (c: Competition) : CompetitionEntity =
-        let tag, p1, p2 = competitionTypeToStrings c.Type
+    let toStaffEntity (staff: Staff) : StaffEntity =
+        let contractClubId, contractSalary, contractExpiry =
+            match staff.Contract with
+            | Some contract -> contract.ClubId, contract.Salary, contract.ExpiryYear
+            | None -> 0, 0m, 0
 
-        { Id = c.Id
-          Name = c.Name
+        { Id = staff.Id
+          Name = staff.Name
+          Nationality = staff.Nationality
+          Birthday = staff.Birthday
+          Role = staffRoleToString staff.Role
+          Badge = coachingBadgeToString staff.Badge
+          Reputation = staff.Reputation
+          Status = staffStatusToString staff.Status
+          TrophiesWon = staff.TrophiesWon
+          SeasonsManaged = staff.SeasonsManaged
+          ContractClubId = contractClubId
+          ContractSalary = contractSalary
+          ContractExpiry = contractExpiry
+          CoachAttacking = staff.Attributes.Coaching.Attacking
+          CoachDefending = staff.Attributes.Coaching.Defending
+          CoachFitness = staff.Attributes.Coaching.Fitness
+          CoachGoalkeeping = staff.Attributes.Coaching.Goalkeeping
+          CoachMental = staff.Attributes.Coaching.Mental
+          CoachSetPieces = staff.Attributes.Coaching.SetPieces
+          CoachTactical = staff.Attributes.Coaching.Tactical
+          CoachTechnical = staff.Attributes.Coaching.Technical
+          CoachWorkingWithYoungsters = staff.Attributes.Coaching.WorkingWithYoungsters
+          ScoutJudgingAbility = staff.Attributes.Scouting.JudgingAbility
+          ScoutJudgingPotential = staff.Attributes.Scouting.JudgingPotential
+          ScoutAdaptability = staff.Attributes.Scouting.Adaptability
+          MedicalPhysiotherapy = staff.Attributes.Medical.Physiotherapy
+          MedicalSportsScience = staff.Attributes.Medical.SportsScience
+          AnalysisPerformance = staff.Attributes.Analysis.PerformanceAnalysis
+          AnalysisRecruitment = staff.Attributes.Analysis.RecruitmentAnalysis
+          MentalAdaptability = staff.Mental.Adaptability
+          MentalDetermination = staff.Mental.Determination
+          MentalLevelOfDiscipline = staff.Mental.LevelOfDiscipline
+          MentalManManagement = staff.Mental.ManManagement
+          MentalMotivating = staff.Mental.Motivating
+          MentalPlayerKnowledge = staff.Mental.PlayerKnowledge
+          MentalYoungsterKnowledge = staff.Mental.YoungsterKnowledge }
+
+    let toStaffDomain (e: StaffEntity) : StaffId * Staff =
+        let contract =
+            if e.ContractClubId <= 0 then
+                None
+            else
+                Some
+                    { ClubId = e.ContractClubId
+                      Salary = e.ContractSalary
+                      ExpiryYear = e.ContractExpiry }
+
+        e.Id,
+        { Id = e.Id
+          Name = e.Name
+          Nationality = e.Nationality
+          Birthday = e.Birthday
+          Role = parseStaffRole e.Role
+          Badge = parseCoachingBadge e.Badge
+          Reputation = e.Reputation
+          Status = parseStaffStatus e.Status
+          TrophiesWon = e.TrophiesWon
+          SeasonsManaged = e.SeasonsManaged
+          Contract = contract
+          Attributes =
+            { Coaching =
+                { Attacking = e.CoachAttacking
+                  Defending = e.CoachDefending
+                  Fitness = e.CoachFitness
+                  Goalkeeping = e.CoachGoalkeeping
+                  Mental = e.CoachMental
+                  SetPieces = e.CoachSetPieces
+                  Tactical = e.CoachTactical
+                  Technical = e.CoachTechnical
+                  WorkingWithYoungsters = e.CoachWorkingWithYoungsters }
+              Scouting =
+                { JudgingAbility = e.ScoutJudgingAbility
+                  JudgingPotential = e.ScoutJudgingPotential
+                  Adaptability = e.ScoutAdaptability }
+              Medical =
+                { Physiotherapy = e.MedicalPhysiotherapy
+                  SportsScience = e.MedicalSportsScience }
+              Analysis =
+                { PerformanceAnalysis = e.AnalysisPerformance
+                  RecruitmentAnalysis = e.AnalysisRecruitment } }
+          Mental =
+            { Adaptability = e.MentalAdaptability
+              Determination = e.MentalDetermination
+              LevelOfDiscipline = e.MentalLevelOfDiscipline
+              ManManagement = e.MentalManManagement
+              Motivating = e.MentalMotivating
+              PlayerKnowledge = e.MentalPlayerKnowledge
+              YoungsterKnowledge = e.MentalYoungsterKnowledge } }
+
+    let toCompetitionEntity (competition: Competition) : CompetitionEntity =
+        let tag, param1, param2 = competitionTypeToStrings competition.Type
+
+        { Id = competition.Id
+          Name = competition.Name
           TypeTag = tag
-          TypeParam1 = p1
-          TypeParam2 = p2
-          Country = c.Country |> Option.defaultValue ""
-          Season = c.Season }
+          TypeParam1 = param1
+          TypeParam2 = param2
+          Country = competition.Country |> Option.defaultValue ""
+          Season = competition.Season }
 
-    let toFixtureEntity (f: MatchFixture) : MatchFixtureEntity =
-        { Id = f.Id
-          CompetitionId = f.CompetitionId
-          Round = f.Round |> Option.map roundToString |> Option.defaultValue ""
-          HomeClubId = f.HomeClubId
-          AwayClubId = f.AwayClubId
-          ScheduledDate = f.ScheduledDate
-          HomeScore = f.HomeScore |> Option.defaultValue -1
-          AwayScore = f.AwayScore |> Option.defaultValue -1
-          Played = f.Played }
+    let toFixtureEntity (fixture: MatchFixture) : MatchFixtureEntity =
+        { Id = fixture.Id
+          CompetitionId = fixture.CompetitionId
+          Round = fixture.Round |> Option.map roundToString |> Option.defaultValue ""
+          HomeClubId = fixture.HomeClubId
+          AwayClubId = fixture.AwayClubId
+          ScheduledDate = fixture.ScheduledDate
+          HomeScore = fixture.HomeScore |> Option.defaultValue -1
+          AwayScore = fixture.AwayScore |> Option.defaultValue -1
+          Played = fixture.Played }
 
     let toFixtureDomain (e: MatchFixtureEntity) : MatchFixture =
         { Id = e.Id
@@ -252,19 +349,19 @@ module Mappers =
           Played = e.Played
           Events = [] }
 
-    let toKnockoutTieEntity (compId: CompetitionId) (t: KnockoutTie) : KnockoutTieEntity =
-        let aggHome, aggAway = t.AggregateScore |> Option.defaultValue (-1, -1)
+    let toKnockoutTieEntity (compId: CompetitionId) (tie: KnockoutTie) : KnockoutTieEntity =
+        let aggHome, aggAway = tie.AggregateScore |> Option.defaultValue (-1, -1)
 
-        { TieId = t.TieId
+        { TieId = tie.TieId
           CompetitionId = compId
-          Round = roundToString t.Round
-          HomeClubId = t.HomeClubId
-          AwayClubId = t.AwayClubId
-          Leg1FixtureId = t.Leg1FixtureId |> Option.defaultValue -1
-          Leg2FixtureId = t.Leg2FixtureId |> Option.defaultValue -1
+          Round = roundToString tie.Round
+          HomeClubId = tie.HomeClubId
+          AwayClubId = tie.AwayClubId
+          Leg1FixtureId = tie.Leg1FixtureId |> Option.defaultValue -1
+          Leg2FixtureId = tie.Leg2FixtureId |> Option.defaultValue -1
           AggHome = aggHome
           AggAway = aggAway
-          WinnerId = t.WinnerId |> Option.defaultValue -1 }
+          WinnerId = tie.WinnerId |> Option.defaultValue -1 }
 
     let toKnockoutTieDomain (e: KnockoutTieEntity) : KnockoutTie =
         { TieId = e.TieId
@@ -276,17 +373,17 @@ module Mappers =
           AggregateScore = if e.AggHome = -1 then None else Some(e.AggHome, e.AggAway)
           WinnerId = if e.WinnerId = -1 then None else Some e.WinnerId }
 
-    let toStandingEntity (compId: CompetitionId) (s: LeagueStanding) : LeagueStandingEntity =
+    let toStandingEntity (compId: CompetitionId) (standing: LeagueStanding) : LeagueStandingEntity =
         { Id = 0
           CompetitionId = compId
-          ClubId = s.ClubId
-          Played = s.Played
-          Won = s.Won
-          Drawn = s.Drawn
-          Lost = s.Lost
-          GoalsFor = s.GoalsFor
-          GoalsAgainst = s.GoalsAgainst
-          Points = s.Points }
+          ClubId = standing.ClubId
+          Played = standing.Played
+          Won = standing.Won
+          Drawn = standing.Drawn
+          Lost = standing.Lost
+          GoalsFor = standing.GoalsFor
+          GoalsAgainst = standing.GoalsAgainst
+          Points = standing.Points }
 
     let toStandingDomain (e: LeagueStandingEntity) : LeagueStanding =
         { ClubId = e.ClubId
@@ -343,10 +440,10 @@ module Mappers =
           Standings = standings
           KnockoutTies = knockoutTies }
 
-    let toCountryEntity (c: Country) : CountryEntity =
-        { Code = c.Code
-          Name = c.Name
-          Confederation = confederationToString c.Confederation }
+    let toCountryEntity (country: Country) : CountryEntity =
+        { Code = country.Code
+          Name = country.Name
+          Confederation = confederationToString country.Confederation }
 
     let toCountryDomain (e: CountryEntity) : Country =
         { Code = e.Code

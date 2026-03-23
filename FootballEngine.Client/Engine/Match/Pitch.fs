@@ -4,9 +4,39 @@ open System
 open FootballEngine.Domain
 open FSharp.Stats.Distributions
 open MatchState
-open MatchStats
 
 module Pitch =
+    type PlayerRole =
+        | Defender
+        | Midfielder
+        | Attacker
+        | Goalkeeper
+
+    let playerRole (p: Player) =
+        match p.Position with
+        | GK -> Goalkeeper
+        | DC
+        | DL
+        | DR
+        | DM -> Defender
+        | WBL
+        | WBR -> Defender
+        | MC
+        | ML
+        | MR
+        | AML
+        | AMR
+        | AMC -> Midfielder
+        | ST -> Attacker
+
+    let inline distance (x1, y1) (x2, y2) =
+        sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
+
+    let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
+        positions
+        |> Array.mapi (fun i pos -> i, distance point pos)
+        |> Array.minBy snd
+        |> fst
 
     let private activePlayers (ts: TeamSide) =
         let idx = activeIndices ts.Players ts.Sidelined

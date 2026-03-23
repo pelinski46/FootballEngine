@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.Generation
 open MatchSimulator
 
 module Engine =
@@ -163,7 +164,11 @@ module Engine =
             |> Seq.collect (fun (_, comp) ->
                 comp.Fixtures
                 |> Map.toSeq
-                |> Seq.filter (fun (_, f) -> f.ScheduledDate.Date = gs.CurrentDate.Date && not f.Played))
+                |> Seq.filter (fun (_, f) ->
+                    f.ScheduledDate.Date = gs.CurrentDate.Date
+                    && not f.Played
+                    && f.HomeClubId <> gs.UserClubId
+                    && f.AwayClubId <> gs.UserClubId))
             |> List.ofSeq
 
         if todayFixtures.IsEmpty then
@@ -225,7 +230,7 @@ module Engine =
     let private runSeasonPipeline (gs: GameState) =
         gs
         |> World.advanceSeason (Random())
-        |> GameGenerator.regenerateSeasonFixtures
+        |> SeasonGen.regenerateFixtures
         |> World.applyLeagueConsequences
 
     let advanceSeason (gs: GameState) : SeasonResult =
@@ -263,3 +268,66 @@ module Engine =
                     { Summary = World.computeSeasonSummary finalGs
                       SeasonFinalGs = finalGs
                       NewGs = runSeasonPipeline finalGs }
+
+    // ── Match-day flow ────────────────────────────────────────────────────
+
+    type UserMatchDayResult =
+        { DayResult: DayResult
+          UserMatchReplay: MatchReplay }
+
+    let hasUserFixtureToday (gs: GameState) : bool =
+        gs.Competitions
+        |> Map.exists (fun _ comp ->
+            comp.Fixtures
+            |> Map.exists (fun _ f ->
+                f.ScheduledDate.Date = gs.CurrentDate.Date
+                && not f.Played
+                && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId)))
+
+    /// Simulates only the user's fixture for the current date with full snapshot replay.
+    let simulateUserFixtureForDay (gs: GameState) : Result<UserMatchDayResult, string> =
+        let userFixture =
+            gs.Competitions
+            |> Map.toSeq
+            |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
+            |> Seq.tryFind (fun (_, f) ->
+                f.ScheduledDate.Date = gs.CurrentDate.Date
+                && not f.Played
+                && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId))
+
+        match userFixture with
+        | None -> Error "No user fixture today"
+        | Some(fixtureId, fixture) ->
+            let home = gs.Clubs[fixture.HomeClubId] |> ensureLineup gs.Players
+            let away = gs.Clubs[fixture.AwayClubId] |> ensureLineup gs.Players
+
+            match trySimulateMatchFull home away gs.Players with
+            | Error e -> Error $"Match simulation failed: {e}"
+            | Ok replay ->
+                let h = replay.Final.HomeScore
+                let a = replay.Final.AwayScore
+
+                let updatedFixture =
+                    { fixture with
+                        Played = true
+                        HomeScore = Some h
+                        AwayScore = Some a
+                        Events = List.rev replay.Final.EventsRev }
+
+                let outcome =
+                    { FixtureId = fixtureId
+                      Fixture = updatedFixture
+                      HomeScore = h
+                      AwayScore = a }
+
+                let finalGs = applyOutcomes (fixtureToCompMap gs) [| outcome |] gs
+
+                let dayResult =
+                    { GameState = finalGs
+                      PlayedFixtures = [ fixtureId, updatedFixture ]
+                      Logs = [ $"{home.Name} {h}-{a} {away.Name}" ]
+                      SeasonComplete = isSeasonComplete finalGs }
+
+                Ok
+                    { DayResult = dayResult
+                      UserMatchReplay = replay }

@@ -19,23 +19,6 @@ module Transfers =
     let private pageSize = 100
     let roundToNearest (step: decimal) (v: decimal) = System.Math.Round(v / step) * step
 
-    let private positionColor (pos: Position) =
-        match pos with
-        | GK -> "#f59e0b"
-        | DC
-        | DL
-        | DR
-        | WBL
-        | WBR -> "#3b82f6"
-        | DM
-        | MC
-        | ML
-        | MR -> "#10b981"
-        | AMC
-        | AML
-        | AMR
-        | ST -> "#ef4444"
-
     let private formatValue (v: decimal) =
         if v >= 1_000_000m then $"£{v / 1_000_000m:F1}M"
         elif v >= 1_000m then $"£{v / 1_000m:F0}K"
@@ -68,7 +51,7 @@ module Transfers =
         | TransferHistory -> PlayerIcon.contract
 
     let private playerAvatar (name: string) (pos: Position) (size: float) =
-        let color = positionColor pos
+        let color = Theme.positionColor pos
 
         Border.create
             [ Border.width size
@@ -117,7 +100,7 @@ module Transfers =
         (onSelect: unit -> unit)
         (onWatch: unit -> unit)
         =
-        let posColor = positionColor p.Position
+        let posColor = Theme.positionColor p.Position
 
         Button.create
             [ Button.horizontalAlignment HorizontalAlignment.Stretch
@@ -253,8 +236,6 @@ module Transfers =
                           TextBlock.margin (0.0, 0.0, 0.0, 4.0) ]
                     for label, value in stats do
                         statBar label value color ] ]
-
-    // ── Negotiation panel ────────────────────────────────────────────────
 
     let private sectionLabel (text: string) =
         TextBlock.create
@@ -498,8 +479,6 @@ module Transfers =
                               stepContent ] ]
               ) ]
 
-    // ── Player detail panel ──────────────────────────────────────────────
-
     let private playerDetailPanel
         (p: Player)
         (clubName: string)
@@ -508,7 +487,7 @@ module Transfers =
         (activeNeg: ActiveNegotiation option)
         (dispatch: Msg -> unit)
         =
-        let posColor = positionColor p.Position
+        let posColor = Theme.positionColor p.Position
 
         let header =
             Border.create
@@ -710,8 +689,6 @@ module Transfers =
                   [ Border.create [ Grid.row 0; Border.child header ]
                     Border.create [ Grid.row 1; Border.child body ] ] ]
 
-    // ── Static panels ────────────────────────────────────────────────────
-
     let private marketTableHeader () =
         Border.create
             [ Border.padding (16.0, 8.0)
@@ -757,48 +734,6 @@ module Transfers =
                               Border.create [ Grid.column 5; Border.width 44.0 ] ] ]
               ) ]
 
-    let private emptyState (icon: Material.Icons.MaterialIconKind) (title: string) (sub: string) =
-        Border.create
-            [ Border.padding (40.0, 60.0)
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 10.0
-                        StackPanel.horizontalAlignment HorizontalAlignment.Center
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.horizontalAlignment HorizontalAlignment.Center
-                                    Border.child (Icons.icon icon 40.0 Theme.TextMuted) ]
-                              TextBlock.create
-                                  [ TextBlock.text title
-                                    TextBlock.fontSize 15.0
-                                    TextBlock.fontWeight FontWeight.Bold
-                                    TextBlock.foreground Theme.TextSub
-                                    TextBlock.horizontalAlignment HorizontalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text sub
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.foreground Theme.TextMuted
-                                    TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
-              ) ]
-
-    let private loadingState () =
-        Border.create
-            [ Border.padding (40.0, 80.0)
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.spacing 12.0
-                        StackPanel.horizontalAlignment HorizontalAlignment.Center
-                        StackPanel.children
-                            [ Border.create
-                                  [ Border.horizontalAlignment HorizontalAlignment.Center
-                                    Border.child (Icons.icon IconName.refresh 36.0 Theme.Accent) ]
-                              TextBlock.create
-                                  [ TextBlock.text "Loading transfer market..."
-                                    TextBlock.fontSize 14.0
-                                    TextBlock.foreground Theme.TextMuted
-                                    TextBlock.horizontalAlignment HorizontalAlignment.Center ] ] ]
-              ) ]
-
     let private paginationBar (page: int) (total: int) (dispatch: Msg -> unit) =
         let totalPages = max 1 ((total + pageSize - 1) / pageSize)
 
@@ -827,7 +762,7 @@ module Transfers =
                                   TextBlock.create
                                       [ TextBlock.text $"{page + 1} / {totalPages}"
                                         TextBlock.fontSize 12.0
-                                        TextBlock.foreground Theme.TextMuted
+                                        TextBlock.foreground (Theme.TextMuted: string)
                                         TextBlock.verticalAlignment VerticalAlignment.Center ]
                                   Button.create
                                       [ Button.content (Icons.iconSm Nav.next Theme.TextMuted)
@@ -840,8 +775,6 @@ module Transfers =
                   ) ]
             |> View.withKey $"{page}"
             :> IView
-
-    // ── Outgoing offers tab ──────────────────────────────────────────────
 
     let private offerStatusLabel (status: OfferStatus) =
         match status with
@@ -931,8 +864,6 @@ module Transfers =
                                         Button.content (Icons.iconSm IconName.close Theme.Danger) ] ] ]
               ) ]
 
-    // ── Transfer history tab ─────────────────────────────────────────────
-
     let private historyRow (r: TransferRecord) =
         Border.create
             [ Border.padding (16.0, 12.0)
@@ -972,8 +903,6 @@ module Transfers =
                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
               ) ]
 
-    // ── Root view ────────────────────────────────────────────────────────
-
     let transfersView (state: State) (dispatch: Msg -> unit) =
         let ts = state.Transfer
         let gs = state.GameState
@@ -985,7 +914,6 @@ module Transfers =
             ts.ClubNameCache |> Map.tryFind pid |> Option.defaultValue "Unknown"
 
         let buyer = gs.Clubs[gs.UserClubId]
-
         let userBudget = buyer.Budget
 
         let topBar =
@@ -1150,7 +1078,7 @@ module Transfers =
 
         let playerListPanel =
             if ts.IsLoading then
-                loadingState () :> IView
+                UI.loadingState ()
             else
                 Grid.create
                     [ Grid.rowDefinitions "Auto, *, Auto"
@@ -1158,7 +1086,7 @@ module Transfers =
                           [ marketTableHeader () |> fun h -> Border.create [ Grid.row 0; Border.child h ]
 
                             if pagedPlayers.IsEmpty then
-                                emptyState IconName.search "No players found" "Try adjusting your search or filters"
+                                UI.emptyState IconName.search "No players found" "Try adjusting your search or filters"
                                 |> fun e -> Border.create [ Grid.row 1; Border.child e ]
                             else
                                 ScrollViewer.create
@@ -1183,10 +1111,10 @@ module Transfers =
 
         let detailPanel =
             match ts.SelectedPlayerId with
-            | None -> emptyState PlayerIcon.position "No player selected" "Click a player to view details" :> IView
+            | None -> UI.emptyState PlayerIcon.position "No player selected" "Click a player to view details"
             | Some pid ->
                 match ts.CachedPlayers |> List.tryFind (fun p -> p.Id = pid) with
-                | None -> emptyState IconName.error "Player not found" "" :> IView
+                | None -> UI.emptyState IconName.error "Player not found" ""
                 | Some p ->
                     playerDetailPanel
                         p
@@ -1211,8 +1139,7 @@ module Transfers =
         let watchlistContent =
             match ts.WatchlistIds with
             | [] ->
-                emptyState PlayerIcon.skill "Your watchlist is empty" "Star players in the market to track them here"
-                :> IView
+                UI.emptyState PlayerIcon.skill "Your watchlist is empty" "Star players in the market to track them here"
             | ids ->
                 let watched = ts.CachedPlayers |> List.filter (fun p -> List.contains p.Id ids)
 
@@ -1256,7 +1183,7 @@ module Transfers =
             let active = ts.OutgoingOffers |> List.filter (fun o -> o.Status <> Withdrawn)
 
             if active.IsEmpty then
-                emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here" :> IView
+                UI.emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here"
             else
                 StackPanel.create
                     [ StackPanel.children
@@ -1304,7 +1231,7 @@ module Transfers =
 
         let historyContent =
             if ts.TransferHistory.IsEmpty then
-                emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here" :> IView
+                UI.emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here"
             else
                 StackPanel.create
                     [ StackPanel.children
@@ -1323,7 +1250,7 @@ module Transfers =
             | MarketSearch -> marketContent :> IView
             | MyWatchlist -> watchlistContent
             | IncomingOffers ->
-                emptyState IconName.add "No incoming offers" "Other clubs haven't made any offers yet" :> IView
+                UI.emptyState IconName.add "No incoming offers" "Other clubs haven't made any offers yet"
             | OutgoingOffers -> outgoingContent
             | TransferHistory -> historyContent
 

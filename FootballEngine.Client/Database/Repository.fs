@@ -24,7 +24,7 @@ module Db =
                           CurrentDate = state.CurrentDate
                           Season = state.Season
                           UserClubId = state.UserClubId
-                          ManagerName = state.ManagerName
+                          UserStaffId = state.UserStaffId
                           PrimaryCountry = state.PrimaryCountry }
                     )
                     |> ignore
@@ -53,6 +53,9 @@ module Db =
 
                     for KeyValue(_, player) in state.Players do
                         conn.InsertOrReplace(toPlayerEntity player) |> ignore
+
+                    for KeyValue(_, staff) in state.Staff do
+                        conn.InsertOrReplace(toStaffEntity staff) |> ignore
 
                     conn.DeleteAll<CompetitionClubEntity>() |> ignore
                     conn.DeleteAll<LeagueStandingEntity>() |> ignore
@@ -100,6 +103,10 @@ module Db =
                         |> Seq.map (fun p -> p.Id, p)
                         |> Map.ofSeq
 
+                    let! staffEntities = db.Value.Table<StaffEntity>().ToListAsync()
+
+                    let staff = staffEntities |> Seq.map toStaffDomain |> Map.ofSeq
+
                     let! lineupSlots = db.Value.Table<LineupSlotEntity>().ToListAsync()
                     let! compClubs = db.Value.Table<CompetitionClubEntity>().ToListAsync()
                     let! allFixtures = db.Value.Table<MatchFixtureEntity>().ToListAsync()
@@ -139,10 +146,11 @@ module Db =
                               Season = meta.Season
                               Clubs = clubs
                               Players = players
+                              Staff = staff
                               Competitions = competitions
                               Countries = countries
                               UserClubId = meta.UserClubId
-                              ManagerName = meta.ManagerName
+                              UserStaffId = meta.UserStaffId
                               PrimaryCountry = meta.PrimaryCountry }
         }
 
@@ -151,6 +159,7 @@ module Db =
             let! _ = db.Value.CreateTableAsync<PlayerEntity>()
             let! _ = db.Value.CreateTableAsync<ClubEntity>()
             let! _ = db.Value.CreateTableAsync<LineupSlotEntity>()
+            let! _ = db.Value.CreateTableAsync<StaffEntity>()
             let! _ = db.Value.CreateTableAsync<CompetitionEntity>()
             let! _ = db.Value.CreateTableAsync<CompetitionClubEntity>()
             let! _ = db.Value.CreateTableAsync<LeagueStandingEntity>()
