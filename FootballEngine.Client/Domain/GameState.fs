@@ -50,7 +50,7 @@ module GameState =
         | Contracted(clubId, _) -> Some clubId
         | YouthProspect clubId -> Some clubId
         | FreeAgent
-        | Retired -> None
+        | Retired -> failwith "todo"
 
     let contractOf (p: Player) : ContractInfo option =
         match p.Affiliation with

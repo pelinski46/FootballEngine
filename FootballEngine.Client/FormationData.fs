@@ -10,7 +10,7 @@ module FormationData =
           X = x
           Y = y }
 
-    let getFormation (formation: Formation) : FormationSlot list =
+    let getFormation (formation: Formation) : LineupSlot list =
         match formation with
         | F442 ->
             [ createSlot 0 GK 0.50 0.90

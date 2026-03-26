@@ -5,6 +5,7 @@ type ClubId = int
 type MatchId = int
 type CompetitionId = int
 type CountryCode = string
+type StaffId = int
 
 type Round =
     | GroupStage of groupIndex: int
@@ -28,7 +29,7 @@ type Position =
     | AML
     | ST
 
-    static member All = [ GK; DR; DC; DL; WBR; WBL; DM; MR; MC; ML; AMR; AMC; AML; ST ]
+
 
 type Formation =
     | F442

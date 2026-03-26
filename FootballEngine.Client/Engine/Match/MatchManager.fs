@@ -48,12 +48,12 @@ module MatchManager =
 
     let private pickIncoming
         (squadPlayers: Player list)
-        (club: Club)
+        (manager: Staff)
         (ts: TeamSide)
         (preferred: Position list)
         : Player option =
         let startingIds =
-            club.CurrentLineup
+            manager.Attributes.Coaching.Lineup
             |> Option.map (fun lu -> lu.Slots |> List.choose _.PlayerId |> Set.ofList)
             |> Option.defaultValue Set.empty
 
@@ -76,7 +76,7 @@ module MatchManager =
     let processSubstitution (squadPlayers: Player list) (clubId: ClubId) (second: int) (s: MatchState) : MatchState =
         let isHome = clubId = s.Home.Id
         let ts = side isHome s
-        let club = if isHome then s.Home else s.Away
+        let coach = if isHome then s.HomeCoach else s.AwayCoach
 
         if ts.SubsUsed >= maxSubs then
             s
@@ -89,7 +89,7 @@ module MatchManager =
             | Some outIdx ->
                 let playerOut = ts.Players[outIdx]
 
-                match pickIncoming squadPlayers club ts (preferredPositions sit) with
+                match pickIncoming squadPlayers coach ts (preferredPositions sit) with
                 | None -> s
                 | Some incoming ->
                     let pos =

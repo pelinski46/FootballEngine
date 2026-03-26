@@ -1,22 +1,6 @@
 namespace FootballEngine.Domain
 
-type FormationSlot =
-    { Index: int
-      Role: Position
-      X: float
-      Y: float }
 
-type LineupSlot =
-    { Index: int
-      Role: Position
-      X: float
-      Y: float
-      PlayerId: PlayerId option }
-
-type ClubLineup =
-    { Formation: Formation
-      TeamTactics: string
-      Slots: LineupSlot list }
 
 type CupObjective =
     | WinDomesticCup
@@ -42,7 +26,7 @@ type Club =
       Nationality: CountryCode
       Reputation: int
       PlayerIds: PlayerId list
-      CurrentLineup: ClubLineup option
+      StaffIds: StaffId list
       Budget: decimal
       Morale: int
       BoardObjective: BoardObjective }

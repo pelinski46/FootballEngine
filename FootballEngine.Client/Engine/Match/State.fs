@@ -35,44 +35,14 @@ module MatchState =
     let addEvent (ev: MatchEvent) (s: MatchState) =
         { s with EventsRev = ev :: s.EventsRev }
 
-
-    let homeSide (s: MatchState) : TeamSide =
-        { Players = s.HomePlayers
-          Conditions = s.HomeConditions
-          Positions = s.HomePositions
-          BasePositions = s.HomeBasePositions
-          Sidelined = s.HomeSidelined
-          Yellows = s.HomeYellows
-          SubsUsed = s.HomeSubsUsed }
-
-    let awaySide (s: MatchState) : TeamSide =
-        { Players = s.AwayPlayers
-          Conditions = s.AwayConditions
-          Positions = s.AwayPositions
-          BasePositions = s.AwayBasePositions
-          Sidelined = s.AwaySidelined
-          Yellows = s.AwayYellows
-          SubsUsed = s.AwaySubsUsed }
+    let homeSide (s: MatchState) = s.HomeSide
+    let awaySide (s: MatchState) = s.AwaySide
 
     let side (isHome: bool) (s: MatchState) =
-        if isHome then homeSide s else awaySide s
+        if isHome then s.HomeSide else s.AwaySide
 
-    let withSide (isHome: bool) (ts: TeamSide) (s: MatchState) : MatchState =
+    let withSide (isHome: bool) (ts: TeamSide) (s: MatchState) =
         if isHome then
-            { s with
-                HomePlayers = ts.Players
-                HomeConditions = ts.Conditions
-                HomePositions = ts.Positions
-                HomeBasePositions = ts.BasePositions
-                HomeSidelined = ts.Sidelined
-                HomeYellows = ts.Yellows
-                HomeSubsUsed = ts.SubsUsed }
+            { s with HomeSide = ts }
         else
-            { s with
-                AwayPlayers = ts.Players
-                AwayConditions = ts.Conditions
-                AwayPositions = ts.Positions
-                AwayBasePositions = ts.BasePositions
-                AwaySidelined = ts.Sidelined
-                AwayYellows = ts.Yellows
-                AwaySubsUsed = ts.SubsUsed }
+            { s with AwaySide = ts }

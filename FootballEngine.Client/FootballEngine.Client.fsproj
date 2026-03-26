@@ -11,6 +11,7 @@
         <Compile Include="Domain\Country.fs"/>
         <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Player.fs"/>
+        <Compile Include="Domain\Lineup.fs"/>
         <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Competition.fs"/>
@@ -41,6 +42,10 @@
         <Compile Include="Engine\WorldGeneration\FixtureGen.fs"/>
         <Compile Include="Engine\WorldGeneration\WorldGen.fs"/>
         <Compile Include="Engine\WorldGeneration\SeasonGen.fs"/>
+        <Compile Include="Engine\World\ClubFinance.fs"/>
+        <Compile Include="Engine\World\ManagerAI.fs"/>
+        <Compile Include="Engine\World\TransferMarket.fs"/>
+        <Compile Include="Engine\World\BoardAI.fs"/>
         <Compile Include="Engine\World.fs"/>
         <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database\Entities.fs"/>

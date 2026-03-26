@@ -2,7 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 
-module FormationLineUps =
+module FormationLineups =
     let all =
         [ F442
           F442Diamond
@@ -20,9 +20,9 @@ module FormationLineUps =
           F541
           F523 ]
 
-
 module Lineup =
-    let private available (players: Player list) =
+
+    let private availablePlayers (players: Player list) =
         players |> List.filter (fun p -> p.Status = Available)
 
     let bestForPosition (players: Player list) (pos: Position) : Player option =
@@ -31,66 +31,76 @@ module Lineup =
         | exact -> exact |> List.sortByDescending _.CurrentSkill |> List.tryHead
 
     let bestFormation (players: Player list) : Formation =
-        let bench = available players
+        let available = availablePlayers players
 
-        FormationLineUps.all
+        FormationLineups.all
         |> List.maxBy (fun formation ->
             FormationData.getFormation formation
             |> List.sumBy (fun slot ->
-                bench
+                available
                 |> List.filter (fun p -> p.Position = slot.Role)
                 |> List.sortByDescending _.CurrentSkill
                 |> List.tryHead
                 |> Option.map _.CurrentSkill
                 |> Option.defaultValue 0))
 
-    let private countActiveSlots (players: Player list) (lu: ClubLineup) =
-        lu.Slots
+    let private countActiveSlots (players: Player list) (lineup: Lineup) =
+        lineup.Slots
         |> List.filter (fun s ->
             s.PlayerId
             |> Option.map (fun pid -> players |> List.exists (fun p -> p.Id = pid && p.Status = Available))
             |> Option.defaultValue false)
         |> List.length
 
-    let autoLineup (club: Club) (players: Player list) (formation: Formation) : Club =
+    let private buildSlots (formation: Formation) (players: Player list) : LineupSlot list =
+        let formationSlots = FormationData.getFormation formation
+        let available = availablePlayers players
+
+        let rec assign (remaining: LineupSlot list) (pool: Player list) (acc: LineupSlot list) =
+            match remaining with
+            | [] -> List.rev acc
+            | slot :: rest ->
+                let lineupSlot =
+                    { Index = slot.Index
+                      Role = slot.Role
+                      X = slot.X
+                      Y = slot.Y
+                      PlayerId = None }
+
+                match bestForPosition pool slot.Role with
+                | None -> assign rest pool (lineupSlot :: acc)
+                | Some p ->
+                    assign
+                        rest
+                        (pool |> List.filter (fun x -> x.Id <> p.Id))
+                        ({ lineupSlot with PlayerId = Some p.Id } :: acc)
+
+        assign formationSlots available []
+
+    let autoLineup (coach: Staff) (players: Player list) (formation: Formation) : Staff =
+        let current = coach.Attributes.Coaching.Lineup
+
         let needsRegen =
-            match club.CurrentLineup with
+            match current with
             | None -> true
             | Some lu -> countActiveSlots players lu < 11
 
         if not needsRegen then
-            club
+            coach
         else
-            let slots = FormationData.getFormation formation
-            let bench = available players
+            let lineup =
+                { Formation = formation
+                  Tactics = Balanced
+                  Slots = buildSlots formation players }
 
-            let rec assign (remaining: FormationSlot list) (pool: Player list) (acc: LineupSlot list) =
-                match remaining with
-                | [] -> List.rev acc
-                | slot :: rest ->
-                    let lineSlot =
-                        { Index = slot.Index
-                          Role = slot.Role
-                          X = slot.X
-                          Y = slot.Y
-                          PlayerId = None }
+            { coach with
+                Attributes =
+                    { coach.Attributes with
+                        Coaching =
+                            { coach.Attributes.Coaching with
+                                Lineup = Some lineup } } }
 
-                    match bestForPosition pool slot.Role with
-                    | None -> assign rest pool (lineSlot :: acc)
-                    | Some p ->
-                        assign
-                            rest
-                            (pool |> List.filter (fun x -> x.Id <> p.Id))
-                            ({ lineSlot with PlayerId = Some p.Id } :: acc)
-
-            { club with
-                CurrentLineup =
-                    Some
-                        { Formation = formation
-                          TeamTactics = "Balanced"
-                          Slots = assign slots bench [] } }
-
-    let swapPlayer (targetIdx: int) (pId: PlayerId) (lineup: ClubLineup) : ClubLineup =
+    let swapPlayer (targetIdx: int) (pId: PlayerId) (lineup: Lineup) : Lineup =
         let slotsMap = lineup.Slots |> List.map (fun s -> s.Index, s.PlayerId) |> Map.ofList
 
         let sourceIdx =
@@ -101,11 +111,8 @@ module Lineup =
 
         let newSlotsMap =
             match sourceIdx with
-            | Some src ->
-
-                slotsMap |> Map.add targetIdx (Some pId) |> Map.add src occupant
+            | Some src -> slotsMap |> Map.add targetIdx (Some pId) |> Map.add src occupant
             | None ->
-
                 slotsMap
                 |> Map.add targetIdx (Some pId)
                 |> Map.map (fun idx idOpt -> if idx <> targetIdx && idOpt = Some pId then None else idOpt)
@@ -114,13 +121,12 @@ module Lineup =
             newSlotsMap
             |> Map.toList
             |> List.map (fun (idx, pidOpt) ->
-
-                let originalSlot = lineup.Slots |> List.find (fun s -> s.Index = idx)
+                let original = lineup.Slots |> List.find (fun s -> s.Index = idx)
 
                 { Index = idx
-                  Role = originalSlot.Role
-                  X = originalSlot.X
-                  Y = originalSlot.Y
+                  Role = original.Role
+                  X = original.X
+                  Y = original.Y
                   PlayerId = pidOpt })
             |> List.sortBy _.Index
 

@@ -95,9 +95,9 @@ module MatchSimulator =
         else
             slotY * 100.0, slotX * 100.0
 
-    let private extractLineup (club: Club) (players: Map<PlayerId, Player>) (isHome: bool) =
-        match club.CurrentLineup with
-        | None -> raise' (MissingLineup club.Name)
+    let private extractLineup (headCoach: Staff) (players: Map<PlayerId, Player>) (isHome: bool) =
+        match headCoach.Attributes.Coaching.Lineup with
+        | None -> raise' (MissingLineup headCoach.Name)
         | Some lu ->
             lu.Slots
             |> List.choose (fun s ->
@@ -143,7 +143,11 @@ module MatchSimulator =
           HomePositions = ctx.HomePositions
           AwayPositions = ctx.AwayPositions
           HomeBasePositions = ctx.HomePositions
-          AwayBasePositions = ctx.AwayPositions }
+          AwayBasePositions = ctx.AwayPositions
+          HomeCoach = Map.empty
+          AwayCoach = failwith "todo"
+          HomeSide = failwith "todo"
+          AwaySide = failwith "todo" }
 
     let private runLoopFast (homeSquad: Player list) (awaySquad: Player list) (homeId: ClubId) (init: MatchState) =
         let q = initQueue init.Home.Id init.Away.Id

@@ -2,7 +2,7 @@ namespace FootballEngine.Domain
 
 open System
 
-type StaffId = int
+
 
 type CoachingBadge =
     | NoneBadge
@@ -25,6 +25,7 @@ type StaffRole =
     | PerformanceAnalyst
     | RecruitmentAnalyst
     | LoanManager
+    | TechnicalDirector
 
 type CoachingAttributes =
     { Attacking: int
@@ -35,12 +36,21 @@ type CoachingAttributes =
       SetPieces: int
       Tactical: int
       Technical: int
-      WorkingWithYoungsters: int }
+      WorkingWithYoungsters: int
+      PreferredFormation: Formation option
+      Lineup: Lineup option }
+
+type KnowledgeAttributes =
+    { JudgingPlayerAbility: int
+      JudgingPlayerPotential: int
+      JudgingStaffAbility: int
+      Negotiating: int
+      TacticalKnowledge: int }
 
 type ScoutingAttributes =
-    { JudgingAbility: int
-      JudgingPotential: int
-      Adaptability: int }
+    { NetworkReach: int
+      DataAnalysis: int
+      MarketKnowledge: int }
 
 type MedicalAttributes =
     { Physiotherapy: int
@@ -60,10 +70,8 @@ type StaffMentalAttributes =
     { Adaptability: int
       Determination: int
       LevelOfDiscipline: int
-      ManManagement: int
-      Motivating: int
-      PlayerKnowledge: int
-      YoungsterKnowledge: int }
+      PeopleManagement: int
+      Motivating: int }
 
 type StaffStatus =
     | Active
@@ -72,6 +80,7 @@ type StaffStatus =
     | Resigned
     | ContractExpired
     | Unemployed
+    | StaffRetired
 
 type StaffContract =
     { ClubId: ClubId
@@ -85,6 +94,7 @@ type Staff =
       Birthday: DateTime
       Role: StaffRole
       Attributes: StaffAttributes
+      Knowledge: KnowledgeAttributes
       Mental: StaffMentalAttributes
       Badge: CoachingBadge
       Reputation: int
@@ -121,76 +131,104 @@ module Staff =
         | SportsScientist
         | PerformanceAnalyst
         | RecruitmentAnalyst
-        | LoanManager -> false
+        | LoanManager
+        | TechnicalDirector -> false
 
     let effectiveAbility (s: Staff) =
         let c = s.Attributes.Coaching
         let sc = s.Attributes.Scouting
         let md = s.Attributes.Medical
         let an = s.Attributes.Analysis
+        let kn = s.Knowledge
         let mn = s.Mental
+
+        let disciplineMultiplier =
+            let avg = float (mn.Determination + mn.LevelOfDiscipline + mn.Motivating) / 3.0
+            0.79 + (avg / 20.0) * 0.21
+
+        let applyDiscipline (baseScore: float) = baseScore * disciplineMultiplier |> int
 
         match s.Role with
         | HeadCoach ->
-            let coachScore =
-                [ c.Attacking; c.Defending; c.Tactical; c.Technical; c.Mental; c.SetPieces ]
-                |> List.averageBy float
-
-            let mentalScore =
-                [ mn.ManManagement; mn.Motivating; mn.Determination; mn.LevelOfDiscipline ]
-                |> List.averageBy float
-
-            int ((coachScore + mentalScore) / 2.0)
+            [ kn.TacticalKnowledge
+              kn.JudgingPlayerAbility
+              kn.JudgingPlayerPotential
+              mn.PeopleManagement
+              c.Attacking
+              c.Defending ]
+            |> List.averageBy float
+            |> applyDiscipline
 
         | AssistantManager ->
-            let coachScore =
-                [ c.Attacking; c.Defending; c.Tactical; c.Technical ] |> List.averageBy float
-
-            let mentalScore =
-                [ mn.ManManagement; mn.Motivating; mn.PlayerKnowledge ] |> List.averageBy float
-
-            int ((coachScore + mentalScore) / 2.0)
+            [ kn.TacticalKnowledge
+              kn.JudgingPlayerAbility
+              mn.PeopleManagement
+              c.Attacking
+              c.Defending ]
+            |> List.averageBy float
+            |> applyDiscipline
 
         | FirstTeamCoach ->
-            [ c.Attacking; c.Defending; c.Technical; c.Mental; c.Tactical ]
+            [ c.Attacking; c.Defending; c.Technical; c.Mental; kn.TacticalKnowledge ]
             |> List.averageBy float
-            |> int
+            |> applyDiscipline
 
-        | GoalkeeperCoach -> [ c.Goalkeeping; c.Technical; c.Mental ] |> List.averageBy float |> int
+        | GoalkeeperCoach ->
+            [ c.Goalkeeping; c.Technical; c.Mental ]
+            |> List.averageBy float
+            |> applyDiscipline
 
-        | FitnessCoach -> [ c.Fitness; mn.Determination; md.SportsScience ] |> List.averageBy float |> int
+        | FitnessCoach -> [ c.Fitness; md.SportsScience ] |> List.averageBy float |> applyDiscipline
 
         | HeadOfYouthDevelopment ->
-            [ c.WorkingWithYoungsters; mn.YoungsterKnowledge; sc.JudgingPotential ]
+            [ c.WorkingWithYoungsters
+              kn.JudgingPlayerPotential
+              kn.JudgingPlayerAbility
+              mn.PeopleManagement ]
             |> List.averageBy float
-            |> int
+            |> applyDiscipline
 
         | Scout ->
-            [ sc.JudgingAbility; sc.JudgingPotential; mn.Determination; sc.Adaptability ]
+
+            [ kn.JudgingPlayerAbility
+              kn.JudgingPlayerPotential
+              mn.Adaptability
+              sc.NetworkReach
+              sc.DataAnalysis ]
             |> List.averageBy float
-            |> int
+            |> applyDiscipline
 
         | Physio ->
-            [ md.Physiotherapy; mn.Determination; c.WorkingWithYoungsters ]
-            |> List.averageBy float
-            |> int
+            int (
+                float md.Physiotherapy * 0.8
+                + float md.SportsScience * 0.1
+                + float mn.Determination * 0.1
+            )
 
-        | SportsScientist -> [ md.SportsScience; c.Fitness; mn.Determination ] |> List.averageBy float |> int
+        | SportsScientist -> [ md.SportsScience; c.Fitness ] |> List.averageBy float |> applyDiscipline
 
         | PerformanceAnalyst ->
-            [ an.PerformanceAnalysis; mn.PlayerKnowledge; mn.Determination ]
+            [ an.PerformanceAnalysis; kn.TacticalKnowledge; kn.JudgingPlayerAbility ]
             |> List.averageBy float
-            |> int
+            |> applyDiscipline
 
         | RecruitmentAnalyst ->
-            [ an.RecruitmentAnalysis; sc.JudgingAbility; sc.JudgingPotential ]
+            [ an.RecruitmentAnalysis
+              kn.JudgingPlayerAbility
+              kn.JudgingPlayerPotential
+              sc.MarketKnowledge ]
             |> List.averageBy float
             |> int
 
         | LoanManager ->
-            [ mn.PlayerKnowledge; sc.JudgingPotential; mn.ManManagement ]
+            [ kn.JudgingPlayerPotential
+              mn.PeopleManagement
+              kn.JudgingPlayerAbility
+              mn.Adaptability ]
             |> List.averageBy float
             |> int
+
+        | TechnicalDirector -> [ kn.JudgingStaffAbility; kn.Negotiating ] |> List.averageBy float |> int
 
     let canBecomeHeadCoach (s: Staff) =
         match s.Role with
@@ -231,11 +269,18 @@ module Staff =
                 | UnderPressure, true -> Active
                 | other, _ -> other
 
+            let isTrophy =
+                match objective, achieved with
+                | LeagueObjective WinLeague, true -> true
+                | CupObjective _, true -> true
+                | Promotion, true -> true
+                | _ -> false
+
             { s with
                 Reputation = max 0 (min 10000 (s.Reputation + repDelta))
                 Status = newStatus
                 SeasonsManaged = s.SeasonsManaged + 1
-                TrophiesWon = if achieved then s.TrophiesWon + 1 else s.TrophiesWon }
+                TrophiesWon = if isTrophy then s.TrophiesWon + 1 else s.TrophiesWon }
 
         | _ ->
             { s with
