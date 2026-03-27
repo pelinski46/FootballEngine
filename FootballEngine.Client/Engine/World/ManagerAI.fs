@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
+open FootballEngine.Stats
 
 module ManagerPersonality =
 
@@ -26,7 +27,7 @@ module ManagerPersonality =
         (norm coach.Mental.LevelOfDiscipline + norm coach.Mental.PeopleManagement) / 2.0
 
     let spendingAggression (coach: Staff) (budget: decimal) =
-        let budgetComfort = min 1.0 (float budget / 10_000_000.0)
+        let budgetComfort = min 1.0 (log (1.0 + float budget / 5_000_000.0) / log 11.0)
         ambition coach * budgetComfort
 
 module SquadAnalysis =
@@ -40,12 +41,14 @@ module SquadAnalysis =
         |> List.length
 
     let private averageSkill (squad: Player list) =
-        if squad.IsEmpty then
-            0.0
-        else
-            squad |> List.averageBy (fun p -> float p.CurrentSkill)
+        if squad.IsEmpty then 0.0
+        else squad |> List.averageBy (fun p -> float p.CurrentSkill)
 
-    let assessNeeds (squad: Player list) : SquadNeed list =
+    let private averageAge (currentDate: System.DateTime) (players: Player list) =
+        if players.IsEmpty then 0.0
+        else players |> List.averageBy (fun p -> Player.age currentDate p |> float)
+
+    let assessNeeds (currentDate: System.DateTime) (squad: Player list) : SquadNeed list =
         let avg = averageSkill squad
 
         let gkNeeds =
@@ -57,18 +60,33 @@ module SquadAnalysis =
         let outfieldNeeds =
             allOutfieldPositions
             |> List.collect (fun pos ->
-                match countAvailable pos squad with
+                let atPos = squad |> List.filter (fun p -> p.Position = pos && p.Status = Available)
+                let count = List.length atPos
+                let avgAgeAtPos = averageAge currentDate atPos
+
+                match count with
                 | 0 -> [ NeedsPosition pos ]
-                | 1 -> [ NeedsDepth pos ]
-                | _ -> [])
+                | 1 ->
+                    let agingOut = avgAgeAtPos > 30.0
+                    if agingOut then [ NeedsDepth pos; NeedsPosition pos ]
+                    else [ NeedsDepth pos ]
+                | _ ->
+                    let allAging = avgAgeAtPos > 31.0
+                    if allAging then [ NeedsDepth pos ] else [])
 
         let qualityNeed = if avg < 65.0 then [ NeedsQualityUpgrade(int avg) ] else []
 
         gkNeeds @ outfieldNeeds @ qualityNeed
 
-    let assessSales (coach: Staff) (squad: Player list) : PlayerId list =
+    let assessSales (coach: Staff) (currentDate: System.DateTime) (squad: Player list) : PlayerId list =
         let avg = averageSkill squad
         let loyalty = ManagerPersonality.loyalty coach
+
+        let positionCounts =
+            allOutfieldPositions
+            |> List.map (fun pos ->
+                pos, squad |> List.filter (fun p -> p.Position = pos && p.Status = Available) |> List.length)
+            |> Map.ofList
 
         squad
         |> List.filter (fun p ->
@@ -79,18 +97,43 @@ module SquadAnalysis =
                 | Contracted(_, c) -> c.ExpiryYear <= 0
                 | _ -> false
 
-            isWeak && isExpiring && not (Stats.bernoulli loyalty))
+            let isOldAndExpiring =
+                match p.Affiliation with
+                | Contracted(_, c) -> Player.age currentDate p > 32 && c.ExpiryYear <= 1
+                | _ -> false
+
+            let isExcessCoverage =
+                let count = positionCounts |> Map.tryFind p.Position |> Option.defaultValue 0
+                count >= 3 && float p.CurrentSkill < avg - 5.0
+
+            let sellChance =
+                if isWeak && isExpiring then 0.85
+                elif isOldAndExpiring then 0.6
+                elif isExcessCoverage then loyalty |> fun l -> 0.3 * (1.0 - l)
+                else 0.0
+
+            bernoulli sellChance)
         |> List.map _.Id
 
 module TargetSelection =
 
     let private perceivedSkill (coach: Staff) (p: Player) : float =
         let accuracy = ManagerPersonality.scoutingAccuracy coach
-        float p.CurrentSkill * (0.8 + accuracy * 0.4)
+        let mean = float p.CurrentSkill * (0.8 + accuracy * 0.4)
+        let stdDev = (1.0 - accuracy) * 12.0
+        normalFloat mean stdDev (float p.CurrentSkill * 0.5) (float p.CurrentSkill * 1.5)
+
+    let private perceivedPotential (coach: Staff) (p: Player) : float =
+        let accuracy = ManagerPersonality.scoutingAccuracy coach
+        let youthFocus = ManagerPersonality.youthFocus coach
+        let mean = float p.PotentialSkill * (0.7 + accuracy * 0.3)
+        let stdDev = (1.0 - accuracy) * 15.0 * (1.0 - youthFocus * 0.5)
+        normalFloat mean stdDev (float p.CurrentSkill) 200.0
 
     let private potentialBonus (coach: Staff) (p: Player) : float =
-        if ManagerPersonality.youthFocus coach > 0.6 then
-            float (p.PotentialSkill - p.CurrentSkill) * 0.3
+        if ManagerPersonality.youthFocus coach > 0.5 then
+            let perceived = perceivedPotential coach p
+            (perceived - float p.CurrentSkill) * ManagerPersonality.youthFocus coach * 0.4
         else
             0.0
 
@@ -98,14 +141,15 @@ module TargetSelection =
         let base' = perceivedSkill coach p + potentialBonus coach p
 
         match need with
-        | NeedsPosition pos when p.Position = pos -> base' + 20.0
+        | NeedsPosition pos when p.Position = pos -> base' + 25.0
         | NeedsDepth pos when p.Position = pos -> base' + 10.0
-        | NeedsQualityUpgrade minSkill when p.CurrentSkill > minSkill -> base'
+        | NeedsQualityUpgrade minSkill when p.CurrentSkill > minSkill -> base' * 0.8
         | _ -> 0.0
 
     let private maxFeeFor (coach: Staff) (budget: decimal) (p: Player) : decimal =
         let aggression = decimal (ManagerPersonality.spendingAggression coach budget)
-        suggestedFee p * (0.85m + aggression * 0.4m)
+        let riskMult = decimal (0.85 + ManagerPersonality.riskTolerance coach * 0.3)
+        suggestedFee p * riskMult * (0.85m + aggression * 0.4m)
 
     let selectTargets
         (coach: Staff)
@@ -133,16 +177,20 @@ module ManagerAI =
 
     let private budgetAllocation (coach: Staff) (budget: decimal) (needs: SquadNeed list) : decimal =
         let aggression = ManagerPersonality.spendingAggression coach budget
+        let riskTolerance = ManagerPersonality.riskTolerance coach
 
         let urgency =
             needs
-            |> List.filter (function
-                | NeedsPosition _ -> true
-                | _ -> false)
-            |> List.length
-            |> float
+            |> List.sumBy (function
+                | NeedsPosition _ -> 2.0
+                | NeedsDepth _ -> 1.0
+                | NeedsQualityUpgrade _ -> 0.5)
 
-        budget * decimal (aggression * (1.0 + urgency * 0.1)) * 0.4m
+        let urgencyMult = 1.0 + urgency * 0.08
+        let riskMult = 0.3 + riskTolerance * 0.3
+
+        budget * decimal (aggression * urgencyMult * riskMult)
+        |> fun b -> min b (budget * 0.7m)
 
     let private transferCandidates (clubId: ClubId) (gs: GameState) : Player list =
         gs.Players
@@ -159,8 +207,8 @@ module ManagerAI =
         match Map.tryFind clubId gs.Clubs, GameState.headCoach clubId gs with
         | Some club, Some coach ->
             let squad = GameState.getSquad clubId gs
-            let needs = SquadAnalysis.assessNeeds squad
-            let toSell = SquadAnalysis.assessSales coach squad
+            let needs = SquadAnalysis.assessNeeds gs.CurrentDate squad
+            let toSell = SquadAnalysis.assessSales coach gs.CurrentDate squad
             let candidates = transferCandidates clubId gs
             let targets = TargetSelection.selectTargets coach club needs candidates
             let budget = budgetAllocation coach club.Budget needs
