@@ -3,30 +3,13 @@ namespace FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
 
-type SquadNeed =
-    | NeedsPosition of Position
-    | NeedsDepth of Position
-    | NeedsQualityUpgrade of aboveSkill: int
-
-type TransferTarget =
-    { PlayerId: PlayerId
-      Priority: float
-      MaxFee: decimal }
-
-type ManagerIntent =
-    { ClubId: ClubId
-      CoachId: StaffId
-      Needs: SquadNeed list
-      Targets: TransferTarget list
-      PlayersToSell: PlayerId list
-      BudgetAllocation: decimal }
-
 module ManagerPersonality =
 
     let private norm (v: int) = float v / 20.0
 
     let ambition (coach: Staff) =
-        (norm coach.Mental.Determination + norm coach.Knowledge.JudgingPlayerPotential) / 2.0
+        (norm coach.Mental.Determination + norm coach.Knowledge.JudgingPlayerPotential)
+        / 2.0
 
     let riskTolerance (coach: Staff) =
         (norm coach.Mental.Adaptability + norm coach.Mental.Determination) / 2.0
@@ -35,7 +18,9 @@ module ManagerPersonality =
         norm coach.Knowledge.JudgingPlayerPotential
 
     let scoutingAccuracy (coach: Staff) =
-        (norm coach.Knowledge.JudgingPlayerAbility + norm coach.Knowledge.JudgingPlayerPotential) / 2.0
+        (norm coach.Knowledge.JudgingPlayerAbility
+         + norm coach.Knowledge.JudgingPlayerPotential)
+        / 2.0
 
     let loyalty (coach: Staff) =
         (norm coach.Mental.LevelOfDiscipline + norm coach.Mental.PeopleManagement) / 2.0
@@ -55,8 +40,10 @@ module SquadAnalysis =
         |> List.length
 
     let private averageSkill (squad: Player list) =
-        if squad.IsEmpty then 0.0
-        else squad |> List.averageBy (fun p -> float p.CurrentSkill)
+        if squad.IsEmpty then
+            0.0
+        else
+            squad |> List.averageBy (fun p -> float p.CurrentSkill)
 
     let assessNeeds (squad: Player list) : SquadNeed list =
         let avg = averageSkill squad
@@ -75,9 +62,7 @@ module SquadAnalysis =
                 | 1 -> [ NeedsDepth pos ]
                 | _ -> [])
 
-        let qualityNeed =
-            if avg < 65.0 then [ NeedsQualityUpgrade(int avg) ]
-            else []
+        let qualityNeed = if avg < 65.0 then [ NeedsQualityUpgrade(int avg) ] else []
 
         gkNeeds @ outfieldNeeds @ qualityNeed
 
@@ -88,10 +73,12 @@ module SquadAnalysis =
         squad
         |> List.filter (fun p ->
             let isWeak = float p.CurrentSkill < avg - 15.0
+
             let isExpiring =
                 match p.Affiliation with
                 | Contracted(_, c) -> c.ExpiryYear <= 0
                 | _ -> false
+
             isWeak && isExpiring && not (Stats.bernoulli loyalty))
         |> List.map _.Id
 
@@ -109,6 +96,7 @@ module TargetSelection =
 
     let private scoreAgainstNeed (coach: Staff) (need: SquadNeed) (p: Player) : float =
         let base' = perceivedSkill coach p + potentialBonus coach p
+
         match need with
         | NeedsPosition pos when p.Position = pos -> base' + 20.0
         | NeedsDepth pos when p.Position = pos -> base' + 10.0
@@ -145,11 +133,15 @@ module ManagerAI =
 
     let private budgetAllocation (coach: Staff) (budget: decimal) (needs: SquadNeed list) : decimal =
         let aggression = ManagerPersonality.spendingAggression coach budget
+
         let urgency =
             needs
-            |> List.filter (function NeedsPosition _ -> true | _ -> false)
+            |> List.filter (function
+                | NeedsPosition _ -> true
+                | _ -> false)
             |> List.length
             |> float
+
         budget * decimal (aggression * (1.0 + urgency * 0.1)) * 0.4m
 
     let private transferCandidates (clubId: ClubId) (gs: GameState) : Player list =

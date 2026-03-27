@@ -8,7 +8,8 @@ module FormationData =
         { Index = index
           Role = pos
           X = x
-          Y = y }
+          Y = y
+          PlayerId = None }
 
     let getFormation (formation: Formation) : LineupSlot list =
         match formation with

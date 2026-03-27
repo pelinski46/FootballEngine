@@ -30,7 +30,9 @@ type TransferRecord =
 module TransferNegotiation =
 
     let private minAcceptableMultiplier = 0.85m
+
     let private clubBudgetSafetyFactor = 1.2m
+
     let private reputationGapThreshold = 2000
 
     let private playerWillAccept (club: Club) (p: Player) (salary: decimal) =

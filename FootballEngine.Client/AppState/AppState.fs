@@ -42,7 +42,31 @@ module AppState =
         { state with
             LogMessages = msg :: state.LogMessages |> List.truncate 30 }
 
-    let private buildNewLineupSlots (formation: Formation) (existing: ClubLineup option) =
+    let private headCoach (clubId: ClubId) (gs: GameState) : Staff option =
+        gs.Staff
+        |> Map.values
+        |> Seq.tryFind (fun s -> s.Role = HeadCoach && s.Contract |> Option.map (fun c -> c.ClubId) = Some clubId)
+
+    let private getCurrentLineup (gs: GameState) (clubId: ClubId) : Lineup option =
+        headCoach clubId gs
+        |> Option.bind (fun coach -> coach.Attributes.Coaching.Lineup)
+
+    let private setCurrentLineup (gs: GameState) (clubId: ClubId) (lineup: Lineup option) : GameState =
+        match headCoach clubId gs with
+        | Some coach ->
+            let updatedCoach =
+                { coach with
+                    Attributes =
+                        { coach.Attributes with
+                            Coaching =
+                                { coach.Attributes.Coaching with
+                                    Lineup = lineup } } }
+
+            { gs with
+                Staff = gs.Staff |> Map.add coach.Id updatedCoach }
+        | None -> gs
+
+    let private buildNewLineupSlots (formation: Formation) (existing: Lineup option) =
         let newFormationSlots = FormationData.getFormation formation
 
         match existing with
@@ -145,30 +169,39 @@ module AppState =
             Cmd.none
 
         | DropPlayerInSlot(targetIdx, pId) ->
-            let team = state.GameState.Clubs[state.GameState.UserClubId]
+            let clubId = state.GameState.UserClubId
+            let currentLineup = getCurrentLineup state.GameState clubId
 
-            let lineup =
-                team.CurrentLineup
-                |> Option.defaultValue
-                    { Formation = state.SelectedTactics
-                      TeamTactics = "Balanced"
-                      Slots =
-                        FormationData.getFormation state.SelectedTactics
-                        |> List.map (fun fs ->
-                            { Index = fs.Index
-                              Role = fs.Role
-                              X = fs.X
-                              Y = fs.Y
-                              PlayerId = None })
-                        |> List.sortBy _.Index }
+            let defaultLineup =
+                { Formation = state.SelectedTactics
+                  Tactics = Balanced
+                  Slots =
+                    FormationData.getFormation state.SelectedTactics
+                    |> List.map (fun fs ->
+                        { Index = fs.Index
+                          Role = fs.Role
+                          X = fs.X
+                          Y = fs.Y
+                          PlayerId = None })
+                    |> List.sortBy _.Index }
 
-            let updatedTeam =
-                { team with
-                    CurrentLineup = Some(Lineup.swapPlayer targetIdx pId lineup) }
+            let lineup = currentLineup |> Option.defaultValue defaultLineup
 
-            let newGs =
-                { state.GameState with
-                    Clubs = state.GameState.Clubs.Add(team.Id, updatedTeam) }
+            let swapPlayer (idx: int) (pid: PlayerId) (lineup: Lineup) : Lineup =
+                let updatedSlots =
+                    lineup.Slots
+                    |> List.map (fun slot ->
+                        if slot.Index = idx then
+                            { slot with PlayerId = Some pid }
+                        else if slot.PlayerId = Some pid then
+                            { slot with PlayerId = None }
+                        else
+                            slot)
+
+                { lineup with Slots = updatedSlots }
+
+            let newLineup = swapPlayer targetIdx pId lineup
+            let newGs = setCurrentLineup state.GameState clubId (Some newLineup)
 
             { state with
                 GameState = newGs
@@ -184,20 +217,16 @@ module AppState =
             Cmd.none
 
         | SetTactics formation ->
-            let userClub = state.GameState.Clubs[state.GameState.UserClubId]
-            let newSlots = buildNewLineupSlots formation userClub.CurrentLineup
+            let clubId = state.GameState.UserClubId
+            let currentLineup = getCurrentLineup state.GameState clubId
+            let newSlots = buildNewLineupSlots formation currentLineup
 
-            let updatedClub =
-                { userClub with
-                    CurrentLineup =
-                        Some
-                            { Formation = formation
-                              TeamTactics = "Balanced"
-                              Slots = newSlots } }
+            let newLineup =
+                { Formation = formation
+                  Tactics = Balanced
+                  Slots = newSlots }
 
-            let newGs =
-                { state.GameState with
-                    Clubs = state.GameState.Clubs |> Map.add updatedClub.Id updatedClub }
+            let newGs = setCurrentLineup state.GameState clubId (Some newLineup)
 
             { state with
                 GameState = newGs

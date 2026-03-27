@@ -100,6 +100,35 @@ module Lineup =
                             { coach.Attributes.Coaching with
                                 Lineup = Some lineup } } }
 
+    let ensureForClub (clubId: ClubId) (gs: GameState) : GameState =
+        let club = gs.Clubs[clubId]
+
+        match GameState.headCoach clubId gs with
+        | None -> gs
+        | Some coach ->
+            let isComplete =
+                coach.Attributes.Coaching.Lineup
+                |> Option.map (fun lu -> lu.Slots |> List.filter (fun s -> s.PlayerId.IsSome) |> List.length = 11)
+                |> Option.defaultValue false
+
+            if isComplete then
+                gs
+            else
+                let squad = club.PlayerIds |> List.choose gs.Players.TryFind
+                let updatedCoach = autoLineup coach squad (bestFormation squad)
+
+                { gs with
+                    Staff = gs.Staff |> Map.add coach.Id updatedCoach }
+
+    let ensureForFixtures (fixtures: (MatchId * MatchFixture) list) (gs: GameState) : GameState =
+        let clubIds =
+            fixtures
+            |> List.collect (fun (_, f) -> [ f.HomeClubId; f.AwayClubId ])
+            |> List.distinct
+
+        (gs, clubIds)
+        ||> List.fold (fun currentGs clubId -> ensureForClub clubId currentGs)
+
     let swapPlayer (targetIdx: int) (pId: PlayerId) (lineup: Lineup) : Lineup =
         let slotsMap = lineup.Slots |> List.map (fun s -> s.Index, s.PlayerId) |> Map.ofList
 

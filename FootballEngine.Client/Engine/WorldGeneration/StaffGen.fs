@@ -22,7 +22,9 @@ module StaffGen =
               SetPieces = mid
               Tactical = high
               Technical = high
-              WorkingWithYoungsters = mid }
+              WorkingWithYoungsters = mid
+              PreferredFormation = None
+              Lineup = None }
         | AssistantManager ->
             { Attacking = high
               Defending = high
@@ -32,7 +34,9 @@ module StaffGen =
               SetPieces = mid
               Tactical = high
               Technical = mid
-              WorkingWithYoungsters = mid }
+              WorkingWithYoungsters = mid
+              PreferredFormation = None
+              Lineup = None }
         | FirstTeamCoach ->
             { Attacking = high
               Defending = high
@@ -42,7 +46,9 @@ module StaffGen =
               SetPieces = mid
               Tactical = mid
               Technical = high
-              WorkingWithYoungsters = low }
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
         | GoalkeeperCoach ->
             { Attacking = low
               Defending = mid
@@ -52,7 +58,9 @@ module StaffGen =
               SetPieces = low
               Tactical = low
               Technical = mid
-              WorkingWithYoungsters = low }
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
         | FitnessCoach ->
             { Attacking = low
               Defending = low
@@ -62,7 +70,9 @@ module StaffGen =
               SetPieces = low
               Tactical = low
               Technical = low
-              WorkingWithYoungsters = mid }
+              WorkingWithYoungsters = mid
+              PreferredFormation = None
+              Lineup = None }
         | HeadOfYouthDevelopment ->
             { Attacking = mid
               Defending = mid
@@ -72,7 +82,9 @@ module StaffGen =
               SetPieces = low
               Tactical = mid
               Technical = mid
-              WorkingWithYoungsters = high }
+              WorkingWithYoungsters = high
+              PreferredFormation = None
+              Lineup = None }
         | Scout ->
             { Attacking = low
               Defending = low
@@ -82,7 +94,9 @@ module StaffGen =
               SetPieces = low
               Tactical = mid
               Technical = low
-              WorkingWithYoungsters = mid }
+              WorkingWithYoungsters = mid
+              PreferredFormation = None
+              Lineup = None }
         | Physio ->
             { Attacking = low
               Defending = low
@@ -92,7 +106,9 @@ module StaffGen =
               SetPieces = low
               Tactical = low
               Technical = low
-              WorkingWithYoungsters = low }
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
         | SportsScientist ->
             { Attacking = low
               Defending = low
@@ -102,7 +118,9 @@ module StaffGen =
               SetPieces = low
               Tactical = low
               Technical = low
-              WorkingWithYoungsters = low }
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
         | PerformanceAnalyst ->
             { Attacking = mid
               Defending = mid
@@ -112,7 +130,9 @@ module StaffGen =
               SetPieces = mid
               Tactical = high
               Technical = low
-              WorkingWithYoungsters = low }
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
         | RecruitmentAnalyst ->
             { Attacking = low
               Defending = low
@@ -122,7 +142,9 @@ module StaffGen =
               SetPieces = low
               Tactical = mid
               Technical = low
-              WorkingWithYoungsters = mid }
+              WorkingWithYoungsters = mid
+              PreferredFormation = None
+              Lineup = None }
         | LoanManager ->
             { Attacking = low
               Defending = low
@@ -132,7 +154,71 @@ module StaffGen =
               SetPieces = low
               Tactical = mid
               Technical = low
-              WorkingWithYoungsters = high }
+              WorkingWithYoungsters = high
+              PreferredFormation = None
+              Lineup = None }
+        | TechnicalDirector ->
+            { Attacking = low
+              Defending = low
+              Fitness = low
+              Goalkeeping = low
+              Mental = mid
+              SetPieces = low
+              Tactical = mid
+              Technical = low
+              WorkingWithYoungsters = low
+              PreferredFormation = None
+              Lineup = None }
+
+    let private knowledgeFor (role: StaffRole) =
+        let high = normalInt 14.0 2.0 10 20
+        let mid = normalInt 10.0 2.0 5 16
+        let low = normalInt 6.0 2.0 1 10
+
+        match role with
+        | Scout
+        | RecruitmentAnalyst ->
+            { JudgingPlayerAbility = high
+              JudgingPlayerPotential = high
+              JudgingStaffAbility = mid
+              Negotiating = mid
+              TacticalKnowledge = mid }
+        | HeadCoach
+        | AssistantManager ->
+            { JudgingPlayerAbility = high
+              JudgingPlayerPotential = high
+              JudgingStaffAbility = mid
+              Negotiating = high
+              TacticalKnowledge = high }
+        | HeadOfYouthDevelopment
+        | LoanManager ->
+            { JudgingPlayerAbility = mid
+              JudgingPlayerPotential = high
+              JudgingStaffAbility = low
+              Negotiating = mid
+              TacticalKnowledge = mid }
+        | PerformanceAnalyst ->
+            { JudgingPlayerAbility = high
+              JudgingPlayerPotential = mid
+              JudgingStaffAbility = low
+              Negotiating = low
+              TacticalKnowledge = high }
+        | TechnicalDirector ->
+            { JudgingPlayerAbility = high
+              JudgingPlayerPotential = high
+              JudgingStaffAbility = high
+              Negotiating = high
+              TacticalKnowledge = mid }
+        | FirstTeamCoach
+        | GoalkeeperCoach
+        | FitnessCoach
+        | Physio
+        | SportsScientist ->
+            { JudgingPlayerAbility = low
+              JudgingPlayerPotential = low
+              JudgingStaffAbility = low
+              Negotiating = low
+              TacticalKnowledge = low }
 
     let private scoutingFor (role: StaffRole) =
         let high = normalInt 14.0 2.0 10 20
@@ -142,31 +228,32 @@ module StaffGen =
         match role with
         | Scout
         | RecruitmentAnalyst ->
-            { JudgingAbility = high
-              JudgingPotential = high
-              Adaptability = high }
+            { NetworkReach = high
+              DataAnalysis = high
+              MarketKnowledge = high }
         | HeadCoach
-        | AssistantManager ->
-            { JudgingAbility = high
-              JudgingPotential = high
-              Adaptability = mid }
+        | AssistantManager
+        | TechnicalDirector ->
+            { NetworkReach = mid
+              DataAnalysis = mid
+              MarketKnowledge = high }
         | HeadOfYouthDevelopment
         | LoanManager ->
-            { JudgingAbility = mid
-              JudgingPotential = high
-              Adaptability = mid }
+            { NetworkReach = mid
+              DataAnalysis = mid
+              MarketKnowledge = mid }
         | PerformanceAnalyst ->
-            { JudgingAbility = high
-              JudgingPotential = mid
-              Adaptability = mid }
+            { NetworkReach = low
+              DataAnalysis = high
+              MarketKnowledge = mid }
         | FirstTeamCoach
         | GoalkeeperCoach
         | FitnessCoach
         | Physio
         | SportsScientist ->
-            { JudgingAbility = low
-              JudgingPotential = low
-              Adaptability = low }
+            { NetworkReach = low
+              DataAnalysis = low
+              MarketKnowledge = low }
 
     let private medicalFor (role: StaffRole) =
         let high = normalInt 14.0 2.0 10 20
@@ -191,7 +278,8 @@ module StaffGen =
         | Scout
         | PerformanceAnalyst
         | RecruitmentAnalyst
-        | LoanManager ->
+        | LoanManager
+        | TechnicalDirector ->
             { Physiotherapy = low
               SportsScience = low }
 
@@ -208,7 +296,8 @@ module StaffGen =
             { PerformanceAnalysis = mid
               RecruitmentAnalysis = high }
         | HeadCoach
-        | AssistantManager ->
+        | AssistantManager
+        | TechnicalDirector ->
             { PerformanceAnalysis = mid
               RecruitmentAnalysis = mid }
         | FirstTeamCoach
@@ -232,91 +321,75 @@ module StaffGen =
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = high
-              ManManagement = high
-              Motivating = high
-              PlayerKnowledge = high
-              YoungsterKnowledge = mid }
+              PeopleManagement = high
+              Motivating = high }
         | AssistantManager ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = mid
-              ManManagement = high
-              Motivating = high
-              PlayerKnowledge = high
-              YoungsterKnowledge = mid }
+              PeopleManagement = high
+              Motivating = high }
         | FirstTeamCoach ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = mid
-              ManManagement = mid
-              Motivating = mid
-              PlayerKnowledge = high
-              YoungsterKnowledge = low }
+              PeopleManagement = mid
+              Motivating = mid }
         | GoalkeeperCoach ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = mid
-              ManManagement = low
-              Motivating = mid
-              PlayerKnowledge = mid
-              YoungsterKnowledge = low }
+              PeopleManagement = low
+              Motivating = mid }
         | FitnessCoach ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = high
-              ManManagement = low
-              Motivating = mid
-              PlayerKnowledge = low
-              YoungsterKnowledge = low }
+              PeopleManagement = low
+              Motivating = mid }
         | HeadOfYouthDevelopment ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = mid
-              ManManagement = mid
-              Motivating = mid
-              PlayerKnowledge = high
-              YoungsterKnowledge = high }
+              PeopleManagement = mid
+              Motivating = mid }
         | Scout ->
             { Adaptability = high
               Determination = high
               LevelOfDiscipline = low
-              ManManagement = low
-              Motivating = low
-              PlayerKnowledge = high
-              YoungsterKnowledge = high }
+              PeopleManagement = low
+              Motivating = low }
         | Physio
         | SportsScientist ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = mid
-              ManManagement = low
-              Motivating = low
-              PlayerKnowledge = low
-              YoungsterKnowledge = low }
+              PeopleManagement = low
+              Motivating = low }
         | PerformanceAnalyst ->
             { Adaptability = mid
               Determination = high
               LevelOfDiscipline = low
-              ManManagement = low
-              Motivating = low
-              PlayerKnowledge = high
-              YoungsterKnowledge = low }
+              PeopleManagement = low
+              Motivating = low }
         | RecruitmentAnalyst ->
             { Adaptability = high
               Determination = high
               LevelOfDiscipline = low
-              ManManagement = low
-              Motivating = low
-              PlayerKnowledge = high
-              YoungsterKnowledge = high }
+              PeopleManagement = low
+              Motivating = low }
         | LoanManager ->
             { Adaptability = high
               Determination = mid
               LevelOfDiscipline = low
-              ManManagement = high
-              Motivating = mid
-              PlayerKnowledge = high
-              YoungsterKnowledge = high }
+              PeopleManagement = high
+              Motivating = mid }
+        | TechnicalDirector ->
+            { Adaptability = mid
+              Determination = high
+              LevelOfDiscipline = mid
+              PeopleManagement = high
+              Motivating = mid }
 
     let private badgeForRole (role: StaffRole) (reputation: int) =
         match role with
@@ -337,7 +410,8 @@ module StaffGen =
         | SportsScientist
         | PerformanceAnalyst
         | RecruitmentAnalyst
-        | LoanManager -> NoneBadge
+        | LoanManager
+        | TechnicalDirector -> NoneBadge
 
     let private reputationFor (leagueLevel: int) (role: StaffRole) =
         match role with
@@ -347,6 +421,10 @@ module StaffGen =
             | 1 -> normalInt 3500.0 800.0 500 6000
             | _ -> normalInt 1500.0 600.0 100 4000
         | AssistantManager ->
+            match leagueLevel with
+            | 0 -> normalInt 4000.0 800.0 1000 7000
+            | _ -> normalInt 2000.0 600.0 200 5000
+        | TechnicalDirector ->
             match leagueLevel with
             | 0 -> normalInt 4000.0 800.0 1000 7000
             | _ -> normalInt 2000.0 600.0 200 5000
@@ -385,6 +463,7 @@ module StaffGen =
               Scouting = scoutingFor role
               Medical = medicalFor role
               Analysis = analysisFor role }
+          Knowledge = knowledgeFor role
           Mental = mentalFor role
           Badge = badgeForRole role reputation
           Reputation = reputation

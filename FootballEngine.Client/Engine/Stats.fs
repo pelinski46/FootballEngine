@@ -5,6 +5,7 @@ open FSharp.Stats
 open FSharp.Stats.Distributions
 
 module Stats =
+    let clamp (lo: int) hi v = Math.Clamp(v, lo, hi)
 
     let normalInt (mean: float) (stdDev: float) (lo: int) (hi: int) =
         Continuous.Normal.Sample mean stdDev

@@ -29,20 +29,29 @@ module Db =
                     )
                     |> ignore
 
-                    for KeyValue(_, club) in state.Clubs do
+                    for club in state.Clubs.Values do
                         conn.InsertOrReplace(toClubEntity club) |> ignore
 
-                        match club.CurrentLineup with
-                        | None -> ()
-                        | Some lineup ->
-                            conn.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", club.Id) |> ignore
+                    for player in state.Players.Values do
+                        conn.InsertOrReplace(toPlayerEntity player) |> ignore
+
+                    for staff in state.Staff.Values do
+                        conn.InsertOrReplace(toStaffEntity staff) |> ignore
+
+                    // Save lineups only for head coaches
+                    for staff in state.Staff.Values do
+                        match staff.Role, staff.Contract, staff.Attributes.Coaching.Lineup with
+                        | HeadCoach, Some contract, Some lineup ->
+                            // Delete existing slots for this club before inserting new ones
+                            conn.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", contract.ClubId)
+                            |> ignore
 
                             for slot in lineup.Slots do
                                 conn.Insert(
                                     { LineupSlotEntity.Id = 0
-                                      ClubId = club.Id
+                                      ClubId = contract.ClubId
                                       FormationName = Serializers.formationToString lineup.Formation
-                                      TacticsName = lineup.TeamTactics
+                                      TacticsName = Serializers.tacticsToString lineup.Tactics
                                       SlotIndex = slot.Index
                                       Role = string slot.Role
                                       X = slot.X
@@ -50,18 +59,13 @@ module Db =
                                       PlayerId = slot.PlayerId |> Option.defaultValue -1 }
                                 )
                                 |> ignore
-
-                    for KeyValue(_, player) in state.Players do
-                        conn.InsertOrReplace(toPlayerEntity player) |> ignore
-
-                    for KeyValue(_, staff) in state.Staff do
-                        conn.InsertOrReplace(toStaffEntity staff) |> ignore
+                        | _ -> ()
 
                     conn.DeleteAll<CompetitionClubEntity>() |> ignore
                     conn.DeleteAll<LeagueStandingEntity>() |> ignore
                     conn.DeleteAll<MatchFixtureEntity>() |> ignore
 
-                    for KeyValue(_, comp) in state.Competitions do
+                    for comp in state.Competitions.Values do
                         conn.InsertOrReplace(toCompetitionEntity comp) |> ignore
 
                         for clubId in comp.ClubIds do
@@ -72,16 +76,16 @@ module Db =
                             )
                             |> ignore
 
-                        for KeyValue(_, fixture) in comp.Fixtures do
+                        for fixture in comp.Fixtures.Values do
                             conn.Insert(toFixtureEntity fixture) |> ignore
 
-                        for KeyValue(_, standing) in comp.Standings do
+                        for standing in comp.Standings.Values do
                             conn.Insert(toStandingEntity comp.Id standing) |> ignore
 
-                        for KeyValue(_, tie) in comp.KnockoutTies do
+                        for tie in comp.KnockoutTies.Values do
                             conn.InsertOrReplace(toKnockoutTieEntity comp.Id tie) |> ignore
 
-                    for KeyValue(_, country) in state.Countries do
+                    for country in state.Countries.Values do
                         conn.InsertOrReplace(toCountryEntity country) |> ignore)
         }
 
@@ -115,9 +119,56 @@ module Db =
                     let! clubEntities = db.Value.Table<ClubEntity>().ToListAsync()
 
                     let clubs =
-                        clubEntities
-                        |> Seq.map (toClubDomain players (List.ofSeq lineupSlots))
-                        |> Map.ofSeq
+                        clubEntities |> Seq.map (fun ce -> toClubDomain players staff ce) |> Map.ofSeq
+
+                    let lineupByClub =
+                        lineupSlots
+                        |> List.ofSeq
+                        |> List.groupBy (fun s -> s.ClubId)
+                        |> List.choose (fun (clubId, slots) ->
+                            match slots with
+                            | [] -> None
+                            | first :: _ ->
+                                let formation = Serializers.parseFormation first.FormationName
+                                let tactics = Serializers.parseTactics first.TacticsName
+
+                                let slotsList =
+                                    slots
+                                    |> List.sortBy (fun s -> s.SlotIndex)
+                                    |> List.map (fun s ->
+                                        { Index = s.SlotIndex
+                                          Role = Serializers.parsePosition s.Role
+                                          X = s.X
+                                          Y = s.Y
+                                          PlayerId = if s.PlayerId = -1 then None else Some s.PlayerId })
+
+                                Some(
+                                    clubId,
+                                    { Formation = formation
+                                      Tactics = tactics
+                                      Slots = slotsList }
+                                ))
+
+                    let updatedStaff =
+                        lineupByClub
+                        |> List.fold
+                            (fun (staffMap: Map<StaffId, Staff>) (clubId, lineup) ->
+                                let headCoach =
+                                    staffMap
+                                    |> Map.values
+                                    |> Seq.tryFind (fun s ->
+                                        s.Role = HeadCoach
+                                        && s.Contract |> Option.map (fun c -> c.ClubId) = Some clubId)
+
+                                match headCoach with
+                                | Some coach ->
+                                    let updatedCoach =
+                                        { coach with
+                                            Attributes.Coaching.Lineup = Some lineup }
+
+                                    staffMap |> Map.add coach.Id updatedCoach
+                                | None -> staffMap)
+                            staff
 
                     let! compEntities = db.Value.Table<CompetitionEntity>().ToListAsync()
 
@@ -146,7 +197,7 @@ module Db =
                               Season = meta.Season
                               Clubs = clubs
                               Players = players
-                              Staff = staff
+                              Staff = updatedStaff
                               Competitions = competitions
                               Countries = countries
                               UserClubId = meta.UserClubId

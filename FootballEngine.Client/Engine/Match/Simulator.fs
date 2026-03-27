@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open FootballEngine.Domain
 open FSharp.Stats.Distributions
+open FsToolkit.ErrorHandling
 open MatchState
 open MatchReferee
 open MatchManager
@@ -16,10 +17,6 @@ module MatchSimulator =
         | MissingLineup of clubName: string
         | IncompleteLineup of clubName: string * playerCount: int
         | SameClub of clubName: string
-
-    exception SimulationException of SimulationError
-
-    let private raise' e = raise (SimulationException e)
 
     let private fatigue (p: Player) (pressing: bool) =
         let base' = (100 - p.Physical.Stamina) / 20
@@ -40,7 +37,7 @@ module MatchSimulator =
     type private Queue = PriorityQueue<ScheduledEvent, int>
 
     let private clubIdOf (p: Player) (s: MatchState) =
-        if s.HomePlayers |> Array.exists (fun x -> x.Id = p.Id) then
+        if s.HomeSide.Players |> Array.exists (fun x -> x.Id = p.Id) then
             s.Home.Id
         else
             s.Away.Id
@@ -79,7 +76,6 @@ module MatchSimulator =
             s' |> updatePositions
 
         | ShotAttempt att -> tryShot att s
-
         | CardCheck(p, clubId, _) -> processCard p clubId second s
         | InjuryCheck(p, clubId) -> processInjury p clubId second s
 
@@ -95,9 +91,20 @@ module MatchSimulator =
         else
             slotY * 100.0, slotX * 100.0
 
-    let private extractLineup (headCoach: Staff) (players: Map<PlayerId, Player>) (isHome: bool) =
+    let private resolveCoach (club: Club) (staff: Map<StaffId, Staff>) : Result<Staff, SimulationError> =
+        staff
+        |> Map.values
+        |> Seq.tryFind (fun s -> s.Role = HeadCoach && s.Contract |> Option.map _.ClubId = Some club.Id)
+        |> Option.map Ok
+        |> Option.defaultValue (Error(MissingLineup club.Name))
+
+    let private extractLineup
+        (headCoach: Staff)
+        (players: Map<PlayerId, Player>)
+        (isHome: bool)
+        : Result<(Player * float * float)[], SimulationError> =
         match headCoach.Attributes.Coaching.Lineup with
-        | None -> raise' (MissingLineup headCoach.Name)
+        | None -> Error(MissingLineup headCoach.Name)
         | Some lu ->
             lu.Slots
             |> List.choose (fun s ->
@@ -105,8 +112,68 @@ module MatchSimulator =
                 |> Option.bind (fun pid ->
                     players
                     |> Map.tryFind pid
-                    |> Option.map (fun p -> let x, y = toCoords s.X s.Y isHome in p, x, y)))
+                    |> Option.map (fun p ->
+                        let x, y = toCoords s.X s.Y isHome
+                        p, x, y)))
             |> Array.ofList
+            |> Ok
+
+    let private validateLineups
+        (home: Club)
+        (homeData: 'a[])
+        (away: Club)
+        (awayData: 'a[])
+        : Result<unit, SimulationError> =
+        if home.Id = away.Id then
+            Error(SameClub home.Name)
+        elif homeData.Length <> 11 then
+            Error(IncompleteLineup(home.Name, homeData.Length))
+        elif awayData.Length <> 11 then
+            Error(IncompleteLineup(away.Name, awayData.Length))
+        else
+            Ok()
+
+    let private buildContext (homeData: (Player * float * float)[]) (awayData: (Player * float * float)[]) =
+        { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
+          AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
+
+    let private initState
+        (home: Club)
+        (homeCoach: Staff)
+        (hp: Player[])
+        (hPos: Map<PlayerId, float * float>)
+        (away: Club)
+        (awayCoach: Staff)
+        (ap: Player[])
+        (aPos: Map<PlayerId, float * float>)
+        : MatchState =
+        { Home = home
+          Away = away
+          HomeCoach = homeCoach
+          AwayCoach = awayCoach
+          Second = 0
+          HomeScore = 0
+          AwayScore = 0
+          BallPosition = 50.0, 50.0
+          Possession = Home
+          Momentum = 0.0
+          HomeSide =
+            { Players = hp
+              Conditions = hp |> Array.map _.Condition
+              Positions = hPos
+              BasePositions = hPos
+              Sidelined = Map.empty
+              Yellows = Map.empty
+              SubsUsed = 0 }
+          AwaySide =
+            { Players = ap
+              Conditions = ap |> Array.map _.Condition
+              Positions = aPos
+              BasePositions = aPos
+              Sidelined = Map.empty
+              Yellows = Map.empty
+              SubsUsed = 0 }
+          EventsRev = [] }
 
     let private initQueue (homeId: ClubId) (awayId: ClubId) =
         let q = Queue()
@@ -119,35 +186,6 @@ module MatchSimulator =
             q.Enqueue(SubstitutionCheck awayId, min * 60)
 
         q
-
-    let private initState (home: Club) (hp: Player[]) (away: Club) (ap: Player[]) (ctx: MatchContext) : MatchState =
-        { Home = home
-          Away = away
-          Second = 0
-          HomeScore = 0
-          AwayScore = 0
-          BallPosition = 50.0, 50.0
-          Possession = Home
-          Momentum = 0.0
-          HomePlayers = hp
-          AwayPlayers = ap
-          HomeConditions = hp |> Array.map _.Condition
-          AwayConditions = ap |> Array.map _.Condition
-          HomeSidelined = Map.empty
-          AwaySidelined = Map.empty
-          HomeYellows = Map.empty
-          AwayYellows = Map.empty
-          HomeSubsUsed = 0
-          AwaySubsUsed = 0
-          EventsRev = []
-          HomePositions = ctx.HomePositions
-          AwayPositions = ctx.AwayPositions
-          HomeBasePositions = ctx.HomePositions
-          AwayBasePositions = ctx.AwayPositions
-          HomeCoach = Map.empty
-          AwayCoach = failwith "todo"
-          HomeSide = failwith "todo"
-          AwaySide = failwith "todo" }
 
     let private runLoopFast (homeSquad: Player list) (awaySquad: Player list) (homeId: ClubId) (init: MatchState) =
         let q = initQueue init.Home.Id init.Away.Id
@@ -190,62 +228,68 @@ module MatchSimulator =
 
         s, snapshots.ToArray()
 
-    let private buildContext (homeData: (Player * float * float)[]) (awayData: (Player * float * float)[]) =
-        { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
-          AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
+    let private runFast
+        (home: Club)
+        (away: Club)
+        (players: Map<PlayerId, Player>)
+        (staff: Map<StaffId, Staff>)
+        : Result<int * int * MatchEvent list, SimulationError> =
+        result {
+            let! homeCoach = resolveCoach home staff
+            let! awayCoach = resolveCoach away staff
+            let! homeData = extractLineup homeCoach players true
+            let! awayData = extractLineup awayCoach players false
+            do! validateLineups home homeData away awayData
+            let ctx = buildContext homeData awayData
+            let hp = homeData |> Array.map (fun (p, _, _) -> p)
+            let ap = awayData |> Array.map (fun (p, _, _) -> p)
+            let homeSquad = home.PlayerIds |> List.choose players.TryFind
+            let awaySquad = away.PlayerIds |> List.choose players.TryFind
 
-    let private validateLineups (home: Club) (homeData: 'a[]) (away: Club) (awayData: 'a[]) =
-        if home.Id = away.Id then
-            raise' (SameClub home.Name)
+            let init =
+                initState home homeCoach hp ctx.HomePositions away awayCoach ap ctx.AwayPositions
 
-        if homeData.Length <> 11 then
-            raise' (IncompleteLineup(home.Name, homeData.Length))
+            let final = runLoopFast homeSquad awaySquad home.Id init
+            return final.HomeScore, final.AwayScore, final.EventsRev
+        }
 
-        if awayData.Length <> 11 then
-            raise' (IncompleteLineup(away.Name, awayData.Length))
+    let private run
+        (home: Club)
+        (away: Club)
+        (players: Map<PlayerId, Player>)
+        (staff: Map<StaffId, Staff>)
+        : Result<MatchReplay, SimulationError> =
+        result {
+            let! homeCoach = resolveCoach home staff
+            let! awayCoach = resolveCoach away staff
+            let! homeData = extractLineup homeCoach players true
+            let! awayData = extractLineup awayCoach players false
+            do! validateLineups home homeData away awayData
+            let ctx = buildContext homeData awayData
+            let hp = homeData |> Array.map (fun (p, _, _) -> p)
+            let ap = awayData |> Array.map (fun (p, _, _) -> p)
+            let homeSquad = home.PlayerIds |> List.choose players.TryFind
+            let awaySquad = away.PlayerIds |> List.choose players.TryFind
 
-    let private runFast (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
-        let homeData = extractLineup home players true
-        let awayData = extractLineup away players false
-        validateLineups home homeData away awayData
-        let ctx = buildContext homeData awayData
-        let hp = homeData |> Array.map (fun (p, _, _) -> p)
-        let ap = awayData |> Array.map (fun (p, _, _) -> p)
-        let homeSquad = home.PlayerIds |> List.choose players.TryFind
-        let awaySquad = away.PlayerIds |> List.choose players.TryFind
-        let final = runLoopFast homeSquad awaySquad home.Id (initState home hp away ap ctx)
-        final.HomeScore, final.AwayScore, final.EventsRev
+            let init =
+                initState home homeCoach hp ctx.HomePositions away awayCoach ap ctx.AwayPositions
 
-    let private run (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
-        let homeData = extractLineup home players true
-        let awayData = extractLineup away players false
-        validateLineups home homeData away awayData
-        let ctx = buildContext homeData awayData
-        let hp = homeData |> Array.map (fun (p, _, _) -> p)
-        let ap = awayData |> Array.map (fun (p, _, _) -> p)
-        let homeSquad = home.PlayerIds |> List.choose players.TryFind
-        let awaySquad = away.PlayerIds |> List.choose players.TryFind
-
-        let final, snapshots =
-            runLoop homeSquad awaySquad home.Id (initState home hp away ap ctx)
-
-        { Final = final; Snapshots = snapshots }
-
-    let simulate (home: Club) (away: Club) (players: Map<PlayerId, Player>) : int * int * MatchEvent list =
-        runFast home away players
+            let final, snapshots = runLoop homeSquad awaySquad home.Id init
+            return { Final = final; Snapshots = snapshots }
+        }
 
     let trySimulateMatch
         (home: Club)
         (away: Club)
         (players: Map<PlayerId, Player>)
+        (staff: Map<StaffId, Staff>)
         : Result<int * int * MatchEvent list, SimulationError> =
-        try
-            Ok(simulate home away players)
-        with SimulationException e ->
-            Error e
+        runFast home away players staff
 
-    let trySimulateMatchFull (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
-        try
-            Ok(run home away players)
-        with SimulationException e ->
-            Error e
+    let trySimulateMatchFull
+        (home: Club)
+        (away: Club)
+        (players: Map<PlayerId, Player>)
+        (staff: Map<StaffId, Staff>)
+        : Result<MatchReplay, SimulationError> =
+        run home away players staff

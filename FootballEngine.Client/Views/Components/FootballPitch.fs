@@ -33,7 +33,7 @@ module FootballPitch =
         let lineGlow = SolidColorBrush.Parse "#ffffff33"
 
 
-    let private stripedGrass (cfg: PitchConfig) =
+    let private stripedGrass  =
         Grid.create
             [ Grid.rowDefinitions "*,*,*,*,*,*,*,*,*,*,*,*"
               Grid.children
@@ -45,13 +45,6 @@ module FootballPitch =
 
     let private penaltyArea (cfg: PitchConfig) (isTop: bool) =
         let centerX = cfg.Width / 2.0
-
-        let topPos =
-            if isTop then
-                cfg.Margin
-            else
-                cfg.Height - cfg.Margin - 120.0
-
         let smallAreaH = 50.0
         let largeAreaH = 120.0
 
@@ -134,7 +127,7 @@ module FootballPitch =
                     yield! penaltyArea cfg false ] ]
 
 
-    let render formation (renderPlayer: FormationSlot -> IView) =
+    let render formation (renderPlayer: LineupSlot -> IView) =
         let cfg = defaultCfg
         let slots = getFormation formation
 
@@ -145,7 +138,7 @@ module FootballPitch =
               Viewbox.child (
                   Grid.create
                       [ Grid.children
-                            [ stripedGrass cfg
+                            [ stripedGrass 
                               markings cfg
 
                               Canvas.create

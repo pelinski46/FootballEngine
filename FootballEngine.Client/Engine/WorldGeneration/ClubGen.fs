@@ -98,7 +98,13 @@ module ClubGen =
 
         let staff =
             StaffGen.rolesForClub
-            |> List.map (fun role -> StaffGen.create (nextStaffId ()) role clubId countryData entry.LeagueLevel year)
+            |> List.map (fun role ->
+                let generatedStaff =
+                    StaffGen.create (nextStaffId ()) role clubId countryData entry.LeagueLevel year
+
+                match role with
+                | HeadCoach -> autoLineup generatedStaff players (bestFormation players)
+                | _ -> generatedStaff)
 
         let club =
             { Id = clubId
@@ -106,13 +112,13 @@ module ClubGen =
               Nationality = countryData.Country.Code
               Reputation = reputation
               PlayerIds = players |> List.map _.Id
-              CurrentLineup = None
+              StaffIds = staff |> List.map _.Id
               Budget = budgetForLevel reputation entry.LeagueLevel
               Morale = moraleForReputation reputation
               BoardObjective = boardObjectiveFor entry.LeagueLevel reputation }
 
-        let clubWithLineup = autoLineup club players (bestFormation players)
+
         let playerMap = players |> List.map (fun p -> p.Id, p) |> Map.ofList
         let staffMap = staff |> List.map (fun s -> s.Id, s) |> Map.ofList
 
-        clubWithLineup, playerMap, staffMap
+        club, playerMap, staffMap

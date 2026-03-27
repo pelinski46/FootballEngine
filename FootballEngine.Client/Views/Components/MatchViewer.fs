@@ -245,7 +245,7 @@ module MatchViewer =
                           TextBlock.verticalAlignment VerticalAlignment.Center ]
                     TextBlock.create
                         [ TextBlock.text "IN POSSESSION"
-                          TextBlock.foreground (Theme.TextMuted)
+                          TextBlock.foreground Theme.TextMuted
                           TextBlock.fontSize 9.0
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
@@ -367,13 +367,18 @@ module MatchViewer =
                             [ yield! pitchMarkings ()
                               yield!
                                   drawTeam
-                                      s.HomePlayers
-                                      s.HomeConditions
-                                      s.HomePositions
-                                      s.HomeSidelined
+                                      s.HomeSide.Players
+                                      s.HomeSide.Conditions
+                                      s.HomeSide.Positions
+                                      s.HomeSide.Sidelined
                                       Theme.AccentAlt
                               yield!
-                                  drawTeam s.AwayPlayers s.AwayConditions s.AwayPositions s.AwaySidelined Theme.Danger
+                                  drawTeam
+                                      s.AwaySide.Players
+                                      s.AwaySide.Conditions
+                                      s.AwaySide.Positions
+                                      s.AwaySide.Sidelined
+                                      Theme.Danger
                               yield! drawBall bcx bcy
                               possessionOverlay s
                               scoreOverlay s

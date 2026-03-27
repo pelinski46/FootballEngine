@@ -169,11 +169,7 @@ module Mappers =
           Morale = club.Morale
           BoardObjective = boardObjectiveToString club.BoardObjective }
 
-    let toClubDomain
-        (players: Map<PlayerId, Player>)
-        (lineupSlots: LineupSlotEntity list)
-        (ce: ClubEntity)
-        : ClubId * Club =
+    let toClubDomain (players: Map<PlayerId, Player>) (staff: Map<StaffId, Staff>) (ce: ClubEntity) : ClubId * Club =
         let playerIds =
             players
             |> Map.values
@@ -184,26 +180,16 @@ module Mappers =
                 | _ -> None)
             |> List.ofSeq
 
-        let slots =
-            lineupSlots
-            |> List.filter (fun ls -> ls.ClubId = ce.Id)
-            |> List.sortBy _.SlotIndex
+        let staffIds =
+            staff
+            |> Map.values
+            |> Seq.choose (fun s ->
+                match s.Contract with
+                | Some c when c.ClubId = ce.Id -> Some s.Id
+                | _ -> None)
+            |> List.ofSeq
 
-        let lineup =
-            match slots with
-            | [] -> None
-            | first :: _ ->
-                Some
-                    { Formation = parseFormation first.FormationName
-                      TeamTactics = first.TacticsName
-                      Slots =
-                        slots
-                        |> List.map (fun s ->
-                            { Index = s.SlotIndex
-                              Role = parsePosition s.Role
-                              X = s.X
-                              Y = s.Y
-                              PlayerId = if s.PlayerId = -1 then None else Some s.PlayerId }) }
+
 
         ce.Id,
         { Id = ce.Id
@@ -211,7 +197,7 @@ module Mappers =
           Nationality = ce.Nationality
           Reputation = ce.Reputation
           PlayerIds = playerIds
-          CurrentLineup = lineup
+          StaffIds = staffIds
           Budget = ce.Budget
           Morale = ce.Morale
           BoardObjective = parseBoardObjective ce.BoardObjective }
@@ -244,9 +230,9 @@ module Mappers =
           CoachTactical = staff.Attributes.Coaching.Tactical
           CoachTechnical = staff.Attributes.Coaching.Technical
           CoachWorkingWithYoungsters = staff.Attributes.Coaching.WorkingWithYoungsters
-          ScoutJudgingAbility = staff.Attributes.Scouting.JudgingAbility
-          ScoutJudgingPotential = staff.Attributes.Scouting.JudgingPotential
-          ScoutAdaptability = staff.Attributes.Scouting.Adaptability
+          ScoutJudgingAbility = staff.Knowledge.JudgingPlayerAbility
+          ScoutJudgingPotential = staff.Knowledge.JudgingPlayerPotential
+          ScoutAdaptability = staff.Mental.Adaptability
           MedicalPhysiotherapy = staff.Attributes.Medical.Physiotherapy
           MedicalSportsScience = staff.Attributes.Medical.SportsScience
           AnalysisPerformance = staff.Attributes.Analysis.PerformanceAnalysis
@@ -254,10 +240,10 @@ module Mappers =
           MentalAdaptability = staff.Mental.Adaptability
           MentalDetermination = staff.Mental.Determination
           MentalLevelOfDiscipline = staff.Mental.LevelOfDiscipline
-          MentalManManagement = staff.Mental.ManManagement
+          MentalManManagement = staff.Mental.PeopleManagement
           MentalMotivating = staff.Mental.Motivating
-          MentalPlayerKnowledge = staff.Mental.PlayerKnowledge
-          MentalYoungsterKnowledge = staff.Mental.YoungsterKnowledge }
+          MentalPlayerKnowledge = 0
+          MentalYoungsterKnowledge = 0 }
 
     let toStaffDomain (e: StaffEntity) : StaffId * Staff =
         let contract =
@@ -291,25 +277,31 @@ module Mappers =
                   SetPieces = e.CoachSetPieces
                   Tactical = e.CoachTactical
                   Technical = e.CoachTechnical
-                  WorkingWithYoungsters = e.CoachWorkingWithYoungsters }
+                  WorkingWithYoungsters = e.CoachWorkingWithYoungsters
+                  PreferredFormation = None
+                  Lineup = None }
               Scouting =
-                { JudgingAbility = e.ScoutJudgingAbility
-                  JudgingPotential = e.ScoutJudgingPotential
-                  Adaptability = e.ScoutAdaptability }
+                { NetworkReach = 0
+                  DataAnalysis = 0
+                  MarketKnowledge = 0 }
               Medical =
                 { Physiotherapy = e.MedicalPhysiotherapy
                   SportsScience = e.MedicalSportsScience }
               Analysis =
                 { PerformanceAnalysis = e.AnalysisPerformance
                   RecruitmentAnalysis = e.AnalysisRecruitment } }
+          Knowledge =
+            { JudgingPlayerAbility = e.ScoutJudgingAbility
+              JudgingPlayerPotential = e.ScoutJudgingPotential
+              JudgingStaffAbility = 0
+              Negotiating = 0
+              TacticalKnowledge = 0 }
           Mental =
             { Adaptability = e.MentalAdaptability
               Determination = e.MentalDetermination
               LevelOfDiscipline = e.MentalLevelOfDiscipline
-              ManManagement = e.MentalManManagement
-              Motivating = e.MentalMotivating
-              PlayerKnowledge = e.MentalPlayerKnowledge
-              YoungsterKnowledge = e.MentalYoungsterKnowledge } }
+              PeopleManagement = e.MentalManManagement
+              Motivating = e.MentalMotivating } }
 
     let toCompetitionEntity (competition: Competition) : CompetitionEntity =
         let tag, param1, param2 = competitionTypeToStrings competition.Type

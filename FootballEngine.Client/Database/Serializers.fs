@@ -66,6 +66,23 @@ module Serializers =
         | "5-2-3" -> F523
         | _ -> F442
 
+    let parseTactics =
+        function
+        | "Balanced" -> Balanced
+        | "Attacking" -> Attacking
+        | "Defensive" -> Defensive
+        | "Pressing" -> Pressing
+        | "Counter" -> Counter
+        | _ -> Balanced
+
+    let tacticsToString =
+        function
+        | Balanced -> "Balanced"
+        | Attacking -> "Attacking"
+        | Defensive -> "Defensive"
+        | Pressing -> "Pressing"
+        | Counter -> "Counter"
+
     let roundToString =
         function
         | GroupStage groupIndex -> $"GroupStage:{groupIndex}"
@@ -115,6 +132,7 @@ module Serializers =
         | PerformanceAnalyst -> "PerformanceAnalyst"
         | RecruitmentAnalyst -> "RecruitmentAnalyst"
         | LoanManager -> "LoanManager"
+        | TechnicalDirector -> "TechnicalDirector"
 
     let parseStaffRole (s: string) : StaffRole =
         match s with
@@ -157,6 +175,7 @@ module Serializers =
         | Resigned -> "Resigned"
         | ContractExpired -> "ContractExpired"
         | Unemployed -> "Unemployed"
+        | StaffRetired -> "StaffRetired"
 
     let parseStaffStatus (s: string) : StaffStatus =
         match s with

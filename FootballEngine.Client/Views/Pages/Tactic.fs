@@ -22,7 +22,7 @@ module Tactics =
 
     let private draggedId = ref<PlayerId option> None
 
-    let private startDrag (playerId: int) (dispatch: Msg -> unit) (args: PointerPressedEventArgs) =
+    let private startDrag (playerId: int) (_dispatch: Msg -> unit) (args: PointerPressedEventArgs) =
         draggedId.Value <- Some playerId
 
         task {
@@ -52,6 +52,11 @@ module Tactics =
         | AMC
         | AML -> 3
         | ST -> 4
+
+    let private getCurrentLineup (gs: GameState) : Lineup option =
+        gs
+        |> GameState.headCoach gs.UserClubId
+        |> Option.bind (fun coach -> coach.Attributes.Coaching.Lineup)
 
     let benchRow (p: Player) dispatch : IView =
         let col = Theme.positionColor p.Position
@@ -118,7 +123,7 @@ module Tactics =
         |> View.withKey $"bench-{p.Id}-{p.MatchFitness}"
         :> IView
 
-    let playerNode (player: Player option) (slot: FormationSlot) (state: State) (dispatch: Msg -> unit) =
+    let playerNode (player: Player option) (slot: LineupSlot) (_state: State) (dispatch: Msg -> unit) =
         let pIdFijo = player |> Option.map _.Id |> Option.defaultValue -1
         let isEmpty = player.IsNone
 
@@ -213,18 +218,16 @@ module Tactics =
         |> View.withKey (string pIdFijo)
 
     let pitchContainer (state: State) dispatch =
-        let myTeam = state.GameState.Clubs[state.GameState.UserClubId]
+        let lineup = getCurrentLineup state.GameState
 
         let formation =
-            myTeam.CurrentLineup
-            |> Option.map _.Formation
-            |> Option.defaultValue state.SelectedTactics
+            lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
 
-        let lineup = myTeam.CurrentLineup |> Option.map _.Slots |> Option.defaultValue []
+        let slots = lineup |> Option.map _.Slots |> Option.defaultValue []
 
         FootballPitch.render formation (fun slot ->
             let assignedPlayer =
-                lineup
+                slots
                 |> List.tryFind (fun s -> s.Index = slot.Index)
                 |> Option.bind _.PlayerId
                 |> Option.bind state.GameState.Players.TryFind
@@ -240,7 +243,7 @@ module Tactics =
                         [ Border.padding (16.0, 12.0)
                           Border.child (
                               ComboBox.create
-                                  [ ComboBox.dataItems FormationLineUps.all
+                                  [ ComboBox.dataItems FormationLineups.all
                                     ComboBox.selectedItem currentFormation
                                     ComboBox.onSelectedItemChanged (fun obj ->
                                         if obj <> null then
@@ -297,15 +300,13 @@ module Tactics =
                           ) ] ] ]
 
     let tacticView (state: State) dispatch : IView =
-        let myTeam = state.GameState.Clubs[state.GameState.UserClubId]
+        let lineup = getCurrentLineup state.GameState
 
         let currentFormation =
-            myTeam.CurrentLineup
-            |> Option.map _.Formation
-            |> Option.defaultValue state.SelectedTactics
+            lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
 
         let starterIds =
-            myTeam.CurrentLineup
+            lineup
             |> Option.map (fun l -> l.Slots |> List.choose _.PlayerId)
             |> Option.defaultValue []
             |> Set.ofList

@@ -17,7 +17,9 @@
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\MatchContext.fs"/>
         <Compile Include="Domain\Transfer.fs"/>
+        <Compile Include="Domain\Negotiation.fs"/>
         <Compile Include="Domain\GameState.fs"/>
+        <Compile Include="Domain\Manager.fs"/>
         <Compile Include="GameData\CountryData.fs"/>
         <Compile Include="GameData\Arg.fs"/>
         <Compile Include="GameData\Eng.fs"/>
@@ -46,7 +48,11 @@
         <Compile Include="Engine\World\ManagerAI.fs"/>
         <Compile Include="Engine\World\TransferMarket.fs"/>
         <Compile Include="Engine\World\BoardAI.fs"/>
-        <Compile Include="Engine\World.fs"/>
+        <Compile Include="Engine\World\ContractManager.fs"/>
+        <Compile Include="Engine\World\MatchOutcome.fs"/>
+        <Compile Include="Engine\World\PlayerDevelopment.fs"/>
+        <Compile Include="Engine\World\SeasonManager.fs"/>
+        <Compile Include="Engine\World\YouthAcademy.fs"/>
         <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database\Entities.fs"/>
         <Compile Include="Database\Serializers.fs"/>
@@ -84,6 +90,7 @@
         <PackageReference Include="Elmish" Version="5.0.2"/>
         <PackageReference Update="FSharp.Core" Version="10.1.201"/>
         <PackageReference Include="FSharp.Stats" Version="0.6.0"/>
+        <PackageReference Include="FsToolkit.ErrorHandling" Version="5.2.0"/>
         <PackageReference Include="Material.Icons.Avalonia" Version="3.0.0"/>
         <PackageReference Include="sqlite-net-pcl" Version="1.9.172"/>
     </ItemGroup>
