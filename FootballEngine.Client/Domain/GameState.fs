@@ -50,7 +50,7 @@ module GameState =
         | Contracted(clubId, _) -> Some clubId
         | YouthProspect clubId -> Some clubId
         | FreeAgent
-        | Retired -> failwith "todo"
+        | Retired -> None
 
     let contractOf (p: Player) : ContractInfo option =
         match p.Affiliation with
@@ -70,3 +70,19 @@ module GameState =
             not f.Played && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId))
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
         |> Seq.tryHead
+
+    let getLineup (clubId: ClubId) (gs: GameState) : Lineup option =
+        headCoach clubId gs |> Option.bind _.Attributes.Coaching.Lineup
+
+    let setLineup (clubId: ClubId) (lineup: Lineup option) (gs: GameState) : GameState =
+        match headCoach clubId gs with
+        | None -> gs
+        | Some coach ->
+            let updatedCoach = Staff.setLineup lineup coach
+
+            { gs with
+                Staff = gs.Staff |> Map.add coach.Id updatedCoach }
+
+    let updateLineup (clubId: ClubId) (updater: Lineup option -> Lineup option) (gs: GameState) : GameState =
+        let newLineupOpt = gs |> getLineup clubId |> updater
+        setLineup clubId newLineupOpt gs

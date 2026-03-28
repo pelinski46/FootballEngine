@@ -38,11 +38,12 @@ module Pitch =
         |> Array.minBy snd
         |> fst
 
+
     let private activePlayers (ts: TeamSide) =
         let idx = activeIndices ts.Players ts.Sidelined
 
         idx |> Array.map (fun i -> ts.Players[i]),
-        idx |> Array.map (fun i -> positionOf ts.Positions ts.Players[i]),
+        idx |> Array.map (fun i -> ts.Positions[i]),
         idx |> Array.map (fun i -> ts.Conditions[i])
 
     type PitchView =
@@ -73,11 +74,15 @@ module Pitch =
 
     let pickDuel (s: MatchState) =
         let v = buildView s
-        let ai = nearestIdx v.APos s.BallPosition
-        let di = nearestIdx v.DPos s.BallPosition
-        v.Att[ai], v.Def[di], ai, di
 
-    let private tacticalTarget (p: Player) baseX baseY ballX ballY isPossessing =
+        if v.Att.Length = 0 || v.Def.Length = 0 then
+            None
+        else
+            let ai = nearestIdx v.APos s.BallPosition
+            let di = nearestIdx v.DPos s.BallPosition
+            Some(v.Att[ai], v.Def[di], ai, di)
+
+    let private tacticalTarget (p: Player) baseX baseY ballX ballY isPossessing tacticsConfig =
         let offPush, defPull, lateral =
             match p.Position with
             | GK -> 0.05, 0.02, 0.05
@@ -95,31 +100,35 @@ module Pitch =
             | AML -> 0.40, 0.25, 0.35
             | ST -> 0.45, 0.30, 0.20
 
+        // Apply tactics modifier to base position
+        let modifiedBaseX =
+            if isPossessing then
+                baseX + tacticsConfig.ForwardPush
+            else
+                baseX + tacticsConfig.DefensiveDrop
+
         let push = if isPossessing then offPush else defPull
-        Math.Clamp(baseX + (ballX - baseX) * push, 2.0, 98.0), Math.Clamp(baseY + (ballY - baseY) * lateral, 2.0, 98.0)
+
+        Math.Clamp(modifiedBaseX + (ballX - modifiedBaseX) * push, 2.0, 98.0),
+        Math.Clamp(baseY + (ballY - baseY) * lateral, 2.0, 98.0)
 
     let updatePositions (s: MatchState) : MatchState =
         let ballX, ballY = s.BallPosition
 
         let move (ts: TeamSide) (isPossessing: bool) =
-            { ts with
-                Positions =
-                    ts.Players
-                    |> Array.fold
-                        (fun acc p ->
-                            let curX, curY = acc |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0)
+            let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
 
-                            let baseX, baseY =
-                                ts.BasePositions |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0)
+            let newPositions =
+                ts.Players
+                |> Array.mapi (fun i p ->
+                    let curX, curY = ts.Positions[i]
+                    let baseX, baseY = ts.BasePositions[i]
+                    let tx, ty = tacticalTarget p baseX baseY ballX ballY isPossessing tacticsCfg
 
-                            let tx, ty = tacticalTarget p baseX baseY ballX ballY isPossessing
+                    curX + ((tx + (baseX - tx) * 0.25) - curX) * 0.15,
+                    curY + ((ty + (baseY - ty) * 0.25) - curY) * 0.15)
 
-                            Map.add
-                                p.Id
-                                (curX + ((tx + (baseX - tx) * 0.25) - curX) * 0.15,
-                                 curY + ((ty + (baseY - ty) * 0.25) - curY) * 0.15)
-                                acc)
-                        ts.Positions }
+            { ts with Positions = newPositions }
 
         s
         |> withSide true (move (homeSide s) (s.Possession = Home))

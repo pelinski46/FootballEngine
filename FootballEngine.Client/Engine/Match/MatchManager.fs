@@ -20,13 +20,15 @@ module MatchManager =
 
     let urgency (isHome: bool) (s: MatchState) : float =
         let late = s.Second > 60 * 60
+        let ts = side isHome s
+        let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
 
         match situation isHome s, late with
-        | Losing, true -> 1.35
-        | Losing, false -> 1.15
-        | Winning, _ -> 0.85
-        | Drawing, true -> 1.10
-        | Drawing, false -> 1.00
+        | Losing, true -> 1.35 * tacticsCfg.UrgencyMultiplier
+        | Losing, false -> 1.15 * tacticsCfg.UrgencyMultiplier
+        | Winning, _ -> 0.85 * tacticsCfg.UrgencyMultiplier
+        | Drawing, true -> 1.10 * tacticsCfg.UrgencyMultiplier
+        | Drawing, false -> 1.00 * tacticsCfg.UrgencyMultiplier
 
     let private conditionThreshold =
         function
@@ -92,16 +94,16 @@ module MatchManager =
                 match pickIncoming squadPlayers coach ts (preferredPositions sit) with
                 | None -> s
                 | Some incoming ->
-                    let pos =
-                        ts.Positions |> Map.tryFind playerOut.Id |> Option.defaultValue (50.0, 50.0)
+                    // Inherit the outgoing player's position on the pitch
+                    let inheritedPos = ts.Positions[outIdx]
 
                     let ts' =
                         { ts with
                             Players = Array.append ts.Players [| incoming |]
                             Conditions = Array.append ts.Conditions [| incoming.Condition |]
+                            Positions = Array.append ts.Positions [| inheritedPos |]
+                            BasePositions = Array.append ts.BasePositions [| inheritedPos |]
                             Sidelined = Map.add playerOut.Id SidelinedBySub ts.Sidelined
-                            Positions = Map.add incoming.Id pos ts.Positions
-                            BasePositions = Map.add incoming.Id pos ts.BasePositions
                             SubsUsed = ts.SubsUsed + 1 }
 
                     withSide isHome ts' s

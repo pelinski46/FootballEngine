@@ -33,7 +33,7 @@ module FootballPitch =
         let lineGlow = SolidColorBrush.Parse "#ffffff33"
 
 
-    let private stripedGrass  =
+    let private stripedGrass () =
         Grid.create
             [ Grid.rowDefinitions "*,*,*,*,*,*,*,*,*,*,*,*"
               Grid.children
@@ -138,7 +138,7 @@ module FootballPitch =
               Viewbox.child (
                   Grid.create
                       [ Grid.children
-                            [ stripedGrass 
+                            [ stripedGrass ()
                               markings cfg
 
                               Canvas.create

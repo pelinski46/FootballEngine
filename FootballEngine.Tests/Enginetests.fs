@@ -100,9 +100,21 @@ let doubleSimGuardTests =
           <| fun () ->
               let game = loadGame ()
 
+              // Prepare clubs with lineups in staff - process sequentially to accumulate staff updates
+              let initialStaff = game.Staff
+              let clubsArray, finalStaff =
+                  game.Clubs
+                  |> Map.toArray
+                  |> Array.map snd
+                  |> Array.fold (fun (accClubs, accStaff) club ->
+                      let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
+                      (Array.append accClubs [|updatedClub|]), updatedStaff
+                  ) ([||], initialStaff)
+              
               let gameWithLineups =
                   { game with
-                      Clubs = game.Clubs |> Map.map (fun _ -> makeReadyClub game) }
+                      Clubs = clubsArray |> Array.map (fun c -> c.Id, c) |> Map.ofArray
+                      Staff = finalStaff }
 
               let fixtures = unplayedFixtures gameWithLineups 5
 

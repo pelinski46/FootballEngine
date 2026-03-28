@@ -285,3 +285,16 @@ module Staff =
         | _ ->
             { s with
                 SeasonsManaged = s.SeasonsManaged + 1 }
+
+    let setLineup (lineup: Lineup option) (s: Staff) : Staff =
+        { s with
+            Attributes =
+                { s.Attributes with
+                    Coaching =
+                        { s.Attributes.Coaching with
+                            Lineup = lineup } } }
+
+    let updateLineup (updater: Lineup -> Lineup) (s: Staff) : Staff =
+        match s.Attributes.Coaching.Lineup with
+        | None -> s
+        | Some lineup -> setLineup (Some (updater lineup)) s

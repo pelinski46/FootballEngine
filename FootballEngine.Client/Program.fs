@@ -56,7 +56,7 @@ type MainWindow() as this =
 
     do
         base.Title <- "Football Engine 2026"
-        base.WindowState <- WindowState.Maximized
+        base.WindowState <- WindowState.FullScreen
 
         Elmish.Program.mkProgram AppState.init AppState.update Views.mainView
         |> Elmish.Program.withHost this

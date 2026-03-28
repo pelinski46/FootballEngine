@@ -32,7 +32,7 @@
         <Compile Include="Lineup.fs"/>
         <Compile Include="Engine\Stats.fs"/>
         <Compile Include="Engine\Match\MatchCalc.fs"/>
-        <Compile Include="Engine\Match\State.fs"/>
+        <Compile Include="Engine\Match\MatchState.fs"/>
         <Compile Include="Engine\Match\Pitch.fs"/>
         <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\MatchManager.fs"/>

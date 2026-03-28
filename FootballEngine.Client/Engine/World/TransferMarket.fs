@@ -111,7 +111,7 @@ module NegotiationEngine =
                     |> Map.add
                         neg.BuyerClubId
                         { buyer with
-                            Budget = buyer.Budget - fee
+                            Budget = max 0m (buyer.Budget - fee)
                             PlayerIds = moved.Id :: (buyer.PlayerIds |> List.filter ((<>) moved.Id)) }
                     |> Map.add
                         neg.SellerClubId

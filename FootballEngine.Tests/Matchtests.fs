@@ -11,26 +11,26 @@ let singleMatchTests =
     testList
         "Single Match Invariants"
         [ test "simulateMatch returns Ok" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isOk
-                  (trySimulateMatch clubs[0] clubs[1] players)
+                  (trySimulateMatch clubs[0] clubs[1] players staff)
                   "trySimulateMatch returned Error — check lineup/GK"
           }
           test "scores are non-negative" {
-              let clubs, players = loadClubs ()
-              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (h >= 0 && a >= 0) $"negative score: {h}-{a}"
           }
           test "scores are plausible (each <= 10)" {
-              let clubs, players = loadClubs ()
-              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (h <= 10 && a <= 10) $"implausible score: {h}-{a}"
           }
           test "goal events match reported score" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let hScore, aScore, events = trySimulateMatch home away players |> getOk
+              let hScore, aScore, events = trySimulateMatch home away players staff |> getOk
               let goals = events |> List.filter (fun e -> e.Type = Goal)
               let hGoals = goals |> List.filter (fun e -> e.ClubId = home.Id) |> List.length
               let aGoals = goals |> List.filter (fun e -> e.ClubId = away.Id) |> List.length
@@ -40,17 +40,17 @@ let singleMatchTests =
                   $"goal event count mismatch for score {hScore}-{aScore}"
           }
           test "all event seconds in [1, 5700]" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (events |> List.forall (fun e -> e.Second >= 1 && e.Second <= 95 * 60))
                   "event with second outside valid range"
           }
           test "all event playerIds belong to one of the two clubs" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players |> getOk
+              let _, _, events = trySimulateMatch home away players staff |> getOk
               let homeIds = home.PlayerIds |> Set.ofList
               let awayIds = away.PlayerIds |> Set.ofList
 
@@ -60,8 +60,8 @@ let singleMatchTests =
                   "event references unknown player"
           }
           test "events are ordered chronologically" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               let ordered = List.rev events
 
               Expect.isTrue
@@ -69,8 +69,8 @@ let singleMatchTests =
                   "events not sorted by second"
           }
           test "no duplicate goal events for same player at same second" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let goalKeys =
                   events
@@ -80,25 +80,25 @@ let singleMatchTests =
               Expect.isTrue (goalKeys.Length = (goalKeys |> List.distinct).Length) "duplicate goal event detected"
           }
           test "all event ClubIds are either home or away" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players |> getOk
+              let _, _, events = trySimulateMatch home away players staff |> getOk
 
               Expect.isTrue
                   (events |> List.forall (fun e -> e.ClubId = home.Id || e.ClubId = away.Id))
                   "event has unknown ClubId"
           }
           test "SubstitutionIn and SubstitutionOut are balanced" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               let ins = events |> List.filter (fun e -> e.Type = SubstitutionIn) |> List.length
               let outs = events |> List.filter (fun e -> e.Type = SubstitutionOut) |> List.length
               Expect.equal ins outs "substitution in/out count mismatch"
           }
           test "at most 3 substitutions per team" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players |> getOk
+              let _, _, events = trySimulateMatch home away players staff |> getOk
 
               let homeSubs =
                   events
@@ -115,8 +115,8 @@ let singleMatchTests =
                   $"more than 3 substitutions — home={homeSubs} away={awaySubs}"
           }
           test "no player receives more than 1 red card" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let reds =
                   events |> List.filter (fun e -> e.Type = RedCard) |> List.countBy _.PlayerId
@@ -124,8 +124,8 @@ let singleMatchTests =
               Expect.isTrue (reds |> List.forall (fun (_, count) -> count = 1)) "player has multiple red cards"
           }
           test "second yellow triggers a red card for same player" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let orderedEvents = List.rev events
 
@@ -148,8 +148,8 @@ let singleMatchTests =
                   "player received 2 yellows but no red card"
           }
           test "no player receives more than 2 yellow cards" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let yellows =
                   events |> List.filter (fun e -> e.Type = YellowCard) |> List.countBy _.PlayerId
@@ -159,8 +159,8 @@ let singleMatchTests =
                   "player has more than 2 yellow cards"
           }
           test "no goals scored at second 0" {
-              let clubs, players = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (events
@@ -178,14 +178,14 @@ let statisticalTests =
     let iterations = 1000
 
     let runOutcomes () =
-        let clubs, players = loadClubs ()
+        let clubs, players, staff = loadClubs ()
 
         Array.Parallel.init iterations (fun i ->
             let hi = i % clubs.Length
             let ai = (hi + 1) % clubs.Length
 
             try
-                match trySimulateMatch clubs[hi] clubs[ai] players with
+                match trySimulateMatch clubs[hi] clubs[ai] players staff with
                 | Ok(h, a, _) -> Success(h, a)
                 | Error e -> KnownError(clubs[hi].Name, clubs[ai].Name, e)
             with ex ->
@@ -213,7 +213,7 @@ let statisticalTests =
                       | _ -> None)
 
               let avg = float (Array.sum totals) / float totals.Length
-              Expect.isTrue (avg >= 1.8 && avg <= 3.8) $"avg goals = %.2f{avg} (expected [1.8, 3.8])"
+              Expect.isTrue (avg >= 2.2 && avg <= 3.2) $"avg goals = %.2f{avg} (expected [2.2, 3.2])"
 
           testCase "no match has outlier score (either side > 10)"
           <| fun () ->
@@ -265,13 +265,13 @@ let statisticalTests =
 
           testCase "speed under 5 ms/match"
           <| fun () ->
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
               let sw = Diagnostics.Stopwatch.StartNew()
 
               Array.Parallel.init iterations (fun i ->
                   let hi = i % clubs.Length
                   let ai = (hi + 1) % clubs.Length
-                  trySimulateMatch clubs[hi] clubs[ai] players)
+                  trySimulateMatch clubs[hi] clubs[ai] players staff)
               |> ignore
 
               sw.Stop()
@@ -282,112 +282,202 @@ let errorHandlingTests =
     testList
         "Error Handling Contracts"
         [ test "no lineup → MissingLineup" {
-              let clubs, players = loadClubs ()
-              let noLineup = { clubs[0] with CurrentLineup = None }
+              let clubs, players, staff = loadClubs ()
+              // Remove lineup from head coach
+              let headCoachId =
+                  clubs[0].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+              let staffNoLineup =
+                  staff
+                  |> Map.change
+                      headCoachId
+                      (Option.map (fun hc ->
+                          { hc with
+                              Attributes =
+                                  { hc.Attributes with
+                                      Coaching =
+                                          { hc.Attributes.Coaching with
+                                              Lineup = None } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch noLineup clubs[1] players with
+                  (match trySimulateMatch clubs[0] clubs[1] players staffNoLineup with
                    | Error(MissingLineup _) -> true
                    | _ -> false)
                   "expected MissingLineup"
           }
           test "empty lineup slots → IncompleteLineup" {
-              let clubs, players = loadClubs ()
-              let home = clubs[0]
+              let clubs, players, staff = loadClubs ()
 
-              let emptyLineup =
-                  match home.CurrentLineup with
-                  | None -> home
-                  | Some lu ->
-                      { home with
-                          CurrentLineup =
-                              Some
-                                  { lu with
-                                      Slots = lu.Slots |> List.map (fun s -> { s with PlayerId = None }) } }
+              let headCoachId =
+                  clubs[0].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+              let emptyLineupStaff =
+                  match staff |> Map.tryFind headCoachId with
+                  | None -> staff
+                  | Some hc ->
+                      match hc.Attributes.Coaching.Lineup with
+                      | None -> staff
+                      | Some lu ->
+                          let emptyLu =
+                              { lu with
+                                  Slots = lu.Slots |> List.map (fun s -> { s with PlayerId = None }) }
+
+                          staff
+                          |> Map.change
+                              headCoachId
+                              (Option.map (fun h ->
+                                  { h with
+                                      Attributes =
+                                          { h.Attributes with
+                                              Coaching =
+                                                  { h.Attributes.Coaching with
+                                                      Lineup = Some emptyLu } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch emptyLineup clubs[1] players with
+                  (match trySimulateMatch clubs[0] clubs[1] players emptyLineupStaff with
                    | Error(IncompleteLineup _) -> true
                    | _ -> false)
                   "expected IncompleteLineup"
           }
           test "partial lineup (5 players) → IncompleteLineup" {
-              let clubs, players = loadClubs ()
-              let home = clubs[0]
+              let clubs, players, staff = loadClubs ()
 
-              let partialLineup =
-                  match home.CurrentLineup with
-                  | None -> home
-                  | Some lu ->
-                      { home with
-                          CurrentLineup =
-                              Some
-                                  { lu with
-                                      Slots =
-                                          lu.Slots
-                                          |> List.mapi (fun i s -> if i < 5 then s else { s with PlayerId = None }) } }
+              let headCoachId =
+                  clubs[0].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+              let partialLineupStaff =
+                  match staff |> Map.tryFind headCoachId with
+                  | None -> staff
+                  | Some hc ->
+                      match hc.Attributes.Coaching.Lineup with
+                      | None -> staff
+                      | Some lu ->
+                          let partialLu =
+                              { lu with
+                                  Slots =
+                                      lu.Slots
+                                      |> List.mapi (fun i s -> if i < 5 then s else { s with PlayerId = None }) }
+
+                          staff
+                          |> Map.change
+                              headCoachId
+                              (Option.map (fun h ->
+                                  { h with
+                                      Attributes =
+                                          { h.Attributes with
+                                              Coaching =
+                                                  { h.Attributes.Coaching with
+                                                      Lineup = Some partialLu } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch partialLineup clubs[1] players with
+                  (match trySimulateMatch clubs[0] clubs[1] players partialLineupStaff with
                    | Error(IncompleteLineup _) -> true
                    | _ -> false)
                   "expected IncompleteLineup for partial lineup"
           }
           test "MissingLineup error carries club name" {
-              let clubs, players = loadClubs ()
-              let home = clubs[0]
-              let noLineup = { home with CurrentLineup = None }
+              let clubs, players, staff = loadClubs ()
+
+              let headCoachId =
+                  clubs[0].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+              let staffNoLineup =
+                  staff
+                  |> Map.change
+                      headCoachId
+                      (Option.map (fun hc ->
+                          { hc with
+                              Attributes =
+                                  { hc.Attributes with
+                                      Coaching =
+                                          { hc.Attributes.Coaching with
+                                              Lineup = None } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch noLineup clubs[1] players with
-                   | Error(MissingLineup name) -> name = home.Name
+                  (match trySimulateMatch clubs[0] clubs[1] players staffNoLineup with
+                   | Error(MissingLineup name) -> name = clubs[0].Name
                    | _ -> false)
                   "MissingLineup did not carry correct club name"
           }
           test "swapped home/away still simulates" {
-              let clubs, players = loadClubs ()
-              Expect.isOk (trySimulateMatch clubs[1] clubs[0] players) "swap broke the simulation"
+              let clubs, players, staff = loadClubs ()
+              Expect.isOk (trySimulateMatch clubs[1] clubs[0] players staff) "swap broke the simulation"
           }
           test "same club vs itself returns SameClub error" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
-                  (match trySimulateMatch clubs[0] clubs[0] players with
+                  (match trySimulateMatch clubs[0] clubs[0] players staff with
                    | Error(SameClub _) -> true
                    | _ -> false)
                   "expected SameClub error when home.Id = away.Id"
           }
           test "away has no lineup → MissingLineup" {
-              let clubs, players = loadClubs ()
-              let noLineup = { clubs[1] with CurrentLineup = None }
+              let clubs, players, staff = loadClubs ()
+
+              let headCoachId =
+                  clubs[1].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+              let staffNoLineup =
+                  staff
+                  |> Map.change
+                      headCoachId
+                      (Option.map (fun hc ->
+                          { hc with
+                              Attributes =
+                                  { hc.Attributes with
+                                      Coaching =
+                                          { hc.Attributes.Coaching with
+                                              Lineup = None } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch clubs[0] noLineup players with
+                  (match trySimulateMatch clubs[0] clubs[1] players staffNoLineup with
                    | Error(MissingLineup _) -> true
                    | _ -> false)
                   "expected MissingLineup for away club"
           }
           test "no GK in lineup → IncompleteLineup or MissingLineup, never throws" {
-              let clubs, players = loadClubs ()
-              let home = clubs[0]
+              let clubs, players, staff = loadClubs ()
 
-              let noGk =
-                  match home.CurrentLineup with
-                  | None -> home
-                  | Some lu ->
-                      let withoutGk =
-                          lu.Slots
-                          |> List.map (fun s ->
-                              match s.PlayerId with
-                              | Some pid when players |> Map.tryFind pid |> Option.exists (fun p -> p.Position = GK) ->
-                                  { s with PlayerId = None }
-                              | _ -> s)
+              let headCoachId =
+                  clubs[0].StaffIds
+                  |> List.find (fun sid -> staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
 
-                      { home with
-                          CurrentLineup = Some { lu with Slots = withoutGk } }
+              let noGkStaff =
+                  match staff |> Map.tryFind headCoachId with
+                  | None -> staff
+                  | Some hc ->
+                      match hc.Attributes.Coaching.Lineup with
+                      | None -> staff
+                      | Some lu ->
+                          let withoutGk =
+                              lu.Slots
+                              |> List.map (fun s ->
+                                  match s.PlayerId with
+                                  | Some pid when
+                                      players |> Map.tryFind pid |> Option.exists (fun p -> p.Position = GK)
+                                      ->
+                                      { s with PlayerId = None }
+                                  | _ -> s)
+
+                          staff
+                          |> Map.change
+                              headCoachId
+                              (Option.map (fun h ->
+                                  { h with
+                                      Attributes =
+                                          { h.Attributes with
+                                              Coaching =
+                                                  { h.Attributes.Coaching with
+                                                      Lineup = Some { lu with Slots = withoutGk } } } }))
 
               Expect.isTrue
-                  (match trySimulateMatch noGk clubs[1] players with
+                  (match trySimulateMatch clubs[0] clubs[1] players noGkStaff with
                    | Error(IncompleteLineup _)
                    | Error(MissingLineup _) -> true
                    | Error(SameClub _)
@@ -397,21 +487,21 @@ let errorHandlingTests =
 
 let private snapshotChecks (label: string) (s: MatchState) =
     let homeActive =
-        s.HomePlayers
-        |> Array.filter (fun p -> not (Map.containsKey p.Id s.HomeSidelined))
+        s.HomeSide.Players
+        |> Array.filter (fun p -> not (Map.containsKey p.Id s.HomeSide.Sidelined))
         |> Array.length
 
     let awayActive =
-        s.AwayPlayers
-        |> Array.filter (fun p -> not (Map.containsKey p.Id s.AwaySidelined))
+        s.AwaySide.Players
+        |> Array.filter (fun p -> not (Map.containsKey p.Id s.AwaySide.Sidelined))
         |> Array.length
 
     [ test "ball in bounds" { Expect.isTrue (inBounds s.BallPosition) $"ball at {s.BallPosition}" }
       test "home positions in bounds" {
-          Expect.isTrue (allPositionsInBounds s.HomePositions) "home player outside 0-100"
+          Expect.isTrue (s.HomeSide.Positions |> Array.forall inBounds) "home player outside 0-100"
       }
       test "away positions in bounds" {
-          Expect.isTrue (allPositionsInBounds s.AwayPositions) "away player outside 0-100"
+          Expect.isTrue (s.AwaySide.Positions |> Array.forall inBounds) "away player outside 0-100"
       }
       test "scores non-negative" {
           Expect.isTrue (s.HomeScore >= 0 && s.AwayScore >= 0) $"score {s.HomeScore}-{s.AwayScore}"
@@ -423,45 +513,34 @@ let private snapshotChecks (label: string) (s: MatchState) =
       test "home has at least 1 active player" { Expect.isTrue (homeActive >= 1) $"active home players = {homeActive}" }
       test "away has at least 1 active player" { Expect.isTrue (awayActive >= 1) $"active away players = {awayActive}" }
       test "home conditions length matches players" {
-          Expect.equal s.HomeConditions.Length s.HomePlayers.Length "home conditions/players mismatch"
+          Expect.equal s.HomeSide.Conditions.Length s.HomeSide.Players.Length "home conditions/players mismatch"
       }
       test "away conditions length matches players" {
-          Expect.equal s.AwayConditions.Length s.AwayPlayers.Length "away conditions/players mismatch"
+          Expect.equal s.AwaySide.Conditions.Length s.AwaySide.Players.Length "away conditions/players mismatch"
       }
       test "all home conditions in [0, 100]" {
-          Expect.isTrue (s.HomeConditions |> Array.forall (fun c -> c >= 0 && c <= 100)) "home condition out of range"
+          Expect.isTrue
+              (s.HomeSide.Conditions |> Array.forall (fun c -> c >= 0 && c <= 100))
+              "home condition out of range"
       }
       test "all away conditions in [0, 100]" {
-          Expect.isTrue (s.AwayConditions |> Array.forall (fun c -> c >= 0 && c <= 100)) "away condition out of range"
-      }
-      test "each home player has a position entry" {
           Expect.isTrue
-              (s.HomePlayers |> Array.forall (fun p -> Map.containsKey p.Id s.HomePositions))
-              "home player missing position"
-      }
-      test "each away player has a position entry" {
-          Expect.isTrue
-              (s.AwayPlayers |> Array.forall (fun p -> Map.containsKey p.Id s.AwayPositions))
-              "away player missing position"
-      }
-      test "no player on both teams" {
-          let homeIds = s.HomePlayers |> Array.map _.Id |> Set.ofArray
-          let awayIds = s.AwayPlayers |> Array.map _.Id |> Set.ofArray
-          Expect.isEmpty (Set.intersect homeIds awayIds) "player appears in both squads"
+              (s.AwaySide.Conditions |> Array.forall (fun c -> c >= 0 && c <= 100))
+              "away condition out of range"
       }
       test "subs used in [0, 3]" {
           Expect.isTrue
-              (s.HomeSubsUsed >= 0
-               && s.HomeSubsUsed <= 3
-               && s.AwaySubsUsed >= 0
-               && s.AwaySubsUsed <= 3)
-              $"subs home={s.HomeSubsUsed} away={s.AwaySubsUsed}"
+              (s.HomeSide.SubsUsed >= 0
+               && s.HomeSide.SubsUsed <= 3
+               && s.AwaySide.SubsUsed >= 0
+               && s.AwaySide.SubsUsed <= 3)
+              $"subs home={s.HomeSide.SubsUsed} away={s.AwaySide.SubsUsed}"
       }
       test "home base positions count matches players" {
-          Expect.equal s.HomeBasePositions.Count s.HomePlayers.Length "home base positions mismatch"
+          Expect.equal s.HomeSide.BasePositions.Length s.HomeSide.Players.Length "home base positions mismatch"
       }
       test "away base positions count matches players" {
-          Expect.equal s.AwayBasePositions.Count s.AwayPlayers.Length "away base positions mismatch"
+          Expect.equal s.AwaySide.BasePositions.Length s.AwaySide.Players.Length "away base positions mismatch"
       } ]
     |> testList label
 
@@ -470,13 +549,13 @@ let replayTests =
         "Replay UI Contracts"
         [ testCase "replay has snapshots"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (replay.Snapshots.Length > 0) "no snapshots — viewer slider will be empty"
           testCase "snapshot seconds are non-decreasing"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots
@@ -485,8 +564,8 @@ let replayTests =
                   "time went backwards between snapshots"
           testCase "home score never decreases"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots
@@ -495,8 +574,8 @@ let replayTests =
                   "home score decreased between snapshots"
           testCase "away score never decreases"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots
@@ -505,8 +584,8 @@ let replayTests =
                   "away score decreased between snapshots"
           testCase "final score >= last snapshot score"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               let last = replay.Snapshots[replay.Snapshots.Length - 1]
 
               Expect.isTrue
@@ -515,13 +594,13 @@ let replayTests =
                   "final score lower than last snapshot"
           testCase "final second = 5700 (95 min)"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               Expect.equal replay.Final.Second (95 * 60) "final.Second != 5700"
           testCase "goal events match final score"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               let final = replay.Final
               let goals = final.EventsRev |> List.filter (fun e -> e.Type = Goal)
               let hGoals = goals |> List.filter (fun e -> e.ClubId = final.Home.Id) |> List.length
@@ -532,31 +611,31 @@ let replayTests =
                   $"goal events don't match {final.HomeScore}-{final.AwayScore}"
           testCase "all snapshots have [11, 14] home players"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots
-                   |> Array.forall (fun s -> s.HomePlayers.Length >= 11 && s.HomePlayers.Length <= 14))
+                   |> Array.forall (fun s -> s.HomeSide.Players.Length >= 11 && s.HomeSide.Players.Length <= 14))
                   "snapshot with invalid home player count"
           testCase "all snapshots have [11, 14] away players"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots
-                   |> Array.forall (fun s -> s.AwayPlayers.Length >= 11 && s.AwayPlayers.Length <= 14))
+                   |> Array.forall (fun s -> s.AwaySide.Players.Length >= 11 && s.AwaySide.Players.Length <= 14))
                   "snapshot with invalid away player count"
           testCase "first snapshot second > 0"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (replay.Snapshots.Length = 0 || replay.Snapshots[0].Second > 0) "first snapshot at second 0"
           testCase "last snapshot second <= 5700"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (replay.Snapshots.Length = 0
@@ -564,8 +643,8 @@ let replayTests =
                   "last snapshot beyond 95 min"
           testCase "final snapshot invariants pass"
           <| fun () ->
-              let clubs, players = loadClubs ()
-              let replay = trySimulateMatchFull clubs[0] clubs[1] players |> getOk
+              let clubs, players, staff = loadClubs ()
+              let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
               let result = runTestsWithCLIArgs [] [||] (snapshotChecks "final" replay.Final)
               Expect.equal result 0 "one or more final snapshot invariants failed" ]
 
@@ -573,27 +652,38 @@ let matchStateOpsTests =
     let minimalState homeScore awayScore =
         { Home = Unchecked.defaultof<_>
           Away = Unchecked.defaultof<_>
+          HomeCoach = Unchecked.defaultof<_>
+          AwayCoach = Unchecked.defaultof<_>
           Second = 0
           HomeScore = homeScore
           AwayScore = awayScore
           BallPosition = 50.0, 50.0
           Possession = Home
           Momentum = 0.0
-          HomePlayers = Array.empty
-          AwayPlayers = Array.empty
-          HomeConditions = Array.empty
-          AwayConditions = Array.empty
-          HomeSidelined = Map.empty
-          AwaySidelined = Map.empty
-          HomeYellows = Map.empty
-          AwayYellows = Map.empty
-          HomeSubsUsed = 0
-          AwaySubsUsed = 0
+          HomeSide =
+            { Players = Array.empty
+              Conditions = Array.empty
+              Positions = Array.empty
+              BasePositions = Array.empty
+              Sidelined = Map.empty
+              Yellows = Map.empty
+              SubsUsed = 0
+              Tactics = Balanced
+              Instructions = Some TacticalInstructions.defaultInstructions }
+          AwaySide =
+            { Players = Array.empty
+              Conditions = Array.empty
+              Positions = Array.empty
+              BasePositions = Array.empty
+              Sidelined = Map.empty
+              Yellows = Map.empty
+              SubsUsed = 0
+              Tactics = Balanced
+              Instructions = Some TacticalInstructions.defaultInstructions }
           EventsRev = []
-          HomePositions = Map.empty
-          AwayPositions = Map.empty
-          HomeBasePositions = Map.empty
-          AwayBasePositions = Map.empty }
+          PenaltyShootout = None
+          IsExtraTime = false
+          IsKnockoutMatch = false }
 
     testList
         "MatchStateOps Unit Contracts"
@@ -636,10 +726,10 @@ let multiMatchTests =
     testList
         "Multi-Match Consistency"
         [ test "all repeated match scores non-negative" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               let results =
-                  Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players)
+                  Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
                       | Ok(h, a, _) -> Some(h, a)
                       | Error _ -> None)
@@ -647,10 +737,10 @@ let multiMatchTests =
               Expect.isTrue (results |> Array.forall (fun (h, a) -> h >= 0 && a >= 0)) "negative score detected"
           }
           test "matches produce at least 5 distinct scores across 50 runs" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               let distinctScores =
-                  Array.init 50 (fun _ -> trySimulateMatch clubs[0] clubs[1] players)
+                  Array.init 50 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
                       | Ok(h, a, _) -> Some(h, a)
                       | Error _ -> None)
@@ -661,10 +751,10 @@ let multiMatchTests =
                   $"only {distinctScores.Length} distinct scores in 50 runs — RNG may be broken"
           }
           test "no match has outlier score (> 10 each)" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               let results =
-                  Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players)
+                  Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
                       | Ok(h, a, _) -> Some(h, a)
                       | Error _ -> None)

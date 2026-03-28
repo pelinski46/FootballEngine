@@ -21,6 +21,7 @@ module Stats =
     let betaInt (alpha: float) (beta: float) (lo: int) (hi: int) =
         Continuous.Beta.Sample alpha beta
         |> fun s -> lo + int (Math.Round(s * float (hi - lo)))
+        |> fun n -> Math.Clamp(n, lo, hi)
 
     let bernoulli (p: float) : bool =
         (Discrete.Bernoulli.Init p).Sample() = 1

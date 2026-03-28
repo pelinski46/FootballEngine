@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Domain.TacticalInstructions
 
 module FormationLineups =
     let all =
@@ -88,17 +89,16 @@ module Lineup =
         if not needsRegen then
             coach
         else
+
+
             let lineup =
                 { Formation = formation
                   Tactics = Balanced
+                  Instructions = Some defaultInstructions
                   Slots = buildSlots formation players }
 
             { coach with
-                Attributes =
-                    { coach.Attributes with
-                        Coaching =
-                            { coach.Attributes.Coaching with
-                                Lineup = Some lineup } } }
+                Attributes.Coaching.Lineup = Some lineup }
 
     let ensureForClub (clubId: ClubId) (gs: GameState) : GameState =
         let club = gs.Clubs[clubId]

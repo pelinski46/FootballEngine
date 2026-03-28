@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Optimize>true</Optimize>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="Helpers.fs"/>
+        <Compile Include="MatchSimulatorBenchmarks.fs"/>
+        <Compile Include="PitchBenchmarks.fs"/>
+        <Compile Include="EngineBenchmarks.fs"/>
+        <Compile Include="Program.fs"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\FootballEngine.Client\FootballEngine.Client.fsproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" Version="0.14.0"/>
+        <PackageReference Update="FSharp.Core" Version="10.1.201"/>
+    </ItemGroup>
+
+</Project>

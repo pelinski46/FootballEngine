@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="FootballEngine.Benchmarks/FootballEngine.Benchmarks.fsproj" />
   <Project Path="FootballEngine.Client/FootballEngine.Client.fsproj" />
   <Project Path="FootballEngine.Tests/FootballEngine.Tests.fsproj" />
 </Solution>

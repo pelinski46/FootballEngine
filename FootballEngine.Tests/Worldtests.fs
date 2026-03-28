@@ -410,42 +410,60 @@ let lineupTests =
     testList
         "Lineup & Formation Contracts"
         [ test "all formations produce 11-slot lineup" {
-              let clubs, players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       FormationLineUps.all
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+                       let squad = c.PlayerIds |> List.choose (fun pid -> players |> Map.tryFind pid)
+
+                       FormationLineups.all
                        |> List.forall (fun f ->
-                           match
-                               (autoLineup
-                                   { c with CurrentLineup = None }
-                                   (c.PlayerIds |> List.choose (fun pid -> players |> Map.tryFind pid))
-                                   f)
-                                   .CurrentLineup
-                           with
+                           let updatedCoach = autoLineup coach squad f
+
+                           match updatedCoach.Attributes.Coaching.Lineup with
                            | None -> false
                            | Some lu -> lu.Slots.Length = 11)))
                   "formation produced <11 slots"
           }
           test "lineup has exactly 11 filled slots" {
-              let clubs, _players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       match c.CurrentLineup with
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+
+                       match coach.Attributes.Coaching.Lineup with
                        | None -> false
                        | Some lu -> lu.Slots |> List.filter (fun s -> s.PlayerId.IsSome) |> List.length = 11))
                   "lineup does not have 11 filled players"
           }
           test "all lineup players belong to the club" {
-              let clubs, _players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       match c.CurrentLineup with
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+
+                       match coach.Attributes.Coaching.Lineup with
                        | None -> true
                        | Some lu ->
                            let clubIds = c.PlayerIds |> Set.ofList
@@ -455,23 +473,37 @@ let lineupTests =
                   "lineup references foreign player"
           }
           test "lineup always has a GK" {
-              let clubs, _players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       match c.CurrentLineup with
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+
+                       match coach.Attributes.Coaching.Lineup with
                        | None -> false
                        | Some lu -> lu.Slots |> List.exists (fun s -> s.Role = GK && s.PlayerId.IsSome)))
                   "lineup has no goalkeeper"
           }
           test "all lineup slot positions in [0, 1]" {
-              let clubs, _players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       match c.CurrentLineup with
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+
+                       match coach.Attributes.Coaching.Lineup with
                        | None -> true
                        | Some lu ->
                            lu.Slots
@@ -479,12 +511,19 @@ let lineupTests =
                   "slot position out of [0,1]"
           }
           test "no player appears twice in a lineup" {
-              let clubs, _players = loadClubs ()
+              let clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
                    |> Array.forall (fun c ->
-                       match c.CurrentLineup with
+                       let headCoachId =
+                           c.StaffIds
+                           |> List.find (fun sid ->
+                               staff |> Map.tryFind sid |> Option.map (fun s -> s.Role) = Some HeadCoach)
+
+                       let coach = staff.[headCoachId]
+
+                       match coach.Attributes.Coaching.Lineup with
                        | None -> true
                        | Some lu ->
                            let ids = lu.Slots |> List.choose _.PlayerId

@@ -13,20 +13,44 @@ let loadGame () =
 let clubPlayers (game: GameState) (club: Club) : Player list =
     club.PlayerIds |> List.choose (fun pid -> game.Players |> Map.tryFind pid)
 
-let makeReadyClub (game: GameState) (club: Club) : Club =
+let makeReadyClubAndStaff (game: GameState) (club: Club) (staff: Map<StaffId, Staff>) : Club * Map<StaffId, Staff> =
     let players = clubPlayers game club
     let formation = bestFormation players
-    autoLineup { club with CurrentLineup = None } players formation
+    
+    // Find the head coach for this club
+    let headCoachId = 
+        club.StaffIds 
+        |> List.tryFind (fun sid -> staff |> Map.tryFind sid |> Option.map _.Role = Some HeadCoach)
+    
+    let updatedStaff =
+        match headCoachId with
+        | Some hcId ->
+            let coach = staff.[hcId]
+            let lineup = autoLineup coach players formation
+            staff |> Map.add hcId lineup
+        | None -> staff
+    
+    club, updatedStaff
 
 
 let loadClubs () =
     let game = loadGame ()
-    let clubs = game.Clubs |> Map.toArray |> Array.map (snd >> makeReadyClub game)
-
+    let initialStaff = game.Staff
+    
+    // Process each club and accumulate staff updates
+    let clubs, finalStaff =
+        game.Clubs 
+        |> Map.toArray 
+        |> Array.map snd
+        |> Array.fold (fun (accClubs, accStaff) club ->
+            let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
+            (Array.append accClubs [|updatedClub|]), updatedStaff
+        ) ([||], initialStaff)
+    
     if clubs.Length < 2 then
         failtest "Need at least 2 clubs."
 
-    clubs, game.Players
+    clubs, game.Players, finalStaff
 
 let inBounds (x: float, y: float) =
     x >= 0.0 && x <= 100.0 && y >= 0.0 && y <= 100.0

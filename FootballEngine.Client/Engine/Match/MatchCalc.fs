@@ -9,7 +9,7 @@ module MatchStats =
 
     let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
         let base' = float stat * (float condition / 100.0) * (0.8 + float morale / 500.0)
-        Continuous.Normal.Sample base' sigma
+        Continuous.Normal.Sample base' (sigma * 0.6)
 
     let attackEffort (phase: MatchPhase) (att: Player) (cond: int) =
         match phase with

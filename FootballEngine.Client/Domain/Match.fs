@@ -11,6 +11,9 @@ type MatchEventType =
     | Injury of description: string
     | SubstitutionIn
     | SubstitutionOut
+    | PenaltyAwarded of isScored: bool
+    | FreeKick of isScored: bool
+    | Corner
 
 type MatchEvent =
     { Second: int

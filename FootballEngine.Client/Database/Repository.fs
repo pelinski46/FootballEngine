@@ -3,6 +3,7 @@ namespace FootballEngine
 open System
 open System.IO
 open FootballEngine.Domain
+open TacticalInstructions
 open FootballEngine.Database
 open FootballEngine.Database.Mappers
 open SQLite
@@ -42,6 +43,8 @@ module Db =
                     for staff in state.Staff.Values do
                         match staff.Role, staff.Contract, staff.Attributes.Coaching.Lineup with
                         | HeadCoach, Some contract, Some lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            
                             // Delete existing slots for this club before inserting new ones
                             conn.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", contract.ClubId)
                             |> ignore
@@ -52,6 +55,9 @@ module Db =
                                       ClubId = contract.ClubId
                                       FormationName = Serializers.formationToString lineup.Formation
                                       TacticsName = Serializers.tacticsToString lineup.Tactics
+                                      Mentality = instructions.Mentality
+                                      DefensiveLine = instructions.DefensiveLine
+                                      PressingIntensity = instructions.PressingIntensity
                                       SlotIndex = slot.Index
                                       Role = string slot.Role
                                       X = slot.X
@@ -132,6 +138,11 @@ module Db =
                                 let formation = Serializers.parseFormation first.FormationName
                                 let tactics = Serializers.parseTactics first.TacticsName
 
+                                let instructions =
+                                    { Mentality = first.Mentality
+                                      DefensiveLine = first.DefensiveLine
+                                      PressingIntensity = first.PressingIntensity }
+
                                 let slotsList =
                                     slots
                                     |> List.sortBy (fun s -> s.SlotIndex)
@@ -146,6 +157,7 @@ module Db =
                                     clubId,
                                     { Formation = formation
                                       Tactics = tactics
+                                      Instructions = Some instructions
                                       Slots = slotsList }
                                 ))
 

@@ -58,6 +58,10 @@ module AppMsgs =
         | DropPlayerInSlot of slotIndex: int * playerId: int
         | SortPlayersBy of string
         | SetTactics of Formation
+        | SetTeamTactics of TeamTactics
+        | SetMentality of int
+        | SetDefensiveLine of int
+        | SetPressingIntensity of int
         | ChangeLeague of CompetitionId
         | SetProcessing of bool
         | NoOp

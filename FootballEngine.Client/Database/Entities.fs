@@ -77,6 +77,9 @@ type LineupSlotEntity =
       ClubId: int
       FormationName: string
       TacticsName: string
+      Mentality: int
+      DefensiveLine: int
+      PressingIntensity: int
       SlotIndex: int
       Role: string
       X: float

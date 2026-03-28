@@ -14,8 +14,6 @@ open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
 open FootballEngine.Domain
 open FootballEngine.Icons
-open FootballEngine.MatchState
-
 
 module MatchViewer =
 
@@ -59,16 +57,12 @@ module MatchViewer =
             [ Canvas.left (x - r - 4.0)
               Canvas.top (y - r - 14.0)
               Canvas.children
-                  [
-                    // Team fill
-                    Ellipse.create
+                  [ Ellipse.create
                         [ Canvas.left 2.0
                           Canvas.top 2.0
                           Ellipse.width (d + 6.0)
                           Ellipse.height (d + 6.0)
                           Ellipse.fill (teamColor + "DD") ]
-
-                    // Condition ring
                     Ellipse.create
                         [ Canvas.left 2.0
                           Canvas.top 2.0
@@ -77,7 +71,6 @@ module MatchViewer =
                           Ellipse.fill "transparent"
                           Ellipse.stroke condColor
                           Ellipse.strokeThickness 2.0 ]
-                    // Position abbreviation
                     TextBlock.create
                         [ Canvas.left 5.0
                           Canvas.top 5.0
@@ -89,7 +82,6 @@ module MatchViewer =
                           TextBlock.textAlignment TextAlignment.Center
                           TextBlock.verticalAlignment VerticalAlignment.Bottom
                           TextBlock.fontWeight FontWeight.Black ]
-                    // Skill number
                     TextBlock.create
                         [ Canvas.left 5.0
                           Canvas.top (5.0 + d * 0.5)
@@ -101,7 +93,6 @@ module MatchViewer =
                           TextBlock.textAlignment TextAlignment.Center
                           TextBlock.verticalAlignment VerticalAlignment.Top
                           TextBlock.fontWeight FontWeight.Black ]
-                    // Name tag below circle
                     Border.create
                         [ Canvas.left -4.0
                           Canvas.top (d + 10.0)
@@ -121,7 +112,7 @@ module MatchViewer =
     let private drawTeam
         (players: Player[])
         (conditions: int[])
-        (positions: Map<PlayerId, float * float>)
+        (positions: (float * float)[]) // aligned with players[]
         (sidelined: Map<PlayerId, PlayerOut>)
         (color: string)
         : IView list =
@@ -130,7 +121,7 @@ module MatchViewer =
             if Map.containsKey p.Id sidelined then
                 None
             else
-                let cx, cy = toCanvas (positionOf positions p)
+                let cx, cy = toCanvas positions[i]
                 let cond = conditions |> Array.tryItem i |> Option.defaultValue 100
                 Some(drawPlayer cx cy p color cond))
         |> Array.choose id

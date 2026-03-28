@@ -735,7 +735,7 @@ module PlayerView =
               Border.borderThickness (1.0, 0.0, 0.0, 0.0)
               Border.child (
                   match player with
-                  | None -> UI.emptyState Icons.IconName.squad "Select a player" ""
+                  | None -> UI.emptyState IconName.squad "Select a player" ""
                   | Some p ->
                       Grid.create
                           [ Grid.rowDefinitions "Auto, *"
@@ -868,7 +868,7 @@ module Display =
                                   TextBlock.foreground Theme.TextSub
                                   TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-        let nextMatchBanner (homeName: string) (awayName: string) (date: System.DateTime) (location: string) =
+        let nextMatchBanner (homeName: string) (awayName: string) (date: DateTime) (location: string) =
             Border.create
                 [ Border.cornerRadius 12.0
                   Border.margin (0.0, 0.0, 0.0, 30.0)

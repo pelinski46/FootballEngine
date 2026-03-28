@@ -99,7 +99,7 @@ module PlayerDevelopment =
     let developPlayer (rng: Random) (currentDate: DateTime) (p: Player) : Player =
         let a = Player.age currentDate p
         let delta = skillDelta a p.CurrentSkill p.PotentialSkill
-        let newCA = clamp 1 200 (p.CurrentSkill + delta)
+        let newCA = clamp 1 p.PotentialSkill (p.CurrentSkill + delta)
 
         let updatedAffiliation =
             match p.Affiliation with
