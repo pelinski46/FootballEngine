@@ -48,9 +48,8 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f: MatchFixture) ->
-            not f.Played
-            && (f.HomeClubId = state.UserClubId || f.AwayClubId = state.UserClubId))
+        |> Seq.filter (fun (_, f) ->
+            MatchFixture.isPending f && MatchFixture.involves state.UserClubId f)
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
         |> Seq.truncate count
         |> List.ofSeq
@@ -59,8 +58,8 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f: MatchFixture) ->
-            f.Played && (f.HomeClubId = state.UserClubId || f.AwayClubId = state.UserClubId))
+        |> Seq.filter (fun (_, f) ->
+            MatchFixture.isPlayed f && MatchFixture.involves state.UserClubId f)
         |> Seq.sortByDescending (fun (_, f) -> f.ScheduledDate)
         |> Seq.truncate count
         |> Seq.choose (fun (_, f) ->
@@ -123,33 +122,21 @@ module HomePresenter =
         state.Competitions.TryFind leagueId
         |> Option.bind (fun comp ->
             let sorted =
-                comp.ClubIds
-                |> List.choose (fun id ->
-                    state.Clubs.TryFind id
-                    |> Option.map (fun club ->
-                        let s = comp.Standings.TryFind id |> Option.defaultWith (fun () -> emptyStanding id)
-                        club, s))
-                |> List.sortByDescending (fun (_, s) -> s.Points, s.Won, -s.Lost)
+                Competition.rankedStandings comp
                 |> List.indexed
 
             sorted
-            |> List.tryFind (fun (_, (club, _)) -> club.Id = state.UserClubId)
+            |> List.tryFind (fun (_, (clubId, _)) -> clubId = state.UserClubId)
             |> Option.map (fun (i, (_, s)) -> i + 1, sorted.Length, s))
 
     let getTableData (state: GameState) (leagueId: CompetitionId) =
         match state.Competitions.TryFind leagueId with
         | None -> []
         | Some league ->
-            league.ClubIds
-            |> List.choose (fun tid -> state.Clubs.TryFind tid |> Option.map (fun club -> club, tid))
-            |> List.map (fun (club, tid) ->
-                let s =
-                    league.Standings.TryFind tid |> Option.defaultWith (fun () -> emptyStanding tid)
-
-                club, s)
-            |> List.sortByDescending (fun (_, s) -> s.Points, s.Won, -s.Lost)
+            Competition.rankedStandings league
             |> List.indexed
-            |> List.map (fun (i, (club, s)) ->
+            |> List.map (fun (i, (clubId, s)) ->
+                let club = state.Clubs[clubId]
                 { Display.Tables.Pos = i + 1
                   Display.Tables.TeamName = club.Name
                   Display.Tables.Points = s.Points
@@ -289,15 +276,16 @@ module Home =
                     UI.iconStatCard "MORALE" $"{userTeam.Morale}%%" PlayerIcon.morale ""
                     |> fun c -> Border.create [ Grid.column 6; Border.child c ] ] ]
 
-    let private notificationKindColor =
-        function
-        | MatchResult -> Theme.Accent
-        | SeasonEnd -> Theme.Warning
-        | Transfer -> Theme.AccentAlt
-        | Info -> Theme.TextMuted
-
     let private notificationRow (note: Notification) dispatch =
-        let color = notificationKindColor note.Kind
+        let icon = note.Icon
+        let color =
+            match icon with
+            | Material.Icons.MaterialIconKind.Trophy
+            | Material.Icons.MaterialIconKind.CheckCircleOutline -> Theme.Accent
+            | Material.Icons.MaterialIconKind.ArrowUpBoldCircleOutline -> Theme.Success
+            | Material.Icons.MaterialIconKind.ArrowDownBoldCircleOutline -> Theme.Danger
+            | Material.Icons.MaterialIconKind.FlagCheckered -> Theme.Warning
+            | _ -> Theme.TextMuted
 
         Border.create
             [ Border.padding (12.0, 10.0)
@@ -306,19 +294,13 @@ module Home =
               Border.background (color + "0A")
               Border.child (
                   Grid.create
-                      [ Grid.columnDefinitions "4, *, Auto"
+                      [ Grid.columnDefinitions "Auto, *, Auto"
                         Grid.children
-                            [ Border.create
-                                  [ Grid.column 0
-                                    Border.width 3.0
-                                    Border.cornerRadius 2.0
-                                    Border.background color
-                                    Border.margin (0.0, 0.0, 10.0, 0.0)
-                                    Border.verticalAlignment VerticalAlignment.Stretch ]
-
+                            [ Icons.iconMd icon color
                               StackPanel.create
                                   [ Grid.column 1
                                     StackPanel.spacing 2.0
+                                    StackPanel.margin (8.0, 0.0)
                                     StackPanel.children
                                         [ TextBlock.create
                                               [ TextBlock.text note.Title

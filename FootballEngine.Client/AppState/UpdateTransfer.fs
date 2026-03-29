@@ -4,6 +4,7 @@ open System.Threading.Tasks
 open Elmish
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
+open FootballEngine.Icons
 open AppTypes
 open AppMsgs
 
@@ -88,20 +89,10 @@ module UpdateTransfer =
                     )
                 Morale = min 100 (p.Morale + 10) }
 
-        { gs with
-            Players = gs.Players |> Map.add p.Id moved
-            Clubs =
-                gs.Clubs
-                |> Map.add
-                    buyer.Id
-                    { buyer with
-                        Budget = max 0m (buyer.Budget - fee)
-                        PlayerIds = moved.Id :: (buyer.PlayerIds |> List.filter ((<>) moved.Id)) }
-                |> Map.add
-                    seller.Id
-                    { seller with
-                        Budget = seller.Budget + fee
-                        PlayerIds = seller.PlayerIds |> List.filter ((<>) p.Id) } }
+        let gs2 = Transfer.transferPlayer p.Id seller.Id buyer.Id fee gs
+
+        { gs2 with
+            Players = gs2.Players |> Map.add p.Id moved }
 
     let private recordTransfer
         (p: Player)
@@ -302,8 +293,7 @@ module UpdateTransfer =
                                 { state with
                                     GameState = newGs
                                     Transfer = updatedTransfer }
-                                |> pushNotification
-                                    Transfer
+                                |> pushNotification NotificationIcons.win
                                     "Transfer Complete"
                                     $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}",
                                 SimHelpers.saveCmd newGs

@@ -1,7 +1,5 @@
 namespace FootballEngine.Domain
 
-
-
 type CupObjective =
     | WinDomesticCup
     | WinContinentalCup
@@ -30,3 +28,17 @@ type Club =
       Budget: decimal
       Morale: int
       BoardObjective: BoardObjective }
+
+module Club =
+
+    let addPlayer (playerId: PlayerId) (club: Club) =
+        { club with PlayerIds = playerId :: (club.PlayerIds |> List.filter ((<>) playerId)) }
+
+    let removePlayer (playerId: PlayerId) (club: Club) =
+        { club with PlayerIds = club.PlayerIds |> List.filter ((<>) playerId) }
+
+    let adjustBudget (delta: decimal) (club: Club) =
+        { club with Budget = max 0m (club.Budget + delta) }
+
+    let setObjective (objective: BoardObjective) (club: Club) =
+        { club with BoardObjective = objective }

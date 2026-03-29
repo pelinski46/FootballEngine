@@ -85,7 +85,8 @@ type Player =
       CurrentSkill: int
       PotentialSkill: int
       Reputation: int
-      Affiliation: PlayerAffiliation }
+      Affiliation: PlayerAffiliation
+      TrainingSchedule: TrainingSchedule }
 
 module Player =
     let age (currentDate: DateTime) (p: Player) =

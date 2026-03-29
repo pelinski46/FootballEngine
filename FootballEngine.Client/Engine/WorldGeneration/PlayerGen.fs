@@ -206,4 +206,7 @@ module PlayerGen =
                 clubId,
                 { Salary = Player.playerSalary currentSkill
                   ExpiryYear = contractExpiryFor year age }
-            ) }
+            )
+          TrainingSchedule =
+            { Focus = TrainingFocus.TrainingAllRound
+              Intensity = TrainingIntensity.TrainingNormal } }

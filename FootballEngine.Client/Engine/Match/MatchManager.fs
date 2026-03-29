@@ -94,7 +94,6 @@ module MatchManager =
                 match pickIncoming squadPlayers coach ts (preferredPositions sit) with
                 | None -> s
                 | Some incoming ->
-                    // Inherit the outgoing player's position on the pitch
                     let inheritedPos = ts.Positions[outIdx]
 
                     let ts' =

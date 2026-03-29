@@ -24,16 +24,12 @@ module MatchPlayer =
 
         let homeBonus = if s.Home.Id = homeId then 7.0 else -5.0
 
-        // Bonus por calidad de jugador (CurrentSkill) - más impacto
         let skillBonus = float (att.CurrentSkill - def.CurrentSkill) * 0.12
 
-        // Bonus por moral del jugador
         let moraleBonus = float (att.Morale - def.Morale) * 0.05
 
-        // Bonus por condición física
         let conditionBonus = float (att.Condition - def.Condition) * 0.03
 
-        // Bonus por reputación del club del atacante vs defensor
         let attClubId =
             if s.HomeSide.Players |> Array.exists (fun p -> p.Id = att.Id) then
                 s.Home.Id
@@ -53,7 +49,6 @@ module MatchPlayer =
         let momentum = if s.Possession = Home then s.Momentum else -s.Momentum
         let pressure = (pressureMultiplier v.AttIsHome s - 1.0) * 5.0
 
-        // Apply tactics urgency multiplier - get tactics from the attacking team side
         let attSide = side v.AttIsHome s
         let attTacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
         let u = MatchManager.urgency v.AttIsHome s * attTacticsCfg.UrgencyMultiplier
@@ -151,7 +146,6 @@ module MatchPlayer =
                     + defTacticsCfg.DefensiveDrop * 0.15
                 | None -> nearDefenders + Continuous.Normal.Sample 8.0 3.0
 
-            // Reducir varianza para más consistencia
             if shotPower > savePower + Continuous.Normal.Sample 2.0 6.0 then
                 { s with
                     HomeScore = if s.Possession = Home then s.HomeScore + 1 else s.HomeScore
@@ -170,8 +164,7 @@ module MatchPlayer =
                         Continuous.Normal.Sample 75.0 5.0
                     else
                         Continuous.Normal.Sample 25.0 5.0
-                
-                // Corner solo si el rebote va MUY cerca de la línea de fondo (menos frecuente)
+
                 if rebX >= 82.0 || rebX <= 18.0 then
                     q.Enqueue(CornerTaken, second + 5)
                     { s with
@@ -210,24 +203,22 @@ module MatchPlayer =
     let processFreeKick (kicker: Player) (s: MatchState) (homeId: ClubId) (players: Map<PlayerId, Player>) =
         let clubId = clubIdOf kicker s
         let bX, bY = s.BallPosition
-        
-        // Determinar el arco que ataca (basado en el club del pateador, no en la posesión)
+
         let isHomeKicker = clubId = homeId
         let attackingX = if isHomeKicker then 100.0 else 0.0
-        
+
         let kickerSkill = float kicker.CurrentSkill
         let finishingBonus =
             match kicker.Position with
             | ST | AMC | AML | AMR -> 2.0
             | MC -> 1.2
             | _ -> 0.5
-        
+
         let shotPower =
             effectiveStat kicker.Technical.Finishing kicker.Condition kicker.Morale finishingBonus
             + effectiveStat kicker.Mental.Composure kicker.Condition kicker.Morale 1.5
             + effectiveStat kicker.Technical.LongShots kicker.Condition kicker.Morale 1.0
-        
-        // El arquero es el del equipo contrario al pateador
+
         let gk = if isHomeKicker then s.AwaySide.Players |> Array.tryFind (fun p -> p.Position = GK) else s.HomeSide.Players |> Array.tryFind (fun p -> p.Position = GK)
         let savePower =
             match gk with
@@ -256,19 +247,16 @@ module MatchPlayer =
     let processCorner (s: MatchState) (homeId: ClubId) (q: PriorityQueue<ScheduledEvent, int>) (second: int) =
         let isHomeCorner = s.Possession = Home
         let clubId = if isHomeCorner then s.Home.Id else s.Away.Id
-        
-        // Buscar el mejor cabeceador del equipo
+
         let squad = if isHomeCorner then s.HomeSide.Players else s.AwaySide.Players
-        
-        // Guard: si no hay jugadores, no hacer nada
+
         if squad.Length = 0 then s
         else
             let bestHeader = squad |> Array.maxBy (fun p -> p.Physical.Strength + p.Technical.Finishing)
-            
-            // Simular el corner
+
             let headerChance = float bestHeader.CurrentSkill / 200.0 * 0.6
             let scored = Continuous.Uniform.Sample 0.0 1.0 < headerChance
-            
+
             let s' =
                 if scored then
                     { s with
@@ -280,5 +268,5 @@ module MatchPlayer =
                     { s with
                         BallPosition = (if isHomeCorner then 20.0 else 80.0), 50.0
                         Possession = flipPossession s.Possession }
-            
+
             s' |> addEvent { Second = second; PlayerId = bestHeader.Id; ClubId = clubId; Type = Corner }

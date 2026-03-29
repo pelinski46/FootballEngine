@@ -15,8 +15,6 @@ module Header =
     let header (state: State) dispatch =
 
         let isProcessing = state.IsProcessing
-        // Mutable flag to prevent double-dispatch on fast double-click,
-        // before Elmish re-renders with IsProcessing = true.
         let mutable dispatched = false
 
         let guardedDispatch msg =
@@ -40,8 +38,7 @@ module Header =
                   DockPanel.create
                       [ DockPanel.lastChildFill false
                         DockPanel.children
-                            [ // ── Left: club name ─────────────────────────────
-                              StackPanel.create
+                            [ StackPanel.create
                                   [ StackPanel.dock Dock.Left
                                     StackPanel.orientation Orientation.Horizontal
                                     StackPanel.verticalAlignment VerticalAlignment.Center
@@ -55,15 +52,13 @@ module Header =
                                                 TextBlock.foreground Theme.TextMain
                                                 TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-                              // ── Right: date + continue ───────────────────────
                               StackPanel.create
                                   [ StackPanel.dock Dock.Right
                                     StackPanel.orientation Orientation.Horizontal
                                     StackPanel.verticalAlignment VerticalAlignment.Center
                                     StackPanel.spacing 12.0
                                     StackPanel.children
-                                        [ // Date pill
-                                          Border.create
+                                        [ Border.create
                                               [ Border.background Theme.BgCard
                                                 Border.cornerRadius 8.0
                                                 Border.padding (12.0, 6.0)
@@ -86,7 +81,6 @@ module Header =
                                                                           VerticalAlignment.Center ] ] ]
                                                 ) ]
 
-                                          // Continue button
                                           Button.create
                                               [ Button.isEnabled (not isProcessing)
                                                 Button.background (if isProcessing then Theme.BgCard else Theme.Accent)

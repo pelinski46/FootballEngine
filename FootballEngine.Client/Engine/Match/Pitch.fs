@@ -100,7 +100,6 @@ module Pitch =
             | AML -> 0.40, 0.25, 0.35
             | ST -> 0.45, 0.30, 0.20
 
-        // Apply tactics modifier to base position
         let modifiedBaseX =
             if isPossessing then
                 baseX + tacticsConfig.ForwardPush

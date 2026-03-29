@@ -19,7 +19,6 @@ type PitchBenchmarks() =
         match trySimulateMatchFull clubs[0] clubs[1] players staff with
         | Error e -> failwith $"Setup failed: %A{e}"
         | Ok replay ->
-            // Usamos el snapshot de la mitad del partido — estado más representativo
             let mid = replay.Snapshots.Length / 2
             matchState <- Some replay.Snapshots[mid]
 

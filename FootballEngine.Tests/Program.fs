@@ -5,6 +5,7 @@ open Expecto.Logging
 open FootballEngine.Tests.MatchTests
 open FootballEngine.Tests.EngineTests
 open FootballEngine.Tests.WorldTests
+open FootballEngine.Tests.TrainingSystemTests
 
 [<EntryPoint>]
 let main argv =
@@ -25,6 +26,7 @@ let main argv =
               playerDataTests
               seasonProgressTests
               lineupTests
-              isSeasonOverTests ]
+              isSeasonOverTests
+              trainingSystemTests ]
 
     runTestsWithCLIArgs [ Verbosity LogLevel.Verbose ] argv all

@@ -9,6 +9,7 @@
     <ItemGroup>
         <Compile Include="Domain\DomainTypes.fs"/>
         <Compile Include="Domain\Country.fs"/>
+        <Compile Include="Domain\Training.fs"/>
         <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Player.fs"/>
         <Compile Include="Domain\Lineup.fs"/>
@@ -16,9 +17,10 @@
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\MatchContext.fs"/>
-        <Compile Include="Domain\Transfer.fs"/>
         <Compile Include="Domain\Negotiation.fs"/>
+        <Compile Include="Domain\Inbox.fs"/>
         <Compile Include="Domain\GameState.fs"/>
+        <Compile Include="Domain\Transfer.fs"/>
         <Compile Include="Domain\Manager.fs"/>
         <Compile Include="GameData\CountryData.fs"/>
         <Compile Include="GameData\Arg.fs"/>
@@ -46,6 +48,7 @@
         <Compile Include="Engine\WorldGeneration\SeasonGen.fs"/>
         <Compile Include="Engine\World\ClubFinance.fs"/>
         <Compile Include="Engine\World\ManagerAI.fs"/>
+        <Compile Include="Engine\World\TrainingEngine.fs"/>
         <Compile Include="Engine\World\TransferMarket.fs"/>
         <Compile Include="Engine\World\BoardAI.fs"/>
         <Compile Include="Engine\World\ContractManager.fs"/>
@@ -53,18 +56,19 @@
         <Compile Include="Engine\World\PlayerDevelopment.fs"/>
         <Compile Include="Engine\World\SeasonManager.fs"/>
         <Compile Include="Engine\World\YouthAcademy.fs"/>
+        <Compile Include="Engine\InboxMessages.fs"/>
         <Compile Include="Engine\Engine.fs"/>
         <Compile Include="Database\Entities.fs"/>
         <Compile Include="Database\Serializers.fs"/>
         <Compile Include="Database\Mappers.fs"/>
         <Compile Include="Database\Repository.fs"/>
+        <Compile Include="AppState\Icons.fs"/>
         <Compile Include="AppState\Types.fs"/>
         <Compile Include="AppState\Msg.fs"/>
         <Compile Include="AppState\UpdateSetup.fs"/>
         <Compile Include="AppState\UpdateSim.fs"/>
         <Compile Include="AppState\UpdateTransfer.fs"/>
         <Compile Include="AppState\AppState.fs"/>
-        <Compile Include="Views\Icons.fs"/>
         <Compile Include="Views\Theme.fs"/>
         <Compile Include="Views\Components\UI.fs"/>
         <Compile Include="Views\Components\Sidebar.fs"/>
@@ -74,8 +78,10 @@
         <Compile Include="Views\Pages\Loading.fs"/>
         <Compile Include="Views\Pages\Setup.fs"/>
         <Compile Include="Views\Pages\Home.fs"/>
+        <Compile Include="Views\Pages\Inbox.fs"/>
         <Compile Include="Views\Pages\Squad.fs"/>
         <Compile Include="Views\Pages\Tactic.fs"/>
+        <Compile Include="Views\Pages\Training.fs"/>
         <Compile Include="Views\Pages\Transfer.fs"/>
         <Compile Include="Program.fs"/>
 

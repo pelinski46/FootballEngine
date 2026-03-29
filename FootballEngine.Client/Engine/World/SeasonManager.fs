@@ -74,18 +74,10 @@ module SeasonManager =
             gs.Clubs |> Map.tryFind id |> Option.map _.Name |> Option.defaultValue "Unknown"
 
         let topOf (comp: Competition) =
-            comp.Standings
-            |> Map.toList
-            |> List.sortByDescending (fun (_, s) -> s.Points, s.Won, -(s.GoalsAgainst - s.GoalsFor))
-            |> List.tryHead
-            |> Option.map fst
+            Competition.leader comp
 
         let bottomN n (comp: Competition) =
-            comp.Standings
-            |> Map.toList
-            |> List.sortBy (fun (_, s) -> s.Points, s.Won)
-            |> List.truncate n
-            |> List.map fst
+            Competition.bottomN n comp
 
         let countRelegation =
             List.sumBy (function
@@ -110,9 +102,7 @@ module SeasonManager =
 
             | NationalLeague(_, rules) ->
                 [ for id, _ in
-                      comp.Standings
-                      |> Map.toList
-                      |> List.sortByDescending (fun (_, s) -> s.Points)
+                      Competition.rankedStandings comp
                       |> List.truncate (countPromotion rules.Promotion) do
                       yield $"Promoted from {comp.Name}: {clubName id}" ]
 

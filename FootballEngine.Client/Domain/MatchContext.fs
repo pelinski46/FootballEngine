@@ -26,7 +26,7 @@ type TeamSide =
       Instructions: TacticalInstructions option }
 
 type PenaltyShootout =
-    { HomeKicks: (PlayerId * bool) list  // playerId * scored
+    { HomeKicks: (PlayerId * bool) list
       AwayKicks: (PlayerId * bool) list
       CurrentKick: int
       IsComplete: bool }

@@ -1,5 +1,6 @@
 namespace FootballEngine
 
+open System
 open FootballEngine.Domain
 open FootballEngine.Domain.TransferNegotiation
 open FootballEngine.Stats
@@ -228,3 +229,38 @@ module ManagerAI =
         |> Seq.filter (fun id -> id <> gs.UserClubId)
         |> Seq.choose (buildIntent gs)
         |> List.ofSeq
+
+    let decideTrainingForPlayer (currentDate: DateTime) (coach: Staff) (player: Player) : TrainingSchedule =
+        let age = Player.age currentDate player
+        let potentialGap = player.PotentialSkill - player.CurrentSkill
+
+        let focus =
+            match player.Position with
+            | GK -> TrainingFocus.TrainingGoalkeeping
+            | DC | DM | DR | DL | WBR | WBL ->
+                if potentialGap > 15 then TrainingFocus.TrainingPhysical
+                elif player.CurrentSkill < 70 then TrainingFocus.TrainingTechnical
+                else TrainingFocus.TrainingMental
+            | MC | AMC | MR | ML ->
+                if potentialGap > 15 then TrainingFocus.TrainingTechnical
+                elif player.CurrentSkill < 70 then TrainingFocus.TrainingMental
+                else TrainingFocus.TrainingAllRound
+            | ST | AML | AMR ->
+                if potentialGap > 15 then TrainingFocus.TrainingTechnical
+                elif player.CurrentSkill < 70 then TrainingFocus.TrainingPhysical
+                else TrainingFocus.TrainingAllRound
+
+        let ambition = ManagerPersonality.ambition coach
+
+        let intensity =
+            if age > 30 || player.Condition < 60 then
+                TrainingIntensity.TrainingLight
+            elif age < 21 && player.Condition > 85 && potentialGap > 10 then
+                TrainingIntensity.TrainingHeavy
+            elif ambition > 0.7 && player.Condition > 70 then
+                TrainingIntensity.TrainingHeavy
+            else
+                TrainingIntensity.TrainingNormal
+
+        { Focus = focus
+          Intensity = intensity }

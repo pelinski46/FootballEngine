@@ -58,7 +58,7 @@ module ClubFinance =
         |> Seq.sumBy (fun comp ->
             comp.Fixtures
             |> Map.values
-            |> Seq.filter (fun f -> f.Played && (f.HomeClubId = clubId || f.AwayClubId = clubId))
+            |> Seq.filter (fun f -> MatchFixture.isPlayed f && MatchFixture.involves clubId f)
             |> Seq.length)
 
     let private playerWageBill (players: Player list) : decimal =
@@ -113,5 +113,5 @@ module ClubFinance =
                 gs.Clubs
                 |> Map.map (fun id club ->
                     match Map.tryFind id deltas with
-                    | Some delta -> { club with Budget = max 0m (club.Budget + delta) }
+                    | Some delta -> Club.adjustBudget delta club
                     | None -> club) }

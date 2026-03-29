@@ -24,11 +24,18 @@ module Db =
                         { GameSaveMeta.Id = 1
                           CurrentDate = state.CurrentDate
                           Season = state.Season
+                          TrainingWeeksApplied = state.TrainingWeeksApplied
                           UserClubId = state.UserClubId
                           UserStaffId = state.UserStaffId
-                          PrimaryCountry = state.PrimaryCountry }
+                          PrimaryCountry = state.PrimaryCountry
+                          NextInboxId = state.NextInboxId }
                     )
                     |> ignore
+
+                    conn.Execute("DELETE FROM InboxMessageEntity WHERE GameSaveId = ?", 1) |> ignore
+                    
+                    for msg in state.Inbox do
+                        conn.InsertOrReplace(Mappers.toInboxMessageEntity 1 msg) |> ignore
 
                     for club in state.Clubs.Values do
                         conn.InsertOrReplace(toClubEntity club) |> ignore
@@ -39,13 +46,11 @@ module Db =
                     for staff in state.Staff.Values do
                         conn.InsertOrReplace(toStaffEntity staff) |> ignore
 
-                    // Save lineups only for head coaches
                     for staff in state.Staff.Values do
                         match staff.Role, staff.Contract, staff.Attributes.Coaching.Lineup with
                         | HeadCoach, Some contract, Some lineup ->
                             let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            
-                            // Delete existing slots for this club before inserting new ones
+
                             conn.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", contract.ClubId)
                             |> ignore
 
@@ -203,10 +208,15 @@ module Db =
                         |> Seq.map (fun c -> c.Code, c)
                         |> Map.ofSeq
 
+                    let! inboxEntities = db.Value.Table<InboxMessageEntity>().Where(fun e -> e.GameSaveId = 1).ToListAsync()
+
+                    let inbox = inboxEntities |> Seq.map Mappers.fromInboxMessageEntity |> List.ofSeq
+
                     return
                         Some
                             { CurrentDate = meta.CurrentDate
                               Season = meta.Season
+                              TrainingWeeksApplied = meta.TrainingWeeksApplied
                               Clubs = clubs
                               Players = players
                               Staff = updatedStaff
@@ -214,7 +224,9 @@ module Db =
                               Countries = countries
                               UserClubId = meta.UserClubId
                               UserStaffId = meta.UserStaffId
-                              PrimaryCountry = meta.PrimaryCountry }
+                              PrimaryCountry = meta.PrimaryCountry
+                              Inbox = inbox
+                              NextInboxId = meta.NextInboxId }
         }
 
     let initTables () =
@@ -230,5 +242,6 @@ module Db =
             let! _ = db.Value.CreateTableAsync<KnockoutTieEntity>()
             let! _ = db.Value.CreateTableAsync<CountryEntity>()
             let! _ = db.Value.CreateTableAsync<GameSaveMeta>()
+            let! _ = db.Value.CreateTableAsync<InboxMessageEntity>()
             return ()
         }

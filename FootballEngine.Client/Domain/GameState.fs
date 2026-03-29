@@ -1,10 +1,12 @@
 namespace FootballEngine.Domain
 
 open System
+open Inbox
 
 type GameState =
     { CurrentDate: DateTime
       Season: int
+      TrainingWeeksApplied: int
       Clubs: Map<ClubId, Club>
       Players: Map<PlayerId, Player>
       Staff: Map<StaffId, Staff>
@@ -12,7 +14,9 @@ type GameState =
       Countries: Map<CountryCode, Country>
       UserClubId: ClubId
       UserStaffId: StaffId
-      PrimaryCountry: CountryCode }
+      PrimaryCountry: CountryCode
+      Inbox: InboxMessage list
+      NextInboxId: int }
 
 module GameState =
 
@@ -66,8 +70,8 @@ module GameState =
         gs.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f: MatchFixture) ->
-            not f.Played && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId))
+        |> Seq.filter (fun (_, f) ->
+            MatchFixture.isPending f && MatchFixture.involves gs.UserClubId f)
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
         |> Seq.tryHead
 
@@ -86,3 +90,22 @@ module GameState =
     let updateLineup (clubId: ClubId) (updater: Lineup option -> Lineup option) (gs: GameState) : GameState =
         let newLineupOpt = gs |> getLineup clubId |> updater
         setLineup clubId newLineupOpt gs
+
+    let addInboxMessage (message: InboxMessage) (gs: GameState) : GameState =
+        { gs with
+            Inbox = { message with Id = gs.NextInboxId } :: gs.Inbox
+            NextInboxId = gs.NextInboxId + 1 }
+
+    let markMessageAsRead (messageId: int) (gs: GameState) : GameState =
+        { gs with
+            Inbox = Inbox.markAsRead messageId gs.Inbox }
+
+    let markMessageActionTaken (messageId: int) (gs: GameState) : GameState =
+        { gs with
+            Inbox = Inbox.markAsActionTaken messageId gs.Inbox }
+
+    let unreadInboxCount (gs: GameState) : int =
+        Inbox.unreadCount gs.Inbox
+
+    let pendingActionCount (gs: GameState) : int =
+        Inbox.pendingActionCount gs.Inbox

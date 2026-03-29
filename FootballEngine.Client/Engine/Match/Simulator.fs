@@ -83,10 +83,8 @@ module MatchSimulator =
                 if s'.Possession = possBefore then
                     q.Enqueue(ShotAttempt att, second)
 
-                // Probabilidad de falta (basada en agresividad del defensor)
                 let foulChance = 0.02 + float def.Mental.Aggression * 0.001
                 if Continuous.Uniform.Sample 0.0 1.0 < foulChance && s'.Possession <> possBefore then
-                    // Falta cometida - tiro libre para el atacante (la posesión NO cambia)
                     q.Enqueue(FreeKickAttempt att, second + 2)
 
                 if Continuous.Uniform.Sample 0.0 1.0 < cardProbability def then
@@ -170,12 +168,10 @@ module MatchSimulator =
         else
             Ok()
 
-    // MatchContext keeps Map for external consumers — we only use it during init
     let private buildContext (homeData: (Player * float * float)[]) (awayData: (Player * float * float)[]) =
         { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
           AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
 
-    // Build parallel position arrays aligned with the player array
     let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float * float>) : (float * float)[] =
         players
         |> Array.map (fun p -> posMap |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0))
@@ -299,45 +295,40 @@ module MatchSimulator =
 
     let private simulatePenaltyShootout (s: MatchState) (home: Club) (away: Club) (players: Map<PlayerId, Player>) (staff: Map<StaffId, Staff>) =
         result {
-            // Obtener los 5 mejores pateadores de cada equipo
             let homePlayers = home.PlayerIds |> List.choose players.TryFind |> List.sortByDescending _.CurrentSkill
             let awayPlayers = away.PlayerIds |> List.choose players.TryFind |> List.sortByDescending _.CurrentSkill
-            
+
             let takePenaltyKick (kicker: Player) (gk: Player) =
                 let kickerSkill = float kicker.CurrentSkill
                 let gkSkill = float gk.CurrentSkill
                 let kickerMorale = float kicker.Morale
-                let pressure = 0.85 // Presión de penal
+                let pressure = 0.85
                 let baseChance = 0.75 + (kickerSkill - gkSkill) * 0.002 + kickerMorale * 0.001
                 Continuous.Uniform.Sample 0.0 1.0 < baseChance * pressure
-            
+
             let homeGk = awayPlayers |> List.tryFind (fun p -> p.Position = GK)
             let awayGk = homePlayers |> List.tryFind (fun p -> p.Position = GK)
-            
+
             let rec simulateKicks (homeKicks: (PlayerId * bool) list) (awayKicks: (PlayerId * bool) list) (kickNum: int) =
-                // En muerte súbita, agregar un kick nuevo por ronda
                 let homeKicker = homePlayers |> List.item ((kickNum - 1) % homePlayers.Length)
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
-                
+
                 let homeScored = match homeGk with Some gk -> takePenaltyKick homeKicker gk | None -> false
                 let awayScored = match awayGk with Some gk -> takePenaltyKick awayKicker gk | None -> false
-                
+
                 let newHomeKicks = (homeKicker.Id, homeScored) :: homeKicks
                 let newAwayKicks = (awayKicker.Id, awayScored) :: awayKicks
-                
+
                 let homeGoals = newHomeKicks |> List.sumBy (fun (_, scored) -> if scored then 1 else 0)
                 let awayGoals = newAwayKicks |> List.sumBy (fun (_, scored) -> if scored then 1 else 0)
-                
-                // Si es muerte súbita (kickNum > 5) y hay diferencia, termina
+
                 if kickNum > 5 && homeGoals <> awayGoals then
                     { HomeKicks = newHomeKicks
                       AwayKicks = newAwayKicks
                       CurrentKick = kickNum
                       IsComplete = true }
-                // Si es muerte súbita y hay empate, continuar
                 elif kickNum > 5 && homeGoals = awayGoals then
                     simulateKicks newHomeKicks newAwayKicks (kickNum + 1)
-                // Si es ronda normal (<=5) y hay ganador anticipado, termina
                 elif kickNum <= 5 then
                     let remaining = 5 - kickNum
                     if homeGoals > awayGoals + remaining || awayGoals > homeGoals + remaining then
@@ -354,11 +345,10 @@ module MatchSimulator =
                         simulateKicks newHomeKicks newAwayKicks (kickNum + 1)
                 else
                     simulateKicks newHomeKicks newAwayKicks (kickNum + 1)
-            
+
             let shootout = simulateKicks [] [] 1
-            
-            // Agregar eventos de penales
-            let events = 
+
+            let events =
                 [ for (pid, scored) in shootout.HomeKicks ->
                     { Second = 95 * 60 + shootout.CurrentKick
                       PlayerId = pid
@@ -369,7 +359,7 @@ module MatchSimulator =
                       PlayerId = pid
                       ClubId = away.Id
                       Type = PenaltyAwarded scored } ]
-            
+
             let finalState = { s with PenaltyShootout = Some shootout; EventsRev = events @ s.EventsRev }
             return { Final = finalState; Snapshots = [|finalState|] }
         }
@@ -473,11 +463,10 @@ module MatchSimulator =
         (away: Club)
         (players: Map<PlayerId, Player>)
         (staff: Map<StaffId, Staff>)
-        : Result<MatchReplay * bool, SimulationError> =  // Resultado * tienePenales
+        : Result<MatchReplay * bool, SimulationError> =
         result {
             let! replay = run home away players staff true
-            
-            // Si es empate y es knockout, ir a penales
+
             if replay.Final.HomeScore = replay.Final.AwayScore then
                 let! shootoutResult = simulatePenaltyShootout replay.Final home away players staff
                 return shootoutResult, true

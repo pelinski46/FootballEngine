@@ -194,8 +194,7 @@ module Squad =
                                                           for player in players do
                                                               let isSelected =
                                                                   state.SelectedPlayer
-                                                                  |> Option.map (fun p -> p.Id = player.Id)
-                                                                  |> Option.defaultValue false
+                                                                  |> Option.exists (fun id -> id = player.Id)
 
                                                               PlayerView.row
                                                                   player
@@ -208,4 +207,8 @@ module Squad =
 
                     Grid.create
                         [ Grid.column 1
-                          Grid.children [ PlayerView.detail state.SelectedPlayer gs.CurrentDate ] ] ] ]
+                          Grid.children [
+                              match state.SelectedPlayer |> Option.bind (fun id -> gs.Players |> Map.tryFind id) with
+                              | Some player -> PlayerView.detail (Some player) gs.CurrentDate
+                              | None -> PlayerView.detail None gs.CurrentDate
+                          ] ] ] ]

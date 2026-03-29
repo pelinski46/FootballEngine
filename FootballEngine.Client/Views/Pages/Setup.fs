@@ -97,9 +97,9 @@ module Setup =
                             UniformGrid.create
                                 [ UniformGrid.columns 2
                                   UniformGrid.children
-                                      [ UI.menuButton "NEW CAREER" "⚽" "Start a new journey as a manager" (fun _ ->
+                                      [ UI.menuButton "NEW CAREER" NotificationIcons.newCareer "Start a new journey as a manager" (fun _ ->
                                             dispatch (SetupMsg(GoToStep CountrySelection)))
-                                        UI.menuButton "LOAD GAME" "💾" "Continue your existing career" (fun _ ->
+                                        UI.menuButton "LOAD GAME" NotificationIcons.loadGame "Continue your existing career" (fun _ ->
                                             dispatch (SimMsg SaveGame)) ] ] ] ]
             )
 

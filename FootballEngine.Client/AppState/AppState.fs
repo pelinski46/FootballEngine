@@ -12,6 +12,7 @@ module AppState =
     let private emptyGameState () : GameState =
         { CurrentDate = DateTime.Now
           Season = DateTime.Now.Year
+          TrainingWeeksApplied = 0
           Clubs = Map.empty
           Players = Map.empty
           Staff = Map.empty
@@ -19,7 +20,9 @@ module AppState =
           Countries = Map.empty
           UserClubId = 0
           UserStaffId = 0
-          PrimaryCountry = "" }
+          PrimaryCountry = ""
+          Inbox = []
+          NextInboxId = 1 }
 
     let private initialState (gs: GameState) : State =
         { GameState = gs
@@ -36,7 +39,10 @@ module AppState =
           Setup = initSetupState
           Transfer = initTransferState
           ActiveMatchReplay = None
-          ActiveMatchSnapshot = 0 }
+          ActiveMatchSnapshot = 0
+          Inbox = initInboxState
+          PrevUserClubSkills = None
+          PrevUserClubStatus = None }
 
     let private addLog msg (state: State) =
         { state with
@@ -122,13 +128,31 @@ module AppState =
                     NextNotificationId = state.NextNotificationId + 1 },
                 Cmd.none
 
+        | InboxMsg im ->
+            match im with
+            | SelectMessage messageId ->
+                let gs = GameState.markMessageAsRead messageId state.GameState
+
+                { state with
+                    GameState = gs
+                    State.Inbox.SelectedMessageId = Some messageId },
+                SimHelpers.saveCmd gs
+
+            | MarkAsRead messageId ->
+                let gs = GameState.markMessageAsRead messageId state.GameState
+                { state with GameState = gs }, SimHelpers.saveCmd gs
+
+            | MarkActionTaken messageId ->
+                let gs = GameState.markMessageActionTaken messageId state.GameState
+                { state with GameState = gs }, SimHelpers.saveCmd gs
+
         | GameLoaded result ->
             let gs = result |> Option.defaultValue (emptyGameState ())
             let leagueId = SimHelpers.primaryLeagueId gs
 
             { state with
                 GameState = gs
-                CurrentPage = if gs.Clubs.IsEmpty then Setup else Home
+                CurrentPage = if gs.Clubs.IsEmpty then Setup else HomePage
                 SelectedLeagueId = leagueId
                 IsProcessing = false },
             Cmd.none
@@ -143,15 +167,14 @@ module AppState =
             let saveCmd =
                 if state.CurrentPage = Tactics && page <> Tactics then
                     SimHelpers.saveCmd state.GameState
+                elif state.CurrentPage = Training && page <> Training then
+                    SimHelpers.saveCmd state.GameState
                 else
                     Cmd.none
 
             { state with CurrentPage = page }, Cmd.batch [ cmd; saveCmd ]
 
-        | SelectPlayer pId ->
-            { state with
-                SelectedPlayer = state.GameState.Players.TryFind pId },
-            Cmd.none
+        | SelectPlayer pId -> { state with SelectedPlayer = Some pId }, Cmd.none
 
         | DropPlayerInSlot(targetIdx, pId) ->
             let clubId = state.GameState.UserClubId
@@ -194,7 +217,7 @@ module AppState =
             { state with
                 GameState = newGs
                 DraggedPlayer = None }
-            |> addLog $"🔄 Swap made: Slot {targetIdx}",
+            |> addLog $"Swap made: Slot {targetIdx}",
             Cmd.none
 
         | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
@@ -300,6 +323,18 @@ module AppState =
 
             { state with GameState = newGs }, Cmd.none
 
+        | SetPlayerTrainingSchedule(playerId, schedule) ->
+            { state with
+                GameState =
+                    { state.GameState with
+                        Players =
+                            state.GameState.Players
+                            |> Map.add
+                                playerId
+                                { state.GameState.Players[playerId] with
+                                    TrainingSchedule = schedule } } },
+            Cmd.none
+
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none
         | NoOp -> state, Cmd.none
 
@@ -317,5 +352,5 @@ module AppState =
             { state with
                 ActiveMatchReplay = None
                 ActiveMatchSnapshot = 0
-                CurrentPage = Home },
+                CurrentPage = HomePage },
             Cmd.none

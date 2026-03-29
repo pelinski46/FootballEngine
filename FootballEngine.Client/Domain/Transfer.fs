@@ -68,3 +68,31 @@ module TransferNegotiation =
 
     let canAfford (buyer: Club) (fee: decimal) (salary: decimal) =
         buyer.Budget >= fee * clubBudgetSafetyFactor && buyer.Budget >= salary * 12m
+
+module Transfer =
+
+    let transferPlayer
+        (playerId: PlayerId)
+        (fromClubId: ClubId)
+        (toClubId: ClubId)
+        (fee: decimal)
+        (gs: GameState)
+        : GameState =
+        match gs.Clubs |> Map.tryFind toClubId, gs.Clubs |> Map.tryFind fromClubId with
+        | Some buyer, Some seller ->
+            let updatedBuyer =
+                buyer
+                |> Club.adjustBudget -fee
+                |> Club.addPlayer playerId
+
+            let updatedSeller =
+                seller
+                |> Club.adjustBudget fee
+                |> Club.removePlayer playerId
+
+            { gs with
+                Clubs =
+                    gs.Clubs
+                    |> Map.add toClubId updatedBuyer
+                    |> Map.add fromClubId updatedSeller }
+        | _ -> gs

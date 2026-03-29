@@ -91,3 +91,47 @@ type Competition =
       Fixtures: Map<MatchId, MatchFixture>
       Standings: Map<ClubId, LeagueStanding>
       KnockoutTies: Map<int, KnockoutTie> }
+
+module Competition =
+
+    let private emptyStanding clubId =
+        { ClubId = clubId
+          Played = 0
+          Won = 0
+          Drawn = 0
+          Lost = 0
+          GoalsFor = 0
+          GoalsAgainst = 0
+          Points = 0 }
+
+    let rankedStandings (comp: Competition) =
+        comp.ClubIds
+        |> List.map (fun id ->
+            let standing =
+                comp.Standings
+                |> Map.tryFind id
+                |> Option.defaultWith (fun () -> emptyStanding id)
+            id, standing)
+        |> List.sortByDescending (fun (_, s) -> s.Points, s.Won, s.GoalsFor - s.GoalsAgainst)
+
+    let leader (comp: Competition) : ClubId option =
+        rankedStandings comp |> List.tryHead |> Option.map fst
+
+    let bottomN (n: int) (comp: Competition) : ClubId list =
+        comp.ClubIds
+        |> List.map (fun id ->
+            let standing =
+                comp.Standings
+                |> Map.tryFind id
+                |> Option.defaultWith (fun () -> emptyStanding id)
+            id, standing)
+        |> List.sortBy (fun (_, s) -> s.Points, s.Won, s.GoalsFor - s.GoalsAgainst)
+        |> List.truncate n
+        |> List.map fst
+
+    let unplayedFixtures (comp: Competition) =
+        comp.Fixtures |> Map.filter (fun _ f -> MatchFixture.isPending f)
+
+    let fixturesFor (clubId: ClubId) (comp: Competition) =
+        comp.Fixtures
+        |> Map.filter (fun _ f -> MatchFixture.involves clubId f)

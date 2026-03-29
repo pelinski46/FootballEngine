@@ -76,6 +76,6 @@ module UpdateSetup =
 
             { state with
                 GameState = newGameState
-                CurrentPage = Home
+                CurrentPage = HomePage
                 LogMessages = [ $"Career started by {managerName}" ] },
             saveCmd newGameState

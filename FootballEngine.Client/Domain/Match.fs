@@ -32,3 +32,20 @@ type MatchFixture =
       HomeScore: int option
       AwayScore: int option
       Events: MatchEvent list }
+
+module MatchFixture =
+
+    let involves (clubId: ClubId) (f: MatchFixture) =
+        f.HomeClubId = clubId || f.AwayClubId = clubId
+
+    let isPlayed (f: MatchFixture) = f.Played
+
+    let isPending (f: MatchFixture) = not f.Played
+
+    let scoreFor (clubId: ClubId) (f: MatchFixture) =
+        match f.HomeScore, f.AwayScore with
+        | Some h, Some a ->
+            if f.HomeClubId = clubId then Some(h, a)
+            elif f.AwayClubId = clubId then Some(a, h)
+            else None
+        | _ -> None

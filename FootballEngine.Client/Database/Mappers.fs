@@ -6,6 +6,37 @@ open FootballEngine.Database.Serializers
 
 module Mappers =
 
+    let toInboxMessageEntity (gameSaveId: int) (msg: InboxMessage) : InboxMessageEntity =
+        { Id = msg.Id
+          GameSaveId = gameSaveId
+          Date = msg.Date
+          From = msg.From
+          Subject = msg.Subject
+          Body = msg.Body
+          Category = inboxCategoryToString msg.Category
+          IsRead = msg.IsRead
+          RequiresAction = msg.RequiresAction
+          ActionTaken =
+            match msg.ActionTaken with
+            | Some true -> System.Nullable<bool>(true)
+            | Some false -> System.Nullable<bool>(false)
+            | None -> System.Nullable<bool>() }
+
+    let fromInboxMessageEntity (e: InboxMessageEntity) : InboxMessage =
+        { Id = e.Id
+          Date = e.Date
+          From = e.From
+          Subject = e.Subject
+          Body = e.Body
+          Category = parseInboxCategory e.Category
+          IsRead = e.IsRead
+          RequiresAction = e.RequiresAction
+          ActionTaken =
+            if e.ActionTaken.HasValue then
+                Some e.ActionTaken.Value
+            else
+                None }
+
     let private affiliationFromEntity (e: PlayerEntity) : PlayerAffiliation =
         if e.ClubId <= 0 then
             FreeAgent
@@ -91,7 +122,9 @@ module Mappers =
           Reputation = player.Reputation
           Value = Player.playerValue player.CurrentSkill
           Salary = salary
-          ContractExpiry = contractExpiry }
+          ContractExpiry = contractExpiry
+          TrainingFocus = trainingFocusToString player.TrainingSchedule.Focus
+          TrainingIntensity = trainingIntensityToString player.TrainingSchedule.Intensity }
 
     let toPlayerDomain (e: PlayerEntity) : Player =
         let status =
@@ -158,7 +191,10 @@ module Mappers =
           CurrentSkill = e.CurrentSkill
           PotentialSkill = e.PotentialSkill
           Reputation = e.Reputation
-          Affiliation = affiliationFromEntity e }
+          Affiliation = affiliationFromEntity e
+          TrainingSchedule =
+            { Focus = parseTrainingFocus e.TrainingFocus
+              Intensity = parseTrainingIntensity e.TrainingIntensity } }
 
     let toClubEntity (club: Club) : ClubEntity =
         { Id = club.Id
@@ -188,8 +224,6 @@ module Mappers =
                 | Some c when c.ClubId = ce.Id -> Some s.Id
                 | _ -> None)
             |> List.ofSeq
-
-
 
         ce.Id,
         { Id = ce.Id

@@ -11,9 +11,7 @@ type BoardDecision =
 module ObjectiveEvaluation =
 
     let private leaguePos (clubId: ClubId) (comp: Competition) : int option =
-        comp.Standings
-        |> Map.toList
-        |> List.sortByDescending (fun (_, s) -> s.Points, s.Won)
+        Competition.rankedStandings comp
         |> List.tryFindIndex (fun (id, _) -> id = clubId)
         |> Option.map ((+) 1)
 

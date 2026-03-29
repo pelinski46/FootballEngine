@@ -329,6 +329,7 @@ module WorldGen =
 
         { CurrentDate = DateTime(year, 7, 1)
           Season = year
+          TrainingWeeksApplied = 0
           Clubs = world.Clubs
           Players = world.Players
           Staff = world.Staff |> Map.add userStaffId userManager
@@ -336,4 +337,6 @@ module WorldGen =
           Countries = DataRegistry.countries
           UserClubId = userClubId
           UserStaffId = userStaffId
-          PrimaryCountry = primaryCountry }
+          PrimaryCountry = primaryCountry
+          Inbox = []
+          NextInboxId = 1 }

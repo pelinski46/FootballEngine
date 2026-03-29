@@ -104,20 +104,10 @@ module NegotiationEngine =
                         )
                     Morale = min 100 (p.Morale + 5) }
 
-            { gs with
-                Players = gs.Players |> Map.add p.Id moved
-                Clubs =
-                    gs.Clubs
-                    |> Map.add
-                        neg.BuyerClubId
-                        { buyer with
-                            Budget = max 0m (buyer.Budget - fee)
-                            PlayerIds = moved.Id :: (buyer.PlayerIds |> List.filter ((<>) moved.Id)) }
-                    |> Map.add
-                        neg.SellerClubId
-                        { seller with
-                            Budget = seller.Budget + fee
-                            PlayerIds = seller.PlayerIds |> List.filter ((<>) p.Id) } }
+            let gs2 = Transfer.transferPlayer p.Id neg.SellerClubId neg.BuyerClubId fee gs
+
+            { gs2 with
+                Players = gs2.Players |> Map.add p.Id moved }
         | _ -> gs
 
     let resolveAndPrune (gs: GameState) (negotiations: Negotiation list) : GameState * Negotiation list =

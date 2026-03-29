@@ -112,7 +112,7 @@ module MatchViewer =
     let private drawTeam
         (players: Player[])
         (conditions: int[])
-        (positions: (float * float)[]) // aligned with players[]
+        (positions: (float * float)[])
         (sidelined: Map<PlayerId, PlayerOut>)
         (color: string)
         : IView list =
@@ -447,6 +447,11 @@ module MatchDayView =
         | Injury _ -> MatchEvent.injury, Theme.Danger, "INJURY"
         | SubstitutionIn -> MatchEvent.subOn, Theme.Success, "SUB ON"
         | SubstitutionOut -> MatchEvent.subOff, Theme.Danger, "SUB OFF"
+        | PenaltyAwarded true -> MatchEvent.goal, Theme.Success, "PENALTY GOAL"
+        | PenaltyAwarded false -> MatchEvent.penaltyMiss, Theme.Danger, "PENALTY MISS"
+        | FreeKick true -> MatchEvent.goal, Theme.Success, "FREE KICK GOAL"
+        | FreeKick false -> MatchEvent.freeKickMiss, Theme.Danger, "FREE KICK MISS"
+        | Corner -> MatchEvent.corner, Theme.TextMuted, "CORNER"
 
     let private eventRow (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) (ev: MatchEvent) : IView =
         let iconKind, color, label = eventTypeMeta ev.Type
@@ -536,7 +541,10 @@ module MatchDayView =
                 | RedCard
                 | Injury _
                 | SubstitutionIn
-                | SubstitutionOut -> true)
+                | SubstitutionOut
+                | PenaltyAwarded _
+                | FreeKick _
+                | Corner -> true)
 
         DockPanel.create
             [ DockPanel.width 270.0

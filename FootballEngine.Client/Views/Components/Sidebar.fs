@@ -2,11 +2,13 @@ namespace FootballEngine.Components
 
 open Avalonia.Controls
 open Avalonia.FuncUI.DSL
+open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
 open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
+open FootballEngine.Domain
 open FootballEngine.Icons
 open Material.Icons
 
@@ -17,9 +19,12 @@ module Navigation =
           Icon: MaterialIconKind }
 
     let menuItems =
-        [ { Page = Home
+        [ { Page = HomePage
             Label = "Home"
             Icon = IconName.home }
+          { Page = Inbox
+            Label = "Inbox"
+            Icon = IconName.inbox }
           { Page = Squad
             Label = "Squad"
             Icon = IconName.squad }
@@ -43,10 +48,28 @@ module Navigation =
             Icon = IconName.settings } ]
 
 module Sidebar =
-    let private navButton (item: Navigation.NavItem) (isActive: bool) dispatch =
+    let private navButton (item: Navigation.NavItem) (isActive: bool) (badgeCount: int option) dispatch =
         let accentBg = Theme.Accent + "18"
         let activeFg = Theme.Accent
         let inactiveFg = Theme.TextSub
+
+        let badge =
+            match badgeCount with
+            | Some count when count > 0 ->
+                Border.create
+                    [ Border.background Theme.Accent
+                      Border.cornerRadius 8.0
+                      Border.padding (4.0, 1.0)
+                      Border.margin (4.0, 0.0)
+                      Border.child (
+                          TextBlock.create
+                              [ TextBlock.text (string count)
+                                TextBlock.fontSize 10.0
+                                TextBlock.fontWeight FontWeight.Bold
+                                TextBlock.foreground Theme.BgSidebar ]
+                      ) ]
+                :> IView
+            | _ -> TextBlock.create [ TextBlock.text "" ] :> IView
 
         Button.create
             [ Button.background (if isActive then accentBg else "Transparent")
@@ -58,21 +81,29 @@ module Sidebar =
               Button.horizontalContentAlignment HorizontalAlignment.Left
               Button.onClick (fun _ -> dispatch (ChangePage item.Page))
               Button.content (
-                  StackPanel.create
-                      [ StackPanel.orientation Orientation.Horizontal
-                        StackPanel.spacing 14.0
-                        StackPanel.verticalAlignment VerticalAlignment.Center
-                        StackPanel.children
-                            [ Icons.icon item.Icon 18.0 (if isActive then activeFg else inactiveFg)
-                              TextBlock.create
-                                  [ TextBlock.text item.Label
-                                    TextBlock.fontSize 13.0
-                                    TextBlock.fontWeight (if isActive then FontWeight.SemiBold else FontWeight.Normal)
-                                    TextBlock.foreground (if isActive then activeFg else inactiveFg)
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                  DockPanel.create
+                      [ DockPanel.lastChildFill true
+                        DockPanel.children
+                            [ badge |> fun b -> Border.create [ Border.child b; Border.dock Dock.Right ]
+                              StackPanel.create
+                                  [ StackPanel.orientation Orientation.Horizontal
+                                    StackPanel.spacing 14.0
+                                    StackPanel.verticalAlignment VerticalAlignment.Center
+                                    StackPanel.children
+                                        [ Icons.icon item.Icon 18.0 (if isActive then activeFg else inactiveFg)
+                                          TextBlock.create
+                                              [ TextBlock.text item.Label
+                                                TextBlock.fontSize 13.0
+                                                TextBlock.fontWeight (
+                                                    if isActive then FontWeight.SemiBold else FontWeight.Normal
+                                                )
+                                                TextBlock.foreground (if isActive then activeFg else inactiveFg)
+                                                TextBlock.verticalAlignment VerticalAlignment.Center ] ] ] ] ]
               ) ]
 
     let sidebar (state: State) dispatch =
+        let unreadCount = GameState.unreadInboxCount state.GameState
+
         Border.create
             [ Border.width 220.0
               Border.background Theme.BgSidebar
@@ -110,5 +141,6 @@ module Sidebar =
                                     StackPanel.margin (0.0, 8.0)
                                     StackPanel.children
                                         [ for item in Navigation.menuItems do
-                                              navButton item (state.CurrentPage = item.Page) dispatch ] ] ] ]
+                                              let badge = if item.Page = Inbox then Some unreadCount else None
+                                              navButton item (state.CurrentPage = item.Page) badge dispatch ] ] ] ]
               ) ]

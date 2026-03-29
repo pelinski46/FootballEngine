@@ -68,10 +68,28 @@ module Engine =
                    | _ -> true))
         |> Option.defaultValue false
 
+    let private applyWeeklyTrainingIfNeeded (gs: GameState) : GameState =
+        let seasonStart = DateTime(gs.Season, 7, 1)
+        let dayOfSeason = int (gs.CurrentDate - seasonStart).TotalDays
+
+        if dayOfSeason > 0 && dayOfSeason % 7 = 0 then
+            { gs with
+                TrainingWeeksApplied = gs.TrainingWeeksApplied + 1
+                Players =
+                    gs.Players
+                    |> Map.map (fun _ player ->
+                        match player.Affiliation with
+                        | Contracted _ -> TrainingEngine.applyWeeklyTraining gs.CurrentDate player.TrainingSchedule player
+                        | _ -> player) }
+        else
+            gs
+
     let private advanceSingleDay (gs: GameState) : DayResult =
         let gs =
             { gs with
                 CurrentDate = gs.CurrentDate.AddDays(1.0) }
+
+        let gs = applyWeeklyTrainingIfNeeded gs
 
         let todayFixtures =
             gs.Competitions
@@ -142,15 +160,28 @@ module Engine =
         | NoFixturesToPlay
         | SimulationErrors of string
 
+    let private seasonWeeks (gs: GameState) =
+        let seasonStart = DateTime(gs.Season, 7, 1)
+        let seasonEnd =
+            gs.Competitions
+            |> Map.toSeq
+            |> Seq.collect (fun (_, c) -> c.Fixtures |> Map.toSeq |> Seq.map (fun (_, f) -> f.ScheduledDate))
+            |> Seq.toList
+            |> function
+                | [] -> DateTime(gs.Season + 1, 5, 1)
+                | dates -> List.max dates
+        int (seasonEnd - seasonStart).TotalDays / 7
+
     let private runSeasonPipeline (gs: GameState) =
-        let rng = Random()
+        let totalWeeks = seasonWeeks gs
 
         gs
         |> ClubFinance.distributeRevenue
         |> TransferMarket.simulateSummerWindow
-        |> PlayerDevelopment.developAll rng
-        |> ContractManager.processContracts rng
-        |> YouthAcademy.generateYouth rng
+        |> TrainingEngine.applyRemainingSeasonTraining gs.CurrentDate gs.TrainingWeeksApplied totalWeeks
+        |> PlayerDevelopment.developAll
+        |> ContractManager.processContracts
+        |> YouthAcademy.generateYouth
         |> SeasonManager.applyLeagueConsequences
         |> BoardAI.runEndOfSeason
         |> SeasonManager.resetConditions
@@ -158,7 +189,8 @@ module Engine =
         |> fun s ->
             { s with
                 Season = s.Season + 1
-                CurrentDate = DateTime(s.Season + 1, 7, 1) }
+                CurrentDate = DateTime(s.Season + 1, 7, 1)
+                TrainingWeeksApplied = 0 }
         |> SeasonGen.regenerateFixtures
 
     let advanceSeason (gs: GameState) : SeasonResult =
@@ -207,8 +239,8 @@ module Engine =
             comp.Fixtures
             |> Map.exists (fun _ f ->
                 f.ScheduledDate.Date = gs.CurrentDate.Date
-                && not f.Played
-                && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId)))
+                && MatchFixture.isPending f
+                && MatchFixture.involves gs.UserClubId f))
 
     let simulateUserFixtureForDay (gs: GameState) : Result<UserMatchDayResult, string> =
         let userFixture =
@@ -217,8 +249,8 @@ module Engine =
             |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
             |> Seq.tryFind (fun (_, f) ->
                 f.ScheduledDate.Date = gs.CurrentDate.Date
-                && not f.Played
-                && (f.HomeClubId = gs.UserClubId || f.AwayClubId = gs.UserClubId))
+                && MatchFixture.isPending f
+                && MatchFixture.involves gs.UserClubId f)
 
         match userFixture with
         | None -> Error "No user fixture today"

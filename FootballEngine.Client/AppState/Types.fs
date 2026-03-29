@@ -7,7 +7,7 @@ module AppTypes =
     type Page =
         | Loading
         | Setup
-        | Home
+        | HomePage
         | Inbox
         | Squad
         | Tactics
@@ -53,7 +53,7 @@ module AppTypes =
 
     type Notification =
         { Id: int
-          Kind: NotificationKind
+          Icon: Material.Icons.MaterialIconKind
           Title: string
           Body: string
           IsRead: bool }
@@ -100,6 +100,8 @@ module AppTypes =
           Result: MatchReplay option
           Snapshot: int }
 
+    type InboxState = { SelectedMessageId: int option }
+
     type State =
         { GameState: GameState
           CurrentPage: Page
@@ -107,7 +109,7 @@ module AppTypes =
           LogMessages: string list
           Notifications: Notification list
           NextNotificationId: int
-          SelectedPlayer: Player option
+          SelectedPlayer: PlayerId option
           SelectedTactics: Formation
           SelectedLeagueId: CompetitionId
           DraggedPlayer: PlayerId option
@@ -115,7 +117,10 @@ module AppTypes =
           Setup: SetupState
           Transfer: TransferState
           ActiveMatchReplay: MatchReplay option
-          ActiveMatchSnapshot: int }
+          ActiveMatchSnapshot: int
+          Inbox: InboxState
+          PrevUserClubSkills: Map<PlayerId, int> option
+          PrevUserClubStatus: Map<PlayerId, PlayerStatus> option }
 
     let initSetupState =
         { Step = MainMenu
@@ -147,14 +152,16 @@ module AppTypes =
           Result = None
           Snapshot = 0 }
 
+    let initInboxState = { SelectedMessageId = None }
+
     let addLog msg (state: State) =
         { state with
             LogMessages = msg :: state.LogMessages |> List.truncate 30 }
 
-    let pushNotification kind title body (state: State) =
+    let pushNotification icon title body (state: State) =
         let note =
             { Id = state.NextNotificationId
-              Kind = kind
+              Icon = icon
               Title = title
               Body = body
               IsRead = false }

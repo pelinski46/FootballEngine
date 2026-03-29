@@ -57,7 +57,9 @@ type PlayerEntity =
       Reputation: int
       Value: decimal
       Salary: decimal
-      ContractExpiry: int }
+      ContractExpiry: int
+      TrainingFocus: string
+      TrainingIntensity: string }
 
 [<CLIMutable>]
 type ClubEntity =
@@ -198,6 +200,22 @@ type GameSaveMeta =
       Id: int
       CurrentDate: DateTime
       Season: int
+      TrainingWeeksApplied: int
       UserClubId: int
       UserStaffId: int
-      PrimaryCountry: string }
+      PrimaryCountry: string
+      NextInboxId: int }
+
+[<CLIMutable>]
+type InboxMessageEntity =
+    { [<PrimaryKey>]
+      Id: int
+      GameSaveId: int
+      Date: DateTime
+      From: string
+      Subject: string
+      Body: string
+      Category: string
+      IsRead: bool
+      RequiresAction: bool
+      ActionTaken: System.Nullable<bool> }

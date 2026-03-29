@@ -47,11 +47,17 @@ module AppMsgs =
         | DismissAll
         | PushNotification of Notification
 
+    type InboxMsg =
+        | SelectMessage of messageId: int
+        | MarkAsRead of messageId: int
+        | MarkActionTaken of messageId: int
+
     type Msg =
         | SetupMsg of SetupMsg
         | SimMsg of SimMsg
         | TransferMsg of TransferMsg
         | NotificationMsg of NotificationMsg
+        | InboxMsg of InboxMsg
         | GameLoaded of GameState option
         | ChangePage of Page
         | SelectPlayer of PlayerId
@@ -67,6 +73,7 @@ module AppMsgs =
         | NoOp
         | StepActiveMatch of delta: int
         | CloseActiveMatch
+        | SetPlayerTrainingSchedule of playerId: PlayerId * TrainingSchedule
 
 module SimHelpers =
     let primaryLeagueId (gs: GameState) =
@@ -88,7 +95,7 @@ module SimHelpers =
             AppMsgs.NotificationMsg(
                 AppMsgs.PushNotification
                     { Id = 0
-                      Kind = Info
+                      Icon = Material.Icons.MaterialIconKind.AlertCircleOutline
                       Title = "Save failed"
                       Body = ex.Message
                       IsRead = false }

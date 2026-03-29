@@ -383,3 +383,50 @@ module Serializers =
 
             InternationalCup(conf, parseCupFormat param1[.. idx - 1], parseList ',' parseQualificationSlot param2)
         | _ -> defaultLeague
+
+    let trainingFocusToString =
+        function
+        | TrainingFocus.TrainingPhysical -> "Physical"
+        | TrainingFocus.TrainingTechnical -> "Technical"
+        | TrainingFocus.TrainingMental -> "Mental"
+        | TrainingFocus.TrainingGoalkeeping -> "Goalkeeping"
+        | TrainingFocus.TrainingAllRound -> "AllRound"
+
+    let parseTrainingFocus (s: string) : TrainingFocus =
+        match s with
+        | "Physical" -> TrainingFocus.TrainingPhysical
+        | "Technical" -> TrainingFocus.TrainingTechnical
+        | "Mental" -> TrainingFocus.TrainingMental
+        | "Goalkeeping" -> TrainingFocus.TrainingGoalkeeping
+        | _ -> TrainingFocus.TrainingAllRound
+
+    let trainingIntensityToString =
+        function
+        | TrainingIntensity.TrainingLight -> "Light"
+        | TrainingIntensity.TrainingNormal -> "Normal"
+        | TrainingIntensity.TrainingHeavy -> "Heavy"
+
+    let parseTrainingIntensity (s: string) : TrainingIntensity =
+        match s with
+        | "Light" -> TrainingIntensity.TrainingLight
+        | "Normal" -> TrainingIntensity.TrainingNormal
+        | _ -> TrainingIntensity.TrainingHeavy
+
+    let inboxCategoryToString =
+        function
+        | InboxMessageCategory.Development -> "Development"
+        | InboxMessageCategory.Transfer -> "Transfer"
+        | InboxMessageCategory.BoardUpdate -> "BoardUpdate"
+        | InboxMessageCategory.MatchReport -> "MatchReport"
+        | InboxMessageCategory.InjuryMessage -> "Injury"
+        | InboxMessageCategory.Contract -> "Contract"
+
+    let parseInboxCategory (s: string) : InboxMessageCategory =
+        match s with
+        | "Development" -> InboxMessageCategory.Development
+        | "Transfer" -> InboxMessageCategory.Transfer
+        | "BoardUpdate" -> InboxMessageCategory.BoardUpdate
+        | "MatchReport" -> InboxMessageCategory.MatchReport
+        | "Injury" -> InboxMessageCategory.InjuryMessage
+        | "Contract" -> InboxMessageCategory.Contract
+        | _ -> InboxMessageCategory.Development

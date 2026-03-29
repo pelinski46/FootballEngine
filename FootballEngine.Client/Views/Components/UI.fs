@@ -258,9 +258,7 @@ module UI =
     let panelCard (header: IView) (body: IView) : IView =
         Border.create
             [ Border.background Theme.BgSidebar
-              Border.cornerRadius 10.0
               Border.borderBrush Theme.Border
-              Border.borderThickness 1.0
               Border.clipToBounds true
               Border.child (StackPanel.create [ StackPanel.spacing 0.0; StackPanel.children [ header; body ] ]) ]
         :> IView
@@ -352,7 +350,7 @@ module UI =
                           Border.clipToBounds true
                           Border.child content ] ] ]
 
-    let menuButton (title: string) (icon: string) (description: string) onClick =
+    let menuButton (title: string) (icon: Material.Icons.MaterialIconKind) (description: string) onClick =
         Button.create
             [ Button.onClick onClick
               Button.padding 0.0
@@ -368,10 +366,7 @@ module UI =
                             StackPanel.create
                                 [ StackPanel.spacing 10.0
                                   StackPanel.children
-                                      [ TextBlock.create
-                                            [ TextBlock.text icon
-                                              TextBlock.fontSize 40.0
-                                              TextBlock.horizontalAlignment HorizontalAlignment.Center ]
+                                      [ Icons.iconXl icon Theme.TextMain
                                         TextBlock.create
                                             [ TextBlock.text title
                                               TextBlock.fontSize 22.0

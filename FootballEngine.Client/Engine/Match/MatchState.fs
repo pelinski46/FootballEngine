@@ -6,11 +6,11 @@ open TacticalInstructions
 module MatchState =
 
     type TacticsConfig =
-        { PressureDistance: float       // Cuánto se adelanta la línea defensiva
-          UrgencyMultiplier: float      // Multiplicador para urgencia en duelos/tiros
-          ForwardPush: float            // Cuántos jugadores se adelantan al atacar
-          DefensiveDrop: float          // Cuánto se retrasan al defender
-          PressingIntensity: float      // Intensidad del pressing (afecta fatigue)
+        { PressureDistance: float
+          UrgencyMultiplier: float
+          ForwardPush: float
+          DefensiveDrop: float
+          PressingIntensity: float
         }
 
     let private baseTacticsConfig =
@@ -49,8 +49,7 @@ module MatchState =
     let tacticsConfig (teamTactics: TeamTactics) (instructions: TacticalInstructions option) =
         let baseCfg = baseTacticsConfig teamTactics
         let instr = instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-        
-        // Convertir sliders 0-4 a multiplicadores (-0.2 a +0.2 por punto)
+
         let mentalityMod = float (instr.Mentality - 2) * 0.08
         let defensiveLineMod = float (instr.DefensiveLine - 2) * 3.0
         let pressingMod = float (instr.PressingIntensity - 2) * 0.15
