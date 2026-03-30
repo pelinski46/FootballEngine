@@ -102,3 +102,13 @@ module Player =
 
     let playerSalary (skill: int) =
         decimal (max 0 (skill - 20) |> fun x -> x * x * 5 + 500)
+
+    let clubOf (p: Player) : ClubId option =
+        match p.Affiliation with
+        | Contracted(clubId, _) | YouthProspect clubId -> Some clubId
+        | FreeAgent | Retired -> None
+
+    let contractOf (p: Player) : ContractInfo option =
+        match p.Affiliation with
+        | Contracted(_, contract) -> Some contract
+        | _ -> None

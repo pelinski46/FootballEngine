@@ -3,7 +3,6 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open FSharp.Stats.Distributions
 
 module PlayerDevelopment =
 
@@ -39,8 +38,8 @@ module PlayerDevelopment =
             else
                 0.50 * float (abs delta)
 
-        let roll = Continuous.Uniform.Sample 0.0 1.0
-        
+        let roll = rollProbability ()
+
         if roll < threshold then
             clamp 1 20 (stat + (if delta > 0 then 1 else -1))
         else

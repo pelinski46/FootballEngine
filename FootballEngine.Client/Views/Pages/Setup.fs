@@ -235,15 +235,18 @@ module Setup =
 
         | ClubSelection ->
             let clubs =
-                state.GameState.Competitions
-                |> Map.tryPick (fun _ (comp: Competition) ->
-                    match comp.Type, comp.Country with
-                    | NationalLeague(LeagueLevel 0, _), Some country when country = state.Setup.SelectedCountry.Value ->
-                        Some comp
-                    | _ -> None)
-                |> Option.map (fun comp -> comp.ClubIds |> List.map (fun id -> state.GameState.Clubs[id]))
-                |> Option.defaultValue []
-                |> List.sortByDescending _.Reputation
+                match state.Mode with
+                | InGame (gs, _) ->
+                    gs.Competitions
+                    |> Map.tryPick (fun _ (comp: Competition) ->
+                        match comp.Type, comp.Country with
+                        | NationalLeague(LeagueLevel 0, _), Some country when country = state.Setup.SelectedCountry.Value ->
+                            Some comp
+                        | _ -> None)
+                    |> Option.map (fun comp -> comp.ClubIds |> List.map (fun id -> gs.Clubs[id]))
+                    |> Option.defaultValue []
+                    |> List.sortByDescending _.Reputation
+                | _ -> []
 
             setupContainer (
                 StackPanel.create

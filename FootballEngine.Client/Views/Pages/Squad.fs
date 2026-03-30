@@ -4,6 +4,7 @@ open System
 open Avalonia.Controls
 open Avalonia.Controls.Primitives
 open Avalonia.FuncUI.DSL
+open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
@@ -29,9 +30,7 @@ module SquadPresenter =
         let totalWages =
             players
             |> List.sumBy (fun p ->
-                match p.Affiliation with
-                | Contracted(_, c) -> c.Salary
-                | _ -> 0m)
+                Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m)
 
         let avgSkill =
             if players.IsEmpty then
@@ -146,69 +145,71 @@ module Squad =
                                 UI.countBadge squadCount ] ] ] ]
 
     let squadView (state: State) dispatch =
-        let gs = state.GameState
-        let squad = GameState.getSquad gs.UserClubId gs
-        let stats = SquadPresenter.getTeamStats squad
+        match state.Mode with
+        | InGame (gs, _) ->
+            let squad = GameState.getSquad gs.UserClubId gs
+            let stats = SquadPresenter.getTeamStats squad
 
-        let groups =
-            SquadPresenter.getGroupedPlayers squad gs.CurrentDate state.PlayerSortBy
+            let groups =
+                SquadPresenter.getGroupedPlayers squad gs.CurrentDate state.PlayerSortBy
 
-        Grid.create
-            [ Grid.columnDefinitions "*, 420"
-              Grid.verticalAlignment VerticalAlignment.Stretch
-              Grid.children
-                  [ Grid.create
-                        [ Grid.column 0
-                          Grid.rowDefinitions "auto, auto, auto, *"
-                          Grid.margin (0.0, 0.0, 20.0, 0.0)
-                          Grid.children
-                              [ UniformGrid.create
-                                    [ Grid.row 0
-                                      UniformGrid.columns 4
-                                      UniformGrid.margin (0.0, 0.0, 0.0, 16.0)
-                                      UniformGrid.horizontalAlignment HorizontalAlignment.Stretch
-                                      UniformGrid.children
-                                          [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize IconName.squad ""
-                                            UI.iconStatCard "TEAM VALUE" stats.TotalValue PlayerIcon.value "Market"
-                                            UI.iconStatCard "AVG SKILL" stats.AvgSkill PlayerIcon.skill "CA"
-                                            UI.iconStatCard "WAGE BILL" stats.TotalWages Club.finances "Weekly" ] ]
+            Grid.create
+                [ Grid.columnDefinitions "*, 420"
+                  Grid.verticalAlignment VerticalAlignment.Stretch
+                  Grid.children
+                      [ Grid.create
+                            [ Grid.column 0
+                              Grid.rowDefinitions "auto, auto, auto, *"
+                              Grid.margin (0.0, 0.0, 20.0, 0.0)
+                              Grid.children
+                                  [ UniformGrid.create
+                                        [ Grid.row 0
+                                          UniformGrid.columns 4
+                                          UniformGrid.margin (0.0, 0.0, 0.0, 16.0)
+                                          UniformGrid.horizontalAlignment HorizontalAlignment.Stretch
+                                          UniformGrid.children
+                                              [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize IconName.squad ""
+                                                UI.iconStatCard "TEAM VALUE" stats.TotalValue PlayerIcon.value "Market"
+                                                UI.iconStatCard "AVG SKILL" stats.AvgSkill PlayerIcon.skill "CA"
+                                                UI.iconStatCard "WAGE BILL" stats.TotalWages Club.finances "Weekly" ] ]
 
-                                (sectionHeader squad.Length dispatch state)
-                                |> fun h -> Border.create [ Grid.row 1; Border.child h ]
+                                    (sectionHeader squad.Length dispatch state)
+                                    |> fun h -> Border.create [ Grid.row 1; Border.child h ]
 
-                                PlayerView.tableHeader ()
-                                |> fun h -> Border.create [ Grid.row 2; Border.child h ]
+                                    PlayerView.tableHeader ()
+                                    |> fun h -> Border.create [ Grid.row 2; Border.child h ]
 
-                                ScrollViewer.create
-                                    [ Grid.row 3
-                                      ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                      ScrollViewer.content (
-                                          StackPanel.create
-                                              [ StackPanel.spacing 1.0
-                                                StackPanel.children
-                                                    [ for label, players in groups do
-                                                          match label with
-                                                          | Some l -> positionGroupHeader l
-                                                          | None -> ()
+                                    ScrollViewer.create
+                                        [ Grid.row 3
+                                          ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                          ScrollViewer.content (
+                                              StackPanel.create
+                                                  [ StackPanel.spacing 1.0
+                                                    StackPanel.children
+                                                        [ for label, players in groups do
+                                                              match label with
+                                                              | Some l -> positionGroupHeader l
+                                                              | None -> ()
 
-                                                          for player in players do
-                                                              let isSelected =
-                                                                  state.SelectedPlayer
-                                                                  |> Option.exists (fun id -> id = player.Id)
+                                                              for player in players do
+                                                                  let isSelected =
+                                                                      state.SelectedPlayer
+                                                                      |> Option.exists (fun id -> id = player.Id)
 
-                                                              PlayerView.row
-                                                                  player
-                                                                  gs.CurrentDate
-                                                                  isSelected
-                                                                  (state.DraggedPlayer = Some player.Id)
-                                                                  (fun () -> dispatch (SelectPlayer player.Id))
-                                                              |> View.withKey (string player.Id) ] ]
-                                      ) ] ] ]
+                                                                  PlayerView.row
+                                                                      player
+                                                                      gs.CurrentDate
+                                                                      isSelected
+                                                                      (state.DraggedPlayer = Some player.Id)
+                                                                      (fun () -> dispatch (SelectPlayer player.Id))
+                                                                  |> View.withKey (string player.Id) ] ]
+                                          ) ] ] ]
 
-                    Grid.create
-                        [ Grid.column 1
-                          Grid.children [
-                              match state.SelectedPlayer |> Option.bind (fun id -> gs.Players |> Map.tryFind id) with
-                              | Some player -> PlayerView.detail (Some player) gs.CurrentDate
-                              | None -> PlayerView.detail None gs.CurrentDate
-                          ] ] ] ]
+                        Grid.create
+                            [ Grid.column 1
+                              Grid.children
+                                  [ match state.SelectedPlayer |> Option.bind (fun id -> gs.Players |> Map.tryFind id) with
+                                    | Some player -> PlayerView.detail (Some player) gs.CurrentDate
+                                    | None -> PlayerView.detail None gs.CurrentDate ] ] ] ]
+            :> IView
+        | _ -> Border.create [] :> IView

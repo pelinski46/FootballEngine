@@ -35,10 +35,10 @@
         <Compile Include="Engine\Stats.fs"/>
         <Compile Include="Engine\Match\MatchCalc.fs"/>
         <Compile Include="Engine\Match\MatchState.fs"/>
-        <Compile Include="Engine\Match\Pitch.fs"/>
-        <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\MatchManager.fs"/>
         <Compile Include="Engine\Match\MatchPlayer.fs"/>
+        <Compile Include="Engine\Match\Pitch.fs"/>
+        <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
         <Compile Include="Engine\WorldGeneration\PlayerGen.fs"/>
         <Compile Include="Engine\WorldGeneration\StaffGen.fs"/>

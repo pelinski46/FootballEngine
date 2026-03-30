@@ -14,18 +14,22 @@ module UpdateTransfer =
         gs.Players
         |> Map.toSeq
         |> Seq.choose (fun (_, p) ->
-            match p.Affiliation with
-            | Contracted(clubId, _) -> gs.Clubs |> Map.tryFind clubId |> Option.map (fun c -> p.Id, c.Name)
-            | _ -> None)
+            Player.clubOf p
+            |> Option.bind (fun clubId -> gs.Clubs |> Map.tryFind clubId |> Option.map (fun c -> p.Id, c.Name)))
         |> Map.ofSeq
 
-    let private matchesFilter (filter: TransferFilter) (p: Player) =
-        match filter with
-        | AllPositions -> true
-        | Goalkeepers -> p.Position = GK
-        | Defenders -> p.Position = DC || p.Position = DL || p.Position = DR
-        | Midfielders -> p.Position = DM || p.Position = MC || p.Position = AMC
-        | Attackers -> p.Position = AML || p.Position = AMR || p.Position = ST
+    let private isPositionInFilter (filter: TransferFilter) (pos: Position) =
+        match filter, pos with
+        | AllPositions, _ -> true
+        | Goalkeepers, GK -> true
+        | Defenders, (DC | DL | DR | WBR | WBL) -> true
+        | Midfielders, (DM | MC | ML | MR | AMC | AMR | AML) -> true
+        | Attackers, ST -> true
+        | _ -> false
+
+    let private matchesFilter (filter: TransferFilter) (p: Player) = isPositionInFilter filter p.Position
+
+
 
     let private applySort (sortBy: SortField) (asc: bool) (players: Player list) =
         match sortBy, asc with
@@ -63,10 +67,8 @@ module UpdateTransfer =
                 |> Map.toList
                 |> List.map snd
                 |> List.filter (fun p ->
-                    match p.Affiliation with
-                    | Contracted(clubId, _) -> clubId <> gs.UserClubId
-                    | FreeAgent -> true
-                    | _ -> false)
+                    Player.clubOf p
+                    |> Option.forall (fun clubId -> clubId <> gs.UserClubId))
 
             players, clubNameCache)
 
@@ -115,15 +117,20 @@ module UpdateTransfer =
     let private pushNotification = AppTypes.pushNotification
 
     let handle (msg: TransferMsg) (state: State) : State * Cmd<Msg> =
-        let gs = state.GameState
         let t = state.Transfer
+
+        let withGame (f: GameState -> State * Cmd<Msg>) =
+            match state.Mode with
+            | InGame(gs, _) -> f gs
+            | _ -> state, Cmd.none
 
         match msg with
         | Load ->
-            { state with
-                State.Transfer.IsLoading = true },
-            Cmd.OfTask.perform (fun () -> buildCacheAsync gs) () (fun (players, cache) ->
-                TransferMsg(Loaded(players, cache)))
+            withGame (fun gs ->
+                { state with
+                    State.Transfer.IsLoading = true },
+                Cmd.OfTask.perform (fun () -> buildCacheAsync gs) () (fun (players, cache) ->
+                    TransferMsg(Loaded(players, cache))))
 
         | Loaded(players, cache) ->
             let updated =
@@ -141,9 +148,26 @@ module UpdateTransfer =
             Cmd.none
 
         | Search query ->
+            let delayed () =
+                task {
+                    do! Task.Delay 150
+                    return query
+                }
+
             { state with
-                Transfer = { t with SearchQuery = query } |> withFilteredPlayers },
-            Cmd.none
+                Transfer = { t with SearchQuery = query } },
+            Cmd.OfTask.perform delayed () (fun q -> TransferMsg(ApplySearch q))
+
+        | ApplySearch query ->
+            if query <> t.SearchQuery then
+                state, Cmd.none
+            else
+                { state with
+                    Transfer =
+                        { t with
+                            FilteredPlayers = applyFilters t
+                            Page = 0 } },
+                Cmd.none
 
         | FilterChange f ->
             { state with
@@ -194,55 +218,56 @@ module UpdateTransfer =
             Cmd.none
 
         | SubmitOffer ->
-            match t.ActiveNegotiation with
-            | None -> state, Cmd.none
-            | Some neg ->
-                match gs.Players |> Map.tryFind neg.PlayerId with
+            withGame (fun gs ->
+                match t.ActiveNegotiation with
                 | None -> state, Cmd.none
-                | Some p ->
-                    let buyer = gs.Clubs[gs.UserClubId]
-
-                    match GameState.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+                | Some neg ->
+                    match gs.Players |> Map.tryFind neg.PlayerId with
                     | None -> state, Cmd.none
-                    | Some seller ->
-                        if not (canAfford buyer neg.OfferedFee (suggestedSalary p)) then
-                            { state with
-                                State.Transfer.ActiveNegotiation =
-                                    Some
-                                        { neg with
-                                            Step = OfferRejected "Insufficient budget" } },
-                            Cmd.none
-                        else
-                            match clubResponse buyer seller p neg.OfferedFee with
-                            | RejectedByClub ->
+                    | Some p ->
+                        let buyer = gs.Clubs[gs.UserClubId]
+
+                        match Player.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+                        | None -> state, Cmd.none
+                        | Some seller ->
+                            if not (canAfford buyer neg.OfferedFee (suggestedSalary p)) then
                                 { state with
                                     State.Transfer.ActiveNegotiation =
                                         Some
                                             { neg with
-                                                Step = OfferRejected $"{seller.Name} rejected the offer" } },
+                                                Step = OfferRejected "Insufficient budget" } },
                                 Cmd.none
+                            else
+                                match clubResponse buyer seller p neg.OfferedFee with
+                                | RejectedByClub ->
+                                    { state with
+                                        State.Transfer.ActiveNegotiation =
+                                            Some
+                                                { neg with
+                                                    Step = OfferRejected $"{seller.Name} rejected the offer" } },
+                                    Cmd.none
 
-                            | AcceptedByClub ->
-                                let offer =
-                                    { Id = t.NextOfferId
-                                      PlayerId = p.Id
-                                      SellerClubId = seller.Id
-                                      Fee = neg.OfferedFee
-                                      Status = AcceptedByClub
-                                      CreatedOnDate = gs.CurrentDate }
+                                | AcceptedByClub ->
+                                    let offer =
+                                        { Id = t.NextOfferId
+                                          PlayerId = p.Id
+                                          SellerClubId = seller.Id
+                                          Fee = neg.OfferedFee
+                                          Status = AcceptedByClub
+                                          CreatedOnDate = gs.CurrentDate }
 
-                                { state with
-                                    Transfer =
-                                        { t with
-                                            ActiveNegotiation =
-                                                Some
-                                                    { neg with
-                                                        Step = NegotiatingContract(suggestedSalary p, 3) }
-                                            OutgoingOffers = offer :: t.OutgoingOffers
-                                            NextOfferId = t.NextOfferId + 1 } },
-                                Cmd.none
+                                    { state with
+                                        Transfer =
+                                            { t with
+                                                ActiveNegotiation =
+                                                    Some
+                                                        { neg with
+                                                            Step = NegotiatingContract(suggestedSalary p, 3) }
+                                                OutgoingOffers = offer :: t.OutgoingOffers
+                                                NextOfferId = t.NextOfferId + 1 } },
+                                    Cmd.none
 
-                            | _ -> state, Cmd.none
+                                | _ -> state, Cmd.none)
 
         | OfferCounterSalary(salary, years) ->
             { state with
@@ -254,52 +279,54 @@ module UpdateTransfer =
             Cmd.none
 
         | AcceptContract ->
-            match t.ActiveNegotiation with
-            | None -> state, Cmd.none
-            | Some neg ->
-                match neg.Step with
-                | NegotiatingContract(salary, years) ->
-                    match gs.Players |> Map.tryFind neg.PlayerId with
-                    | None -> state, Cmd.none
-                    | Some p ->
-                        let buyer = gs.Clubs[gs.UserClubId]
-
-                        match GameState.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+            withGame (fun gs ->
+                match t.ActiveNegotiation with
+                | None -> state, Cmd.none
+                | Some neg ->
+                    match neg.Step with
+                    | NegotiatingContract(salary, years) ->
+                        match gs.Players |> Map.tryFind neg.PlayerId with
                         | None -> state, Cmd.none
-                        | Some seller ->
-                            match playerResponse buyer p salary with
-                            | ContractRejectedByPlayer ->
-                                { state with
-                                    State.Transfer.ActiveNegotiation = Some { neg with Step = ContractRejected } },
-                                Cmd.none
+                        | Some p ->
+                            let buyer = gs.Clubs[gs.UserClubId]
 
-                            | ContractOffered _ ->
-                                let newGs = applyTransferToGameState buyer seller p neg.OfferedFee salary years gs
+                            match Player.clubOf p |> Option.bind (fun id -> gs.Clubs |> Map.tryFind id) with
+                            | None -> state, Cmd.none
+                            | Some seller ->
+                                match playerResponse buyer p salary with
+                                | ContractRejectedByPlayer ->
+                                    { state with
+                                        State.Transfer.ActiveNegotiation = Some { neg with Step = ContractRejected } },
+                                    Cmd.none
 
-                                let updatedTransfer =
-                                    { t with
-                                        ActiveNegotiation = Some { neg with Step = NegotiationComplete }
-                                        OutgoingOffers =
-                                            t.OutgoingOffers
-                                            |> List.map (fun o ->
-                                                if o.PlayerId = p.Id then
-                                                    { o with Status = Completed }
-                                                else
-                                                    o)
-                                        CachedPlayers = t.CachedPlayers |> List.filter (fun x -> x.Id <> p.Id)
-                                        FilteredPlayers = t.FilteredPlayers |> List.filter (fun x -> x.Id <> p.Id) }
-                                    |> recordTransfer p buyer seller neg.OfferedFee gs.Season
+                                | ContractOffered _ ->
+                                    let newGs = applyTransferToGameState buyer seller p neg.OfferedFee salary years gs
 
-                                { state with
-                                    GameState = newGs
-                                    Transfer = updatedTransfer }
-                                |> pushNotification NotificationIcons.win
-                                    "Transfer Complete"
-                                    $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}",
-                                SimHelpers.saveCmd newGs
+                                    let updatedTransfer =
+                                        { t with
+                                            ActiveNegotiation = Some { neg with Step = NegotiationComplete }
+                                            OutgoingOffers =
+                                                t.OutgoingOffers
+                                                |> List.map (fun o ->
+                                                    if o.PlayerId = p.Id then
+                                                        { o with Status = Completed }
+                                                    else
+                                                        o)
+                                            CachedPlayers = t.CachedPlayers |> List.filter (fun x -> x.Id <> p.Id)
+                                            FilteredPlayers = t.FilteredPlayers |> List.filter (fun x -> x.Id <> p.Id) }
+                                        |> recordTransfer p buyer seller neg.OfferedFee gs.Season
 
-                            | _ -> state, Cmd.none
-                | _ -> state, Cmd.none
+                                    { state with
+                                        Mode = InGame(newGs, managerEmployment newGs)
+                                        Transfer = updatedTransfer }
+                                    |> pushNotification
+                                        NotificationIcons.win
+                                        "Transfer Complete"
+                                        $"{p.Name} signed for {buyer.Name} — fee: ${neg.OfferedFee:N0}",
+                                    SimHelpers.saveCmd newGs
+
+                                | _ -> state, Cmd.none
+                    | _ -> state, Cmd.none)
 
         | WithdrawOffer offerId ->
             let clearNeg =

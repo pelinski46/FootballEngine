@@ -19,18 +19,18 @@ let singleMatchTests =
           }
           test "scores are non-negative" {
               let clubs, players, staff = loadClubs ()
-              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let h, a, _, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (h >= 0 && a >= 0) $"negative score: {h}-{a}"
           }
           test "scores are plausible (each <= 10)" {
               let clubs, players, staff = loadClubs ()
-              let h, a, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let h, a, _, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               Expect.isTrue (h <= 10 && a <= 10) $"implausible score: {h}-{a}"
           }
           test "goal events match reported score" {
               let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let hScore, aScore, events = trySimulateMatch home away players staff |> getOk
+              let hScore, aScore, events, _ = trySimulateMatch home away players staff |> getOk
               let goals = events |> List.filter (fun e -> e.Type = Goal)
               let hGoals = goals |> List.filter (fun e -> e.ClubId = home.Id) |> List.length
               let aGoals = goals |> List.filter (fun e -> e.ClubId = away.Id) |> List.length
@@ -41,7 +41,7 @@ let singleMatchTests =
           }
           test "all event seconds in [1, 5700]" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (events |> List.forall (fun e -> e.Second >= 1 && e.Second <= 95 * 60))
@@ -50,7 +50,7 @@ let singleMatchTests =
           test "all event playerIds belong to one of the two clubs" {
               let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players staff |> getOk
+              let _, _, events, _ = trySimulateMatch home away players staff |> getOk
               let homeIds = home.PlayerIds |> Set.ofList
               let awayIds = away.PlayerIds |> Set.ofList
 
@@ -61,7 +61,7 @@ let singleMatchTests =
           }
           test "events are ordered chronologically" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               let ordered = List.rev events
 
               Expect.isTrue
@@ -70,7 +70,7 @@ let singleMatchTests =
           }
           test "no duplicate goal events for same player at same second" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let goalKeys =
                   events
@@ -82,7 +82,7 @@ let singleMatchTests =
           test "all event ClubIds are either home or away" {
               let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players staff |> getOk
+              let _, _, events, _ = trySimulateMatch home away players staff |> getOk
 
               Expect.isTrue
                   (events |> List.forall (fun e -> e.ClubId = home.Id || e.ClubId = away.Id))
@@ -90,7 +90,7 @@ let singleMatchTests =
           }
           test "SubstitutionIn and SubstitutionOut are balanced" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
               let ins = events |> List.filter (fun e -> e.Type = SubstitutionIn) |> List.length
               let outs = events |> List.filter (fun e -> e.Type = SubstitutionOut) |> List.length
               Expect.equal ins outs "substitution in/out count mismatch"
@@ -98,7 +98,7 @@ let singleMatchTests =
           test "at most 3 substitutions per team" {
               let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
-              let _, _, events = trySimulateMatch home away players staff |> getOk
+              let _, _, events, _ = trySimulateMatch home away players staff |> getOk
 
               let homeSubs =
                   events
@@ -116,7 +116,7 @@ let singleMatchTests =
           }
           test "no player receives more than 1 red card" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let reds =
                   events |> List.filter (fun e -> e.Type = RedCard) |> List.countBy _.PlayerId
@@ -125,7 +125,7 @@ let singleMatchTests =
           }
           test "second yellow triggers a red card for same player" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let orderedEvents = List.rev events
 
@@ -149,7 +149,7 @@ let singleMatchTests =
           }
           test "no player receives more than 2 yellow cards" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               let yellows =
                   events |> List.filter (fun e -> e.Type = YellowCard) |> List.countBy _.PlayerId
@@ -160,7 +160,7 @@ let singleMatchTests =
           }
           test "no goals scored at second 0" {
               let clubs, players, staff = loadClubs ()
-              let _, _, events = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
+              let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
 
               Expect.isTrue
                   (events
@@ -177,6 +177,16 @@ type private FixtureOutcome =
 let statisticalTests =
     let iterations = 1000
 
+    let matchesFreeKick (t: MatchEventType) =
+        match t with
+        | FreeKick _ -> true
+        | _ -> false
+
+    let matchesPassCompleted (t: MatchEventType) =
+        match t with
+        | PassCompleted _ -> true
+        | _ -> false
+
     let runOutcomes () =
         let clubs, players, staff = loadClubs ()
 
@@ -186,7 +196,7 @@ let statisticalTests =
 
             try
                 match trySimulateMatch clubs[hi] clubs[ai] players staff with
-                | Ok(h, a, _) -> Success(h, a)
+                | Ok(h, a, _, _) -> Success(h, a)
                 | Error e -> KnownError(clubs[hi].Name, clubs[ai].Name, e)
             with ex ->
                 UnhandledException(clubs[hi].Name, clubs[ai].Name, ex))
@@ -214,6 +224,96 @@ let statisticalTests =
 
               let avg = float (Array.sum totals) / float totals.Length
               Expect.isTrue (avg >= 2.2 && avg <= 3.2) $"avg goals = %.2f{avg} (expected [2.2, 3.2])"
+
+          testCase "avg shots per match in [15, 30]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let shots =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> e.Type = Goal || e.Type = ShotBlocked || e.Type = ShotOffTarget || e.Type = Save) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float shots / 200.0
+              Expect.isTrue (avg >= 15.0 && avg <= 30.0) $"avg shots = %.2f{avg} (expected [15, 30])"
+
+          testCase "avg corners per match in [6, 14]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let corners =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> e.Type = Corner) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float corners / 200.0
+              Expect.isTrue (avg >= 6.0 && avg <= 14.0) $"avg corners = %.2f{avg} (expected [6, 14])"
+
+          testCase "avg fouls per match in [15, 35]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let fouls =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> e.Type = FoulCommitted || matchesFreeKick e.Type) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float fouls / 200.0
+              Expect.isTrue (avg >= 15.0 && avg <= 35.0) $"avg fouls = %.2f{avg} (expected [15, 35])"
+
+          testCase "avg yellow cards per match in [2, 6]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let yellows =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> e.Type = YellowCard) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float yellows / 200.0
+              Expect.isTrue (avg >= 2.0 && avg <= 6.0) $"avg yellows = %.2f{avg} (expected [2, 6])"
+
+          testCase "avg passes per match in [200, 600]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let passes =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> matchesPassCompleted e.Type) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float passes / 200.0
+              Expect.isTrue (avg >= 200.0 && avg <= 600.0) $"avg passes = %.2f{avg} (expected [200, 600])"
+
+          testCase "avg dribbles per match in [30, 80]"
+          <| fun () ->
+              let clubs, players, staff = loadClubs ()
+              let dribbles =
+                  Array.Parallel.init 200 (fun i ->
+                      let hi = i % clubs.Length
+                      let ai = (hi + 1) % clubs.Length
+                      match trySimulateMatch clubs[hi] clubs[ai] players staff with
+                      | Ok(_, _, events, _) -> events |> List.filter (fun e -> e.Type = DribbleSuccess || e.Type = DribbleFail) |> List.length
+                      | Error _ -> 0)
+                  |> Array.sum
+
+              let avg = float dribbles / 200.0
+              Expect.isTrue (avg >= 30.0 && avg <= 80.0) $"avg dribbles = %.2f{avg} (expected [30, 80])"
 
           testCase "no match has outlier score (either side > 10)"
           <| fun () ->
@@ -731,7 +831,7 @@ let multiMatchTests =
               let results =
                   Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
-                      | Ok(h, a, _) -> Some(h, a)
+                      | Ok(h, a, _, _) -> Some(h, a)
                       | Error _ -> None)
 
               Expect.isTrue (results |> Array.forall (fun (h, a) -> h >= 0 && a >= 0)) "negative score detected"
@@ -742,7 +842,7 @@ let multiMatchTests =
               let distinctScores =
                   Array.init 50 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
-                      | Ok(h, a, _) -> Some(h, a)
+                      | Ok(h, a, _, _) -> Some(h, a)
                       | Error _ -> None)
                   |> Array.distinct
 
@@ -756,7 +856,7 @@ let multiMatchTests =
               let results =
                   Array.init 20 (fun _ -> trySimulateMatch clubs[0] clubs[1] players staff)
                   |> Array.choose (function
-                      | Ok(h, a, _) -> Some(h, a)
+                      | Ok(h, a, _, _) -> Some(h, a)
                       | Error _ -> None)
 
               Expect.isTrue (results |> Array.forall (fun (h, a) -> h <= 10 && a <= 10)) "outlier score detected"

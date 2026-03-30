@@ -94,20 +94,14 @@ module UpdateSim =
 
         let nextState =
             { state with
-                GameState = result.GameState
+                Mode = InGame (result.GameState, managerEmployment result.GameState)
                 IsProcessing = false
                 LogMessages = logs @ state.LogMessages |> List.truncate 30 }
             |> applyMatchNotifs result.GameState result.PlayedFixtures
 
         match state.PrevUserClubSkills, state.PrevUserClubStatus with
         | Some prevSkills, Some prevStatus ->
-            let userClubPlayers =
-                result.GameState.Players
-                |> Map.toList
-                |> List.choose (fun (_, p) ->
-                    match p.Affiliation with
-                    | Contracted(clubId, _) when clubId = result.GameState.UserClubId -> Some p
-                    | _ -> None)
+            let userClubPlayers = GameState.getUserSquad result.GameState
 
             let inboxMsgs =
                 InboxMessages.generateWeeklyDevelopmentMessages
@@ -121,7 +115,7 @@ module UpdateSim =
                 |> List.fold (fun acc msg -> GameState.addInboxMessage msg acc) result.GameState
 
             { nextState with
-                GameState = gs
+                Mode = InGame (gs, managerEmployment gs)
                 PrevUserClubSkills = None
                 PrevUserClubStatus = None }
         | _ -> nextState
@@ -141,13 +135,7 @@ module UpdateSim =
         let stateWithInbox =
             match state.PrevUserClubSkills with
             | Some prevSkills ->
-                let userClubPlayers =
-                    result.NewGs.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = result.NewGs.UserClubId -> Some p
-                        | _ -> None)
+                let userClubPlayers = GameState.getUserSquad result.NewGs
 
                 let improved =
                     userClubPlayers
@@ -182,14 +170,19 @@ module UpdateSim =
                     | None -> gsAfterSeasonStart
 
                 { state with
-                    GameState = gs
+                    Mode = InGame (gs, managerEmployment gs)
                     PrevUserClubSkills = None
                     PrevUserClubStatus = None }
             | None ->
                 { state with
-                    GameState = gsAfterSeasonStart
+                    Mode = InGame (gsAfterSeasonStart, managerEmployment gsAfterSeasonStart)
                     PrevUserClubSkills = None
                     PrevUserClubStatus = None }
+
+        let prevGs =
+            match state.Mode with
+            | InGame (gs, _) -> gs
+            | _ -> result.NewGs
 
         let nextState =
             { stateWithInbox with
@@ -198,34 +191,32 @@ module UpdateSim =
                 LogMessages = messages @ stateWithInbox.LogMessages |> List.truncate 50 }
             |> pushNotification NotificationIcons.seasonComplete $"Season {result.NewGs.Season - 1} Complete" seasonBody
 
-        match leagueChangeNotif state.GameState result.NewGs result.NewGs.UserClubId with
+        match leagueChangeNotif prevGs result.NewGs result.NewGs.UserClubId with
         | Some(title, body) when title = "Promoted!" ->
             nextState |> pushNotification NotificationIcons.promotion title body
         | Some(title, body) -> nextState |> pushNotification NotificationIcons.relegation title body
         | None -> nextState
 
     let rec handle (msg: SimMsg) (state: State) : State * Cmd<Msg> =
+        let getGs () =
+            match state.Mode with
+            | InGame (gs, _) -> gs
+            | _ -> failwith "Engine call attempted outside of InGame state"
+
         match msg with
         | Advance days ->
             if state.IsProcessing then
                 state, Cmd.none
             else
+                let gs = getGs ()
                 let prevSkills =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.CurrentSkill)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.Status)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.Status)
                     |> Map.ofList
 
                 { state with
@@ -233,7 +224,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> advanceDays days state.GameState))
+                    (fun () -> Task.Run(fun () -> advanceDays days gs))
                     ()
                     (SimMsg << AdvanceDone)
 
@@ -257,7 +248,7 @@ module UpdateSim =
             else
                 { state with IsProcessing = true },
                 Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> simulateUserFixtureForDay state.GameState))
+                    (fun () -> Task.Run(fun () -> simulateUserFixtureForDay (getGs ())))
                     ()
                     (SimMsg << UserMatchDone)
 
@@ -281,22 +272,15 @@ module UpdateSim =
             if state.IsProcessing then
                 state, Cmd.none
             else
+                let gs = getGs ()
                 let prevSkills =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.CurrentSkill)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.Status)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.Status)
                     |> Map.ofList
 
                 { state with
@@ -304,13 +288,15 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> simulateAndAdvanceSeason state.GameState))
+                    (fun () -> Task.Run(fun () -> simulateAndAdvanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone)
 
         | SeasonAdvanceDone(Ok result) ->
             let nextState = applySeasonResult result state
-            nextState, saveCmd nextState.GameState
+            match nextState.Mode with
+            | InGame (gs, _) -> nextState, saveCmd gs
+            | _ -> nextState, Cmd.none
 
         | SeasonAdvanceDone(Error NoFixturesToPlay) ->
             { state with IsProcessing = false } |> addLog "Season already complete", Cmd.none
@@ -324,22 +310,15 @@ module UpdateSim =
             if state.IsProcessing then
                 state, Cmd.none
             else
+                let gs = getGs ()
                 let prevSkills =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.CurrentSkill)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    state.GameState.Players
-                    |> Map.toList
-                    |> List.choose (fun (_, p) ->
-                        match p.Affiliation with
-                        | Contracted(clubId, _) when clubId = state.GameState.UserClubId -> Some(p.Id, p.Status)
-                        | _ -> None)
+                    GameState.getUserSquad gs
+                    |> List.map (fun p -> p.Id, p.Status)
                     |> Map.ofList
 
                 { state with
@@ -347,8 +326,11 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> advanceSeason state.GameState))
+                    (fun () -> Task.Run(fun () -> advanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone << Ok)
 
-        | SaveGame -> state, saveCmd state.GameState
+        | SaveGame ->
+            match state.Mode with
+            | InGame (gs, _) -> state, saveCmd gs
+            | _ -> state, Cmd.none

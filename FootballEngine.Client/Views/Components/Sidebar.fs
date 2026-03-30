@@ -102,7 +102,20 @@ module Sidebar =
               ) ]
 
     let sidebar (state: State) dispatch =
-        let unreadCount = GameState.unreadInboxCount state.GameState
+        let (unreadCount, visibleItems) =
+            match state.Mode with
+            | InGame(gs, employment) ->
+                let unread = GameState.unreadInboxCount gs
+
+                let items =
+                    match employment with
+                    | Employed _ -> Navigation.menuItems
+                    | NotEmployed ->
+                        Navigation.menuItems
+                        |> List.filter (fun item -> item.Page <> Squad && item.Page <> Tactics && item.Page <> Training)
+
+                unread, items
+            | _ -> 0, Navigation.menuItems
 
         Border.create
             [ Border.width 220.0
@@ -140,7 +153,7 @@ module Sidebar =
                                   [ DockPanel.dock Dock.Top
                                     StackPanel.margin (0.0, 8.0)
                                     StackPanel.children
-                                        [ for item in Navigation.menuItems do
+                                        [ for item in visibleItems do
                                               let badge = if item.Page = Inbox then Some unreadCount else None
                                               navButton item (state.CurrentPage = item.Page) badge dispatch ] ] ] ]
               ) ]

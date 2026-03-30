@@ -9,24 +9,31 @@ open FootballEngine.Tests.TrainingSystemTests
 
 [<EntryPoint>]
 let main argv =
-    let all =
+    let matchTests =
         testList
-            "FootballEngine"
+            "Match"
             [ singleMatchTests
               statisticalTests |> testSequenced
               errorHandlingTests
               replayTests
               matchStateOpsTests
-              multiMatchTests
-              batchTests
-              doubleSimGuardTests
-              standingUpdateTests
-              fixtureIntegrityTests
-              gameStateIntegrityTests
+              multiMatchTests ]
+
+    let engineTests =
+        testList "Engine" [ batchTests; doubleSimGuardTests; standingUpdateTests; fixtureIntegrityTests ]
+
+    let worldTests =
+        testList
+            "World"
+            [ gameStateIntegrityTests
               playerDataTests
               seasonProgressTests
               lineupTests
-              isSeasonOverTests
-              trainingSystemTests ]
+              isSeasonOverTests ]
+
+    let trainingTests = testList "Training" [ trainingSystemTests ]
+
+    let all =
+        testList "FootballEngine" [ matchTests; engineTests; worldTests; trainingTests ]
 
     runTestsWithCLIArgs [ Verbosity LogLevel.Verbose ] argv all

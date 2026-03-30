@@ -29,6 +29,7 @@ module AppMsgs =
         | Loaded of players: Player list * clubNames: Map<PlayerId, string>
         | TabChange of TransferTab
         | Search of string
+        | ApplySearch of string
         | FilterChange of TransferFilter
         | SortChange of SortField
         | PlayerSelect of PlayerId
@@ -74,6 +75,9 @@ module AppMsgs =
         | StepActiveMatch of delta: int
         | CloseActiveMatch
         | SetPlayerTrainingSchedule of playerId: PlayerId * TrainingSchedule
+        | TogglePlayback
+        | SetPlaybackSpeed of int
+        | TickInterpolation
 
 module SimHelpers =
     let primaryLeagueId (gs: GameState) =

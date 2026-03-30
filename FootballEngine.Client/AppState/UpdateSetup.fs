@@ -49,33 +49,36 @@ module UpdateSetup =
                     generateNewGame primaryCountry state.Setup.ManagerName state.Setup.SecondaryCountries
 
                 { state with
-                    GameState = newGameState
+                    Mode = InGame (newGameState, managerEmployment newGameState)
                     State.Setup.Step = ClubSelection },
                 saveCmd newGameState
 
         | ConfirmClub clubId ->
-            let updatedStaff =
-                state.GameState.Staff
-                |> Map.tryFind state.GameState.UserStaffId
-                |> Option.map (fun manager ->
-                    { manager with
-                        Contract =
-                            Some
-                                { ClubId = clubId
-                                  Salary = 50_000m
-                                  ExpiryYear = state.GameState.Season + 3 } })
-                |> Option.map (fun manager -> state.GameState.Staff |> Map.add manager.Id manager)
-                |> Option.defaultValue state.GameState.Staff
+            match state.Mode with
+            | InGame (gs, _) ->
+                let updatedStaff =
+                    gs.Staff
+                    |> Map.tryFind gs.UserStaffId
+                    |> Option.map (fun manager ->
+                        { manager with
+                            Contract =
+                                Some
+                                    { ClubId = clubId
+                                      Salary = 50_000m
+                                      ExpiryYear = gs.Season + 3 } })
+                    |> Option.map (fun manager -> gs.Staff |> Map.add manager.Id manager)
+                    |> Option.defaultValue gs.Staff
 
-            let newGameState =
-                { state.GameState with
-                    UserClubId = clubId
-                    Staff = updatedStaff }
+                let newGameState =
+                    { gs with
+                        UserClubId = clubId
+                        Staff = updatedStaff }
 
-            let managerName = GameState.userManagerName newGameState
+                let managerName = GameState.userManagerName newGameState
 
-            { state with
-                GameState = newGameState
-                CurrentPage = HomePage
-                LogMessages = [ $"Career started by {managerName}" ] },
-            saveCmd newGameState
+                { state with
+                    Mode = InGame (newGameState, managerEmployment newGameState)
+                    CurrentPage = HomePage
+                    LogMessages = [ $"Career started by {managerName}" ] },
+                saveCmd newGameState
+            | _ -> state, Cmd.none

@@ -542,7 +542,7 @@ module PlayerView =
                                                                         ) ]
                                                                   TextBlock.create
                                                                       [ TextBlock.text
-                                                                            $"·  {(GameState.contractOf p |> Option.map _.ExpiryYear |> Option.defaultValue 0)}"
+                                                                            $"·  {(Player.contractOf p |> Option.map _.ExpiryYear |> Option.defaultValue 0)}"
                                                                         TextBlock.fontSize 10.0
                                                                         TextBlock.foreground Theme.TextMuted ] ] ] ] ]
                                           StackPanel.create
@@ -777,7 +777,7 @@ module PlayerView =
                                                                     UI.statMiniCard
                                                                         PlayerIcon.contract
                                                                         "CONTRACT"
-                                                                        (GameState.contractOf p
+                                                                        (Player.contractOf p
                                                                          |> Option.map (_.ExpiryYear >> string)
                                                                          |> Option.defaultValue "—")
                                                                         Theme.Accent ] ]

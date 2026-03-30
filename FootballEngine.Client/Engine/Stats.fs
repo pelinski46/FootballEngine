@@ -7,6 +7,12 @@ open FSharp.Stats.Distributions
 module Stats =
     let clamp (lo: int) hi v = Math.Clamp(v, lo, hi)
 
+    let rollProbability () : float = Continuous.Uniform.Sample 0.0 1.0
+
+    let uniformSample (lo: float) (hi: float) : float = Continuous.Uniform.Sample lo hi
+
+    let normalSample (mean: float) (stdDev: float) : float = Continuous.Normal.Sample mean stdDev
+
     let normalInt (mean: float) (stdDev: float) (lo: int) (hi: int) =
         Continuous.Normal.Sample mean stdDev
         |> Math.Round
@@ -47,3 +53,18 @@ module Stats =
 
     let clearSeed () =
         Random.SetSampleGenerator(Random.RandThreadSafe())
+
+    let exponentialSample (mean: float) : float =
+        Continuous.Exponential.Sample(1.0 / mean)
+
+    let betaSample (mean: float) (concentration: float) : float =
+        let alpha = Math.Max(0.01, mean * concentration)
+        let beta' = Math.Max(0.01, (1.0 - mean) * concentration)
+        Continuous.Beta.Sample alpha beta'
+
+    let logistic (x: float) : float = 1.0 / (1.0 + exp (-x))
+
+    let logisticBernoulli (score: float) (steepness: float) : bool =
+        bernoulli (logistic (score * steepness))
+
+    let poissonSample (lambda: float) : int = Discrete.Poisson.Sample lambda

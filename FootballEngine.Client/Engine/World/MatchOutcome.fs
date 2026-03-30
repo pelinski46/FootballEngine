@@ -67,7 +67,7 @@ module MatchOutcome =
             Players =
                 gs.Players
                 |> Map.map (fun _ p ->
-                    match GameState.clubOf p with
+                    match Player.clubOf p with
                     | Some cid when cid = homeId || cid = awayId ->
                         { p with
                             Morale = clamp 0 100 (p.Morale + playerDelta cid) }
@@ -83,7 +83,14 @@ module MatchOutcome =
         { FixtureId: MatchId
           Fixture: MatchFixture
           HomeScore: int
-          AwayScore: int }
+          AwayScore: int
+          FinalState: MatchState }
+
+    let private injurySeverityWeights =
+        [ 0.30, Minor
+          0.40, Moderate
+          0.20, Major
+          0.10, Severe ]
 
     let applyOutcomes
         (fixtureToComp: Map<MatchId, CompetitionId>)
@@ -118,6 +125,39 @@ module MatchOutcome =
                                 |> Map.add o.Fixture.HomeClubId (updateStanding hs o.HomeScore o.AwayScore)
                                 |> Map.add o.Fixture.AwayClubId (updateStanding as' o.AwayScore o.HomeScore) })
 
-        ({ gs with Competitions = updatedComps }, outcomes)
-        ||> Array.fold (fun acc o ->
-            updateAfterMatch o.HomeScore o.AwayScore o.Fixture.HomeClubId o.Fixture.AwayClubId acc)
+        let withUpdatedMorale =
+            ({ gs with Competitions = updatedComps }, outcomes)
+            ||> Array.fold (fun acc o ->
+                updateAfterMatch o.HomeScore o.AwayScore o.Fixture.HomeClubId o.Fixture.AwayClubId acc)
+
+        let injuredPlayers =
+            outcomes
+            |> Array.collect (fun o ->
+                o.FinalState.HomeSide.Sidelined
+                |> Map.toArray
+                |> Array.append (o.FinalState.AwaySide.Sidelined |> Map.toArray)
+                |> Array.choose (fun (pid, status) ->
+                    if status = SidelinedByInjury then Some pid else None))
+            |> Set.ofSeq
+
+        if injuredPlayers.IsEmpty then
+            withUpdatedMorale
+        else
+            let currentDate = gs.CurrentDate
+
+            let applyInjury (players: Map<PlayerId, Player>) (pid: PlayerId) =
+                players
+                |> Map.change pid (fun playerOpt ->
+                    playerOpt
+                    |> Option.map (fun p ->
+                        let severity = pickWeighted injurySeverityWeights
+                        let until =
+                            match severity with
+                            | Minor -> currentDate.AddDays 7.0
+                            | Moderate -> currentDate.AddDays 21.0
+                            | Major -> currentDate.AddDays 60.0
+                            | Severe -> currentDate.AddDays 120.0
+                        { p with Status = Injured(severity, until) }))
+
+            { withUpdatedMorale with
+                Players = injuredPlayers |> Seq.fold applyInjury withUpdatedMorale.Players }

@@ -12,7 +12,6 @@ open FootballEngine
 open FootballEngine.AppTypes
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
-open TacticalInstructions
 open FootballEngine.Components
 open FootballEngine.Icons
 
@@ -219,21 +218,25 @@ module Tactics =
         |> View.withKey (string pIdFijo)
 
     let pitchContainer (state: State) dispatch =
-        let lineup = getCurrentLineup state.GameState
+        match state.Mode with
+        | InGame (gs, _) ->
+            let lineup = getCurrentLineup gs
 
-        let formation =
-            lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
+            let formation =
+                lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
 
-        let slots = lineup |> Option.map _.Slots |> Option.defaultValue []
+            let slots = lineup |> Option.map _.Slots |> Option.defaultValue []
 
-        FootballPitch.render formation (fun slot ->
-            let assignedPlayer =
-                slots
-                |> List.tryFind (fun s -> s.Index = slot.Index)
-                |> Option.bind _.PlayerId
-                |> Option.bind state.GameState.Players.TryFind
+            FootballPitch.render formation (fun slot ->
+                let assignedPlayer =
+                    slots
+                    |> List.tryFind (fun s -> s.Index = slot.Index)
+                    |> Option.bind _.PlayerId
+                    |> Option.bind gs.Players.TryFind
 
-            playerNode assignedPlayer slot state dispatch)
+                playerNode assignedPlayer slot state dispatch)
+            :> IView
+        | _ -> Border.create [] :> IView
 
     let private formationPicker (currentFormation: Formation) dispatch =
         StackPanel.create
@@ -255,7 +258,8 @@ module Tactics =
                           ) ] ] ]
 
     let private tacticsPicker (currentTactics: TeamTactics) dispatch =
-        let allTactics = [Balanced; Attacking; Defensive; Pressing; Counter]
+        let allTactics = [ Balanced; Attacking; Defensive; Pressing; Counter ]
+
         StackPanel.create
             [ StackPanel.spacing 0.0
               StackPanel.children
@@ -274,12 +278,20 @@ module Tactics =
                                     ComboBox.fontWeight FontWeight.Bold ]
                           ) ] ] ]
 
-    let private instructionSlider (label: string) (value: int) (minVal: int) (maxVal: int) (leftLabel: string) (rightLabel: string) (onValueChange: int -> unit) =
+    let private instructionSlider
+        (label: string)
+        (value: int)
+        (minVal: int)
+        (maxVal: int)
+        (leftLabel: string)
+        (rightLabel: string)
+        (onValueChange: int -> unit)
+        =
         let sliderColor =
             if value <= 1 then Theme.Danger
             elif value = 2 then Theme.Warning
             else Theme.Accent
-        
+
         StackPanel.create
             [ StackPanel.spacing 6.0
               StackPanel.children
@@ -294,7 +306,12 @@ module Tactics =
                                       TextBlock.fontWeight FontWeight.SemiBold ]
                                 TextBlock.create
                                     [ Grid.column 1
-                                      TextBlock.text (if value < (minVal + maxVal) / 2 then leftLabel else rightLabel)
+                                      TextBlock.text (
+                                          if value < (minVal + maxVal) / 2 then
+                                              leftLabel
+                                          else
+                                              rightLabel
+                                      )
                                       TextBlock.foreground sliderColor
                                       TextBlock.fontSize 10.0
                                       TextBlock.fontWeight FontWeight.Bold ] ] ]
@@ -310,15 +327,12 @@ module Tactics =
             currentLineup
             |> Option.bind _.Instructions
             |> Option.defaultValue TacticalInstructions.defaultInstructions
-        
+
         StackPanel.create
             [ StackPanel.spacing 0.0
               StackPanel.children
                   [ tacticsPicker (currentLineup |> Option.map _.Tactics |> Option.defaultValue Balanced) dispatch
-                    Border.create
-                        [ Border.height 1.0
-                          Border.background Theme.Border
-                          Border.margin (0.0, 4.0) ]
+                    Border.create [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
                     UI.sectionHeader IconName.tactics "INSTRUCTIONS"
                     Border.create
                         [ Border.padding (16.0, 12.0)
@@ -326,9 +340,24 @@ module Tactics =
                               StackPanel.create
                                   [ StackPanel.spacing 14.0
                                     StackPanel.children
-                                        [ instructionSlider "Mentality" instructions.Mentality 0 4 "Def" "Att" (fun v -> dispatch (SetMentality v))
-                                          instructionSlider "Defensive Line" instructions.DefensiveLine 0 4 "Low" "High" (fun v -> dispatch (SetDefensiveLine v))
-                                          instructionSlider "Pressing" instructions.PressingIntensity 0 4 "Low" "High" (fun v -> dispatch (SetPressingIntensity v)) ] ]
+                                        [ instructionSlider "Mentality" instructions.Mentality 0 4 "Def" "Att" (fun v ->
+                                              dispatch (SetMentality v))
+                                          instructionSlider
+                                              "Defensive Line"
+                                              instructions.DefensiveLine
+                                              0
+                                              4
+                                              "Low"
+                                              "High"
+                                              (fun v -> dispatch (SetDefensiveLine v))
+                                          instructionSlider
+                                              "Pressing"
+                                              instructions.PressingIntensity
+                                              0
+                                              4
+                                              "Low"
+                                              "High"
+                                              (fun v -> dispatch (SetPressingIntensity v)) ] ]
                           ) ] ] ]
 
     let private teamStats (starterIds: Set<PlayerId>) (gs: GameState) =
@@ -378,75 +407,80 @@ module Tactics =
                           ) ] ] ]
 
     let tacticView (state: State) dispatch : IView =
-        let lineup = getCurrentLineup state.GameState
+        match state.Mode with
+        | InGame (gs, _) ->
+            let lineup = getCurrentLineup gs
 
-        let currentFormation =
-            lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
+            let currentFormation =
+                lineup |> Option.map _.Formation |> Option.defaultValue state.SelectedTactics
 
-        let starterIds =
-            lineup
-            |> Option.map (fun l -> l.Slots |> List.choose _.PlayerId)
-            |> Option.defaultValue []
-            |> Set.ofList
+            let starterIds =
+                lineup
+                |> Option.map (fun l -> l.Slots |> List.choose _.PlayerId)
+                |> Option.defaultValue []
+                |> Set.ofList
 
-        let benchPlayers =
-            GameState.getSquad state.GameState.UserClubId state.GameState
-            |> List.filter (fun p -> not (starterIds.Contains p.Id))
-            |> List.sortBy (fun p -> positionSortKey p.Position, p.CurrentSkill * -1)
+            let benchPlayers =
+                GameState.getSquad gs.UserClubId gs
+                |> List.filter (fun p -> not (starterIds.Contains p.Id))
+                |> List.sortBy (fun p -> positionSortKey p.Position, p.CurrentSkill * -1)
 
-        let benchItems: IView list =
-            [ yield! benchPlayers |> Seq.map (fun p -> benchRow p dispatch)
-              yield Border.create [ Border.height 20.0 ] ]
+            let benchItems: IView list =
+                [ yield! benchPlayers |> Seq.map (fun p -> benchRow p dispatch)
+                  yield Border.create [ Border.height 20.0 ] ]
 
-        Grid.create
-            [ Grid.columnDefinitions "272, *, 296"
-              Grid.children
-                  [ Border.create
-                        [ Grid.column 0
-                          Border.background Theme.BgSidebar
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (0.0, 0.0, 1.0, 0.0)
-                          Border.child (
-                              ScrollViewer.create
-                                  [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                    ScrollViewer.content (
-                                        StackPanel.create
-                                            [ StackPanel.spacing 0.0
-                                              StackPanel.children
-                                                  [ formationPicker currentFormation dispatch
-                                                    Border.create
-                                                        [ Border.height 1.0
-                                                          Border.background Theme.Border
-                                                          Border.margin (0.0, 4.0) ]
-                                                    tacticalInstructions lineup dispatch
-                                                    Border.create
-                                                        [ Border.height 1.0
-                                                          Border.background Theme.Border
-                                                          Border.margin (0.0, 4.0) ]
-                                                    teamStats starterIds state.GameState ] ]
-                                    ) ]
-                          ) ]
-                    Border.create
-                        [ Grid.column 1
-                          Border.padding (20.0, 16.0)
-                          Border.child (pitchContainer state dispatch) ]
-                    Border.create
-                        [ Grid.column 2
-                          Border.background Theme.BgSidebar
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (1.0, 0.0, 0.0, 0.0)
-                          Border.child (
-                              DockPanel.create
-                                  [ DockPanel.lastChildFill true
-                                    DockPanel.children
-                                        [ UI.sectionHeaderWithBadge IconName.squad "BENCH" benchPlayers.Length
-                                          |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
-                                          ScrollViewer.create
-                                              [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                                ScrollViewer.verticalAlignment VerticalAlignment.Stretch
-                                                ScrollViewer.content (
-                                                    StackPanel.create [ StackPanel.children benchItems ]
-                                                ) ] ] ]
-                          ) ] ] ]
-        |> View.withKey $"tactics-{currentFormation}-{starterIds.Count}"
-        :> IView
+            Grid.create
+
+                [ Grid.columnDefinitions "272, *, 296"
+                  Grid.children
+                      [ Border.create
+                            [ Grid.column 0
+                              Border.background Theme.BgSidebar
+                              Border.borderBrush Theme.Border
+                              Border.borderThickness (0.0, 0.0, 1.0, 0.0)
+                              Border.child (
+                                  ScrollViewer.create
+                                      [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                        ScrollViewer.content (
+                                            StackPanel.create
+                                                [ StackPanel.spacing 0.0
+                                                  StackPanel.children
+                                                      [ formationPicker currentFormation dispatch
+                                                        Border.create
+                                                            [ Border.height 1.0
+                                                              Border.background Theme.Border
+                                                              Border.margin (0.0, 4.0) ]
+                                                        tacticalInstructions lineup dispatch
+                                                        Border.create
+                                                            [ Border.height 1.0
+                                                              Border.background Theme.Border
+                                                              Border.margin (0.0, 4.0) ]
+                                                        teamStats starterIds gs ] ]
+                                        ) ]
+                              ) ]
+                        Border.create
+                            [ Grid.column 1
+                              Border.padding (20.0, 16.0)
+                              Border.child (pitchContainer state dispatch) ]
+                        Border.create
+                            [ Grid.column 2
+                              Border.background Theme.BgSidebar
+                              Border.borderBrush Theme.Border
+                              Border.borderThickness (1.0, 0.0, 0.0, 0.0)
+                              Border.child (
+                                  DockPanel.create
+                                      [ DockPanel.lastChildFill true
+                                        DockPanel.children
+                                            [ UI.sectionHeaderWithBadge IconName.squad "BENCH" benchPlayers.Length
+                                              |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
+                                              ScrollViewer.create
+                                                  [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                                    ScrollViewer.verticalAlignment VerticalAlignment.Stretch
+                                                    ScrollViewer.content (
+                                                        StackPanel.create [ StackPanel.children benchItems ]
+                                                    ) ] ] ]
+                              ) ] ] ]
+            |> View.withKey $"tactics-{currentFormation}-{starterIds.Count}"
+            :> IView
+
+        | _ -> Border.create [] :> IView

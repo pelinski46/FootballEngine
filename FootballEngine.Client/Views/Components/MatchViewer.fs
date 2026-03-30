@@ -26,6 +26,21 @@ module MatchViewer =
     let private positionLabel (p: Position) = $"%A{p}"
     let private toCanvas (x: float, y: float) = x * PitchW / 100.0, y * PitchH / 100.0
 
+    let private lerpFloat (t: float) (a: float) (b: float) =
+        let t' = t * t * (3.0 - 2.0 * t)
+        a + (b - a) * t'
+
+    let private lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
+
+    let interpolateState (t: float) (curr: MatchState) (next: MatchState) =
+        let lerpArr (a: (float * float)[]) (b: (float * float)[]) =
+            let len = min a.Length b.Length
+            Array.init len (fun i -> lerpPos t a[i] b[i])
+
+        {| HomePosLerped = lerpArr curr.HomeSide.Positions next.HomeSide.Positions
+           AwayPosLerped = lerpArr curr.AwaySide.Positions next.AwaySide.Positions
+           BallLerped = lerpPos t curr.BallPosition next.BallPosition |}
+
     let private conditionColor c =
         if c >= 75 then Theme.Success
         elif c >= 50 then Theme.Warning
@@ -341,8 +356,13 @@ module MatchViewer =
                                                 Rectangle.radiusY 3.0 ] ] ]
                           ) ] ] ]
 
-    let view (s: MatchState) : IView =
-        let bcx, bcy = toCanvas s.BallPosition
+    let view
+        (s: MatchState)
+        (homePositions: (float * float)[])
+        (awayPositions: (float * float)[])
+        (ballPos: float * float)
+        : IView =
+        let bcx, bcy = toCanvas ballPos
 
         Viewbox.create
             [ Viewbox.stretch Stretch.Uniform
@@ -360,14 +380,14 @@ module MatchViewer =
                                   drawTeam
                                       s.HomeSide.Players
                                       s.HomeSide.Conditions
-                                      s.HomeSide.Positions
+                                      homePositions
                                       s.HomeSide.Sidelined
                                       Theme.AccentAlt
                               yield!
                                   drawTeam
                                       s.AwaySide.Players
                                       s.AwaySide.Conditions
-                                      s.AwaySide.Positions
+                                      awayPositions
                                       s.AwaySide.Sidelined
                                       Theme.Danger
                               yield! drawBall bcx bcy
@@ -376,6 +396,8 @@ module MatchViewer =
                               minuteOverlay s
                               momentumBar s ] ]
               ) ]
+
+open MatchViewer
 
 module MatchDayView =
 
@@ -452,6 +474,20 @@ module MatchDayView =
         | FreeKick true -> MatchEvent.goal, Theme.Success, "FREE KICK GOAL"
         | FreeKick false -> MatchEvent.freeKickMiss, Theme.Danger, "FREE KICK MISS"
         | Corner -> MatchEvent.corner, Theme.TextMuted, "CORNER"
+        | PassCompleted (_, _) -> MatchEvent.pass, Theme.AccentAlt, "PASS"
+        | PassIncomplete _ -> MatchEvent.passIncomplete, Theme.TextMuted, "PASS INCOMPLETE"
+        | DribbleSuccess -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE"
+        | DribbleFail -> MatchEvent.dribbleFail, Theme.TextMuted, "DRIBBLE FAIL"
+        | TackleSuccess -> MatchEvent.tackle, Theme.AccentAlt, "TACKLE"
+        | TackleFail -> MatchEvent.tackleFail, Theme.TextMuted, "TACKLE FAIL"
+        | CrossAttempt true -> MatchEvent.cross, Theme.AccentAlt, "CROSS"
+        | CrossAttempt false -> MatchEvent.cross, Theme.TextMuted, "CROSS INCOMPLETE"
+        | LongBall true -> MatchEvent.longBall, Theme.AccentAlt, "LONG BALL"
+        | LongBall false -> MatchEvent.longBall, Theme.TextMuted, "LONG BALL INCOMPLETE"
+        | ShotBlocked -> MatchEvent.shotBlocked, Theme.TextMuted, "SHOT BLOCKED"
+        | ShotOffTarget -> MatchEvent.shotOffTarget, Theme.TextMuted, "SHOT OFF TARGET"
+        | Save -> MatchEvent.save, Theme.AccentAlt, "SAVE"
+        | FoulCommitted -> MatchEvent.foul, Theme.Warning, "FOUL"
 
     let private eventRow (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) (ev: MatchEvent) : IView =
         let iconKind, color, label = eventTypeMeta ev.Type
@@ -544,7 +580,19 @@ module MatchDayView =
                 | SubstitutionOut
                 | PenaltyAwarded _
                 | FreeKick _
-                | Corner -> true)
+                | Corner
+                | PassCompleted _
+                | PassIncomplete _
+                | DribbleSuccess
+                | DribbleFail
+                | TackleSuccess
+                | TackleFail
+                | CrossAttempt _
+                | LongBall _
+                | ShotBlocked
+                | ShotOffTarget
+                | Save
+                | FoulCommitted -> true)
 
         DockPanel.create
             [ DockPanel.width 270.0
@@ -607,6 +655,10 @@ module MatchDayView =
         (replay: MatchReplay)
         (step: int -> unit)
         (onClose: unit -> unit)
+        (isPlaying: bool)
+        (playbackSpeed: int)
+        (onTogglePlayback: unit -> unit)
+        (onSetSpeed: int -> unit)
         =
         let navButtons =
             [ Nav.skipFirst, -total, idx > 0
@@ -616,8 +668,10 @@ module MatchDayView =
               Nav.fastForward, +10, idx < total
               Nav.skipLast, +total, idx < total ]
 
+        let speedButtons = [ 400, "1×"; 200, "2×"; 100, "4×" ]
+
         Component.create (
-            $"matchday-toolbar-{replayKey}-{idx}",
+            $"matchday-toolbar-{replayKey}",
             fun _ ->
                 StackPanel.create
                     [ StackPanel.orientation Orientation.Horizontal
@@ -650,6 +704,54 @@ module MatchDayView =
                                     else
                                         [ btn ])
                                 |> List.concat
+                            vSep ()
+                            Button.create
+                                [ Button.background (if isPlaying then Theme.Accent else Theme.BgCard)
+                                  Button.foreground (if isPlaying then Theme.BgMain else Theme.TextSub)
+                                  Button.padding (Thickness(10.0, 6.0))
+                                  Button.cornerRadius 7.0
+                                  Button.fontWeight FontWeight.Bold
+                                  Button.onClick (fun _ -> onTogglePlayback ())
+                                  Button.content (
+                                      StackPanel.create
+                                          [ StackPanel.orientation Orientation.Horizontal
+                                            StackPanel.spacing 4.0
+                                            StackPanel.children
+                                                [ Icons.iconSm
+                                                      (if isPlaying then Nav.pause else Nav.play)
+                                                      (if isPlaying then Theme.BgMain else Theme.TextSub)
+                                                  TextBlock.create
+                                                      [ TextBlock.text (if isPlaying then "PAUSE" else "PLAY")
+                                                        TextBlock.foreground (
+                                                            if isPlaying then Theme.BgMain else Theme.TextSub
+                                                        )
+                                                        TextBlock.fontSize 11.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                                  ) ]
+                            vSep ()
+                            yield!
+                                speedButtons
+                                |> List.map (fun (speed, label) ->
+                                    let isActive = playbackSpeed = speed
+
+                                    Button.create
+                                        [ Button.background (if isActive then Theme.Accent else Theme.BgCard)
+                                          Button.foreground (if isActive then Theme.BgMain else Theme.TextSub)
+                                          Button.padding (Thickness(8.0, 4.0))
+                                          Button.cornerRadius 5.0
+                                          Button.fontWeight (if isActive then FontWeight.Bold else FontWeight.Normal)
+                                          Button.onClick (fun _ -> onSetSpeed speed)
+                                          Button.content (
+                                              TextBlock.create
+                                                  [ TextBlock.text label
+                                                    TextBlock.foreground (
+                                                        if isActive then Theme.BgMain else Theme.TextSub
+                                                    )
+                                                    TextBlock.fontSize 10.0
+                                                    TextBlock.fontWeight FontWeight.SemiBold ]
+                                          ) ]
+                                    :> IView)
                             vSep ()
                             Button.create
                                 [ Button.background Theme.Accent
@@ -692,6 +794,11 @@ module MatchDayView =
             let current =
                 replay.Snapshots |> Array.tryItem idx |> Option.defaultValue replay.Final
 
+            let nextSnap =
+                replay.Snapshots |> Array.tryItem (idx + 1) |> Option.defaultValue current
+
+            let interp = interpolateState state.InterpolationT current nextSnap
+
             let replayKey =
                 $"{replay.Snapshots.Length}-{replay.Final.HomeScore}-{replay.Final.AwayScore}"
 
@@ -723,7 +830,11 @@ module MatchDayView =
                                                   replayKey
                                                   replay
                                                   (fun delta -> dispatch (StepActiveMatch delta))
-                                                  (fun () -> dispatch CloseActiveMatch) ] ]
+                                                  (fun () -> dispatch CloseActiveMatch)
+                                                  state.IsPlaying
+                                                  state.PlaybackSpeed
+                                                  (fun () -> dispatch TogglePlayback)
+                                                  (fun speed -> dispatch (SetPlaybackSpeed speed)) ] ]
                               ) ]
                         DockPanel.create
                             [ DockPanel.lastChildFill true
@@ -732,6 +843,10 @@ module MatchDayView =
                                         [ DockPanel.dock Dock.Right
                                           Border.borderBrush Theme.Border
                                           Border.borderThickness (Thickness(1.0, 0.0, 0.0, 0.0))
-                                          Border.child (eventLog replay state.GameState.Clubs state.GameState.Players) ]
-                                    MatchViewer.view current ] ] ] ]
+                                          Border.child (
+                                              match state.Mode with
+                                              | InGame(gs, _) -> eventLog replay gs.Clubs gs.Players
+                                              | _ -> eventLog replay Map.empty Map.empty
+                                          ) ]
+                                    view current interp.HomePosLerped interp.AwayPosLerped interp.BallLerped ] ] ] ]
             :> IView

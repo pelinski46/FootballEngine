@@ -2,42 +2,11 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FSharp.Stats.Distributions
 open MatchState
+open PitchMath
+open PlayerMovement
 
 module Pitch =
-    type PlayerRole =
-        | Defender
-        | Midfielder
-        | Attacker
-        | Goalkeeper
-
-    let playerRole (p: Player) =
-        match p.Position with
-        | GK -> Goalkeeper
-        | DC
-        | DL
-        | DR
-        | DM -> Defender
-        | WBL
-        | WBR -> Defender
-        | MC
-        | ML
-        | MR
-        | AML
-        | AMR
-        | AMC -> Midfielder
-        | ST -> Attacker
-
-    let inline distance (x1, y1) (x2, y2) =
-        sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
-
-    let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
-        positions
-        |> Array.mapi (fun i pos -> i, distance point pos)
-        |> Array.minBy snd
-        |> fst
-
 
     let private activePlayers (ts: TeamSide) =
         let idx = activeIndices ts.Players ts.Sidelined
@@ -68,10 +37,6 @@ module Pitch =
           DPos = dp
           DCond = dc }
 
-    let jitter oX oY tX tY scale nx ny =
-        Math.Clamp(oX + (tX - oX) * scale + Continuous.Normal.Sample 0.0 nx, 0.0, 100.0),
-        Math.Clamp(oY + (tY - oY) * scale + Continuous.Normal.Sample 0.0 ny, 0.0, 100.0)
-
     let pickDuel (s: MatchState) =
         let v = buildView s
 
@@ -82,53 +47,43 @@ module Pitch =
             let di = nearestIdx v.DPos s.BallPosition
             Some(v.Att[ai], v.Def[di], ai, di)
 
-    let private tacticalTarget (p: Player) baseX baseY ballX ballY isPossessing tacticsConfig =
-        let offPush, defPull, lateral =
-            match p.Position with
-            | GK -> 0.05, 0.02, 0.05
-            | DC -> 0.15, 0.08, 0.20
-            | DR
-            | DL -> 0.20, 0.10, 0.35
-            | WBR
-            | WBL -> 0.30, 0.12, 0.40
-            | DM -> 0.25, 0.15, 0.30
-            | MC -> 0.30, 0.20, 0.30
-            | MR
-            | ML -> 0.30, 0.18, 0.40
-            | AMR
-            | AMC
-            | AML -> 0.40, 0.25, 0.35
-            | ST -> 0.45, 0.30, 0.20
+    let private snapBallToPossessor (s: MatchState) =
+        let attSide = if s.Possession = Home then s.HomeSide else s.AwaySide
 
-        let modifiedBaseX =
-            if isPossessing then
-                baseX + tacticsConfig.ForwardPush
-            else
-                baseX + tacticsConfig.DefensiveDrop
+        if attSide.Players.Length = 0 then
+            s
+        else
+            let nearestIdx =
+                attSide.Positions
+                |> Array.mapi (fun i pos -> i, distance pos s.BallPosition)
+                |> Array.minBy snd
+                |> fst
 
-        let push = if isPossessing then offPush else defPull
-
-        Math.Clamp(modifiedBaseX + (ballX - modifiedBaseX) * push, 2.0, 98.0),
-        Math.Clamp(baseY + (ballY - baseY) * lateral, 2.0, 98.0)
+            let px, py = attSide.Positions[nearestIdx]
+            { s with BallPosition = px, py }
 
     let updatePositions (s: MatchState) : MatchState =
         let ballX, ballY = s.BallPosition
 
         let move (ts: TeamSide) (isPossessing: bool) =
-            let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
-
             let newPositions =
                 ts.Players
                 |> Array.mapi (fun i p ->
                     let curX, curY = ts.Positions[i]
                     let baseX, baseY = ts.BasePositions[i]
-                    let tx, ty = tacticalTarget p baseX baseY ballX ballY isPossessing tacticsCfg
+                    let cond = ts.Conditions[i]
+                    let tx, ty = decideTarget p baseX baseY ballX ballY isPossessing
+                    let speed = moveSpeed p cond
 
-                    curX + ((tx + (baseX - tx) * 0.25) - curX) * 0.15,
-                    curY + ((ty + (baseY - ty) * 0.25) - curY) * 0.15)
+                    let sx, sy =
+                        separationForce i (curX, curY) ts.Positions (float p.Physical.Agility / 100.0)
+
+                    Math.Clamp(curX + (tx - curX) * speed + sx, 0.0, 100.0),
+                    Math.Clamp(curY + (ty - curY) * speed + sy, 0.0, 100.0))
 
             { ts with Positions = newPositions }
 
         s
         |> withSide true (move (homeSide s) (s.Possession = Home))
         |> withSide false (move (awaySide s) (s.Possession = Away))
+        |> snapBallToPossessor

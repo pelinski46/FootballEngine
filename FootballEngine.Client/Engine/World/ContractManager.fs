@@ -2,7 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FSharp.Stats.Distributions
+open FootballEngine.Stats
 
 module ContractManager =
 
@@ -12,7 +12,7 @@ module ContractManager =
             else squad |> List.averageBy (fun x -> float x.CurrentSkill)
 
         let isEssential = float p.CurrentSkill >= avg - 5.0
-        let roll = Continuous.Uniform.Sample 2.0 5.0
+        let roll = uniformSample 2.0 5.0
         let newExpiry = if isEssential then season + int roll else season
 
         { p with Affiliation = Contracted(clubId, { c with ExpiryYear = newExpiry }) }

@@ -24,7 +24,25 @@ open FootballEngine.Pages.Transfers
 open Material.Icons.Avalonia
 
 module Views =
+    let private playbackTimer: (Avalonia.Threading.DispatcherTimer option) ref =
+        ref None
+
     let mainView (state: State) dispatch =
+        // Start/stop playback timer based on IsPlaying state
+        match playbackTimer.Value, state.IsPlaying with
+        | Some timer, true when timer.IsEnabled -> ()
+        | Some timer, false ->
+            timer.Stop()
+            playbackTimer.Value <- None
+        | None, true ->
+            let timer =
+                new Avalonia.Threading.DispatcherTimer(Interval = System.TimeSpan.FromMilliseconds 33.0)
+
+            timer.Tick.Add(fun _ -> dispatch TickInterpolation)
+            timer.Start()
+            playbackTimer.Value <- Some timer
+        | _ -> ()
+
         DockPanel.create
             [ DockPanel.background Theme.BgMain
               DockPanel.children

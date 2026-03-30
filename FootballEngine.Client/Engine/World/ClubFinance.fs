@@ -64,9 +64,7 @@ module ClubFinance =
     let private playerWageBill (players: Player list) : decimal =
         players
         |> List.sumBy (fun p ->
-            match p.Affiliation with
-            | Contracted(_, c) -> c.Salary
-            | _ -> 0m)
+            Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m)
         |> (*) 12m
 
     let private staffWageBill (staff: Staff list) : decimal =

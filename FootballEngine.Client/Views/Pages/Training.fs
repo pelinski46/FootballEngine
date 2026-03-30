@@ -58,7 +58,7 @@ module TrainingPresenter =
             Focus = TrainingFocus.TrainingAllRound
             Description = "Balanced development"
             Icon = Material.Icons.MaterialIconKind.ScaleBalance
-            Color = Theme.TextMuted } ]
+            Color = Theme.Danger } ]
 
     let intensityOptions: IntensityOption list =
         [ TrainingIntensity.TrainingLight
@@ -66,6 +66,7 @@ module TrainingPresenter =
           TrainingIntensity.TrainingHeavy ]
         |> List.map (fun intensity ->
             let data = TrainingIntensityData.get intensity
+
             { Label =
                 match intensity with
                 | TrainingIntensity.TrainingLight -> "Light"
@@ -91,8 +92,7 @@ module TrainingPresenter =
               GrowthMult = data.DeltaMultiplier
               InjuryRisk = data.InjuryRisk })
 
-    let formatMult (mult: float) : string =
-        TrainingIntensityData.formatMult mult
+    let formatMult (mult: float) : string = TrainingIntensityData.formatMult mult
 
     let getPositionImpact (focus: TrainingFocus) (intensity: TrainingIntensity) (pos: Position) : float =
         let intensityMult = (TrainingIntensityData.get intensity).DeltaMultiplier
@@ -527,83 +527,83 @@ module Training =
                           ) ] ] ]
 
     let trainingView (state: State) (dispatch: Msg -> unit) : IView =
-        let userClubId = state.GameState.UserClubId
-        let selectedPlayerId = state.SelectedPlayer
+        match state.Mode with
+        | InGame(gs, _) ->
+            let userClubId = gs.UserClubId
+            let selectedPlayerId = state.SelectedPlayer
 
-        let squad =
-            GameState.getSquad userClubId state.GameState
-            |> List.sortBy (fun p -> positionSortKey p.Position, p.CurrentSkill * -1)
+            let squad =
+                GameState.getSquad userClubId gs
+                |> List.sortBy (fun p -> positionSortKey p.Position, p.CurrentSkill * -1)
 
-        let setPlayerFocus (playerId: PlayerId) (currentSchedule: TrainingSchedule) (focus: TrainingFocus) =
-            dispatch (
-                SetPlayerTrainingSchedule(
-                    playerId,
-                    { currentSchedule with
-                        Focus = focus }
+            let setPlayerFocus (playerId: PlayerId) (currentSchedule: TrainingSchedule) (focus: TrainingFocus) =
+                dispatch (SetPlayerTrainingSchedule(playerId, { currentSchedule with Focus = focus }))
+
+            let setPlayerIntensity
+                (playerId: PlayerId)
+                (currentSchedule: TrainingSchedule)
+                (intensity: TrainingIntensity)
+                =
+                dispatch (
+                    SetPlayerTrainingSchedule(
+                        playerId,
+                        { currentSchedule with
+                            Intensity = intensity }
+                    )
                 )
-            )
 
-        let setPlayerIntensity (playerId: PlayerId) (currentSchedule: TrainingSchedule) (intensity: TrainingIntensity) =
-            dispatch (
-                SetPlayerTrainingSchedule(
-                    playerId,
-                    { currentSchedule with
-                        Intensity = intensity }
-                )
-            )
+            let playerScheduleKey =
+                selectedPlayerId
+                |> Option.bind (fun id -> gs.Players.TryFind id)
+                |> Option.map (fun p -> $"{p.TrainingSchedule.Focus}{p.TrainingSchedule.Intensity}")
+                |> Option.defaultValue ""
 
-        let playerScheduleKey =
-            selectedPlayerId
-            |> Option.bind (fun id -> state.GameState.Players.TryFind id)
-            |> Option.map (fun p -> $"{p.TrainingSchedule.Focus}{p.TrainingSchedule.Intensity}")
-            |> Option.defaultValue ""
-
-        Grid.create
-            [ Grid.columnDefinitions "272, *"
-              Grid.children
-                  [
-
-                    Border.create
-                        [ Grid.column 0
-                          Border.background Theme.BgSidebar
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (0.0, 0.0, 1.0, 0.0)
-                          Border.child (
-                              DockPanel.create
-                                  [ DockPanel.lastChildFill true
-                                    DockPanel.children
-                                        [ UI.sectionHeaderWithBadge IconName.squad "SQUAD" squad.Length
-                                          |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
-                                          ScrollViewer.create
-                                              [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                                ScrollViewer.content (
-                                                    StackPanel.create
-                                                        [ StackPanel.children (
-                                                              squad
-                                                              |> List.map (fun p ->
-                                                                  playerRow p (selectedPlayerId = Some p.Id) (fun () ->
-                                                                      dispatch (SelectPlayer p.Id)))
-                                                          ) ]
-                                                ) ] ] ]
-                          ) ]
-
-
-                    Border.create
-                        [ Grid.column 1
-                          Border.background Theme.BgSidebar
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (1.0, 0.0, 0.0, 0.0)
-                          Border.child (
-                              match selectedPlayerId with
-                              | Some playerId ->
-                                  match state.GameState.Players |> Map.tryFind playerId with
-                                  | Some player ->
-                                      playerDetailPanel
-                                          player
-                                          (fun focus -> setPlayerFocus playerId player.TrainingSchedule focus)
-                                          (fun intensity -> setPlayerIntensity playerId player.TrainingSchedule intensity)
+            Grid.create
+                [ Grid.columnDefinitions "*, 272"
+                  Grid.children
+                      [ Border.create
+                            [ Grid.column 0
+                              Border.background Theme.BgSidebar
+                              Border.borderBrush Theme.Border
+                              Border.borderThickness (0.0, 0.0, 1.0, 0.0)
+                              Border.child (
+                                  match selectedPlayerId with
+                                  | Some playerId ->
+                                      match gs.Players |> Map.tryFind playerId with
+                                      | Some player ->
+                                          playerDetailPanel
+                                              player
+                                              (fun focus -> setPlayerFocus playerId player.TrainingSchedule focus)
+                                              (fun intensity ->
+                                                  setPlayerIntensity playerId player.TrainingSchedule intensity)
+                                      | None -> DockPanel.create [ DockPanel.children [ emptyState ] ]
                                   | None -> DockPanel.create [ DockPanel.children [ emptyState ] ]
-                              | None -> DockPanel.create [ DockPanel.children [ emptyState ] ]
-                          ) ] ] ]
-        |> View.withKey $"training-{selectedPlayerId}-{playerScheduleKey}"
-        :> IView
+                              ) ]
+                        Border.create
+                            [ Grid.column 1
+                              Border.background Theme.BgSidebar
+                              Border.borderBrush Theme.Border
+                              Border.borderThickness (1.0, 1.0, 1.0, 1.0)
+                              Border.child (
+                                  DockPanel.create
+                                      [ DockPanel.lastChildFill true
+                                        DockPanel.children
+                                            [ UI.sectionHeaderWithBadge IconName.squad "SQUAD" squad.Length
+                                              |> fun h -> Border.create [ DockPanel.dock Dock.Top; Border.child h ]
+                                              ScrollViewer.create
+                                                  [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                                    ScrollViewer.content (
+                                                        StackPanel.create
+                                                            [ StackPanel.children (
+                                                                  squad
+                                                                  |> List.map (fun p ->
+                                                                      playerRow
+                                                                          p
+                                                                          (selectedPlayerId = Some p.Id)
+                                                                          (fun () -> dispatch (SelectPlayer p.Id)))
+                                                              ) ]
+                                                    ) ] ] ]
+                              ) ] ] ]
+            |> View.withKey $"training-{selectedPlayerId}-{playerScheduleKey}"
+            :> IView
+        | _ -> Border.create [] :> IView

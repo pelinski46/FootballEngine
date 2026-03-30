@@ -25,7 +25,7 @@ module Engine =
                 (fun (outs, errs, ls) (id, fixture, home, away, result) ->
                     match result with
                     | Error e -> outs, (id, e) :: errs, ls
-                    | Ok(h, a, evs) ->
+                    | Ok(h, a, evs, finalState) ->
                         let updatedFixture =
                             { fixture with
                                 Played = true
@@ -36,7 +36,8 @@ module Engine =
                         { FixtureId = id
                           Fixture = updatedFixture
                           HomeScore = h
-                          AwayScore = a }
+                          AwayScore = a
+                          FinalState = finalState }
                         :: outs,
                         errs,
                         $"{home.Name} {h}-{a} {away.Name}" :: ls)
@@ -84,6 +85,20 @@ module Engine =
         else
             gs
 
+    let private processDayFixtures (gs: GameState) (fixtures: (MatchId * MatchFixture) list) =
+        fixtures
+        |> function
+            | [] -> Ok(gs, [])
+            | fixes ->
+                let outcomes, errors, logs, gsReady = simulateFixtureList gs fixes
+
+                if not errors.IsEmpty then
+                    Error(errors)
+                else
+                    gsReady
+                    |> applyOutcomes (fixtureToCompMap gsReady) (List.toArray outcomes)
+                    |> fun newGs -> Ok(newGs, logs)
+
     let private advanceSingleDay (gs: GameState) : DayResult =
         let gs =
             { gs with
@@ -104,28 +119,17 @@ module Engine =
                     && f.AwayClubId <> gs.UserClubId))
             |> List.ofSeq
 
-        if todayFixtures.IsEmpty then
-            { GameState = gs
-              PlayedFixtures = []
-              Logs = []
-              SeasonComplete = isSeasonComplete gs }
-        else
-            let outcomes, errors, logs, gsReady = simulateFixtureList gs todayFixtures
-
-            let newGs =
-                if errors.IsEmpty then
-                    applyOutcomes (fixtureToCompMap gsReady) (List.toArray outcomes) gsReady
-                else
-                    gsReady
-
+        match processDayFixtures gs todayFixtures with
+        | Ok(newGs, logs) ->
             { GameState = newGs
               PlayedFixtures = todayFixtures
-              Logs =
-                if errors.IsEmpty then
-                    logs
-                else
-                    errors |> List.map (fun (id, e) -> $"Fixture {id} failed: {e}")
+              Logs = logs
               SeasonComplete = isSeasonComplete newGs }
+        | Error errors ->
+            { GameState = gs
+              PlayedFixtures = todayFixtures
+              Logs = errors |> List.map (fun (id, e) -> $"Fixture {id} failed: {e}")
+              SeasonComplete = isSeasonComplete gs }
 
     let advanceDays (days: int) (gs: GameState) : DayResult =
         let rec loop remaining current =
@@ -199,35 +203,44 @@ module Engine =
           NewGs = runSeasonPipeline gs }
 
     let simulateAndAdvanceSeason (gs: GameState) : Result<SeasonResult, SeasonError> =
-        let allUnplayed =
+        let fixturesByDate =
             gs.Competitions
             |> Map.toSeq
             |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq |> Seq.filter (fun (_, f) -> not f.Played))
-            |> List.ofSeq
+            |> Seq.groupBy (fun (_, f) -> f.ScheduledDate.Date)
+            |> Seq.map (fun (date, fixtures) -> date, List.ofSeq fixtures)
+            |> Map.ofSeq
 
-        if allUnplayed.IsEmpty then
+        if fixturesByDate.IsEmpty then
             Error NoFixturesToPlay
         else
-            let outcomes, errors, _logs, gsReady = simulateFixtureList gs allUnplayed
+            let sortedDates = fixturesByDate |> Map.keys |> Seq.sort |> Seq.toList
 
-            if not errors.IsEmpty then
-                errors
-                |> List.map (fun (_, e) -> string e)
-                |> String.concat ", "
-                |> SimulationErrors
-                |> Error
-            else
-                let lastMatchDate =
-                    allUnplayed |> List.map (fun (_, f) -> f.ScheduledDate) |> List.max
+            let rec simulateDates (currentGs: GameState) (dates: DateTime list) =
+                match dates with
+                | [] ->
+                    Ok
+                        { Summary = SeasonManager.computeSeasonSummary currentGs
+                          SeasonFinalGs = currentGs
+                          NewGs = runSeasonPipeline currentGs }
+                | date :: remainingDates ->
+                    let dayFixtures = fixturesByDate.[date]
 
-                let finalGs =
-                    { applyOutcomes (fixtureToCompMap gsReady) (List.toArray outcomes) gsReady with
-                        CurrentDate = lastMatchDate }
+                    if dayFixtures.IsEmpty then
+                        simulateDates currentGs remainingDates
+                    else
+                        match processDayFixtures currentGs dayFixtures with
+                        | Ok(updatedGs, _) ->
+                            let gsWithDate = { updatedGs with CurrentDate = date }
+                            simulateDates gsWithDate remainingDates
+                        | Error errors ->
+                            errors
+                            |> List.map (fun (_, e) -> string e)
+                            |> String.concat ", "
+                            |> SimulationErrors
+                            |> Error
 
-                Ok
-                    { Summary = SeasonManager.computeSeasonSummary finalGs
-                      SeasonFinalGs = finalGs
-                      NewGs = runSeasonPipeline finalGs }
+            simulateDates gs sortedDates
 
     type UserMatchDayResult =
         { DayResult: DayResult
@@ -280,7 +293,8 @@ module Engine =
                     { FixtureId = fixtureId
                       Fixture = updatedFixture
                       HomeScore = h
-                      AwayScore = a }
+                      AwayScore = a
+                      FinalState = replay.Final }
 
                 let finalGs = applyOutcomes (fixtureToCompMap gsReady) [| outcome |] gsReady
 

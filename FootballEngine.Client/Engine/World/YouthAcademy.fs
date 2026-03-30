@@ -5,7 +5,6 @@ open FootballEngine.Data
 open FootballEngine.Domain
 open FootballEngine.Generation
 open FootballEngine.Stats
-open FSharp.Stats.Distributions
 
 module YouthAcademy =
 
@@ -30,7 +29,7 @@ module YouthAcademy =
                     |> Option.map (fun c -> DataRegistry.findCountry c.Code)
                     |> Option.defaultWith (fun () -> DataRegistry.findCountry club.Nationality)
 
-                let roll = Continuous.Uniform.Sample 0.0 (float youthPositions.Length)
+                let roll = uniformSample 0.0 (float youthPositions.Length)
                 let pos = youthPositions[int roll]
                 let raw = PlayerGen.create nextId pos clubId countryData 2 gs.Season
 

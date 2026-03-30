@@ -46,13 +46,13 @@ type PitchBenchmarks() =
         let cond = s.HomeSide.Conditions[0]
 
         for _ in 1..10 do
-            MatchStats.effectiveStat p.Technical.Passing cond p.Morale 2.0 |> ignore
-            MatchStats.effectiveStat p.Mental.Vision cond p.Morale 1.5 |> ignore
-            MatchStats.effectiveStat p.Mental.Composure cond p.Morale 1.0 |> ignore
-            MatchStats.effectiveStat p.Technical.BallControl cond p.Morale 2.0 |> ignore
-            MatchStats.effectiveStat p.Technical.Dribbling cond p.Morale 1.5 |> ignore
-            MatchStats.effectiveStat p.Technical.Tackling cond p.Morale 2.0 |> ignore
-            MatchStats.effectiveStat p.Mental.Positioning cond p.Morale 2.0 |> ignore
-            MatchStats.effectiveStat p.Physical.Strength cond p.Morale 1.0 |> ignore
-            MatchStats.effectiveStat p.Mental.Concentration cond p.Morale 1.0 |> ignore
-            MatchStats.effectiveStat p.Technical.Finishing cond p.Morale 3.5 |> ignore
+            MatchCalc.effectiveStat p.Technical.Passing cond p.Morale 2.0 |> ignore
+            MatchCalc.effectiveStat p.Mental.Vision cond p.Morale 1.5 |> ignore
+            MatchCalc.effectiveStat p.Mental.Composure cond p.Morale 1.0 |> ignore
+            MatchCalc.effectiveStat p.Technical.BallControl cond p.Morale 2.0 |> ignore
+            MatchCalc.effectiveStat p.Technical.Dribbling cond p.Morale 1.5 |> ignore
+            MatchCalc.effectiveStat p.Technical.Tackling cond p.Morale 2.0 |> ignore
+            MatchCalc.effectiveStat p.Mental.Positioning cond p.Morale 2.0 |> ignore
+            MatchCalc.effectiveStat p.Physical.Strength cond p.Morale 1.0 |> ignore
+            MatchCalc.effectiveStat p.Mental.Concentration cond p.Morale 1.0 |> ignore
+            MatchCalc.effectiveStat p.Technical.Finishing cond p.Morale 3.5 |> ignore

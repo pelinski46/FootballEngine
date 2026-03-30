@@ -26,6 +26,9 @@ module GameState =
         |> Option.map (fun club -> club.PlayerIds |> List.choose gs.Players.TryFind)
         |> Option.defaultValue []
 
+    let getUserSquad (gs: GameState) : Player list =
+        getSquad gs.UserClubId gs
+
     let getStaff (clubId: ClubId) (gs: GameState) : Staff list =
         gs.Staff
         |> Map.values
@@ -48,18 +51,6 @@ module GameState =
     let updateStaff (s: Staff) (gs: GameState) : GameState =
         { gs with
             Staff = gs.Staff |> Map.add s.Id s }
-
-    let clubOf (p: Player) : ClubId option =
-        match p.Affiliation with
-        | Contracted(clubId, _) -> Some clubId
-        | YouthProspect clubId -> Some clubId
-        | FreeAgent
-        | Retired -> None
-
-    let contractOf (p: Player) : ContractInfo option =
-        match p.Affiliation with
-        | Contracted(_, contract) -> Some contract
-        | _ -> None
 
     let userManager (gs: GameState) : Staff option = gs.Staff |> Map.tryFind gs.UserStaffId
 

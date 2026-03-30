@@ -102,8 +102,17 @@ module AppTypes =
 
     type InboxState = { SelectedMessageId: int option }
 
+    type ManagerEmployment =
+        | Employed of clubId: ClubId
+        | NotEmployed
+
+    type AppMode =
+        | Initializing
+        | NoSave
+        | InGame of GameState * ManagerEmployment
+
     type State =
-        { GameState: GameState
+        { Mode: AppMode
           CurrentPage: Page
           IsProcessing: bool
           LogMessages: string list
@@ -118,6 +127,9 @@ module AppTypes =
           Transfer: TransferState
           ActiveMatchReplay: MatchReplay option
           ActiveMatchSnapshot: int
+          IsPlaying: bool
+          PlaybackSpeed: int
+          InterpolationT: float
           Inbox: InboxState
           PrevUserClubSkills: Map<PlayerId, int> option
           PrevUserClubStatus: Map<PlayerId, PlayerStatus> option }
@@ -153,6 +165,12 @@ module AppTypes =
           Snapshot = 0 }
 
     let initInboxState = { SelectedMessageId = None }
+
+    let managerEmployment (gs: GameState) : ManagerEmployment =
+        GameState.userManager gs
+        |> Option.bind (fun s -> if Staff.isEmployed s then Staff.clubId s else None)
+        |> Option.map Employed
+        |> Option.defaultValue NotEmployed
 
     let addLog msg (state: State) =
         { state with

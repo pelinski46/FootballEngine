@@ -380,10 +380,7 @@ module Transfers =
                 :> IView
 
             | NegotiatingContract(salary, years) ->
-                let currentSalary =
-                    match p.Affiliation with
-                    | Contracted(_, c) -> c.Salary
-                    | _ -> 0m
+                let currentSalary = Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m
 
                 StackPanel.create
                     [ StackPanel.spacing 12.0
@@ -586,9 +583,7 @@ module Transfers =
                                                           TextBlock.create
                                                               [ TextBlock.text (
                                                                     formatSalary (
-                                                                        match p.Affiliation with
-                                                                        | Contracted(_, c) -> c.Salary
-                                                                        | _ -> 0m
+                                                                        Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m
                                                                     )
                                                                 )
                                                                 TextBlock.fontSize 15.0
@@ -904,245 +899,241 @@ module Transfers =
               ) ]
 
     let transfersView (state: State) (dispatch: Msg -> unit) =
-        let ts = state.Transfer
-        let gs = state.GameState
+        match state.Mode with
+        | InGame (gs, _) ->
+            let ts = state.Transfer
 
-        let pagedPlayers =
-            ts.FilteredPlayers |> List.skip (ts.Page * pageSize) |> List.truncate pageSize
+            let pagedPlayers =
+                ts.FilteredPlayers |> List.skip (ts.Page * pageSize) |> List.truncate pageSize
 
-        let getClubName (pid: PlayerId) =
-            ts.ClubNameCache |> Map.tryFind pid |> Option.defaultValue "Unknown"
+            let getClubName (pid: PlayerId) =
+                ts.ClubNameCache |> Map.tryFind pid |> Option.defaultValue "Unknown"
 
-        let buyer = gs.Clubs[gs.UserClubId]
-        let userBudget = buyer.Budget
+            let buyer = gs.Clubs[gs.UserClubId]
+            let userBudget = buyer.Budget
 
-        let topBar =
-            Border.create
-                [ Border.background Theme.BgSidebar
-                  Border.borderBrush Theme.Border
-                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                  Border.padding (20.0, 14.0)
-                  Border.child (
-                      DockPanel.create
-                          [ DockPanel.children
-                                [ StackPanel.create
-                                      [ DockPanel.dock Dock.Right
-                                        StackPanel.orientation Orientation.Horizontal
-                                        StackPanel.spacing 6.0
-                                        StackPanel.verticalAlignment VerticalAlignment.Center
-                                        StackPanel.children
-                                            [ Icons.iconSm Club.finances Theme.Accent
-                                              TextBlock.create
-                                                  [ TextBlock.text "BUDGET"
-                                                    TextBlock.fontSize 10.0
-                                                    TextBlock.fontWeight FontWeight.Bold
-                                                    TextBlock.foreground Theme.TextMuted
-                                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                                              TextBlock.create
-                                                  [ TextBlock.text (formatValue userBudget)
-                                                    TextBlock.fontSize 14.0
-                                                    TextBlock.fontWeight FontWeight.Black
-                                                    TextBlock.foreground Theme.Accent
-                                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                  StackPanel.create
-                                      [ StackPanel.spacing 4.0
-                                        StackPanel.children
-                                            [ TextBlock.create
-                                                  [ TextBlock.text "TRANSFERS"
-                                                    TextBlock.fontSize 18.0
-                                                    TextBlock.fontWeight FontWeight.Black
-                                                    TextBlock.foreground Theme.TextMain
-                                                    TextBlock.lineSpacing 2.0 ]
-                                              TextBlock.create
-                                                  [ TextBlock.text "Recruit, negotiate, and build your squad"
-                                                    TextBlock.fontSize 11.0
-                                                    TextBlock.foreground Theme.TextMuted ] ] ] ] ]
-                  ) ]
+            let topBar =
+                Border.create
+                    [ Border.background Theme.BgSidebar
+                      Border.borderBrush Theme.Border
+                      Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                      Border.padding (20.0, 14.0)
+                      Border.child (
+                          DockPanel.create
+                              [ DockPanel.children
+                                    [ StackPanel.create
+                                          [ DockPanel.dock Dock.Right
+                                            StackPanel.orientation Orientation.Horizontal
+                                            StackPanel.spacing 6.0
+                                            StackPanel.verticalAlignment VerticalAlignment.Center
+                                            StackPanel.children
+                                                [ Icons.iconSm Club.finances Theme.Accent
+                                                  TextBlock.create
+                                                      [ TextBlock.text "BUDGET"
+                                                        TextBlock.fontSize 10.0
+                                                        TextBlock.fontWeight FontWeight.Bold
+                                                        TextBlock.foreground Theme.TextMuted
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center ]
+                                                  TextBlock.create
+                                                      [ TextBlock.text (formatValue userBudget)
+                                                        TextBlock.fontSize 14.0
+                                                        TextBlock.fontWeight FontWeight.Black
+                                                        TextBlock.foreground Theme.Accent
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+                                      StackPanel.create
+                                          [ StackPanel.spacing 4.0
+                                            StackPanel.children
+                                                [ TextBlock.create
+                                                      [ TextBlock.text "TRANSFERS"
+                                                        TextBlock.fontSize 18.0
+                                                        TextBlock.fontWeight FontWeight.Black
+                                                        TextBlock.foreground Theme.TextMain
+                                                        TextBlock.lineSpacing 2.0 ]
+                                                  TextBlock.create
+                                                      [ TextBlock.text "Recruit, negotiate, and build your squad"
+                                                        TextBlock.fontSize 11.0
+                                                        TextBlock.foreground Theme.TextMuted ] ] ] ] ]
+                      ) ]
 
-        let tabBar =
-            Border.create
-                [ Border.background Theme.BgCard
-                  Border.borderBrush Theme.Border
-                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                  Border.padding (20.0, 0.0)
-                  Border.child (
-                      StackPanel.create
-                          [ StackPanel.orientation Orientation.Horizontal
-                            StackPanel.spacing 2.0
-                            StackPanel.children
-                                [ for tab in
-                                      [ MarketSearch; MyWatchlist; IncomingOffers; OutgoingOffers; TransferHistory ] do
-                                      let isActive = ts.ActiveTab = tab
+            let tabBar =
+                Border.create
+                    [ Border.background Theme.BgCard
+                      Border.borderBrush Theme.Border
+                      Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                      Border.padding (20.0, 0.0)
+                      Border.child (
+                          StackPanel.create
+                              [ StackPanel.orientation Orientation.Horizontal
+                                StackPanel.spacing 2.0
+                                StackPanel.children
+                                    [ for tab in
+                                          [ MarketSearch; MyWatchlist; IncomingOffers; OutgoingOffers; TransferHistory ] do
+                                          let isActive = ts.ActiveTab = tab
 
-                                      Button.create
-                                          [ Button.padding (14.0, 12.0)
-                                            Button.background "Transparent"
-                                            Button.borderThickness (
-                                                Avalonia.Thickness(0.0, 0.0, 0.0, if isActive then 2.0 else 0.0)
-                                            )
-                                            Button.borderBrush (if isActive then Theme.Accent else "Transparent")
-                                            Button.cornerRadius 0.0
-                                            Button.onClick (fun _ -> dispatch (TransferMsg(TabChange tab)))
-                                            Button.content (
-                                                StackPanel.create
-                                                    [ StackPanel.orientation Orientation.Horizontal
-                                                      StackPanel.spacing 6.0
-                                                      StackPanel.children
-                                                          [ Icons.iconSm
-                                                                (tabIcon tab)
-                                                                (if isActive then Theme.Accent else Theme.TextMuted)
-                                                            TextBlock.create
-                                                                [ TextBlock.text (tabLabel tab)
-                                                                  TextBlock.fontSize 12.0
-                                                                  TextBlock.fontWeight (
-                                                                      if isActive then
-                                                                          FontWeight.SemiBold
-                                                                      else
-                                                                          FontWeight.Normal
-                                                                  )
-                                                                  TextBlock.foreground (
-                                                                      if isActive then Theme.Accent else Theme.TextMuted
-                                                                  )
-                                                                  TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                            ) ] ] ]
-                  ) ]
+                                          Button.create
+                                              [ Button.padding (14.0, 12.0)
+                                                Button.background "Transparent"
+                                                Button.borderThickness (
+                                                    Avalonia.Thickness(0.0, 0.0, 0.0, if isActive then 2.0 else 0.0)
+                                                )
+                                                Button.borderBrush (if isActive then Theme.Accent else "Transparent")
+                                                Button.cornerRadius 0.0
+                                                Button.onClick (fun _ -> dispatch (TransferMsg(TabChange tab)))
+                                                Button.content (
+                                                    StackPanel.create
+                                                        [ StackPanel.orientation Orientation.Horizontal
+                                                          StackPanel.spacing 6.0
+                                                          StackPanel.children
+                                                              [ Icons.iconSm
+                                                                    (tabIcon tab)
+                                                                    (if isActive then Theme.Accent else Theme.TextMuted)
+                                                                TextBlock.create
+                                                                    [ TextBlock.text (tabLabel tab)
+                                                                      TextBlock.fontSize 12.0
+                                                                      TextBlock.fontWeight (
+                                                                          if isActive then
+                                                                              FontWeight.SemiBold
+                                                                          else
+                                                                              FontWeight.Normal
+                                                                      )
+                                                                      TextBlock.foreground (
+                                                                          if isActive then
+                                                                              Theme.Accent
+                                                                          else
+                                                                              Theme.TextMuted
+                                                                      )
+                                                                      TextBlock.verticalAlignment
+                                                                          VerticalAlignment.Center ] ] ]
+                                                ) ] ] ]
+                      ) ]
 
-        let searchAndFilters =
-            Border.create
-                [ Border.background Theme.BgSidebar
-                  Border.borderBrush Theme.Border
-                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                  Border.padding (16.0, 10.0)
-                  Border.child (
-                      Grid.create
-                          [ Grid.columnDefinitions "*, Auto"
-                            Grid.children
-                                [ Border.create
-                                      [ Grid.column 0
-                                        Border.background Theme.BgCard
-                                        Border.borderBrush Theme.Border
-                                        Border.borderThickness 1.0
-                                        Border.cornerRadius 8.0
-                                        Border.margin (0.0, 0.0, 12.0, 0.0)
-                                        Border.child (
-                                            Grid.create
-                                                [ Grid.columnDefinitions "Auto, *"
-                                                  Grid.children
-                                                      [ Border.create
-                                                            [ Grid.column 0
-                                                              Border.padding (10.0, 0.0, 4.0, 0.0)
-                                                              Border.verticalAlignment VerticalAlignment.Center
-                                                              Border.child (
-                                                                  Icons.iconSm IconName.search Theme.TextMuted
-                                                              ) ]
-                                                        TextBox.create
-                                                            [ Grid.column 1
-                                                              TextBox.text ts.SearchQuery
-                                                              TextBox.onTextChanged (fun q ->
-                                                                  dispatch (TransferMsg(Search q)))
-                                                              TextBox.watermark "Search players..."
-                                                              TextBox.background "Transparent"
-                                                              TextBox.borderThickness 0.0
-                                                              TextBox.padding (4.0, 10.0)
-                                                              TextBox.fontSize 13.0 ] ] ]
-                                        ) ]
-                                  StackPanel.create
-                                      [ Grid.column 1
-                                        StackPanel.orientation Orientation.Horizontal
-                                        StackPanel.spacing 6.0
-                                        StackPanel.children
-                                            [ for f in [ AllPositions; Goalkeepers; Defenders; Midfielders; Attackers ] do
-                                                  let isActive = ts.PositionFilter = f
-
-                                                  Button.create
-                                                      [ Button.padding (10.0, 6.0)
-                                                        Button.cornerRadius 6.0
-                                                        Button.background (
-                                                            if isActive then Theme.AccentLight else "Transparent"
-                                                        )
-                                                        Button.borderBrush (
-                                                            if isActive then Theme.Accent else Theme.Border
-                                                        )
-                                                        Button.borderThickness 1.0
-                                                        Button.onClick (fun _ -> dispatch (TransferMsg(FilterChange f)))
-                                                        Button.content (
-                                                            TextBlock.create
-                                                                [ TextBlock.text (positionLabel f)
-                                                                  TextBlock.fontSize 11.0
-                                                                  TextBlock.fontWeight FontWeight.SemiBold
-                                                                  TextBlock.foreground (
-                                                                      if isActive then Theme.Accent else Theme.TextMuted
+            let searchAndFilters =
+                Border.create
+                    [ Border.background Theme.BgSidebar
+                      Border.borderBrush Theme.Border
+                      Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                      Border.padding (16.0, 10.0)
+                      Border.child (
+                          Grid.create
+                              [ Grid.columnDefinitions "*, Auto"
+                                Grid.children
+                                    [ Border.create
+                                          [ Grid.column 0
+                                            Border.background Theme.BgCard
+                                            Border.borderBrush Theme.Border
+                                            Border.borderThickness 1.0
+                                            Border.cornerRadius 8.0
+                                            Border.margin (0.0, 0.0, 12.0, 0.0)
+                                            Border.child (
+                                                Grid.create
+                                                    [ Grid.columnDefinitions "Auto, *"
+                                                      Grid.children
+                                                          [ Border.create
+                                                                [ Grid.column 0
+                                                                  Border.padding (10.0, 0.0, 4.0, 0.0)
+                                                                  Border.verticalAlignment VerticalAlignment.Center
+                                                                  Border.child (
+                                                                      Icons.iconSm IconName.search Theme.TextMuted
                                                                   ) ]
-                                                        ) ] ] ] ] ]
-                  ) ]
+                                                            TextBox.create
+                                                                [ Grid.column 1
+                                                                  TextBox.text ts.SearchQuery
+                                                                  TextBox.onTextChanged (fun q ->
+                                                                      dispatch (TransferMsg(Search q)))
+                                                                  TextBox.watermark "Search players..."
+                                                                  TextBox.background "Transparent"
+                                                                  TextBox.borderThickness 0.0
+                                                                  TextBox.padding (4.0, 10.0)
+                                                                  TextBox.fontSize 13.0 ] ] ]
+                                            ) ]
+                                      StackPanel.create
+                                          [ Grid.column 1
+                                            StackPanel.orientation Orientation.Horizontal
+                                            StackPanel.spacing 6.0
+                                            StackPanel.children
+                                                [ for f in
+                                                      [ AllPositions; Goalkeepers; Defenders; Midfielders; Attackers ] do
+                                                      let isActive = ts.PositionFilter = f
 
-        let playerListPanel =
-            if ts.IsLoading then
-                UI.loadingState ()
-            else
-                Grid.create
-                    [ Grid.rowDefinitions "Auto, *, Auto"
-                      Grid.children
-                          [ marketTableHeader () |> fun h -> Border.create [ Grid.row 0; Border.child h ]
+                                                      Button.create
+                                                          [ Button.padding (10.0, 6.0)
+                                                            Button.cornerRadius 6.0
+                                                            Button.background (
+                                                                if isActive then Theme.AccentLight else "Transparent"
+                                                            )
+                                                            Button.borderBrush (
+                                                                if isActive then Theme.Accent else Theme.Border
+                                                            )
+                                                            Button.borderThickness 1.0
+                                                            Button.onClick (fun _ ->
+                                                                dispatch (TransferMsg(FilterChange f)))
+                                                            Button.content (
+                                                                TextBlock.create
+                                                                    [ TextBlock.text (positionLabel f)
+                                                                      TextBlock.fontSize 11.0
+                                                                      TextBlock.fontWeight FontWeight.SemiBold
+                                                                      TextBlock.foreground (
+                                                                          if isActive then
+                                                                              Theme.Accent
+                                                                          else
+                                                                              Theme.TextMuted
+                                                                      ) ]
+                                                            ) ] ] ] ] ]
+                      ) ]
 
-                            if pagedPlayers.IsEmpty then
-                                UI.emptyState IconName.search "No players found" "Try adjusting your search or filters"
-                                |> fun e -> Border.create [ Grid.row 1; Border.child e ]
-                            else
-                                ScrollViewer.create
-                                    [ Grid.row 1
-                                      ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                      ScrollViewer.content (
-                                          StackPanel.create
-                                              [ StackPanel.children
-                                                    [ for p in pagedPlayers do
-                                                          playerRow
-                                                              p
-                                                              (getClubName p.Id)
-                                                              (ts.SelectedPlayerId = Some p.Id)
-                                                              (List.contains p.Id ts.WatchlistIds)
-                                                              (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
-                                                              (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
-                                      ) ]
+            let playerListPanel =
+                if ts.IsLoading then
+                    UI.loadingState ()
+                else
+                    Grid.create
+                        [ Grid.rowDefinitions "Auto, *, Auto"
+                          Grid.children
+                              [ marketTableHeader () |> fun h -> Border.create [ Grid.row 0; Border.child h ]
 
-                            paginationBar ts.Page ts.FilteredPlayers.Length dispatch
-                            |> fun p -> Border.create [ Grid.row 2; Border.child p ] ] ]
-                :> IView
+                                if pagedPlayers.IsEmpty then
+                                    UI.emptyState
+                                        IconName.search
+                                        "No players found"
+                                        "Try adjusting your search or filters"
+                                    |> fun e -> Border.create [ Grid.row 1; Border.child e ]
+                                else
+                                    ScrollViewer.create
+                                        [ Grid.row 1
+                                          ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                          ScrollViewer.content (
+                                              StackPanel.create
+                                                  [ StackPanel.children
+                                                        [ for p in pagedPlayers do
+                                                              playerRow
+                                                                  p
+                                                                  (getClubName p.Id)
+                                                                  (ts.SelectedPlayerId = Some p.Id)
+                                                                  (List.contains p.Id ts.WatchlistIds)
+                                                                  (fun () -> dispatch (TransferMsg(PlayerSelect p.Id)))
+                                                                  (fun () -> dispatch (TransferMsg(WatchToggle p.Id))) ] ]
+                                          ) ]
 
-        let detailPanel =
-            match ts.SelectedPlayerId with
-            | None -> UI.emptyState PlayerIcon.position "No player selected" "Click a player to view details"
-            | Some pid ->
-                match ts.CachedPlayers |> List.tryFind (fun p -> p.Id = pid) with
-                | None -> UI.emptyState IconName.error "Player not found" ""
-                | Some p ->
-                    playerDetailPanel
-                        p
-                        (getClubName pid)
-                        (List.contains pid ts.WatchlistIds)
-                        buyer
-                        ts.ActiveNegotiation
-                        dispatch
+                                paginationBar ts.Page ts.FilteredPlayers.Length dispatch
+                                |> fun p -> Border.create [ Grid.row 2; Border.child p ] ] ]
                     :> IView
 
-        let marketContent =
-            Grid.create
-                [ Grid.columnDefinitions "*, 300"
-                  Grid.children
-                      [ Border.create
-                            [ Grid.column 0
-                              Border.borderBrush Theme.Border
-                              Border.borderThickness (0.0, 0.0, 1.0, 0.0)
-                              Border.child playerListPanel ]
-                        Border.create [ Grid.column 1; Border.child detailPanel ] ] ]
+            let detailPanel =
+                match ts.SelectedPlayerId with
+                | None -> UI.emptyState PlayerIcon.position "No player selected" "Click a player to view details"
+                | Some pid ->
+                    match ts.CachedPlayers |> List.tryFind (fun p -> p.Id = pid) with
+                    | None -> UI.emptyState IconName.error "Player not found" ""
+                    | Some p ->
+                        playerDetailPanel
+                            p
+                            (getClubName pid)
+                            (List.contains pid ts.WatchlistIds)
+                            buyer
+                            ts.ActiveNegotiation
+                            dispatch
+                        :> IView
 
-        let watchlistContent =
-            match ts.WatchlistIds with
-            | [] ->
-                UI.emptyState PlayerIcon.skill "Your watchlist is empty" "Star players in the market to track them here"
-            | ids ->
-                let watched = ts.CachedPlayers |> List.filter (fun p -> List.contains p.Id ids)
-
+            let marketContent =
                 Grid.create
                     [ Grid.columnDefinitions "*, 300"
                       Grid.children
@@ -1150,118 +1141,144 @@ module Transfers =
                                 [ Grid.column 0
                                   Border.borderBrush Theme.Border
                                   Border.borderThickness (0.0, 0.0, 1.0, 0.0)
-                                  Border.child (
-                                      StackPanel.create
-                                          [ StackPanel.children
-                                                [ marketTableHeader ()
-                                                  ScrollViewer.create
-                                                      [ ScrollViewer.verticalScrollBarVisibility
-                                                            ScrollBarVisibility.Auto
-                                                        ScrollViewer.content (
-                                                            StackPanel.create
-                                                                [ StackPanel.children
-                                                                      [ for p in watched do
-                                                                            playerRow
-                                                                                p
-                                                                                (getClubName p.Id)
-                                                                                (ts.SelectedPlayerId = Some p.Id)
-                                                                                true
-                                                                                (fun () ->
-                                                                                    dispatch (
-                                                                                        TransferMsg(PlayerSelect p.Id)
-                                                                                    ))
-                                                                                (fun () ->
-                                                                                    dispatch (
-                                                                                        TransferMsg(WatchToggle p.Id)
-                                                                                    )) ] ]
-                                                        ) ] ] ]
-                                  ) ]
+                                  Border.child playerListPanel ]
                             Border.create [ Grid.column 1; Border.child detailPanel ] ] ]
-                :> IView
 
-        let outgoingContent =
-            let active = ts.OutgoingOffers |> List.filter (fun o -> o.Status <> Withdrawn)
+            let watchlistContent =
+                match ts.WatchlistIds with
+                | [] ->
+                    UI.emptyState
+                        PlayerIcon.skill
+                        "Your watchlist is empty"
+                        "Star players in the market to track them here"
+                | ids ->
+                    let watched = ts.CachedPlayers |> List.filter (fun p -> List.contains p.Id ids)
 
-            if active.IsEmpty then
-                UI.emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here"
-            else
-                StackPanel.create
-                    [ StackPanel.children
-                          [ Border.create
-                                [ Border.padding (16.0, 8.0)
-                                  Border.background Theme.BgSidebar
-                                  Border.borderBrush Theme.Border
-                                  Border.borderThickness (0.0, 0.0, 0.0, 1.0)
-                                  Border.child (
-                                      Grid.create
-                                          [ Grid.columnDefinitions "*, Auto, 100, 32"
-                                            Grid.margin 12.0
-                                            Grid.children
-                                                [ TextBlock.create
-                                                      [ Grid.column 0
-                                                        TextBlock.text "PLAYER"
-                                                        TextBlock.fontSize 10.0
-                                                        TextBlock.fontWeight FontWeight.Bold
-                                                        TextBlock.foreground Theme.TextMuted
-                                                        TextBlock.lineSpacing 1.0 ]
-                                                  TextBlock.create
-                                                      [ Grid.column 1
-                                                        TextBlock.text "FEE"
-                                                        TextBlock.fontSize 10.0
-                                                        TextBlock.fontWeight FontWeight.Bold
-                                                        TextBlock.foreground Theme.TextMuted
-                                                        TextBlock.lineSpacing 1.0 ]
-                                                  TextBlock.create
-                                                      [ Grid.column 2
-                                                        TextBlock.text "STATUS"
-                                                        TextBlock.fontSize 10.0
-                                                        TextBlock.fontWeight FontWeight.Bold
-                                                        TextBlock.foreground Theme.TextMuted
-                                                        TextBlock.lineSpacing 1.0 ] ] ]
-                                  ) ]
-                            ScrollViewer.create
-                                [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                  ScrollViewer.content (
-                                      StackPanel.create
-                                          [ StackPanel.children
-                                                [ for o in active do
-                                                      offerRow o gs.Players gs.Clubs dispatch ] ]
-                                  ) ] ] ]
-                :> IView
+                    Grid.create
+                        [ Grid.columnDefinitions "*, 300"
+                          Grid.children
+                              [ Border.create
+                                    [ Grid.column 0
+                                      Border.borderBrush Theme.Border
+                                      Border.borderThickness (0.0, 0.0, 1.0, 0.0)
+                                      Border.child (
+                                          StackPanel.create
+                                              [ StackPanel.children
+                                                    [ marketTableHeader ()
+                                                      ScrollViewer.create
+                                                          [ ScrollViewer.verticalScrollBarVisibility
+                                                                ScrollBarVisibility.Auto
+                                                            ScrollViewer.content (
+                                                                StackPanel.create
+                                                                    [ StackPanel.children
+                                                                          [ for p in watched do
+                                                                                playerRow
+                                                                                    p
+                                                                                    (getClubName p.Id)
+                                                                                    (ts.SelectedPlayerId = Some p.Id)
+                                                                                    true
+                                                                                    (fun () ->
+                                                                                        dispatch (
+                                                                                            TransferMsg(
+                                                                                                PlayerSelect p.Id
+                                                                                            )
+                                                                                        ))
+                                                                                    (fun () ->
+                                                                                        dispatch (
+                                                                                            TransferMsg(
+                                                                                                WatchToggle p.Id
+                                                                                            )
+                                                                                        )) ] ]
+                                                            ) ] ] ]
+                                      ) ]
+                                Border.create [ Grid.column 1; Border.child detailPanel ] ] ]
+                    :> IView
 
-        let historyContent =
-            if ts.TransferHistory.IsEmpty then
-                UI.emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here"
-            else
-                StackPanel.create
-                    [ StackPanel.children
-                          [ ScrollViewer.create
-                                [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                  ScrollViewer.content (
-                                      StackPanel.create
-                                          [ StackPanel.children
-                                                [ for r in ts.TransferHistory do
-                                                      historyRow r ] ]
-                                  ) ] ] ]
-                :> IView
+            let outgoingContent =
+                let active = ts.OutgoingOffers |> List.filter (fun o -> o.Status <> Withdrawn)
 
-        let tabContent =
-            match ts.ActiveTab with
-            | MarketSearch -> marketContent :> IView
-            | MyWatchlist -> watchlistContent
-            | IncomingOffers ->
-                UI.emptyState IconName.add "No incoming offers" "Other clubs haven't made any offers yet"
-            | OutgoingOffers -> outgoingContent
-            | TransferHistory -> historyContent
+                if active.IsEmpty then
+                    UI.emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here"
+                else
+                    StackPanel.create
+                        [ StackPanel.children
+                              [ Border.create
+                                    [ Border.padding (16.0, 8.0)
+                                      Border.background Theme.BgSidebar
+                                      Border.borderBrush Theme.Border
+                                      Border.borderThickness (0.0, 0.0, 0.0, 1.0)
+                                      Border.child (
+                                          Grid.create
+                                              [ Grid.columnDefinitions "*, Auto, 100, 32"
+                                                Grid.margin 12.0
+                                                Grid.children
+                                                    [ TextBlock.create
+                                                          [ Grid.column 0
+                                                            TextBlock.text "PLAYER"
+                                                            TextBlock.fontSize 10.0
+                                                            TextBlock.fontWeight FontWeight.Bold
+                                                            TextBlock.foreground Theme.TextMuted
+                                                            TextBlock.lineSpacing 1.0 ]
+                                                      TextBlock.create
+                                                          [ Grid.column 1
+                                                            TextBlock.text "FEE"
+                                                            TextBlock.fontSize 10.0
+                                                            TextBlock.fontWeight FontWeight.Bold
+                                                            TextBlock.foreground Theme.TextMuted
+                                                            TextBlock.lineSpacing 1.0 ]
+                                                      TextBlock.create
+                                                          [ Grid.column 2
+                                                            TextBlock.text "STATUS"
+                                                            TextBlock.fontSize 10.0
+                                                            TextBlock.fontWeight FontWeight.Bold
+                                                            TextBlock.foreground Theme.TextMuted
+                                                            TextBlock.lineSpacing 1.0 ] ] ]
+                                      ) ]
+                                ScrollViewer.create
+                                    [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                      ScrollViewer.content (
+                                          StackPanel.create
+                                              [ StackPanel.children
+                                                    [ for o in active do
+                                                          offerRow o gs.Players gs.Clubs dispatch ] ]
+                                      ) ] ] ]
+                    :> IView
 
-        Grid.create
-            [ Grid.background Theme.BgMain
-              Grid.rowDefinitions "Auto, Auto, Auto, *"
-              Grid.children
-                  [ Border.create [ Grid.row 0; Border.child topBar ]
-                    Border.create [ Grid.row 1; Border.child tabBar ]
-                    Border.create
-                        [ Grid.row 2
-                          Border.isVisible (ts.ActiveTab = MarketSearch || ts.ActiveTab = MyWatchlist)
-                          Border.child searchAndFilters ]
-                    Border.create [ Grid.row 3; Border.child tabContent ] ] ]
+            let historyContent =
+                if ts.TransferHistory.IsEmpty then
+                    UI.emptyState PlayerIcon.contract "No transfer history" "Completed deals will appear here"
+                else
+                    StackPanel.create
+                        [ StackPanel.children
+                              [ ScrollViewer.create
+                                    [ ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                      ScrollViewer.content (
+                                          StackPanel.create
+                                              [ StackPanel.children
+                                                    [ for r in ts.TransferHistory do
+                                                          historyRow r ] ]
+                                      ) ] ] ]
+                    :> IView
+
+            let tabContent =
+                match ts.ActiveTab with
+                | MarketSearch -> marketContent :> IView
+                | MyWatchlist -> watchlistContent
+                | IncomingOffers ->
+                    UI.emptyState IconName.add "No incoming offers" "Other clubs haven't made any offers yet"
+                | OutgoingOffers -> outgoingContent
+                | TransferHistory -> historyContent
+
+            Grid.create
+                [ Grid.background Theme.BgMain
+                  Grid.rowDefinitions "Auto, Auto, Auto, *"
+                  Grid.children
+                      [ Border.create [ Grid.row 0; Border.child topBar ]
+                        Border.create [ Grid.row 1; Border.child tabBar ]
+                        Border.create
+                            [ Grid.row 2
+                              Border.isVisible (ts.ActiveTab = MarketSearch || ts.ActiveTab = MyWatchlist)
+                              Border.child searchAndFilters ]
+                        Border.create [ Grid.row 3; Border.child tabContent ] ] ]
+            :> IView
+        | _ -> Border.create [] :> IView

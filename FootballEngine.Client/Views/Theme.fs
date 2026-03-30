@@ -10,7 +10,7 @@ module Theme =
     let Border = "#334155"
 
     let TextMain = "#f1f5f9"
-    let TextMuted = "#64748b"
+    let TextMuted = "#FFFFFF"
     let TextSub = "#dddddd"
 
     let Accent = "#10b981"

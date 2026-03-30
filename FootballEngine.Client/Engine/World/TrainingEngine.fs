@@ -2,7 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FSharp.Stats.Distributions
+open FootballEngine.Stats
 
 module TrainingEngine =
 
@@ -37,8 +37,8 @@ module TrainingEngine =
             let focusMult = focusMultiplier schedule.Focus position
             let intensityMult = intensityEffect schedule.Intensity |> fun e -> e.DeltaMultiplier
             let weeklyDelta = float baseDelta * focusMult * intensityMult / 120.0
-            
-            let roll = Continuous.Uniform.Sample 0.0 1.0
+
+            let roll = rollProbability ()
             let shouldIncrease = roll < weeklyDelta
             
             if shouldIncrease then
@@ -87,7 +87,7 @@ module TrainingEngine =
 
         let newMorale = System.Math.Clamp(player.Morale + effect.MoraleChange, 0, 100)
 
-        let injuryRoll = Continuous.Uniform.Sample 0.0 1.0
+        let injuryRoll = rollProbability ()
 
         let playerWithCondition =
             if injuryRoll < effect.InjuryRisk then
@@ -118,7 +118,7 @@ module TrainingEngine =
                             let totalCost = effect.ConditionCost * remaining
                             let newCondition = System.Math.Clamp(player.Condition + totalCost, 0, 100)
                             let cumulativeRisk = 1.0 - (1.0 - effect.InjuryRisk) ** float remaining
-                            let injuryRoll = Continuous.Uniform.Sample 0.0 1.0
+                            let injuryRoll = rollProbability ()
                             let injured = injuryRoll < cumulativeRisk
 
                             { player with

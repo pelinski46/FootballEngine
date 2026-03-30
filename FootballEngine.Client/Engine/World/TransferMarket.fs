@@ -140,9 +140,9 @@ module TransferMarket =
                     match Map.tryFind target.PlayerId gs.Players with
                     | None -> None
                     | Some p ->
-                        match p.Affiliation with
-                        | FreeAgent -> Some(intent.ClubId, intent.ClubId, p)
-                        | Contracted(sellerId, _) when sellerId <> intent.ClubId -> Some(intent.ClubId, sellerId, p)
+                        match Player.clubOf p with
+                        | None -> Some(intent.ClubId, intent.ClubId, p)  // Free agent
+                        | Some sellerId when sellerId <> intent.ClubId -> Some(intent.ClubId, sellerId, p)
                         | _ -> None))
             |> List.fold
                 (fun (acc, id) (buyerId, sellerId, p) ->

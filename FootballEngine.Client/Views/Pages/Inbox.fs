@@ -43,12 +43,17 @@ module InboxPresenter =
         | Contract -> "CONTRACT"
 
     let getMessageList (state: State) =
-        state.GameState.Inbox |> List.sortByDescending (fun m -> m.Date)
+        match state.Mode with
+        | InGame (gs, _) -> gs.Inbox |> List.sortByDescending (fun m -> m.Date)
+        | _ -> []
 
     let getSelectedMessage (state: State) =
-        match state.Inbox.SelectedMessageId with
-        | Some id -> state.GameState.Inbox |> List.tryFind (fun m -> m.Id = id)
-        | None -> None
+        match state.Mode with
+        | InGame (gs, _) ->
+            match state.Inbox.SelectedMessageId with
+            | Some id -> gs.Inbox |> List.tryFind (fun m -> m.Id = id)
+            | None -> None
+        | _ -> None
 
     let formatMessageDate (date: DateTime) (currentDate: DateTime) =
         let daysAgo = int (currentDate - date).TotalDays
@@ -386,7 +391,10 @@ module Inbox =
     let inboxView (state: State) dispatch : IView =
         let messages = InboxPresenter.getMessageList state
         let selectedMessage = InboxPresenter.getSelectedMessage state
-        let currentDate = state.GameState.CurrentDate
+        let currentDate =
+            match state.Mode with
+            | InGame (gs, _) -> gs.CurrentDate
+            | _ -> System.DateTime.Now
 
         Grid.create
             [ Grid.columnDefinitions "320, *"

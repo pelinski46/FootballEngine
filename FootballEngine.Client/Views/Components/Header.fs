@@ -22,11 +22,16 @@ module Header =
                 dispatched <- true
                 dispatch msg
 
-        let clubName =
-            state.GameState.Clubs
-            |> Map.tryFind state.GameState.UserClubId
-            |> Option.map _.Name
-            |> Option.defaultValue "Football Engine"
+        let clubName, currentDateStr =
+            match state.Mode with
+            | InGame (gs, _) ->
+                let name =
+                    gs.Clubs
+                    |> Map.tryFind gs.UserClubId
+                    |> Option.map _.Name
+                    |> Option.defaultValue "Football Engine"
+                name, gs.CurrentDate.ToString("dd MMM yyyy").ToUpper()
+            | _ -> "Football Engine", System.DateTime.Now.ToString("dd MMM yyyy").ToUpper()
 
         Border.create
             [ Border.height 64.0
@@ -69,11 +74,7 @@ module Header =
                                                           StackPanel.children
                                                               [ Icons.iconSm IconName.calendar Theme.TextMuted
                                                                 TextBlock.create
-                                                                    [ TextBlock.text (
-                                                                          state.GameState.CurrentDate
-                                                                              .ToString("dd MMM yyyy")
-                                                                              .ToUpper()
-                                                                      )
+                                                                    [ TextBlock.text currentDateStr
                                                                       TextBlock.fontSize 12.0
                                                                       TextBlock.fontWeight FontWeight.SemiBold
                                                                       TextBlock.foreground Theme.TextSub

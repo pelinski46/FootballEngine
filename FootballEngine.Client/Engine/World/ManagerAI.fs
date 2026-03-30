@@ -93,15 +93,13 @@ module SquadAnalysis =
         |> List.filter (fun p ->
             let isWeak = float p.CurrentSkill < avg - 15.0
 
-            let isExpiring =
-                match p.Affiliation with
-                | Contracted(_, c) -> c.ExpiryYear <= 0
-                | _ -> false
+            let contractExpiry = Player.contractOf p |> Option.map _.ExpiryYear
+
+            let isExpiring = contractExpiry |> Option.exists (fun y -> y <= 0)
 
             let isOldAndExpiring =
-                match p.Affiliation with
-                | Contracted(_, c) -> Player.age currentDate p > 32 && c.ExpiryYear <= 1
-                | _ -> false
+                contractExpiry
+                |> Option.exists (fun y -> Player.age currentDate p > 32 && y <= 1)
 
             let isExcessCoverage =
                 let count = positionCounts |> Map.tryFind p.Position |> Option.defaultValue 0

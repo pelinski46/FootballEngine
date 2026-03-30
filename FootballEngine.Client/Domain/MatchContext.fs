@@ -26,8 +26,8 @@ type TeamSide =
       Instructions: TacticalInstructions option }
 
 type PenaltyShootout =
-    { HomeKicks: (PlayerId * bool) list
-      AwayKicks: (PlayerId * bool) list
+    { HomeKicks: (PlayerId * bool * int) list
+      AwayKicks: (PlayerId * bool * int) list
       CurrentKick: int
       IsComplete: bool }
 
@@ -58,13 +58,30 @@ type MatchReplay =
       Snapshots: MatchState[] }
 
 type ScheduledEvent =
+    // Core simulation events
     | Duel
+    | PositionTick
     | FatigueCheck
+
+    // Attacking actions
     | ShotAttempt of attacker: Player
+    | PassSequence of attacker: Player
+    | DribbleAttempt of attacker: Player
+    | CrossAttemptEvent of attacker: Player
+    | LongBallAttempt of attacker: Player
+
+    // Defensive actions
+    | TackleAttempt of defender: Player
+
+    // Set pieces
+    | FreeKickAttempt of kicker: Player
+    | PenaltyKick of kicker: Player * isHome: bool * kickNumber: int
+    | CornerTaken
+
+    // Administrative events
     | CardCheck of player: Player * clubId: ClubId * isPossessingTeam: bool
     | InjuryCheck of player: Player * clubId: ClubId
     | SubstitutionCheck of clubId: ClubId
+
+    // Match lifecycle
     | MatchEnd
-    | PenaltyKick of kicker: Player * isHome: bool * kickNumber: int
-    | FreeKickAttempt of kicker: Player
-    | CornerTaken

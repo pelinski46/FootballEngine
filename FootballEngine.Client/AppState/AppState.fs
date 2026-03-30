@@ -1,6 +1,5 @@
 namespace FootballEngine
 
-open System
 open Elmish
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
@@ -9,23 +8,8 @@ open AppTypes
 
 module AppState =
 
-    let private emptyGameState () : GameState =
-        { CurrentDate = DateTime.Now
-          Season = DateTime.Now.Year
-          TrainingWeeksApplied = 0
-          Clubs = Map.empty
-          Players = Map.empty
-          Staff = Map.empty
-          Competitions = Map.empty
-          Countries = Map.empty
-          UserClubId = 0
-          UserStaffId = 0
-          PrimaryCountry = ""
-          Inbox = []
-          NextInboxId = 1 }
-
-    let private initialState (gs: GameState) : State =
-        { GameState = gs
+    let private initialState () : State =
+        { Mode = Initializing
           CurrentPage = Loading
           IsProcessing = true
           LogMessages = [ "Football Engine 2026 Initialized" ]
@@ -40,6 +24,9 @@ module AppState =
           Transfer = initTransferState
           ActiveMatchReplay = None
           ActiveMatchSnapshot = 0
+          IsPlaying = false
+          PlaybackSpeed = 60
+          InterpolationT = 0.0
           Inbox = initInboxState
           PrevUserClubSkills = None
           PrevUserClubStatus = None }
@@ -95,9 +82,14 @@ module AppState =
 
     let init () =
         let loadCmd = Cmd.OfTask.perform (fun () -> Db.loadGame ()) () GameLoaded
-        initialState (emptyGameState ()), loadCmd
+        initialState (), loadCmd
 
     let update (msg: Msg) (state: State) : State * Cmd<Msg> =
+        let withGame (f: GameState -> State * Cmd<Msg>) =
+            match state.Mode with
+            | InGame(gs, _) -> f gs
+            | _ -> state, Cmd.none
+
         match msg with
         | SetupMsg m -> UpdateSetup.handle m state
 
@@ -131,31 +123,49 @@ module AppState =
         | InboxMsg im ->
             match im with
             | SelectMessage messageId ->
-                let gs = GameState.markMessageAsRead messageId state.GameState
+                withGame (fun gs ->
+                    let newGs = GameState.markMessageAsRead messageId gs
 
-                { state with
-                    GameState = gs
-                    State.Inbox.SelectedMessageId = Some messageId },
-                SimHelpers.saveCmd gs
+                    { state with
+                        Mode = InGame(newGs, managerEmployment newGs)
+                        Inbox =
+                            { state.Inbox with
+                                SelectedMessageId = Some messageId } },
+                    SimHelpers.saveCmd newGs)
 
             | MarkAsRead messageId ->
-                let gs = GameState.markMessageAsRead messageId state.GameState
-                { state with GameState = gs }, SimHelpers.saveCmd gs
+                withGame (fun gs ->
+                    let newGs = GameState.markMessageAsRead messageId gs
+
+                    { state with
+                        Mode = InGame(newGs, managerEmployment newGs) },
+                    SimHelpers.saveCmd newGs)
 
             | MarkActionTaken messageId ->
-                let gs = GameState.markMessageActionTaken messageId state.GameState
-                { state with GameState = gs }, SimHelpers.saveCmd gs
+                withGame (fun gs ->
+                    let newGs = GameState.markMessageActionTaken messageId gs
+
+                    { state with
+                        Mode = InGame(newGs, managerEmployment newGs) },
+                    SimHelpers.saveCmd newGs)
 
         | GameLoaded result ->
-            let gs = result |> Option.defaultValue (emptyGameState ())
-            let leagueId = SimHelpers.primaryLeagueId gs
+            match result with
+            | Some gs ->
+                let leagueId = SimHelpers.primaryLeagueId gs
 
-            { state with
-                GameState = gs
-                CurrentPage = if gs.Clubs.IsEmpty then Setup else HomePage
-                SelectedLeagueId = leagueId
-                IsProcessing = false },
-            Cmd.none
+                { state with
+                    Mode = InGame(gs, managerEmployment gs)
+                    CurrentPage = HomePage
+                    SelectedLeagueId = leagueId
+                    IsProcessing = false },
+                Cmd.none
+            | None ->
+                { state with
+                    Mode = NoSave
+                    CurrentPage = Setup
+                    IsProcessing = false },
+                Cmd.none
 
         | ChangePage page ->
             let cmd =
@@ -164,61 +174,65 @@ module AppState =
                 else
                     Cmd.none
 
-            let saveCmd =
-                if state.CurrentPage = Tactics && page <> Tactics then
-                    SimHelpers.saveCmd state.GameState
-                elif state.CurrentPage = Training && page <> Training then
-                    SimHelpers.saveCmd state.GameState
-                else
-                    Cmd.none
+            let saveCmdVal =
+                match state.Mode with
+                | InGame(gs, _) ->
+                    if state.CurrentPage = Tactics && page <> Tactics then
+                        SimHelpers.saveCmd gs
+                    elif state.CurrentPage = Training && page <> Training then
+                        SimHelpers.saveCmd gs
+                    else
+                        Cmd.none
+                | _ -> Cmd.none
 
-            { state with CurrentPage = page }, Cmd.batch [ cmd; saveCmd ]
+            { state with CurrentPage = page }, Cmd.batch [ cmd; saveCmdVal ]
 
         | SelectPlayer pId -> { state with SelectedPlayer = Some pId }, Cmd.none
 
         | DropPlayerInSlot(targetIdx, pId) ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let swapPlayer (idx: int) (pid: PlayerId) (lineup: Lineup) : Lineup =
-                let updatedSlots =
-                    lineup.Slots
-                    |> List.map (fun slot ->
-                        if slot.Index = idx then
-                            { slot with PlayerId = Some pid }
-                        else if slot.PlayerId = Some pid then
-                            { slot with PlayerId = None }
-                        else
-                            slot)
+                let swapPlayer (idx: int) (pid: PlayerId) (lineup: Lineup) : Lineup =
+                    let updatedSlots =
+                        lineup.Slots
+                        |> List.map (fun slot ->
+                            if slot.Index = idx then
+                                { slot with PlayerId = Some pid }
+                            else if slot.PlayerId = Some pid then
+                                { slot with PlayerId = None }
+                            else
+                                slot)
 
-                { lineup with Slots = updatedSlots }
+                    { lineup with Slots = updatedSlots }
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (fun currentLineupOpt ->
-                        let defaultLineup =
-                            { Formation = state.SelectedTactics
-                              Tactics = Balanced
-                              Instructions = Some TacticalInstructions.defaultInstructions
-                              Slots =
-                                FormationData.getFormation state.SelectedTactics
-                                |> List.map (fun fs ->
-                                    { Index = fs.Index
-                                      Role = fs.Role
-                                      X = fs.X
-                                      Y = fs.Y
-                                      PlayerId = None })
-                                |> List.sortBy _.Index }
+                let newGs =
+                    GameState.updateLineup
+                        clubId
+                        (fun currentLineupOpt ->
+                            let defaultLineup =
+                                { Formation = state.SelectedTactics
+                                  Tactics = Balanced
+                                  Instructions = Some TacticalInstructions.defaultInstructions
+                                  Slots =
+                                    FormationData.getFormation state.SelectedTactics
+                                    |> List.map (fun fs ->
+                                        { Index = fs.Index
+                                          Role = fs.Role
+                                          X = fs.X
+                                          Y = fs.Y
+                                          PlayerId = None })
+                                    |> List.sortBy _.Index }
 
-                        let current = currentLineupOpt |> Option.defaultValue defaultLineup
-                        Some(swapPlayer targetIdx pId current))
-                    state.GameState
+                            let current = currentLineupOpt |> Option.defaultValue defaultLineup
+                            Some(swapPlayer targetIdx pId current))
+                        gs
 
-            { state with
-                GameState = newGs
-                DraggedPlayer = None }
-            |> addLog $"Swap made: Slot {targetIdx}",
-            Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs)
+                    DraggedPlayer = None }
+                |> addLog $"Swap made: Slot {targetIdx}",
+                Cmd.none)
 
         | SortPlayersBy sortBy -> { state with PlayerSortBy = sortBy }, Cmd.none
 
@@ -228,112 +242,125 @@ module AppState =
             Cmd.none
 
         | SetTactics formation ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (fun currentLineupOpt ->
-                        let lineup =
-                            match currentLineupOpt with
-                            | Some l -> l
-                            | None ->
+                let newGs =
+                    GameState.updateLineup
+                        clubId
+                        (fun currentLineupOpt ->
+                            let lineup =
+                                match currentLineupOpt with
+                                | Some l -> l
+                                | None ->
+                                    { Formation = formation
+                                      Tactics = Balanced
+                                      Instructions = Some TacticalInstructions.defaultInstructions
+                                      Slots = [] }
+
+                            Some
                                 { Formation = formation
-                                  Tactics = Balanced
-                                  Instructions = Some TacticalInstructions.defaultInstructions
-                                  Slots = [] }
+                                  Tactics = lineup.Tactics
+                                  Instructions = lineup.Instructions
+                                  Slots = buildNewLineupSlots formation currentLineupOpt })
+                        gs
 
-                        Some
-                            { Formation = formation
-                              Tactics = lineup.Tactics
-                              Instructions = lineup.Instructions
-                              Slots = buildNewLineupSlots formation currentLineupOpt })
-                    state.GameState
-
-            { state with
-                GameState = newGs
-                SelectedTactics = formation },
-            Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs)
+                    SelectedTactics = formation },
+                Cmd.none)
 
         | SetTeamTactics tactics ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (Option.map (fun lineup -> { lineup with Tactics = tactics }))
-                    state.GameState
+                let newGs =
+                    GameState.updateLineup clubId (Option.map (fun lineup -> { lineup with Tactics = tactics })) gs
 
-            { state with GameState = newGs }, Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetMentality value ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (Option.map (fun lineup ->
-                        let instructions =
-                            lineup.Instructions
-                            |> Option.defaultValue TacticalInstructions.defaultInstructions
+                let newGs =
+                    GameState.updateLineup
+                        clubId
+                        (Option.map (fun lineup ->
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
 
-                        { lineup with
-                            Instructions = Some { instructions with Mentality = value } }))
-                    state.GameState
+                            { lineup with
+                                Instructions = Some { instructions with Mentality = value } }))
+                        gs
 
-            { state with GameState = newGs }, Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetDefensiveLine value ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (Option.map (fun lineup ->
-                        let instructions =
-                            lineup.Instructions
-                            |> Option.defaultValue TacticalInstructions.defaultInstructions
+                let newGs =
+                    GameState.updateLineup
+                        clubId
+                        (Option.map (fun lineup ->
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
 
-                        { lineup with
-                            Instructions =
-                                Some
-                                    { instructions with
-                                        DefensiveLine = value } }))
-                    state.GameState
+                            { lineup with
+                                Instructions =
+                                    Some
+                                        { instructions with
+                                            DefensiveLine = value } }))
+                        gs
 
-            { state with GameState = newGs }, Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetPressingIntensity value ->
-            let clubId = state.GameState.UserClubId
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
 
-            let newGs =
-                GameState.updateLineup
-                    clubId
-                    (Option.map (fun lineup ->
-                        let instructions =
-                            lineup.Instructions
-                            |> Option.defaultValue TacticalInstructions.defaultInstructions
+                let newGs =
+                    GameState.updateLineup
+                        clubId
+                        (Option.map (fun lineup ->
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
 
-                        { lineup with
-                            Instructions =
-                                Some
-                                    { instructions with
-                                        PressingIntensity = value } }))
-                    state.GameState
+                            { lineup with
+                                Instructions =
+                                    Some
+                                        { instructions with
+                                            PressingIntensity = value } }))
+                        gs
 
-            { state with GameState = newGs }, Cmd.none
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetPlayerTrainingSchedule(playerId, schedule) ->
-            { state with
-                GameState =
-                    { state.GameState with
+            withGame (fun gs ->
+                let newGs =
+                    { gs with
                         Players =
-                            state.GameState.Players
+                            gs.Players
                             |> Map.add
                                 playerId
-                                { state.GameState.Players[playerId] with
-                                    TrainingSchedule = schedule } } },
-            Cmd.none
+                                { gs.Players[playerId] with
+                                    TrainingSchedule = schedule } }
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetProcessing b -> { state with IsProcessing = b }, Cmd.none
         | NoOp -> state, Cmd.none
@@ -352,5 +379,36 @@ module AppState =
             { state with
                 ActiveMatchReplay = None
                 ActiveMatchSnapshot = 0
-                CurrentPage = HomePage },
+                CurrentPage = HomePage
+                IsPlaying = false },
             Cmd.none
+
+        | TogglePlayback ->
+            { state with
+                IsPlaying = not state.IsPlaying },
+            Cmd.none
+
+        | SetPlaybackSpeed speed -> { state with PlaybackSpeed = speed }, Cmd.none
+
+        | TickInterpolation ->
+            if not state.IsPlaying then
+                state, Cmd.none
+            else
+                let total =
+                    state.ActiveMatchReplay
+                    |> Option.map (fun r -> r.Snapshots.Length - 1)
+                    |> Option.defaultValue 0
+
+                let newT = state.InterpolationT + (16.0 / float state.PlaybackSpeed)
+
+                if newT >= 1.0 then
+                    let newSnap = min total (state.ActiveMatchSnapshot + 1)
+                    let shouldStop = newSnap >= total
+
+                    { state with
+                        InterpolationT = 0.0
+                        ActiveMatchSnapshot = newSnap
+                        IsPlaying = not shouldStop },
+                    Cmd.none
+                else
+                    { state with InterpolationT = newT }, Cmd.none

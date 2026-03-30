@@ -48,8 +48,7 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f) ->
-            MatchFixture.isPending f && MatchFixture.involves state.UserClubId f)
+        |> Seq.filter (fun (_, f) -> MatchFixture.isPending f && MatchFixture.involves state.UserClubId f)
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
         |> Seq.truncate count
         |> List.ofSeq
@@ -58,8 +57,7 @@ module HomePresenter =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f) ->
-            MatchFixture.isPlayed f && MatchFixture.involves state.UserClubId f)
+        |> Seq.filter (fun (_, f) -> MatchFixture.isPlayed f && MatchFixture.involves state.UserClubId f)
         |> Seq.sortByDescending (fun (_, f) -> f.ScheduledDate)
         |> Seq.truncate count
         |> Seq.choose (fun (_, f) ->
@@ -121,9 +119,7 @@ module HomePresenter =
     let getUserStanding (state: GameState) (leagueId: CompetitionId) =
         state.Competitions.TryFind leagueId
         |> Option.bind (fun comp ->
-            let sorted =
-                Competition.rankedStandings comp
-                |> List.indexed
+            let sorted = Competition.rankedStandings comp |> List.indexed
 
             sorted
             |> List.tryFind (fun (_, (clubId, _)) -> clubId = state.UserClubId)
@@ -137,6 +133,7 @@ module HomePresenter =
             |> List.indexed
             |> List.map (fun (i, (clubId, s)) ->
                 let club = state.Clubs[clubId]
+
                 { Display.Tables.Pos = i + 1
                   Display.Tables.TeamName = club.Name
                   Display.Tables.Points = s.Points
@@ -278,6 +275,7 @@ module Home =
 
     let private notificationRow (note: Notification) dispatch =
         let icon = note.Icon
+
         let color =
             match icon with
             | Material.Icons.MaterialIconKind.Trophy
@@ -751,54 +749,60 @@ module Home =
         (onLeagueChange: CompetitionId -> unit)
         dispatch
         : IView =
-        let gs = state.GameState
-        let userTeam = gs.Clubs[gs.UserClubId]
+        match state.Mode with
+        | InGame (gs, _) ->
+            let userTeam = gs.Clubs[gs.UserClubId]
 
-        let banner =
-            match HomePresenter.getNextMatch gs with
-            | None -> Display.Matches.emptyBanner ()
-            | Some m -> Display.Matches.nextMatchBanner m.LocalName m.VisitName m.Date m.LocationTag
+            let banner =
+                match HomePresenter.getNextMatch gs with
+                | None -> Display.Matches.emptyBanner ()
+                | Some m -> Display.Matches.nextMatchBanner m.LocalName m.VisitName m.Date m.LocationTag
 
-        let upcomingFixtures = HomePresenter.getUpcomingFixtures gs 5
-        let recentResults = HomePresenter.getRecentResults gs 5
-        let userStanding = HomePresenter.getUserStanding gs selectedLeagueId
-        let groups = HomePresenter.getGroupedCompetitions gs
+            let upcomingFixtures = HomePresenter.getUpcomingFixtures gs 5
+            let recentResults = HomePresenter.getRecentResults gs 5
+            let userStanding = HomePresenter.getUserStanding gs selectedLeagueId
+            let groups = HomePresenter.getGroupedCompetitions gs
 
-        let pos, total, standing =
-            match userStanding with
-            | Some(p, t, s) -> Some p, Some t, Some s
-            | None -> None, None, None
+            let pos, total, standing =
+                match userStanding with
+                | Some(p, t, s) -> Some p, Some t, Some s
+                | None -> None, None, None
 
-        ScrollViewer.create
-            [ ScrollViewer.content (
-                  StackPanel.create
-                      [ StackPanel.margin (24.0, 24.0)
-                        StackPanel.spacing 16.0
-                        StackPanel.children
-                            [ banner
-                              summaryBar userTeam pos total standing
-                              Grid.create
-                                  [ Grid.columnDefinitions "1.6*, 20, 1*"
-                                    Grid.children
-                                        [ Grid.create
-                                              [ Grid.column 0
-                                                Grid.columnDefinitions "190, 12, *"
-                                                Grid.children
-                                                    [ Border.create
-                                                          [ Grid.column 0
-                                                            Border.child (
-                                                                competitionPicker groups selectedLeagueId onLeagueChange
-                                                            ) ]
-                                                      StackPanel.create
-                                                          [ Grid.column 2
-                                                            StackPanel.spacing 16.0
-                                                            StackPanel.children
-                                                                [ standingsPanel gs selectedLeagueId
-                                                                  recentResultsPanel recentResults ] ] ] ]
-                                          StackPanel.create
-                                              [ Grid.column 2
-                                                StackPanel.spacing 16.0
-                                                StackPanel.children
-                                                    [ upcomingPanel upcomingFixtures gs
-                                                      notificationsPanel state.Notifications dispatch ] ] ] ] ] ]
-              ) ]
+            ScrollViewer.create
+
+                [ ScrollViewer.content (
+                      StackPanel.create
+                          [ StackPanel.margin (24.0, 24.0)
+                            StackPanel.spacing 16.0
+                            StackPanel.children
+                                [ banner
+                                  summaryBar userTeam pos total standing
+                                  Grid.create
+                                      [ Grid.columnDefinitions "1.6*, 20, 1*"
+                                        Grid.children
+                                            [ Grid.create
+                                                  [ Grid.column 0
+                                                    Grid.columnDefinitions "190, 12, *"
+                                                    Grid.children
+                                                        [ Border.create
+                                                              [ Grid.column 0
+                                                                Border.child (
+                                                                    competitionPicker
+                                                                        groups
+                                                                        selectedLeagueId
+                                                                        onLeagueChange
+                                                                ) ]
+                                                          StackPanel.create
+                                                              [ Grid.column 2
+                                                                StackPanel.spacing 16.0
+                                                                StackPanel.children
+                                                                    [ standingsPanel gs selectedLeagueId
+                                                                      recentResultsPanel recentResults ] ] ] ]
+                                              StackPanel.create
+                                                  [ Grid.column 2
+                                                    StackPanel.spacing 16.0
+                                                    StackPanel.children
+                                                        [ upcomingPanel upcomingFixtures gs
+                                                          notificationsPanel state.Notifications dispatch ] ] ] ] ] ]
+                  ) ]
+        | _ -> Border.create [] :> IView

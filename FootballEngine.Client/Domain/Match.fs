@@ -14,6 +14,18 @@ type MatchEventType =
     | PenaltyAwarded of isScored: bool
     | FreeKick of isScored: bool
     | Corner
+    | PassCompleted of fromPlayer: PlayerId * toPlayer: PlayerId
+    | PassIncomplete of fromPlayer: PlayerId
+    | DribbleSuccess
+    | DribbleFail
+    | TackleSuccess
+    | TackleFail
+    | CrossAttempt of isSuccessful: bool
+    | LongBall of isSuccessful: bool
+    | ShotBlocked
+    | ShotOffTarget
+    | Save
+    | FoulCommitted
 
 type MatchEvent =
     { Second: int
