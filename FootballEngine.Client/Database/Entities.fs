@@ -126,7 +126,9 @@ type StaffEntity =
       MentalManManagement: int
       MentalMotivating: int
       MentalPlayerKnowledge: int
-      MentalYoungsterKnowledge: int }
+      MentalYoungsterKnowledge: int
+      CurrentSkill: int
+      PotentialSkill: int }
 
 [<CLIMutable>]
 type CompetitionEntity =

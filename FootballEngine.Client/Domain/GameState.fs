@@ -26,8 +26,7 @@ module GameState =
         |> Option.map (fun club -> club.PlayerIds |> List.choose gs.Players.TryFind)
         |> Option.defaultValue []
 
-    let getUserSquad (gs: GameState) : Player list =
-        getSquad gs.UserClubId gs
+    let getUserSquad (gs: GameState) : Player list = getSquad gs.UserClubId gs
 
     let getStaff (clubId: ClubId) (gs: GameState) : Staff list =
         gs.Staff
@@ -61,8 +60,7 @@ module GameState =
         gs.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) -> comp.Fixtures |> Map.toSeq)
-        |> Seq.filter (fun (_, f) ->
-            MatchFixture.isPending f && MatchFixture.involves gs.UserClubId f)
+        |> Seq.filter (fun (_, f) -> MatchFixture.isPending f && MatchFixture.involves gs.UserClubId f)
         |> Seq.sortBy (fun (_, f) -> f.ScheduledDate)
         |> Seq.tryHead
 
@@ -89,14 +87,12 @@ module GameState =
 
     let markMessageAsRead (messageId: int) (gs: GameState) : GameState =
         { gs with
-            Inbox = Inbox.markAsRead messageId gs.Inbox }
+            Inbox = markAsRead messageId gs.Inbox }
 
     let markMessageActionTaken (messageId: int) (gs: GameState) : GameState =
         { gs with
-            Inbox = Inbox.markAsActionTaken messageId gs.Inbox }
+            Inbox = markAsActionTaken messageId gs.Inbox }
 
-    let unreadInboxCount (gs: GameState) : int =
-        Inbox.unreadCount gs.Inbox
+    let unreadInboxCount (gs: GameState) : int = unreadCount gs.Inbox
 
-    let pendingActionCount (gs: GameState) : int =
-        Inbox.pendingActionCount gs.Inbox
+    let pendingActionCount (gs: GameState) : int = pendingActionCount gs.Inbox

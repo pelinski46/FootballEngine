@@ -24,12 +24,13 @@ module Header =
 
         let clubName, currentDateStr =
             match state.Mode with
-            | InGame (gs, _) ->
+            | InGame(gs, _) ->
                 let name =
                     gs.Clubs
                     |> Map.tryFind gs.UserClubId
                     |> Option.map _.Name
                     |> Option.defaultValue "Football Engine"
+
                 name, gs.CurrentDate.ToString("dd MMM yyyy").ToUpper()
             | _ -> "Football Engine", System.DateTime.Now.ToString("dd MMM yyyy").ToUpper()
 
@@ -49,7 +50,7 @@ module Header =
                                     StackPanel.verticalAlignment VerticalAlignment.Center
                                     StackPanel.spacing 8.0
                                     StackPanel.children
-                                        [ Icons.iconMd Club.stadium Theme.Accent
+                                        [ Icons.iconMd ClubIcon.stadium Theme.Accent
                                           TextBlock.create
                                               [ TextBlock.text clubName
                                                 TextBlock.fontSize 14.0

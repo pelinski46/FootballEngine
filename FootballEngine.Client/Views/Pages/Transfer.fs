@@ -47,7 +47,7 @@ module Transfers =
         | MarketSearch -> IconName.search
         | MyWatchlist -> PlayerIcon.skill
         | IncomingOffers -> IconName.add
-        | OutgoingOffers -> Club.transfer
+        | OutgoingOffers -> ClubIcon.transfer
         | TransferHistory -> PlayerIcon.contract
 
     let private playerAvatar (name: string) (pos: Position) (size: float) =
@@ -352,7 +352,7 @@ module Transfers =
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
-                                                  UI.primaryButton "Submit Offer" (Some Club.transfer) (fun _ ->
+                                                  UI.primaryButton "Submit Offer" (Some ClubIcon.transfer) (fun _ ->
                                                       dispatch (TransferMsg SubmitOffer))
                                               ) ] ] ] ] ]
                 :> IView
@@ -380,7 +380,8 @@ module Transfers =
                 :> IView
 
             | NegotiatingContract(salary, years) ->
-                let currentSalary = Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m
+                let currentSalary =
+                    Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m
 
                 StackPanel.create
                     [ StackPanel.spacing 12.0
@@ -464,7 +465,7 @@ module Transfers =
                             [ Grid.create
                                   [ Grid.columnDefinitions "Auto, *"
                                     Grid.children
-                                        [ Icons.iconMd Club.transfer Theme.Accent
+                                        [ Icons.iconMd ClubIcon.transfer Theme.Accent
                                           TextBlock.create
                                               [ Grid.column 1
                                                 TextBlock.text "Transfer Negotiation"
@@ -583,7 +584,9 @@ module Transfers =
                                                           TextBlock.create
                                                               [ TextBlock.text (
                                                                     formatSalary (
-                                                                        Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m
+                                                                        Player.contractOf p
+                                                                        |> Option.map _.Salary
+                                                                        |> Option.defaultValue 0m
                                                                     )
                                                                 )
                                                                 TextBlock.fontSize 15.0
@@ -674,7 +677,7 @@ module Transfers =
                                                                               TextBlock.verticalAlignment
                                                                                   VerticalAlignment.Center ] ] ]
                                                         ) ]
-                                                  UI.primaryButton "Make Offer" (Some Club.transfer) (fun _ ->
+                                                  UI.primaryButton "Make Offer" (Some ClubIcon.transfer) (fun _ ->
                                                       dispatch (TransferMsg(MakeOffer(p.Id, suggestedFee p)))) ] ] ] ]
                   ) ]
 
@@ -900,7 +903,7 @@ module Transfers =
 
     let transfersView (state: State) (dispatch: Msg -> unit) =
         match state.Mode with
-        | InGame (gs, _) ->
+        | InGame(gs, _) ->
             let ts = state.Transfer
 
             let pagedPlayers =
@@ -927,7 +930,7 @@ module Transfers =
                                             StackPanel.spacing 6.0
                                             StackPanel.verticalAlignment VerticalAlignment.Center
                                             StackPanel.children
-                                                [ Icons.iconSm Club.finances Theme.Accent
+                                                [ Icons.iconSm ClubIcon.finances Theme.Accent
                                                   TextBlock.create
                                                       [ TextBlock.text "BUDGET"
                                                         TextBlock.fontSize 10.0
@@ -1198,7 +1201,7 @@ module Transfers =
                 let active = ts.OutgoingOffers |> List.filter (fun o -> o.Status <> Withdrawn)
 
                 if active.IsEmpty then
-                    UI.emptyState Club.transfer "No outgoing offers" "Make an offer from the market to see it here"
+                    UI.emptyState ClubIcon.transfer "No outgoing offers" "Make an offer from the market to see it here"
                 else
                     StackPanel.create
                         [ StackPanel.children

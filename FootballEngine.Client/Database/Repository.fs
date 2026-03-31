@@ -33,9 +33,9 @@ module Db =
                     |> ignore
 
                     conn.Execute("DELETE FROM InboxMessageEntity WHERE GameSaveId = ?", 1) |> ignore
-                    
+
                     for msg in state.Inbox do
-                        conn.InsertOrReplace(Mappers.toInboxMessageEntity 1 msg) |> ignore
+                        conn.InsertOrReplace(toInboxMessageEntity 1 msg) |> ignore
 
                     for club in state.Clubs.Values do
                         conn.InsertOrReplace(toClubEntity club) |> ignore
@@ -49,7 +49,7 @@ module Db =
                     for staff in state.Staff.Values do
                         match staff.Role, staff.Contract, staff.Attributes.Coaching.Lineup with
                         | HeadCoach, Some contract, Some lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            let instructions = lineup.Instructions |> Option.defaultValue defaultInstructions
 
                             conn.Execute("DELETE FROM LineupSlotEntity WHERE ClubId = ?", contract.ClubId)
                             |> ignore
@@ -208,9 +208,10 @@ module Db =
                         |> Seq.map (fun c -> c.Code, c)
                         |> Map.ofSeq
 
-                    let! inboxEntities = db.Value.Table<InboxMessageEntity>().Where(fun e -> e.GameSaveId = 1).ToListAsync()
+                    let! inboxEntities =
+                        db.Value.Table<InboxMessageEntity>().Where(fun e -> e.GameSaveId = 1).ToListAsync()
 
-                    let inbox = inboxEntities |> Seq.map Mappers.fromInboxMessageEntity |> List.ofSeq
+                    let inbox = inboxEntities |> Seq.map fromInboxMessageEntity |> List.ofSeq
 
                     return
                         Some

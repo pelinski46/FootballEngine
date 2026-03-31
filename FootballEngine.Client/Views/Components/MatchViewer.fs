@@ -33,13 +33,22 @@ module MatchViewer =
     let private lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
 
     let interpolateState (t: float) (curr: MatchState) (next: MatchState) =
-        let lerpArr (a: (float * float)[]) (b: (float * float)[]) =
+        let lerpFloat (t: float) (a: float) (b: float) =
+            let t' = t * t * (3.0 - 2.0 * t)
+            a + (b - a) * t'
+
+        let lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
+
+        let lerpSpatial (a: Spatial) (b: Spatial) = lerpPos t (a.X, a.Y) (b.X, b.Y)
+
+        let lerpArr (a: Spatial[]) (b: Spatial[]) =
             let len = min a.Length b.Length
-            Array.init len (fun i -> lerpPos t a[i] b[i])
+            Array.init len (fun i -> lerpSpatial a[i] b[i])
 
         {| HomePosLerped = lerpArr curr.HomeSide.Positions next.HomeSide.Positions
            AwayPosLerped = lerpArr curr.AwaySide.Positions next.AwaySide.Positions
-           BallLerped = lerpPos t curr.BallPosition next.BallPosition |}
+           BallLerped =
+            lerpPos t (curr.Ball.Position.X, curr.Ball.Position.Y) (next.Ball.Position.X, next.Ball.Position.Y) |}
 
     let private conditionColor c =
         if c >= 75 then Theme.Success
@@ -361,8 +370,17 @@ module MatchViewer =
         (homePositions: (float * float)[])
         (awayPositions: (float * float)[])
         (ballPos: float * float)
+        (userClubId: ClubId option)
         : IView =
         let bcx, bcy = toCanvas ballPos
+
+        let isUserAway = userClubId |> Option.exists (fun id -> id = s.Away.Id)
+
+        let homeColor, awayColor =
+            if isUserAway then
+                Theme.Accent, Theme.Danger
+            else
+                Theme.Danger, Theme.Accent
 
         Viewbox.create
             [ Viewbox.stretch Stretch.Uniform
@@ -382,14 +400,14 @@ module MatchViewer =
                                       s.HomeSide.Conditions
                                       homePositions
                                       s.HomeSide.Sidelined
-                                      Theme.AccentAlt
+                                      homeColor
                               yield!
                                   drawTeam
                                       s.AwaySide.Players
                                       s.AwaySide.Conditions
                                       awayPositions
                                       s.AwaySide.Sidelined
-                                      Theme.Danger
+                                      awayColor
                               yield! drawBall bcx bcy
                               possessionOverlay s
                               scoreOverlay s
@@ -474,7 +492,7 @@ module MatchDayView =
         | FreeKick true -> MatchEvent.goal, Theme.Success, "FREE KICK GOAL"
         | FreeKick false -> MatchEvent.freeKickMiss, Theme.Danger, "FREE KICK MISS"
         | Corner -> MatchEvent.corner, Theme.TextMuted, "CORNER"
-        | PassCompleted (_, _) -> MatchEvent.pass, Theme.AccentAlt, "PASS"
+        | PassCompleted _ -> MatchEvent.pass, Theme.AccentAlt, "PASS"
         | PassIncomplete _ -> MatchEvent.passIncomplete, Theme.TextMuted, "PASS INCOMPLETE"
         | DribbleSuccess -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE"
         | DribbleFail -> MatchEvent.dribbleFail, Theme.TextMuted, "DRIBBLE FAIL"
@@ -566,7 +584,7 @@ module MatchDayView =
 
     let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
         let relevant =
-            replay.Final.EventsRev
+            replay.Events
             |> List.rev
             |> List.filter (fun ev ->
                 match ev.Type with
@@ -848,5 +866,10 @@ module MatchDayView =
                                               | InGame(gs, _) -> eventLog replay gs.Clubs gs.Players
                                               | _ -> eventLog replay Map.empty Map.empty
                                           ) ]
-                                    view current interp.HomePosLerped interp.AwayPosLerped interp.BallLerped ] ] ] ]
+                                    let userClubId =
+                                        match state.Mode with
+                                        | InGame(gs, _) -> Some gs.UserClubId
+                                        | _ -> None
+
+                                    view current interp.HomePosLerped interp.AwayPosLerped interp.BallLerped userClubId ] ] ] ]
             :> IView

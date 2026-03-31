@@ -36,8 +36,7 @@ type EngineBenchmarks() =
 
     [<Benchmark(Description = "developAll players")>]
     member _.DevelopAllPlayers() =
-        let rng = System.Random(42)
-        PlayerDevelopment.developAll rng game |> ignore
+        PlayerDevelopment.developAll game |> ignore
 
     [<Benchmark(Description = "simulate all unplayed fixtures (parallel)")>]
     member _.SimulateAllFixtures() =

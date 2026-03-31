@@ -29,7 +29,7 @@ type PitchBenchmarks() =
 
     [<Benchmark(Description = "updatePositions")>]
     member this.UpdatePositions() =
-        Pitch.updatePositions this.State |> ignore
+        Pitch.updatePositions 0.5 this.State |> ignore
 
     [<Benchmark(Description = "activeIndices (home, no sidelined)")>]
     member this.ActiveIndicesNoSidelined() =

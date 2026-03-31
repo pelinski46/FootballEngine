@@ -2,9 +2,10 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.MatchCalc
 open MatchState
 open PitchMath
-open PlayerMovement
+
 
 module Pitch =
 
@@ -17,11 +18,11 @@ module Pitch =
 
     type PitchView =
         { Att: Player[]
-          APos: (float * float)[]
+          APos: Spatial[]
           ACond: int[]
           AttIsHome: bool
           Def: Player[]
-          DPos: (float * float)[]
+          DPos: Spatial[]
           DCond: int[] }
 
     let buildView (s: MatchState) =
@@ -39,51 +40,59 @@ module Pitch =
 
     let pickDuel (s: MatchState) =
         let v = buildView s
+        let ballPt = s.Ball.Position.X, s.Ball.Position.Y
 
         if v.Att.Length = 0 || v.Def.Length = 0 then
             None
         else
-            let ai = nearestIdx v.APos s.BallPosition
-            let di = nearestIdx v.DPos s.BallPosition
+            let aPoints = v.APos |> Array.map (fun sp -> sp.X, sp.Y)
+            let dPoints = v.DPos |> Array.map (fun sp -> sp.X, sp.Y)
+            let ai = nearestIdx aPoints ballPt
+            let di = nearestIdx dPoints ballPt
             Some(v.Att[ai], v.Def[di], ai, di)
 
-    let private snapBallToPossessor (s: MatchState) =
+    let private controlBallByProximity (s: MatchState) =
         let attSide = if s.Possession = Home then s.HomeSide else s.AwaySide
 
         if attSide.Players.Length = 0 then
             s
         else
-            let nearestIdx =
+            let ballPt = s.Ball.Position.X, s.Ball.Position.Y
+
+            let nearestIdx, nearestDist =
                 attSide.Positions
-                |> Array.mapi (fun i pos -> i, distance pos s.BallPosition)
+                |> Array.mapi (fun i sp -> i, distance (sp.X, sp.Y) ballPt)
                 |> Array.minBy snd
-                |> fst
 
-            let px, py = attSide.Positions[nearestIdx]
-            { s with BallPosition = px, py }
+            if nearestDist < 1.5 then
+                let sp = attSide.Positions[nearestIdx]
+                let bp = s.Ball.Position
 
-    let updatePositions (s: MatchState) : MatchState =
-        let ballX, ballY = s.BallPosition
+                let newX = bp.X + (sp.X - bp.X) * 0.1
+                let newY = bp.Y + (sp.Y - bp.Y) * 0.1
+                let newVx = bp.Vx * 0.2
+                let newVy = bp.Vy * 0.2
 
-        let move (ts: TeamSide) (isPossessing: bool) =
+                { s with
+                    Ball =
+                        { s.Ball with
+                            Position = { bp with X = newX; Y = newY; Vx = newVx; Vy = newVy } } }
+            else
+                s
+
+    let updatePositions (dt: float) (s: MatchState) : MatchState =
+        let move (ts: TeamSide) =
             let newPositions =
                 ts.Players
-                |> Array.mapi (fun i p ->
-                    let curX, curY = ts.Positions[i]
-                    let baseX, baseY = ts.BasePositions[i]
-                    let cond = ts.Conditions[i]
-                    let tx, ty = decideTarget p baseX baseY ballX ballY isPossessing
-                    let speed = moveSpeed p cond
-
-                    let sx, sy =
-                        separationForce i (curX, curY) ts.Positions (float p.Physical.Agility / 100.0)
-
-                    Math.Clamp(curX + (tx - curX) * speed + sx, 0.0, 100.0),
-                    Math.Clamp(curY + (ty - curY) * speed + sy, 0.0, 100.0))
+                |> Array.mapi (fun i _ ->
+                    let sp = ts.Positions[i]
+                    { sp with
+                        X = Math.Clamp(sp.X + sp.Vx * dt, 0.0, 100.0)
+                        Y = Math.Clamp(sp.Y + sp.Vy * dt, 0.0, 100.0) })
 
             { ts with Positions = newPositions }
 
         s
-        |> withSide true (move (homeSide s) (s.Possession = Home))
-        |> withSide false (move (awaySide s) (s.Possession = Away))
-        |> snapBallToPossessor
+        |> withSide true (move (homeSide s))
+        |> withSide false (move (awaySide s))
+        |> controlBallByProximity

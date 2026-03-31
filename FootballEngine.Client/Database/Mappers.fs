@@ -277,7 +277,9 @@ module Mappers =
           MentalManManagement = staff.Mental.PeopleManagement
           MentalMotivating = staff.Mental.Motivating
           MentalPlayerKnowledge = 0
-          MentalYoungsterKnowledge = 0 }
+          MentalYoungsterKnowledge = 0
+          CurrentSkill = staff.CurrentSkill
+          PotentialSkill = staff.PotentialSkill }
 
     let toStaffDomain (e: StaffEntity) : StaffId * Staff =
         let contract =
@@ -335,7 +337,9 @@ module Mappers =
               Determination = e.MentalDetermination
               LevelOfDiscipline = e.MentalLevelOfDiscipline
               PeopleManagement = e.MentalManManagement
-              Motivating = e.MentalMotivating } }
+              Motivating = e.MentalMotivating }
+          CurrentSkill = e.CurrentSkill
+          PotentialSkill = e.PotentialSkill }
 
     let toCompetitionEntity (competition: Competition) : CompetitionEntity =
         let tag, param1, param2 = competitionTypeToStrings competition.Type

@@ -6,6 +6,16 @@ open FootballEngine.Data
 open FootballEngine.Stats
 
 module StaffGen =
+    let private currentSkillForLevel (leagueLevel: int) : int =
+        match leagueLevel with
+        | 0 -> betaInt 4.0 3.0 100 190
+        | 1 -> betaInt 3.5 4.0 80 160
+        | _ -> betaInt 2.5 5.0 50 130
+
+    let private potentialSkillFor (currentSkill: int) (age: int) : int =
+        let agePenalty = max 0 (age - 50) * 2
+        let rawPotential = currentSkill + normalInt 15.0 5.0 5 40
+        min 200 (max currentSkill (rawPotential - agePenalty))
 
     let private coachingFor (role: StaffRole) =
         let high = normalInt 14.0 2.0 10 20
@@ -449,6 +459,7 @@ module StaffGen =
         : Staff =
         let reputation = reputationFor leagueLevel role
         let age = normalInt 40.0 7.0 28 65
+        let currentSkill = currentSkillForLevel leagueLevel
 
         { Id = staffId
           Name =
@@ -465,6 +476,8 @@ module StaffGen =
               Analysis = analysisFor role }
           Knowledge = knowledgeFor role
           Mental = mentalFor role
+          CurrentSkill = currentSkill
+          PotentialSkill = potentialSkillFor currentSkill age
           Badge = badgeForRole role reputation
           Reputation = reputation
           Contract =

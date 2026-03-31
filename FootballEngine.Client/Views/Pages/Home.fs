@@ -172,7 +172,7 @@ module HomePresenter =
         [ if not leagues.IsEmpty then
               "LEAGUES", IconName.league, leagues
           if not cups.IsEmpty then
-              "CUPS", Club.stadium, cups
+              "CUPS", ClubIcon.stadium, cups
           if not international.IsEmpty then
               "INTERNATIONAL", IconName.league, international ]
 
@@ -239,7 +239,7 @@ module Home =
         Grid.create
             [ Grid.columnDefinitions "*, 8, *, 8, *, 8, *"
               Grid.children
-                  [ UI.iconStatCard "BUDGET" $"€{int (userTeam.Budget / 1_000_000m)}M" Club.finances "Available"
+                  [ UI.iconStatCard "BUDGET" $"€{int (userTeam.Budget / 1_000_000m)}M" ClubIcon.finances "Available"
                     |> fun c -> Border.create [ Grid.column 0; Border.child c ]
 
                     Border.create
@@ -750,7 +750,7 @@ module Home =
         dispatch
         : IView =
         match state.Mode with
-        | InGame (gs, _) ->
+        | InGame(gs, _) ->
             let userTeam = gs.Clubs[gs.UserClubId]
 
             let banner =

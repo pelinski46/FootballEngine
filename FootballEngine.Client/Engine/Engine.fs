@@ -80,7 +80,8 @@ module Engine =
                     gs.Players
                     |> Map.map (fun _ player ->
                         match player.Affiliation with
-                        | Contracted _ -> TrainingEngine.applyWeeklyTraining gs.CurrentDate player.TrainingSchedule player
+                        | Contracted _ ->
+                            TrainingEngine.applyWeeklyTraining gs.CurrentDate player.TrainingSchedule player
                         | _ -> player) }
         else
             gs
@@ -166,6 +167,7 @@ module Engine =
 
     let private seasonWeeks (gs: GameState) =
         let seasonStart = DateTime(gs.Season, 7, 1)
+
         let seasonEnd =
             gs.Competitions
             |> Map.toSeq
@@ -174,6 +176,7 @@ module Engine =
             |> function
                 | [] -> DateTime(gs.Season + 1, 5, 1)
                 | dates -> List.max dates
+
         int (seasonEnd - seasonStart).TotalDays / 7
 
     let private runSeasonPipeline (gs: GameState) =
@@ -287,7 +290,7 @@ module Engine =
                         Played = true
                         HomeScore = Some h
                         AwayScore = Some a
-                        Events = List.rev replay.Final.EventsRev }
+                        Events = replay.Events }
 
                 let outcome =
                     { FixtureId = fixtureId

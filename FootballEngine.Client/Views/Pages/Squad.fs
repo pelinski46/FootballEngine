@@ -29,8 +29,7 @@ module SquadPresenter =
 
         let totalWages =
             players
-            |> List.sumBy (fun p ->
-                Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m)
+            |> List.sumBy (fun p -> Player.contractOf p |> Option.map _.Salary |> Option.defaultValue 0m)
 
         let avgSkill =
             if players.IsEmpty then
@@ -146,7 +145,7 @@ module Squad =
 
     let squadView (state: State) dispatch =
         match state.Mode with
-        | InGame (gs, _) ->
+        | InGame(gs, _) ->
             let squad = GameState.getSquad gs.UserClubId gs
             let stats = SquadPresenter.getTeamStats squad
 
@@ -171,7 +170,7 @@ module Squad =
                                               [ UI.iconStatCard "SQUAD SIZE" stats.SquadSize IconName.squad ""
                                                 UI.iconStatCard "TEAM VALUE" stats.TotalValue PlayerIcon.value "Market"
                                                 UI.iconStatCard "AVG SKILL" stats.AvgSkill PlayerIcon.skill "CA"
-                                                UI.iconStatCard "WAGE BILL" stats.TotalWages Club.finances "Weekly" ] ]
+                                                UI.iconStatCard "WAGE BILL" stats.TotalWages ClubIcon.finances "Weekly" ] ]
 
                                     (sectionHeader squad.Length dispatch state)
                                     |> fun h -> Border.create [ Grid.row 1; Border.child h ]
@@ -208,7 +207,9 @@ module Squad =
                         Grid.create
                             [ Grid.column 1
                               Grid.children
-                                  [ match state.SelectedPlayer |> Option.bind (fun id -> gs.Players |> Map.tryFind id) with
+                                  [ match
+                                        state.SelectedPlayer |> Option.bind (fun id -> gs.Players |> Map.tryFind id)
+                                    with
                                     | Some player -> PlayerView.detail (Some player) gs.CurrentDate
                                     | None -> PlayerView.detail None gs.CurrentDate ] ] ] ]
             :> IView

@@ -96,6 +96,8 @@ type Staff =
       Attributes: StaffAttributes
       Knowledge: KnowledgeAttributes
       Mental: StaffMentalAttributes
+      CurrentSkill: int
+      PotentialSkill: int
       Badge: CoachingBadge
       Reputation: int
       Contract: StaffContract option
@@ -297,4 +299,4 @@ module Staff =
     let updateLineup (updater: Lineup -> Lineup) (s: Staff) : Staff =
         match s.Attributes.Coaching.Lineup with
         | None -> s
-        | Some lineup -> setLineup (Some (updater lineup)) s
+        | Some lineup -> setLineup (Some(updater lineup)) s

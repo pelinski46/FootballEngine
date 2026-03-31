@@ -36,6 +36,9 @@ module PitchMath =
     let inline distance (x1, y1) (x2, y2) =
         sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
 
+    let inline distanceSq (x1, y1) (x2, y2) =
+        (x1 - x2) ** 2.0 + (y1 - y2) ** 2.0
+
     let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
         positions
         |> Array.mapi (fun i pos -> i, distance point pos)
@@ -68,3 +71,29 @@ module PitchMath =
         | AMR
         | AMC -> Midfielder
         | ST -> Attacker
+
+module MovementConstants =
+
+    let positionCoefficients =
+        function
+        | GK -> 0.04, 0.02, 0.03
+        | DC -> 0.10, 0.06, 0.15
+        | DL | DR -> 0.18, 0.08, 0.30
+        | WBL | WBR -> 0.25, 0.10, 0.38
+        | DM -> 0.20, 0.12, 0.25
+        | MC -> 0.28, 0.18, 0.28
+        | ML | MR -> 0.28, 0.15, 0.38
+        | AML | AMR | AMC -> 0.38, 0.22, 0.32
+        | ST -> 0.42, 0.28, 0.18
+
+    let positionModifiers =
+        function
+        | GK -> (fun (off, def, lat) (pos, wr, vis) -> off, def, lat)
+        | DC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.08, def + wr * 0.05, lat + vis * 0.08)
+        | DL | DR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.06, lat + vis * 0.12)
+        | WBL | WBR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.08, lat + vis * 0.10)
+        | DM -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.08, lat + vis * 0.10)
+        | MC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.10, lat + vis * 0.12)
+        | ML | MR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.08, lat + vis * 0.12)
+        | AML | AMR | AMC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.08, lat + vis * 0.10)
+        | ST -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.06, lat + vis * 0.08)

@@ -107,7 +107,7 @@ module PlayerIcon =
     let position = MaterialIconKind.Soccer
     let injured = MaterialIconKind.Bandage
 
-module Club =
+module ClubIcon =
     let stadium = MaterialIconKind.Stadium
     let finances = MaterialIconKind.BankOutline
     let transfer = MaterialIconKind.SwapHorizontal

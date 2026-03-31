@@ -14,11 +14,23 @@ type PlayerOut =
     | SidelinedByInjury
     | SidelinedBySub
 
+type Spatial =
+    { X: float
+      Y: float
+      Z: float
+      Vx: float
+      Vy: float
+      Vz: float }
+
+type BallState =
+    { Position: Spatial
+      LastTouchBy: PlayerId option }
+
 type TeamSide =
     { Players: Player[]
       Conditions: int[]
-      Positions: (float * float)[]
-      BasePositions: (float * float)[]
+      Positions: Spatial[]
+      BasePositions: Spatial[]
       Sidelined: Map<PlayerId, PlayerOut>
       Yellows: Map<PlayerId, int>
       SubsUsed: int
@@ -39,12 +51,11 @@ type MatchState =
       Second: int
       HomeScore: int
       AwayScore: int
-      BallPosition: float * float
+      Ball: BallState
       Possession: Possession
       Momentum: float
       HomeSide: TeamSide
       AwaySide: TeamSide
-      EventsRev: MatchEvent list
       PenaltyShootout: PenaltyShootout option
       IsExtraTime: bool
       IsKnockoutMatch: bool }
@@ -55,33 +66,5 @@ type MatchContext =
 
 type MatchReplay =
     { Final: MatchState
+      Events: MatchEvent list
       Snapshots: MatchState[] }
-
-type ScheduledEvent =
-    // Core simulation events
-    | Duel
-    | PositionTick
-    | FatigueCheck
-
-    // Attacking actions
-    | ShotAttempt of attacker: Player
-    | PassSequence of attacker: Player
-    | DribbleAttempt of attacker: Player
-    | CrossAttemptEvent of attacker: Player
-    | LongBallAttempt of attacker: Player
-
-    // Defensive actions
-    | TackleAttempt of defender: Player
-
-    // Set pieces
-    | FreeKickAttempt of kicker: Player
-    | PenaltyKick of kicker: Player * isHome: bool * kickNumber: int
-    | CornerTaken
-
-    // Administrative events
-    | CardCheck of player: Player * clubId: ClubId * isPossessingTeam: bool
-    | InjuryCheck of player: Player * clubId: ClubId
-    | SubstitutionCheck of clubId: ClubId
-
-    // Match lifecycle
-    | MatchEnd

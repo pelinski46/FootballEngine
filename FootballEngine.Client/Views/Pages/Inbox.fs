@@ -18,7 +18,7 @@ module InboxPresenter =
     let categoryIcon (category: InboxMessageCategory) =
         match category with
         | Development -> IconName.school
-        | Transfer -> Club.transfer
+        | Transfer -> ClubIcon.transfer
         | BoardUpdate -> IconName.bullhorn
         | MatchReport -> MatchEvent.goal
         | InjuryMessage -> PlayerIcon.injured
@@ -44,12 +44,12 @@ module InboxPresenter =
 
     let getMessageList (state: State) =
         match state.Mode with
-        | InGame (gs, _) -> gs.Inbox |> List.sortByDescending (fun m -> m.Date)
+        | InGame(gs, _) -> gs.Inbox |> List.sortByDescending (fun m -> m.Date)
         | _ -> []
 
     let getSelectedMessage (state: State) =
         match state.Mode with
-        | InGame (gs, _) ->
+        | InGame(gs, _) ->
             match state.Inbox.SelectedMessageId with
             | Some id -> gs.Inbox |> List.tryFind (fun m -> m.Id = id)
             | None -> None
@@ -391,10 +391,11 @@ module Inbox =
     let inboxView (state: State) dispatch : IView =
         let messages = InboxPresenter.getMessageList state
         let selectedMessage = InboxPresenter.getSelectedMessage state
+
         let currentDate =
             match state.Mode with
-            | InGame (gs, _) -> gs.CurrentDate
-            | _ -> System.DateTime.Now
+            | InGame(gs, _) -> gs.CurrentDate
+            | _ -> DateTime.Now
 
         Grid.create
             [ Grid.columnDefinitions "320, *"

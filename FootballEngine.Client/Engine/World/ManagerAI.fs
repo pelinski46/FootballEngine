@@ -42,14 +42,18 @@ module SquadAnalysis =
         |> List.length
 
     let private averageSkill (squad: Player list) =
-        if squad.IsEmpty then 0.0
-        else squad |> List.averageBy (fun p -> float p.CurrentSkill)
+        if squad.IsEmpty then
+            0.0
+        else
+            squad |> List.averageBy (fun p -> float p.CurrentSkill)
 
-    let private averageAge (currentDate: System.DateTime) (players: Player list) =
-        if players.IsEmpty then 0.0
-        else players |> List.averageBy (fun p -> Player.age currentDate p |> float)
+    let private averageAge (currentDate: DateTime) (players: Player list) =
+        if players.IsEmpty then
+            0.0
+        else
+            players |> List.averageBy (fun p -> Player.age currentDate p |> float)
 
-    let assessNeeds (currentDate: System.DateTime) (squad: Player list) : SquadNeed list =
+    let assessNeeds (currentDate: DateTime) (squad: Player list) : SquadNeed list =
         let avg = averageSkill squad
 
         let gkNeeds =
@@ -69,8 +73,11 @@ module SquadAnalysis =
                 | 0 -> [ NeedsPosition pos ]
                 | 1 ->
                     let agingOut = avgAgeAtPos > 30.0
-                    if agingOut then [ NeedsDepth pos; NeedsPosition pos ]
-                    else [ NeedsDepth pos ]
+
+                    if agingOut then
+                        [ NeedsDepth pos; NeedsPosition pos ]
+                    else
+                        [ NeedsDepth pos ]
                 | _ ->
                     let allAging = avgAgeAtPos > 31.0
                     if allAging then [ NeedsDepth pos ] else [])
@@ -79,14 +86,17 @@ module SquadAnalysis =
 
         gkNeeds @ outfieldNeeds @ qualityNeed
 
-    let assessSales (coach: Staff) (currentDate: System.DateTime) (squad: Player list) : PlayerId list =
+    let assessSales (coach: Staff) (currentDate: DateTime) (squad: Player list) : PlayerId list =
         let avg = averageSkill squad
         let loyalty = ManagerPersonality.loyalty coach
 
         let positionCounts =
             allOutfieldPositions
             |> List.map (fun pos ->
-                pos, squad |> List.filter (fun p -> p.Position = pos && p.Status = Available) |> List.length)
+                pos,
+                squad
+                |> List.filter (fun p -> p.Position = pos && p.Status = Available)
+                |> List.length)
             |> Map.ofList
 
         squad
@@ -106,10 +116,14 @@ module SquadAnalysis =
                 count >= 3 && float p.CurrentSkill < avg - 5.0
 
             let sellChance =
-                if isWeak && isExpiring then 0.85
-                elif isOldAndExpiring then 0.6
-                elif isExcessCoverage then loyalty |> fun l -> 0.3 * (1.0 - l)
-                else 0.0
+                if isWeak && isExpiring then
+                    0.85
+                elif isOldAndExpiring then
+                    0.6
+                elif isExcessCoverage then
+                    loyalty |> fun l -> 0.3 * (1.0 - l)
+                else
+                    0.0
 
             bernoulli sellChance)
         |> List.map _.Id
@@ -235,18 +249,37 @@ module ManagerAI =
         let focus =
             match player.Position with
             | GK -> TrainingFocus.TrainingGoalkeeping
-            | DC | DM | DR | DL | WBR | WBL ->
-                if potentialGap > 15 then TrainingFocus.TrainingPhysical
-                elif player.CurrentSkill < 70 then TrainingFocus.TrainingTechnical
-                else TrainingFocus.TrainingMental
-            | MC | AMC | MR | ML ->
-                if potentialGap > 15 then TrainingFocus.TrainingTechnical
-                elif player.CurrentSkill < 70 then TrainingFocus.TrainingMental
-                else TrainingFocus.TrainingAllRound
-            | ST | AML | AMR ->
-                if potentialGap > 15 then TrainingFocus.TrainingTechnical
-                elif player.CurrentSkill < 70 then TrainingFocus.TrainingPhysical
-                else TrainingFocus.TrainingAllRound
+            | DC
+            | DM
+            | DR
+            | DL
+            | WBR
+            | WBL ->
+                if potentialGap > 15 then
+                    TrainingFocus.TrainingPhysical
+                elif player.CurrentSkill < 70 then
+                    TrainingFocus.TrainingTechnical
+                else
+                    TrainingFocus.TrainingMental
+            | MC
+            | AMC
+            | MR
+            | ML ->
+                if potentialGap > 15 then
+                    TrainingFocus.TrainingTechnical
+                elif player.CurrentSkill < 70 then
+                    TrainingFocus.TrainingMental
+                else
+                    TrainingFocus.TrainingAllRound
+            | ST
+            | AML
+            | AMR ->
+                if potentialGap > 15 then
+                    TrainingFocus.TrainingTechnical
+                elif player.CurrentSkill < 70 then
+                    TrainingFocus.TrainingPhysical
+                else
+                    TrainingFocus.TrainingAllRound
 
         let ambition = ManagerPersonality.ambition coach
 
@@ -260,5 +293,4 @@ module ManagerAI =
             else
                 TrainingIntensity.TrainingNormal
 
-        { Focus = focus
-          Intensity = intensity }
+        { Focus = focus; Intensity = intensity }

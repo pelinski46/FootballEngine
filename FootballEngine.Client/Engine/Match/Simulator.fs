@@ -1,15 +1,12 @@
 namespace FootballEngine
 
 open System
-open System.Collections.Generic
 open FootballEngine.Domain
+open FootballEngine.MatchPlayerMovement
+open FootballEngine.MatchPlayerDecision
+open FootballEngine.MatchPlayerAction
 open FootballEngine.Stats
-open FsToolkit.ErrorHandling
 open MatchState
-open MatchReferee
-open MatchManager
-open Pitch
-open MatchPlayer
 
 module MatchSimulator =
 
@@ -35,113 +32,172 @@ module MatchSimulator =
         )
 
     let private applyFatigue (s: MatchState) : MatchState =
-        let ballX = fst s.BallPosition
+        let ballX = s.Ball.Position.X
 
-        let drain (ts: TeamSide) (pressing: bool) =
+        let drain (ts: TeamSide) (pressing: bool) (fatigueMultiplier: float) =
             { ts with
                 Conditions =
                     Array.map2
-                        (fun c p -> Math.Max(0, c - fatigue p pressing ts.Tactics ts.Instructions))
+                        (fun c p -> Math.Max(0, c - int (float (fatigue p pressing ts.Tactics ts.Instructions) * fatigueMultiplier)))
                         ts.Conditions
                         ts.Players }
 
         s
-        |> withSide true (drain (homeSide s) (ballX > 70.0))
-        |> withSide false (drain (awaySide s) (ballX < 30.0))
+        |> withSide true (drain (homeSide s) (ballX > 70.0) (1.0 - BalanceConfig.HomeFatigueReduction))
+        |> withSide false (drain (awaySide s) (ballX < 30.0) 1.0)
 
-    type private Queue = PriorityQueue<ScheduledEvent, int>
+    type TickKind =
+        | DuelTick
+        | PhysicsTick
+        | SubstitutionTick
+        | MatchEndTick
 
-    let private clubIdOf (p: Player) (s: MatchState) =
-        if s.HomeSide.Players |> Array.exists (fun x -> x.Id = p.Id) then
-            s.Home.Id
-        else
-            s.Away.Id
+    type Tick = { Second: int; Kind: TickKind }
 
-    let private dispatch
-        (homeId: ClubId)
-        (players: Map<PlayerId, Player>)
-        (q: Queue)
-        (second: int)
-        (ev: ScheduledEvent)
-        (s: MatchState)
-        =
-        let s = { s with Second = second }
-
-        match ev with
-        | FatigueCheck ->
-            q.Enqueue(FatigueCheck, second + 180)
-            applyFatigue s
-
-        | Duel ->
-            match pickDuel s with
-            | None -> s
-            | Some(att, def, _, _ as duel) ->
-                let possBefore = s.Possession
-                let s' = resolveDuel homeId duel s
-
-                if s'.Possession = possBefore then
-                    let r = rollProbability ()
-
-                    if r < 0.40 then
-                        q.Enqueue(ShotAttempt att, second)
-                    elif r < 0.90 then
-                        q.Enqueue(PassSequence att, second + normalInt 4.0 2.0 2 8)
-                    elif r < 0.94 then
-                        q.Enqueue(DribbleAttempt att, second + normalInt 5.0 2.0 2 10)
-                    else
-                        q.Enqueue(LongBallAttempt att, second + normalInt 6.0 2.0 3 12)
-
-                let foulChance = 0.02 + float def.Mental.Aggression * 0.001
-
-                if rollProbability () < foulChance && s'.Possession <> possBefore then
-                    q.Enqueue(FreeKickAttempt att, second + 2)
-
-                if rollProbability () < cardProbability def then
-                    q.Enqueue(CardCheck(def, clubIdOf def s, false), second)
-
-                if rollProbability () < injuryProbability att then
-                    q.Enqueue(InjuryCheck(att, clubIdOf att s), second)
-
-                s' |> updatePositions
-
-        | ShotAttempt att -> tryShot att s q second
-        | CardCheck(p, clubId, _) -> processCard p clubId second s
-        | InjuryCheck(p, clubId) -> processInjury p clubId second s
-
-        | SubstitutionCheck clubId ->
-            let squad =
-                if clubId = homeId then
-                    s.Home.PlayerIds |> List.choose players.TryFind
+    let private generateTicks (homeId: ClubId) (awayId: ClubId) : Tick list =
+        let rec duelTicks acc t =
+            if t >= 95 * 60 then List.rev acc
+            else
+                let interval = normalInt 25.0 5.0 15 35
+                let t' = t + interval
+                if t' < 95 * 60 then
+                    let variation = normalInt 0.0 5.0 (-8) 8
+                    duelTicks ({ Second = t' + variation; Kind = DuelTick } :: acc) t'
                 else
-                    s.Away.PlayerIds |> List.choose players.TryFind
+                    List.rev acc
 
-            processSubstitution squad clubId second s
+        let duel = duelTicks [] 0
+        let physics = [ for sec in 30..30 .. (95 * 60) -> { Second = sec; Kind = PhysicsTick } ]
+        let subs = [ for min in [ 60; 75; 85 ] -> { Second = min * 60; Kind = SubstitutionTick } ]
+        let endTick = { Second = 95 * 60; Kind = MatchEndTick }
 
-        | PenaltyKick(kicker, isHome, kickNum) -> processPenaltyKick kicker isHome kickNum s
+        (duel @ physics @ subs @ [endTick]) |> List.sortBy _.Second
 
-        | FreeKickAttempt kicker -> processFreeKick kicker s homeId
+    let private physicsDt = 0.5
 
-        | CornerTaken -> processCorner s second
+    let private runPlayerChain
+        (homeId: ClubId)
+        (second: int)
+        (s: MatchState)
+        : MatchState * MatchEvent list * Player option * Player option =
 
-        | PositionTick -> s |> updatePositions
+        let rec loop state events intent depth lastAtt lastDef =
+            if depth >= BalanceConfig.AvgChainLength || intent = PlayerIdle then
+                state, List.rev events, lastAtt, lastDef
+            else
+                let lastAtt' =
+                    match intent with
+                    | ResolveDuel(att, _, _, _) -> Some att
+                    | ExecuteShot att -> Some att
+                    | ExecutePass att -> Some att
+                    | ExecuteDribble att -> Some att
+                    | ExecuteCross att -> Some att
+                    | ExecuteLongBall att -> Some att
+                    | ExecuteFreeKick att -> Some att
+                    | _ -> lastAtt
 
-        | MatchEnd -> s
+                let lastDef' =
+                    match intent with
+                    | ResolveDuel(_, def, _, _) -> Some def
+                    | ExecuteTackle def -> Some def
+                    | _ -> lastDef
 
-        | PassSequence attacker -> processPassSequence attacker s q second
+                let newState, newEvents, nextIntent = resolve homeId second intent state
+                loop newState (newEvents @ events) nextIntent (depth + 1) lastAtt' lastDef'
 
-        | DribbleAttempt attacker -> processDribble attacker s q second
+        loop s [] (decide s) 0 None None
 
-        | CrossAttemptEvent attacker -> processCross attacker s q second homeId
+    let private runRefereeStep second att def s =
+        MatchReferee.decide second att def s
+        |> List.fold
+            (fun (accState, accEvents) intent ->
+                let s', evs = MatchReferee.resolve second intent accState
+                s', evs @ accEvents)
+            (s, [])
+        |> fun (s, evs) -> s, List.rev evs
 
-        | LongBallAttempt attacker -> processLongBall attacker s q second
+    let private runManagerStep second homeSquad awaySquad s =
+        MatchManager.decide second homeSquad awaySquad s
+        |> List.fold
+            (fun (accState, accEvents) intent ->
+                let s', evs = MatchManager.resolve second intent accState
+                s', evs @ accEvents)
+            (s, [])
+        |> fun (s, evs) -> s, List.rev evs
 
-        | TackleAttempt defender -> processTackle defender s q second homeId
+    let private runTick
+        (homeId: ClubId)
+        (homeSquad: Player list)
+        (awaySquad: Player list)
+        (tick: Tick)
+        (s: MatchState)
+        : MatchState * MatchEvent list =
 
-    let private toCoords slotX slotY isHome =
-        if isHome then
-            (1.0 - slotY) * 100.0, slotX * 100.0
-        else
-            slotY * 100.0, slotX * 100.0
+        let s = { s with Second = tick.Second }
+
+        match tick.Kind with
+        | MatchEndTick -> s, []
+        | PhysicsTick ->
+            s
+            |> updatePlayerVelocities physicsDt
+            |> Pitch.updatePositions physicsDt
+            |> MatchBall.updatePhysics physicsDt
+            |> applyFatigue,
+            []
+        | SubstitutionTick -> runManagerStep tick.Second homeSquad awaySquad s
+        | DuelTick ->
+            let s1 = s |> updatePlayerVelocities physicsDt
+            let s2, playerEvents, att, def = runPlayerChain homeId tick.Second s1
+            let s3 = s2 |> MatchBall.updatePhysics physicsDt |> Pitch.updatePositions physicsDt
+            let s4, refereeEvents = runRefereeStep tick.Second att def s3
+            let s5, managerEvents = runManagerStep tick.Second homeSquad awaySquad s4
+            s5 |> applyFatigue, playerEvents @ refereeEvents @ managerEvents
+
+    let private runLoop
+        (homeId: ClubId)
+        (homeSquad: Player list)
+        (awaySquad: Player list)
+        (init: MatchState)
+        (saveSnapshots: bool)
+        =
+
+        let ticks = generateTicks init.Home.Id init.Away.Id
+
+        let snapshots =
+            if saveSnapshots then
+                Some(System.Collections.Generic.List<MatchState>())
+            else
+                None
+
+        let final, allEvents =
+            ticks
+            |> List.fold
+                (fun (s, evs) tick ->
+                    if tick.Kind = MatchEndTick then
+                        s, evs
+                    else
+                        let s', tickEvents = runTick homeId homeSquad awaySquad tick s
+
+                        match snapshots with
+                        | Some snaps when tick.Kind = DuelTick -> snaps.Add(s')
+                        | _ -> ()
+
+                        s', tickEvents @ evs)
+                (init, [])
+            |> fun (s, evs) -> s, List.rev evs
+
+        final, allEvents, snapshots |> Option.map _.ToArray()
+
+    let private runLoopFast homeId homeSquad awaySquad init =
+        let s, evs, _ = runLoop homeId homeSquad awaySquad init false
+        s, evs
+
+    let private runLoopFull homeId homeSquad awaySquad init =
+        match runLoop homeId homeSquad awaySquad init true with
+        | s, evs, Some snaps -> s, evs, snaps
+        | s, evs, None -> s, evs, [||]
+
+    open FsToolkit.ErrorHandling
 
     let private resolveCoach (club: Club) (staff: Map<StaffId, Staff>) : Result<Staff, SimulationError> =
         staff
@@ -149,6 +205,12 @@ module MatchSimulator =
         |> Seq.tryFind (fun s -> s.Role = HeadCoach && s.Contract |> Option.map _.ClubId = Some club.Id)
         |> Option.map Ok
         |> Option.defaultValue (Error(MissingLineup club.Name))
+
+    let private toCoords slotX slotY isHome =
+        if isHome then
+            (1.0 - slotY) * 100.0, slotX * 100.0
+        else
+            slotY * 100.0, slotX * 100.0
 
     let private extractLineup
         (club: Club)
@@ -159,9 +221,6 @@ module MatchSimulator =
         match headCoach.Attributes.Coaching.Lineup with
         | None -> Error(MissingLineup club.Name)
         | Some lu ->
-            let tactics = lu.Tactics
-            let instructions = lu.Instructions
-
             let slots =
                 lu.Slots
                 |> List.choose (fun s ->
@@ -174,20 +233,15 @@ module MatchSimulator =
                             p, x, y)))
                 |> Array.ofList
 
-            Ok(slots, tactics, instructions)
+            Ok(slots, lu.Tactics, lu.Instructions)
 
-    let private validateLineups
-        (home: Club)
-        (homeData: 'a[])
-        (away: Club)
-        (awayData: 'a[])
-        : Result<unit, SimulationError> =
+    let private validateLineups (home: Club) homeData (away: Club) awayData : Result<unit, SimulationError> =
         if home.Id = away.Id then
             Error(SameClub home.Name)
-        elif homeData.Length <> 11 then
-            Error(IncompleteLineup(home.Name, homeData.Length))
-        elif awayData.Length <> 11 then
-            Error(IncompleteLineup(away.Name, awayData.Length))
+        elif homeData |> Array.length <> 11 then
+            Error(IncompleteLineup(home.Name, homeData |> Array.length))
+        elif awayData |> Array.length <> 11 then
+            Error(IncompleteLineup(away.Name, awayData |> Array.length))
         else
             Ok()
 
@@ -195,28 +249,30 @@ module MatchSimulator =
         { HomePositions = homeData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray
           AwayPositions = awayData |> Array.map (fun (p, x, y) -> p.Id, (x, y)) |> Map.ofArray }
 
-    let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float * float>) : (float * float)[] =
+    let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float * float>) : Spatial[] =
         players
-        |> Array.map (fun p -> posMap |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0))
+        |> Array.map (fun p ->
+            let x, y = posMap |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0)
+            defaultSpatial x y)
 
     let private initState
-        (home: Club)
-        (homeCoach: Staff)
-        (hp: Player[])
-        (hPosMap: Map<PlayerId, float * float>)
-        (homeTactics: TeamTactics)
-        (homeInstructions: TacticalInstructions option)
-        (away: Club)
-        (awayCoach: Staff)
-        (ap: Player[])
-        (aPosMap: Map<PlayerId, float * float>)
-        (awayTactics: TeamTactics)
-        (awayInstructions: TacticalInstructions option)
-        (isKnockout: bool)
-        : MatchState =
+        home
+        homeCoach
+        hp
+        hPosMap
+        homeTactics
+        homeInstructions
+        away
+        awayCoach
+        ap
+        aPosMap
+        awayTactics
+        awayInstructions
+        isKnockout
+        =
+
         let hPos = positionArrayOf hp hPosMap
         let aPos = positionArrayOf ap aPosMap
-
         let defaultInstructions = TacticalInstructions.defaultInstructions
 
         { Home = home
@@ -226,7 +282,7 @@ module MatchSimulator =
           Second = 0
           HomeScore = 0
           AwayScore = 0
-          BallPosition = 50.0, 50.0
+          Ball = defaultBall
           Possession = Home
           Momentum = 0.0
           HomeSide =
@@ -249,84 +305,11 @@ module MatchSimulator =
               SubsUsed = 0
               Tactics = awayTactics
               Instructions = awayInstructions |> Option.orElse (Some defaultInstructions) }
-          EventsRev = []
           PenaltyShootout = None
           IsExtraTime = false
           IsKnockoutMatch = isKnockout }
 
-    let private initQueue (homeId: ClubId) (awayId: ClubId) =
-        let q = Queue()
-        let mutable currentTime = 0
-
-        while currentTime < 95 * 60 do
-            let interval = normalInt 25.0 5.0 15 35
-            currentTime <- currentTime + interval
-
-            if currentTime < 95 * 60 then
-                let variation = normalInt 0.0 5.0 (-8) 8
-                q.Enqueue(Duel, currentTime + variation)
-
-        q.Enqueue(FatigueCheck, 180)
-        q.Enqueue(MatchEnd, 95 * 60)
-
-        for min in [| 60; 75; 85 |] do
-            q.Enqueue(SubstitutionCheck homeId, min * 60)
-            q.Enqueue(SubstitutionCheck awayId, min * 60)
-
-        let mutable tick = 5
-
-        while tick < 95 * 60 do
-            q.Enqueue(PositionTick, tick)
-            tick <- tick + 30
-
-        q
-
-    let private runLoop (homeId: ClubId) (players: Map<PlayerId, Player>) (init: MatchState) (saveSnapshots: bool) =
-        let q = initQueue init.Home.Id init.Away.Id
-        let mutable s = init
-        let snapshots = if saveSnapshots then Some(List<MatchState>()) else None
-
-        while q.Count > 0 do
-            let mutable ev = Unchecked.defaultof<_>
-            let mutable pr = 0
-            q.TryDequeue(&ev, &pr) |> ignore
-
-            match ev with
-            | MatchEnd ->
-                s <- { s with Second = pr }
-                q.Clear()
-            | _ ->
-                s <- dispatch homeId players q pr ev s
-
-                match snapshots with
-                | Some snaps ->
-                    match ev with
-                    | Duel
-                    | ShotAttempt _
-                    | PassSequence _
-                    | DribbleAttempt _
-                    | CrossAttemptEvent _
-                    | LongBallAttempt _
-                    | TackleAttempt _ -> snaps.Add(s)
-                    | _ -> ()
-                | None -> ()
-
-        s, snapshots |> Option.map _.ToArray()
-
-    let private runLoopFast homeId players init = fst (runLoop homeId players init false)
-
-    let private runLoopFull homeId players init =
-        match runLoop homeId players init true with
-        | s, Some snaps -> s, snaps
-        | s, None -> s, [||]
-
-    let private simulatePenaltyShootout
-        (s: MatchState)
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        =
+    let private simulatePenaltyShootout (s: MatchState) (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
         result {
             let homePlayers =
                 home.PlayerIds
@@ -338,50 +321,30 @@ module MatchSimulator =
                 |> List.choose players.TryFind
                 |> List.sortByDescending _.CurrentSkill
 
-            let takePenaltyKick (kicker: Player) (gk: Player) =
-                let kickerSkill = float kicker.CurrentSkill
-                let gkSkill = float gk.CurrentSkill
-                let kickerMorale = float kicker.Morale
-                let pressure = 0.85
-                let baseChance = 0.75 + (kickerSkill - gkSkill) * 0.002 + kickerMorale * 0.001
-                rollProbability () < baseChance * pressure
-
-            let homeGk = awayPlayers |> List.tryFind (fun p -> p.Position = GK)
-            let awayGk = homePlayers |> List.tryFind (fun p -> p.Position = GK)
-
-            let rec simulateKicks
-                (homeKicks: (PlayerId * bool * int) list)
-                (awayKicks: (PlayerId * bool * int) list)
-                (kickNum: int)
-                =
+            let rec simulateKicks homeKicks awayKicks kickNum =
                 let homeKicker = homePlayers |> List.item ((kickNum - 1) % homePlayers.Length)
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
 
-                let homeScored =
-                    match homeGk with
-                    | Some gk -> takePenaltyKick homeKicker gk
-                    | None -> false
+                let homeS, _, _ =
+                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(homeKicker, true, kickNum)) s
 
-                let awayScored =
-                    match awayGk with
-                    | Some gk -> takePenaltyKick awayKicker gk
-                    | None -> false
+                let awayS, _, _ =
+                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(awayKicker, false, kickNum)) homeS
+
+                let homeScored = homeS.HomeScore > s.HomeScore
+                let awayScored = awayS.AwayScore > homeS.AwayScore
 
                 let newHomeKicks = (homeKicker.Id, homeScored, kickNum) :: homeKicks
                 let newAwayKicks = (awayKicker.Id, awayScored, kickNum) :: awayKicks
-
-                let homeGoals =
-                    newHomeKicks |> List.sumBy (fun (_, scored, _) -> if scored then 1 else 0)
-
-                let awayGoals =
-                    newAwayKicks |> List.sumBy (fun (_, scored, _) -> if scored then 1 else 0)
+                let homeGoals = newHomeKicks |> List.sumBy (fun (_, sc, _) -> if sc then 1 else 0)
+                let awayGoals = newAwayKicks |> List.sumBy (fun (_, sc, _) -> if sc then 1 else 0)
 
                 if kickNum > 5 && homeGoals <> awayGoals then
                     { HomeKicks = List.rev newHomeKicks
                       AwayKicks = List.rev newAwayKicks
                       CurrentKick = kickNum
                       IsComplete = true }
-                elif kickNum > 5 && homeGoals = awayGoals then
+                elif kickNum > 5 then
                     simulateKicks newHomeKicks newAwayKicks (kickNum + 1)
                 elif kickNum <= 5 then
                     let remaining = 5 - kickNum
@@ -404,40 +367,39 @@ module MatchSimulator =
             let shootout = simulateKicks [] [] 1
 
             let events =
-                [ for (pid, scored, kickNum) in shootout.HomeKicks ->
-                      { Second = 95 * 60 + kickNum
+                [ for (pid, scored, k) in shootout.HomeKicks ->
+                      { Second = 95 * 60 + k
                         PlayerId = pid
                         ClubId = home.Id
                         Type = PenaltyAwarded scored }
-                  for (pid, scored, kickNum) in shootout.AwayKicks ->
-                      { Second = 95 * 60 + kickNum
+                  for (pid, scored, k) in shootout.AwayKicks ->
+                      { Second = 95 * 60 + k
                         PlayerId = pid
                         ClubId = away.Id
                         Type = PenaltyAwarded scored } ]
 
-            let finalState =
-                { s with
-                    PenaltyShootout = Some shootout
-                    EventsRev = events @ s.EventsRev }
-
             return
-                { Final = finalState
-                  Snapshots = [| finalState |] }
+                { Final =
+                    { s with
+                        PenaltyShootout = Some shootout }
+                  Events = events
+                  Snapshots = [||] }
         }
 
-    let private runFast
+    let private setup
         (home: Club)
         (away: Club)
         (players: Map<PlayerId, Player>)
         (staff: Map<StaffId, Staff>)
         (isKnockout: bool)
-        : Result<int * int * MatchEvent list * MatchState, SimulationError> =
+        : Result<MatchState * Player list * Player list, SimulationError> =
         result {
             let! homeCoach = resolveCoach home staff
             let! awayCoach = resolveCoach away staff
             let! homeData, homeTactics, homeInstructions = extractLineup home homeCoach players true
             let! awayData, awayTactics, awayInstructions = extractLineup away awayCoach players false
             do! validateLineups home homeData away awayData
+
             let ctx = buildContext homeData awayData
             let hp = homeData |> Array.map (fun (p, _, _) -> p)
             let ap = awayData |> Array.map (fun (p, _, _) -> p)
@@ -458,45 +420,10 @@ module MatchSimulator =
                     awayInstructions
                     isKnockout
 
-            let final = runLoopFast home.Id players init
-            return final.HomeScore, final.AwayScore, final.EventsRev, final
-        }
+            let homeSquad = home.PlayerIds |> List.choose players.TryFind
+            let awaySquad = away.PlayerIds |> List.choose players.TryFind
 
-    let private run
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        (isKnockout: bool)
-        : Result<MatchReplay, SimulationError> =
-        result {
-            let! homeCoach = resolveCoach home staff
-            let! awayCoach = resolveCoach away staff
-            let! homeData, homeTactics, homeInstructions = extractLineup home homeCoach players true
-            let! awayData, awayTactics, awayInstructions = extractLineup away awayCoach players false
-            do! validateLineups home homeData away awayData
-            let ctx = buildContext homeData awayData
-            let hp = homeData |> Array.map (fun (p, _, _) -> p)
-            let ap = awayData |> Array.map (fun (p, _, _) -> p)
-
-            let init =
-                initState
-                    home
-                    homeCoach
-                    hp
-                    ctx.HomePositions
-                    homeTactics
-                    homeInstructions
-                    away
-                    awayCoach
-                    ap
-                    ctx.AwayPositions
-                    awayTactics
-                    awayInstructions
-                    isKnockout
-
-            let final, snapshots = runLoopFull home.Id players init
-            return { Final = final; Snapshots = snapshots }
+            return init, homeSquad, awaySquad
         }
 
     let trySimulateMatch
@@ -505,7 +432,11 @@ module MatchSimulator =
         (players: Map<PlayerId, Player>)
         (staff: Map<StaffId, Staff>)
         : Result<int * int * MatchEvent list * MatchState, SimulationError> =
-        runFast home away players staff false
+        result {
+            let! init, homeSquad, awaySquad = setup home away players staff false
+            let final, events = runLoopFast home.Id homeSquad awaySquad init
+            return final.HomeScore, final.AwayScore, events, final
+        }
 
     let trySimulateMatchFull
         (home: Club)
@@ -513,7 +444,15 @@ module MatchSimulator =
         (players: Map<PlayerId, Player>)
         (staff: Map<StaffId, Staff>)
         : Result<MatchReplay, SimulationError> =
-        run home away players staff false
+        result {
+            let! init, homeSquad, awaySquad = setup home away players staff false
+            let final, events, snapshots = runLoopFull home.Id homeSquad awaySquad init
+
+            return
+                { Final = final
+                  Events = events
+                  Snapshots = snapshots }
+        }
 
     let trySimulateMatchKnockout
         (home: Club)
@@ -522,11 +461,17 @@ module MatchSimulator =
         (staff: Map<StaffId, Staff>)
         : Result<MatchReplay * bool, SimulationError> =
         result {
-            let! replay = run home away players staff true
+            let! init, homeSquad, awaySquad = setup home away players staff true
+            let final, events, snapshots = runLoopFull home.Id homeSquad awaySquad init
+
+            let replay =
+                { Final = final
+                  Events = events
+                  Snapshots = snapshots }
 
             if replay.Final.HomeScore = replay.Final.AwayScore then
-                let! shootoutResult = simulatePenaltyShootout replay.Final home away players staff
-                return shootoutResult, true
+                let! shootout = simulatePenaltyShootout replay.Final home away players
+                return shootout, true
             else
                 return replay, false
         }

@@ -3,15 +3,15 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
-
+        <OtherFlags>--warnon:1182</OtherFlags>
     </PropertyGroup>
 
     <ItemGroup>
         <Compile Include="Domain\DomainTypes.fs"/>
         <Compile Include="Domain\Country.fs"/>
         <Compile Include="Domain\Training.fs"/>
-        <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Player.fs"/>
+        <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Lineup.fs"/>
         <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
@@ -34,10 +34,16 @@
         <Compile Include="Lineup.fs"/>
         <Compile Include="Engine\Stats.fs"/>
         <Compile Include="Engine\Match\MatchCalc.fs"/>
+        <Compile Include="Engine\Match\BalanceConfig.fs"/>
+        <Compile Include="Engine\Match\BalanceCalibrator.fs"/>
         <Compile Include="Engine\Match\MatchState.fs"/>
+        <Compile Include="Engine\Match\MatchBall.fs"/>
         <Compile Include="Engine\Match\MatchManager.fs"/>
-        <Compile Include="Engine\Match\MatchPlayer.fs"/>
         <Compile Include="Engine\Match\Pitch.fs"/>
+        <Compile Include="Engine\Match\MatchSpatial.fs"/>
+        <Compile Include="Engine\Match\MatchPlayerMovement.fs"/>
+        <Compile Include="Engine\Match\MatchPlayerDecision.fs"/>
+        <Compile Include="Engine\Match\MatchPlayerAction.fs"/>
         <Compile Include="Engine\Match\MatchReferee.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
         <Compile Include="Engine\WorldGeneration\PlayerGen.fs"/>
