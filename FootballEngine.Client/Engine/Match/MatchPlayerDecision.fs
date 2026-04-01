@@ -8,7 +8,7 @@ open MatchState
 module MatchPlayerDecision =
 
     type PlayerIntent =
-        | ResolveDuel of attacker: Player * defender: Player * ai: int * di: int
+        | ResolveDuel of attacker: Player * defender: Player
         | ExecuteShot of attacker: Player
         | ExecutePass of attacker: Player
         | ExecuteDribble of attacker: Player
@@ -67,7 +67,7 @@ module MatchPlayerDecision =
     let decide (s: MatchState) : PlayerIntent =
         match Pitch.pickDuel s with
         | None -> PlayerIdle
-        | Some(att, def, ai, di) -> ResolveDuel(att, def, ai, di)
+        | Some(att, def) -> ResolveDuel(att, def)
 
     let decideNextAttack (attacker: Player) (s: MatchState) : PlayerIntent =
         let shotT, passT, dribbleT, crossT =

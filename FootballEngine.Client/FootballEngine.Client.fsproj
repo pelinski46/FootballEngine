@@ -45,6 +45,8 @@
         <Compile Include="Engine\Match\MatchPlayerDecision.fs"/>
         <Compile Include="Engine\Match\MatchPlayerAction.fs"/>
         <Compile Include="Engine\Match\MatchReferee.fs"/>
+        <Compile Include="Engine\Match\SchedulingTypes.fs"/>
+        <Compile Include="Engine\Match\TickScheduler.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
         <Compile Include="Engine\WorldGeneration\PlayerGen.fs"/>
         <Compile Include="Engine\WorldGeneration\StaffGen.fs"/>

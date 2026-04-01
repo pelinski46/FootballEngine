@@ -157,7 +157,7 @@ module UpdateSim =
                                 result.NewGs.CurrentDate
                                 "Youth Development System"
                                 $"Season {result.NewGs.Season - 1} Development Summary"
-                                ($"The following players showed improvement over the season:\n\n{improvements}")
+                                $"The following players showed improvement over the season:\n\n{improvements}"
                                 InboxMessageCategory.Development
                                 false
                         )

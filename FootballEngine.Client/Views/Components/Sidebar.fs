@@ -102,7 +102,7 @@ module Sidebar =
               ) ]
 
     let sidebar (state: State) dispatch =
-        let (unreadCount, visibleItems) =
+        let unreadCount, visibleItems =
             match state.Mode with
             | InGame(gs, employment) ->
                 let unread = GameState.unreadInboxCount gs

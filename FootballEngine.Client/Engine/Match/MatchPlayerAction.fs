@@ -47,11 +47,12 @@ module MatchPlayerAction =
         (attSide: TeamSide)
         (defSide: TeamSide)
         (shooter: Player)
-        (shooterIdx: int)
+        (shooterId: PlayerId)
         (shooterCond: int)
         (bX: float)
         (s: MatchState)
         =
+        let shooterIdx = attSide.Players |> Array.findIndex (fun p -> p.Id = shooterId)
 
         let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
         let composure = pressureMultiplier attIsHome s * tacticsCfg.UrgencyMultiplier
@@ -116,13 +117,13 @@ module MatchPlayerAction =
         (second: int)
         (att: Player)
         (def: Player)
-        (ai: int)
-        (di: int)
         (s: MatchState)
         =
         let attIsHome = s.Possession = Home
         let attSide = side attIsHome s
         let defSide = side (not attIsHome) s
+        let ai = attSide.Players |> Array.tryFindIndex (fun p -> p.Id = att.Id) |> Option.defaultValue 0
+        let di = defSide.Players |> Array.tryFindIndex (fun p -> p.Id = def.Id) |> Option.defaultValue 0
         let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
         let homeBonus = if attIsHome then BalanceConfig.HomeDuelAttackBonus else 0.0
 
@@ -219,7 +220,7 @@ module MatchPlayerAction =
                 let info =
                     getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
 
-                resolveShotOutcome second attIsHome attSide defSide info.Player info.Idx info.Condition bX s
+                resolveShotOutcome second attIsHome attSide defSide info.Player info.PlayerId info.Condition bX s
 
     let private resolvePass (second: int) (attacker: Player) (s: MatchState) =
         let isHome = s.Possession = Home
@@ -241,7 +242,8 @@ module MatchPlayerAction =
         let successChance = betaSample passMean (8.0 + condition * 12.0)
 
         match findBestPassTarget attacker s isHome with
-        | Some(teammate, teammateIdx, _) ->
+        | Some(teammate, teammateId, _) ->
+            let teammateIdx = attSide.Players |> Array.findIndex (fun p -> p.Id = teammateId)
             let offside = isOffsideCheck teammate attSide.Positions[teammateIdx].X s isHome
 
             if offside then
@@ -796,7 +798,7 @@ module MatchPlayerAction =
             else
                 { s with
                     Ball =
-                        { Position = MatchState.defaultSpatial 50.0 50.0
+                        { Position = defaultSpatial 50.0 50.0
                           LastTouchBy = None }
                     Possession = if isHome then Away else Home }
 
@@ -812,7 +814,7 @@ module MatchPlayerAction =
         match intent with
 
         | PlayerIdle -> s, [], PlayerIdle
-        | ResolveDuel(att, def, ai, di) -> resolveDuel homeId second att def ai di s
+        | ResolveDuel(att, def) -> resolveDuel homeId second att def s
         | ExecuteShot attacker -> resolveShot second attacker s
         | ExecutePass attacker -> resolvePass second attacker s
         | ExecuteDribble attacker -> resolveDribble second attacker s

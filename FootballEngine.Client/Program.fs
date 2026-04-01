@@ -24,7 +24,7 @@ open FootballEngine.Pages.Transfers
 open Material.Icons.Avalonia
 
 module Views =
-    let private playbackTimer: (Avalonia.Threading.DispatcherTimer option) ref =
+    let private playbackTimer: Avalonia.Threading.DispatcherTimer option ref =
         ref None
 
     let mainView (state: State) dispatch =

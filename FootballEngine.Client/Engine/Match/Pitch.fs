@@ -49,7 +49,7 @@ module Pitch =
             let dPoints = v.DPos |> Array.map (fun sp -> sp.X, sp.Y)
             let ai = nearestIdx aPoints ballPt
             let di = nearestIdx dPoints ballPt
-            Some(v.Att[ai], v.Def[di], ai, di)
+            Some(v.Att[ai], v.Def[di])
 
     let private controlBallByProximity (s: MatchState) =
         let attSide = if s.Possession = Home then s.HomeSide else s.AwaySide

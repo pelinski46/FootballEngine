@@ -10,6 +10,8 @@
         <Compile Include="Matchtests.fs"/>
         <Compile Include="Enginetests.fs"/>
         <Compile Include="Worldtests.fs"/>
+        <Compile Include="DeterminismTests.fs"/>
+        <Compile Include="TickSchedulerTests.fs"/>
         <Compile Include="TrainingSystemTests.fs"/>
         <Compile Include="Program.fs"/>
     </ItemGroup>

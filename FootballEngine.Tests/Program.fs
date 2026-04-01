@@ -6,6 +6,8 @@ open FootballEngine.Tests.MatchTests
 open FootballEngine.Tests.EngineTests
 open FootballEngine.Tests.WorldTests
 open FootballEngine.Tests.TrainingSystemTests
+open FootballEngine.Tests.DeterminismTests
+open FootballEngine.Tests.TickSchedulerTests
 
 [<EntryPoint>]
 let main argv =
@@ -33,7 +35,11 @@ let main argv =
 
     let trainingTests = testList "Training" [ trainingSystemTests ]
 
+    let determinismTests = testList "Determinism" [ determinismTests |> testSequenced ]
+
+    let schedulerTests = testList "Scheduler" [ tickSchedulerTests ]
+
     let all =
-        testList "FootballEngine" [ matchTests; engineTests; worldTests; trainingTests ]
+        testList "FootballEngine" [ matchTests; engineTests; worldTests; trainingTests; determinismTests; schedulerTests ]
 
     runTestsWithCLIArgs [ Verbosity LogLevel.Verbose ] argv all

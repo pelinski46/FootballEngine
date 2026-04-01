@@ -303,7 +303,7 @@ let statisticalTests =
 
           // --- Event counts (strict ranges — failures indicate engine bugs) ---
 
-          // ENGINE BUG: avg shots = 81.72 (expected [15, 30])
+      
           // The engine generates ExecuteShot too aggressively, even from poor positions.
           testCase "avg shots per match in [15, 30]"
           <| fun () ->
@@ -317,7 +317,7 @@ let statisticalTests =
                   (avg >= 15.0 && avg <= 30.0)
                   $"avg shots = %.2f{avg} (expected [15, 30]) — ENGINE BUG if fails"
 
-          // ENGINE BUG: avg dribbles = 127.86 (expected [30, 80])
+         
           // Dribble cascades occur when shot/pass fail and dribble becomes the fallback.
           testCase "avg dribbles per match in [30, 80]"
           <| fun () ->
@@ -331,7 +331,7 @@ let statisticalTests =
                   (avg >= 30.0 && avg <= 80.0)
                   $"avg dribbles = %.2f{avg} (expected [30, 80]) — ENGINE BUG if fails"
 
-          // ENGINE BUG: avg corners = 3.52 (expected [6, 14])
+
           // Cross attempts don't produce enough corners.
           testCase "avg corners per match in [6, 14]"
           <| fun () ->
@@ -342,7 +342,7 @@ let statisticalTests =
                   (avg >= 6.0 && avg <= 14.0)
                   $"avg corners = %.2f{avg} (expected [6, 14]) — ENGINE BUG if fails"
 
-          // ENGINE BUG: avg fouls = 11.04 (expected [15, 35])
+
           // Only count FoulCommitted (not FreeKick) to avoid double-counting.
           testCase "avg fouls per match in [15, 35]"
           <| fun () ->
@@ -363,7 +363,7 @@ let statisticalTests =
               let avg = float yellows / float successOutcomes.Length
               Expect.isTrue (avg >= 2.0 && avg <= 6.0) $"avg yellows = %.2f{avg} (expected [2, 6])"
 
-          // ENGINE BUG: avg passes = 164.46 (expected [200, 600])
+
           // Chains die too early, reducing pass volume.
           testCase "avg passes per match in [120, 600]"
           <| fun () ->

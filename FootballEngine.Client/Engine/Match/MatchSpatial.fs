@@ -5,9 +5,9 @@ open MatchState
 
 module MatchSpatial =
 
-    type PlayerWithIdx =
+    type PlayerInfo =
         { Player: Player
-          Idx: int
+          PlayerId: PlayerId
           Pos: Spatial
           Condition: int }
 
@@ -27,12 +27,12 @@ module MatchSpatial =
         match players |> Array.tryFindIndex (fun p -> p.Id = pid) with
         | Some i ->
             { Player = players[i]
-              Idx = i
+              PlayerId = pid
               Pos = positions[i]
               Condition = conditions[i] }
         | None ->
             { Player = players[0]
-              Idx = 0
+              PlayerId = pid
               Pos = positions[0]
               Condition = conditions[0] }
 
@@ -45,10 +45,16 @@ module MatchSpatial =
         let tx, ty = spatialXY info.Pos
 
         attSide.Players
-        |> Array.mapi (fun i p -> i, p, attSide.Positions[i])
-        |> Array.filter (fun (i, _, _) -> i <> info.Idx)
-        |> Array.minBy (fun (_, _, sp) -> let dx, dy = sp.X - tx, sp.Y - ty in sqrt (dx * dx + dy * dy))
-        |> fun (i, p, sp) -> Some(p, i, spatialXY sp)
+        |> Array.filter (fun p -> p.Id <> attacker.Id)
+        |> Array.minBy (fun p ->
+            let sp = attSide.Positions |> Array.find (fun _ -> true)
+            let idx = attSide.Players |> Array.findIndex (fun x -> x.Id = p.Id)
+            let sp = attSide.Positions[idx]
+            let dx, dy = sp.X - tx, sp.Y - ty
+            sqrt (dx * dx + dy * dy))
+        |> fun p ->
+            let idx = attSide.Players |> Array.findIndex (fun x -> x.Id = p.Id)
+            Some(p, p.Id, spatialXY attSide.Positions[idx])
 
     let findNearestOpponent (attacker: Player) (s: MatchState) (isHome: bool) =
         let attSide = side isHome s
@@ -60,13 +66,18 @@ module MatchSpatial =
         let ax, ay = spatialXY info.Pos
 
         if defSide.Players.Length = 0 then
-            (attacker, 0, spatialXY attSide.Positions[0])
+            (attacker, attacker.Id, spatialXY attSide.Positions[0])
         else
             defSide.Players
-            |> Array.mapi (fun i p -> i, p, defSide.Positions[i])
-            |> Array.filter (fun (_, p, _) -> p.Position <> GK)
-            |> Array.minBy (fun (_, _, sp) -> let dx, dy = sp.X - ax, sp.Y - ay in sqrt (dx * dx + dy * dy))
-            |> fun (i, p, sp) -> (p, i, spatialXY sp)
+            |> Array.filter (fun p -> p.Position <> GK)
+            |> Array.minBy (fun p ->
+                let idx = defSide.Players |> Array.findIndex (fun x -> x.Id = p.Id)
+                let sp = defSide.Positions[idx]
+                let dx, dy = sp.X - ax, sp.Y - ay
+                sqrt (dx * dx + dy * dy))
+            |> fun p ->
+                let idx = defSide.Players |> Array.findIndex (fun x -> x.Id = p.Id)
+                (p, p.Id, spatialXY defSide.Positions[idx])
 
     let findBestPassTarget (attacker: Player) (s: MatchState) (isHome: bool) =
         let attSide = side isHome s
@@ -83,10 +94,10 @@ module MatchSpatial =
         let passLaneClear (targetSp: Spatial) =
             let defendersNearLine =
                 defSide.Players
-                |> Array.mapi (fun di dp -> di, dp)
-                |> Array.filter (fun (_, p) -> p.Position <> GK)
-                |> Array.sumBy (fun (di, _) ->
-                    let dSp = defSide.Positions[di]
+                |> Array.filter (fun p -> p.Position <> GK)
+                |> Array.sumBy (fun dp ->
+                    let dIdx = defSide.Players |> Array.findIndex (fun x -> x.Id = dp.Id)
+                    let dSp = defSide.Positions[dIdx]
                     let dx = dSp.X - ballX
                     let dy = dSp.Y - ballY
                     let tdx = targetSp.X - ballX
@@ -109,8 +120,10 @@ module MatchSpatial =
             defendersNearLine = 0.0
 
         attSide.Players
-        |> Array.mapi (fun i p ->
-            let sp = attSide.Positions[i]
+        |> Array.filter (fun p -> p.Id <> attacker.Id)
+        |> Array.map (fun p ->
+            let idx = attSide.Players |> Array.findIndex (fun x -> x.Id = p.Id)
+            let sp = attSide.Positions[idx]
             let dist = sqrt ((sp.X - ballX) ** 2.0 + (sp.Y - ballY) ** 2.0)
             let forwardBonus = if isForward sp then 0.15 else 0.0
             let laneBonus = if passLaneClear sp then 0.2 else 0.0
@@ -119,8 +132,7 @@ module MatchSpatial =
             let score =
                 (1.0 / (1.0 + dist * 0.1)) + forwardBonus + laneBonus + visionWeight * 0.1
 
-            i, p, sp, score)
-        |> Array.filter (fun (i, _, _, _) -> i <> info.Idx)
-        |> Array.sortByDescending (fun (_, _, _, score) -> score)
+            p, sp, score)
+        |> Array.sortByDescending (fun (_, _, score) -> score)
         |> Array.tryHead
-        |> Option.map (fun (i, p, sp, _) -> p, i, spatialXY sp)
+        |> Option.map (fun (p, sp, _) -> p, p.Id, spatialXY sp)
