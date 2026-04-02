@@ -2,8 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FootballEngine.MatchCalc
-open MatchState
+open MatchStateOps
 open PitchMath
 
 
@@ -26,14 +25,13 @@ module Pitch =
           DCond: int[] }
 
     let buildView (s: MatchState) =
-        let attIsHome = s.Possession = Home
-        let at, ap, ac = activePlayers (side attIsHome s)
-        let dt, dp, dc = activePlayers (side (not attIsHome) s)
+        let at, ap, ac = activePlayers (ClubSide.teamSide s.AttackingClub s)
+        let dt, dp, dc = activePlayers (ClubSide.teamSide (ClubSide.flip s.AttackingClub) s)
 
         { Att = at
           APos = ap
           ACond = ac
-          AttIsHome = attIsHome
+          AttIsHome = s.AttackingClub = HomeClub
           Def = dt
           DPos = dp
           DCond = dc }
@@ -52,7 +50,7 @@ module Pitch =
             Some(v.Att[ai], v.Def[di])
 
     let private controlBallByProximity (s: MatchState) =
-        let attSide = if s.Possession = Home then s.HomeSide else s.AwaySide
+        let attSide = ClubSide.teamSide s.AttackingClub s
 
         if attSide.Players.Length = 0 then
             s
@@ -64,19 +62,24 @@ module Pitch =
                 |> Array.mapi (fun i sp -> i, distance (sp.X, sp.Y) ballPt)
                 |> Array.minBy snd
 
-            if nearestDist < 1.5 then
+            if nearestDist < BalanceConfig.BallControlDistanceThreshold then
                 let sp = attSide.Positions[nearestIdx]
                 let bp = s.Ball.Position
 
-                let newX = bp.X + (sp.X - bp.X) * 0.1
-                let newY = bp.Y + (sp.Y - bp.Y) * 0.1
-                let newVx = bp.Vx * 0.2
-                let newVy = bp.Vy * 0.2
+                let newX = bp.X + (sp.X - bp.X) * BalanceConfig.BallControlDampingX
+                let newY = bp.Y + (sp.Y - bp.Y) * BalanceConfig.BallControlDampingY
+                let newVx = bp.Vx * BalanceConfig.BallControlVx
+                let newVy = bp.Vy * BalanceConfig.BallControlVy
 
                 { s with
                     Ball =
                         { s.Ball with
-                            Position = { bp with X = newX; Y = newY; Vx = newVx; Vy = newVy } } }
+                            Position =
+                                { bp with
+                                    X = newX
+                                    Y = newY
+                                    Vx = newVx
+                                    Vy = newVy } } }
             else
                 s
 
@@ -86,6 +89,7 @@ module Pitch =
                 ts.Players
                 |> Array.mapi (fun i _ ->
                     let sp = ts.Positions[i]
+
                     { sp with
                         X = Math.Clamp(sp.X + sp.Vx * dt, 0.0, 100.0)
                         Y = Math.Clamp(sp.Y + sp.Vy * dt, 0.0, 100.0) })
@@ -93,6 +97,6 @@ module Pitch =
             { ts with Positions = newPositions }
 
         s
-        |> withSide true (move (homeSide s))
-        |> withSide false (move (awaySide s))
+        |> withSide s.Home.Id (move (homeSide s))
+        |> withSide s.Away.Id (move (awaySide s))
         |> controlBallByProximity

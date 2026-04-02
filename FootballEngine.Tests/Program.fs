@@ -11,15 +11,16 @@ open FootballEngine.Tests.TickSchedulerTests
 
 [<EntryPoint>]
 let main argv =
-    let matchTests =
+
+    let allMatchTests =
         testList
-            "Match"
-            [ singleMatchTests
-              statisticalTests |> testSequenced
-              errorHandlingTests
-              replayTests
-              matchStateOpsTests
-              multiMatchTests ]
+            "Match Engine"
+            [ matchStateOpsTests
+              matchSpatialTests
+              matchPlayerActionTests
+              structuralInvariantTests
+              statisticalTests
+              homeAdvantageTests ]
 
     let engineTests =
         testList "Engine" [ batchTests; doubleSimGuardTests; standingUpdateTests; fixtureIntegrityTests ]
@@ -40,6 +41,13 @@ let main argv =
     let schedulerTests = testList "Scheduler" [ tickSchedulerTests ]
 
     let all =
-        testList "FootballEngine" [ matchTests; engineTests; worldTests; trainingTests; determinismTests; schedulerTests ]
+        testList
+            "FootballEngine"
+            [ allMatchTests
+              engineTests
+              worldTests
+              trainingTests
+              determinismTests
+              schedulerTests ]
 
     runTestsWithCLIArgs [ Verbosity LogLevel.Verbose ] argv all

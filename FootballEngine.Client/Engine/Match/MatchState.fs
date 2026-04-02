@@ -4,7 +4,21 @@ open System
 open FootballEngine.Domain
 open TacticalInstructions
 
-module MatchState =
+module ClubSide =
+    let ofClubId (clubId: ClubId) (s: MatchState) : ClubSide =
+        if clubId = s.Home.Id then HomeClub else AwayClub
+
+    let toClubId (side: ClubSide) (s: MatchState) : ClubId =
+        match side with
+        | HomeClub -> s.Home.Id
+        | AwayClub -> s.Away.Id
+
+    let teamSide (side: ClubSide) (s: MatchState) : TeamSide =
+        match side with
+        | HomeClub -> s.HomeSide
+        | AwayClub -> s.AwaySide
+
+module MatchStateOps =
 
     type TacticsConfig =
         { PressureDistance: float
@@ -15,31 +29,31 @@ module MatchState =
 
     let private baseTacticsConfig =
         function
-        | Balanced ->
+        | TeamTactics.Balanced ->
             { PressureDistance = 0.0
               UrgencyMultiplier = 1.0
               ForwardPush = 0.0
               DefensiveDrop = 0.0
               PressingIntensity = 1.0 }
-        | Attacking ->
+        | TeamTactics.Attacking ->
             { PressureDistance = 8.0
               UrgencyMultiplier = 1.15
               ForwardPush = 10.0
               DefensiveDrop = -5.0
               PressingIntensity = 1.2 }
-        | Defensive ->
+        | TeamTactics.Defensive ->
             { PressureDistance = -10.0
               UrgencyMultiplier = 0.9
               ForwardPush = -5.0
               DefensiveDrop = 8.0
               PressingIntensity = 0.7 }
-        | Pressing ->
+        | TeamTactics.Pressing ->
             { PressureDistance = 12.0
               UrgencyMultiplier = 1.1
               ForwardPush = 8.0
               DefensiveDrop = -3.0
               PressingIntensity = 1.5 }
-        | Counter ->
+        | TeamTactics.Counter ->
             { PressureDistance = -6.0
               UrgencyMultiplier = 1.2
               ForwardPush = -8.0
@@ -59,15 +73,19 @@ module MatchState =
           DefensiveDrop = baseCfg.DefensiveDrop - mentalityMod * 5.0 - defensiveLineMod * 0.5
           PressingIntensity = baseCfg.PressingIntensity * (1.0 + pressingMod) }
 
-    let flipPossession =
-        function
-        | Home -> Away
-        | Away -> Home
+    let phaseFromBallZone (dir: AttackDir) (x: float) =
+        let effectiveX =
+            match dir with
+            | LeftToRight -> x
+            | RightToLeft -> 100.0 - x
 
-    let phaseFromBallZone (x: float) =
-        if x < 30.0 || x > 70.0 then BuildUp
-        elif x >= 40.0 && x <= 60.0 then Midfield
+        if effectiveX < 30.0 then BuildUp
+        elif effectiveX <= 70.0 then Midfield
         else Attack
+
+    let adjustMomentum (dir: AttackDir) (delta: float) (s: MatchState) : MatchState =
+        let signedDelta = AttackDir.momentumDelta dir delta
+        { s with Momentum = Math.Clamp(s.Momentum + signedDelta, -10.0, 10.0) }
 
     let activeIndices (players: Player[]) (sidelined: Map<PlayerId, PlayerOut>) =
         players
@@ -75,23 +93,23 @@ module MatchState =
         |> Array.filter (fun (_, p) -> not (Map.containsKey p.Id sidelined))
         |> Array.map fst
 
-    let goalDiff (isHome: bool) (s: MatchState) =
-        if isHome then
+    let goalDiff (clubId: ClubId) (s: MatchState) =
+        if clubId = s.Home.Id then
             s.HomeScore - s.AwayScore
         else
             s.AwayScore - s.HomeScore
 
-    let pressureMultiplier (isHome: bool) (s: MatchState) =
-        1.1 - float (max -2 (min 2 (goalDiff isHome s))) * 0.25
+    let pressureMultiplier (clubId: ClubId) (s: MatchState) =
+        1.1 - float (max -2 (min 2 (goalDiff clubId s))) * 0.25
 
     let homeSide (s: MatchState) = s.HomeSide
     let awaySide (s: MatchState) = s.AwaySide
 
-    let side (isHome: bool) (s: MatchState) =
-        if isHome then s.HomeSide else s.AwaySide
+    let side (clubId: ClubId) (s: MatchState) =
+        if clubId = s.Home.Id then s.HomeSide else s.AwaySide
 
-    let withSide (isHome: bool) (ts: TeamSide) (s: MatchState) =
-        if isHome then
+    let withSide (clubId: ClubId) (ts: TeamSide) (s: MatchState) =
+        if clubId = s.Home.Id then
             { s with HomeSide = ts }
         else
             { s with AwaySide = ts }
@@ -124,8 +142,8 @@ module MatchState =
                     Position = defaultSpatial 50.0 50.0
                     LastTouchBy = None } }
 
-    let awardGoal (scoringTeam: Possession) (scorerId: PlayerId option) (second: int) (s: MatchState) =
-        let isHome = scoringTeam = Home
+    let awardGoal (scoringClub: ClubSide) (scorerId: PlayerId option) (second: int) (s: MatchState) =
+        let isHome = scoringClub = HomeClub
         let clubId = if isHome then s.Home.Id else s.Away.Id
 
         let s' =
@@ -134,7 +152,7 @@ module MatchState =
                 AwayScore = if isHome then s.AwayScore else s.AwayScore + 1
                 Momentum = Math.Clamp(s.Momentum + (if isHome then 3.0 else -3.0), -10.0, 10.0) }
             |> resetBallToCenter
-            |> fun s'' -> { s'' with Possession = flipPossession scoringTeam }
+            |> fun s'' -> { s'' with AttackingClub = ClubSide.flip scoringClub }
 
         let events =
             match scorerId with

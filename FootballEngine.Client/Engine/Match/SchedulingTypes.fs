@@ -36,9 +36,9 @@ module SchedulingTypes =
         | DuelTick of chainDepth: int
         | PhysicsTick
         | FreeKickTick of kicker: PlayerId * position: Spatial * chainDepth: int
-        | CornerTick of team: Possession * chainDepth: int
+        | CornerTick of club: ClubSide * chainDepth: int
         | PenaltyTick of kicker: PlayerId * isHome: bool
-        | ThrowInTick of team: Possession * chainDepth: int
+        | ThrowInTick of club: ClubSide * chainDepth: int
         | GoalKickTick
         | KickOffTick
         | HalfTimeTick

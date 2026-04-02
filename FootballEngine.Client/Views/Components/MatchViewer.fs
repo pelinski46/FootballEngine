@@ -238,9 +238,9 @@ module MatchViewer =
 
     let private possessionOverlay (s: MatchState) : IView =
         let name, color =
-            match s.Possession with
-            | Home -> s.Home.Name, Theme.AccentAlt
-            | Away -> s.Away.Name, Theme.Danger
+            match s.AttackingClub with
+            | HomeClub -> s.Home.Name, Theme.AccentAlt
+            | AwayClub -> s.Away.Name, Theme.Danger
 
         hudPill 10.0 10.0
         <| StackPanel.create

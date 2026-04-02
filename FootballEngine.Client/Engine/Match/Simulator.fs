@@ -5,8 +5,9 @@ open FootballEngine.Domain
 open FootballEngine.MatchPlayerMovement
 open FootballEngine.MatchPlayerDecision
 open FootballEngine.MatchPlayerAction
+open FootballEngine.MatchStateOps
 open FootballEngine.Stats
-open MatchState
+
 
 module MatchSimulator =
 
@@ -33,6 +34,7 @@ module MatchSimulator =
 
     let private applyFatigue (s: MatchState) : MatchState =
         let ballX = s.Ball.Position.X
+        let dir = AttackDir.ofClubSide s.AttackingClub
 
         let drain (ts: TeamSide) (pressing: bool) (fatigueMultiplier: float) =
             { ts with
@@ -47,36 +49,26 @@ module MatchSimulator =
                         ts.Conditions
                         ts.Players }
 
+        let homePressingThird =
+            match dir with
+            | LeftToRight -> ballX < 30.0
+            | RightToLeft -> ballX > 70.0
+
+        let awayPressingThird =
+            match dir with
+            | LeftToRight -> ballX > 70.0
+            | RightToLeft -> ballX < 30.0
+
         s
-        |> withSide true (drain (homeSide s) (ballX > 70.0) (1.0 - BalanceConfig.HomeFatigueReduction))
-        |> withSide false (drain (awaySide s) (ballX < 30.0) 1.0)
+        |> withSide s.Home.Id (drain (homeSide s) homePressingThird (1.0 - BalanceConfig.HomeFatigueReduction))
+        |> withSide s.Away.Id (drain (awaySide s) awayPressingThird 1.0)
 
     open SchedulingTypes
 
     let private physicsDt = 0.5
 
     let private generateInitialTicks (init: MatchState) : ScheduledTick list =
-        let rec duelTicks acc t seqId =
-            if t >= 95 * 60 then
-                List.rev acc, seqId
-            else
-                let interval = normalInt 25.0 5.0 15 35
-                let t' = t + interval
-
-                if t' < 95 * 60 then
-                    let variation = normalInt 0.0 5.0 -8 8
-
-                    let tick =
-                        { Second = t' + variation
-                          Priority = TickPriority.Duel
-                          SequenceId = seqId
-                          Kind = DuelTick 0 }
-
-                    duelTicks (tick :: acc) t' (seqId + 1L)
-                else
-                    List.rev acc, seqId
-
-        let duel, seqAfterDuel = duelTicks [] 0 0L
+        let seqAfterDuel = 0L
 
         let physics =
             [ for sec in 30..30 .. (95 * 60) ->
@@ -106,7 +98,6 @@ module MatchSimulator =
             Kind = FullTimeTick } ]
         |> List.append subs
         |> List.append physics
-        |> List.append duel
 
     let private runPlayerChain
         (homeId: ClubId)
@@ -136,7 +127,19 @@ module MatchSimulator =
                     | _ -> lastDef
 
                 let newState, newEvents, nextIntent = resolve homeId second intent state
-                loop newState (newEvents @ events) nextIntent (depth + 1) lastAtt' lastDef'
+
+                let shouldTerminate =
+                    newEvents
+                    |> List.exists (fun e ->
+                        match e.Type with
+                        | MatchEventType.Goal
+                        | FoulCommitted -> true
+                        | _ -> false)
+
+                if shouldTerminate then
+                    newState, List.rev (newEvents @ events), lastAtt', lastDef'
+                else
+                    loop newState (newEvents @ events) nextIntent (depth + 1) lastAtt' lastDef'
 
         loop s [] (decide s) 0 None None
 
@@ -211,8 +214,9 @@ module MatchSimulator =
 
         | DuelTick chainDepth ->
             let s1 = s |> updatePlayerVelocities physicsDt
-            let s2, playerEvents, att, def = runPlayerChain homeId tick.Second s1
-            let s3 = s2 |> MatchBall.updatePhysics physicsDt |> Pitch.updatePositions physicsDt
+            let s1b = s1 |> Pitch.updatePositions physicsDt
+            let s2, playerEvents, att, def = runPlayerChain homeId tick.Second s1b
+            let s3 = s2 |> MatchBall.updatePhysics physicsDt
             let s4, refereeEvents, refereeIntents = runRefereeStep tick.Second att def s3
             let s5, managerEvents = runManagerStep tick.Second homeSquad awaySquad s4
             let finalState = s5 |> applyFatigue
@@ -291,7 +295,7 @@ module MatchSimulator =
                             [ { Second = tick.Second + 1
                                 Priority = TickPriority.SetPiece
                                 SequenceId = 0L
-                                Kind = CornerTick(finalState.Possession, chainDepth + 1) } ]
+                                Kind = CornerTick(finalState.AttackingClub, chainDepth + 1) } ]
                         | Some(SetPiece Corner) -> []
                         | _ -> []
 
@@ -322,6 +326,20 @@ module MatchSimulator =
 
             let finalSpawned = spawned @ managerReactions
 
+            let spawnedWithNextDuel =
+                let baseInterval = normalInt 25.0 5.0 15 35
+                let momentumFactor = 1.0 - Math.Abs(finalState.Momentum) * 0.03
+                let interval = int (float baseInterval * momentumFactor) |> max 10
+
+                if tick.Second + interval < 95 * 60 then
+                    { Second = tick.Second + interval
+                      Priority = TickPriority.Duel
+                      SequenceId = 0L
+                      Kind = DuelTick 0 }
+                    :: finalSpawned
+                else
+                    finalSpawned
+
             let finalTransition =
                 match injuryIntent with
                 | Some _ when chainDepth < 6 -> Some(Stopped Injury)
@@ -333,11 +351,20 @@ module MatchSimulator =
 
             { State = finalState
               Events = allEvents
-              SpawnedTicks = finalSpawned
+              SpawnedTicks = spawnedWithNextDuel
               PlayStateTransition = finalTransition }
 
         | FreeKickTick(kickerId, _position, _chainDepth) ->
-            let kicker = allPlayers |> List.find (fun p -> p.Id = kickerId)
+            let kicker =
+                seq {
+                    yield! s.HomeSide.Players
+                    yield! s.AwaySide.Players
+                }
+                |> Seq.tryFind (fun p -> p.Id = kickerId)
+                |> Option.defaultWith (fun () ->
+
+                    s.HomeSide.Players.[0])
+
             let intent = ExecuteFreeKick kicker
             let newState, events, _ = resolve homeId tick.Second intent s
 
@@ -346,7 +373,7 @@ module MatchSimulator =
               SpawnedTicks = []
               PlayStateTransition = Some LivePlay }
 
-        | CornerTick(_team, _chainDepth) ->
+        | CornerTick(_club, _chainDepth) ->
             let intent = ExecuteCorner
             let newState, events, _ = resolve homeId tick.Second intent s
 
@@ -378,6 +405,7 @@ module MatchSimulator =
 
         | ManagerReactionTick _trigger ->
             let newState, events = runManagerStep tick.Second homeSquad awaySquad s
+
             { State = newState
               Events = events
               SpawnedTicks = []
@@ -416,6 +444,14 @@ module MatchSimulator =
               Snapshots = snapshots
               MatchEndScheduled = false
               SequenceCounter = scheduler.Count |> int64 }
+
+        let firstDuelInterval = normalInt 25.0 5.0 15 35
+
+        scheduler.Insert
+            { Second = firstDuelInterval
+              Priority = TickPriority.Duel
+              SequenceId = -1L
+              Kind = DuelTick 0 }
 
         let allPlayers = homeSquad @ awaySquad
 
@@ -485,17 +521,16 @@ module MatchSimulator =
         |> Option.map Ok
         |> Option.defaultValue (Error(MissingLineup club.Name))
 
-    let private toCoords slotX slotY isHome =
-        if isHome then
-            (1.0 - slotY) * 100.0, slotX * 100.0
-        else
-            slotY * 100.0, slotX * 100.0
+    let private toCoords slotX slotY (clubSide: ClubSide) =
+        match clubSide with
+        | HomeClub -> slotY * 100.0, slotX * 100.0
+        | AwayClub -> (1.0 - slotY) * 100.0, slotX * 100.0
 
     let private extractLineup
         (club: Club)
         (headCoach: Staff)
         (players: Map<PlayerId, Player>)
-        (isHome: bool)
+        (clubSide: ClubSide)
         : Result<(Player * float * float)[] * TeamTactics * TacticalInstructions option, SimulationError> =
         match headCoach.Attributes.Coaching.Lineup with
         | None -> Error(MissingLineup club.Name)
@@ -508,7 +543,7 @@ module MatchSimulator =
                         players
                         |> Map.tryFind pid
                         |> Option.map (fun p ->
-                            let x, y = toCoords s.X s.Y isHome
+                            let x, y = toCoords s.X s.Y clubSide
                             p, x, y)))
                 |> Array.ofList
 
@@ -562,7 +597,7 @@ module MatchSimulator =
           HomeScore = 0
           AwayScore = 0
           Ball = defaultBall
-          Possession = Home
+          AttackingClub = HomeClub
           Momentum = 0.0
           HomeSide =
             { Players = hp
@@ -605,10 +640,10 @@ module MatchSimulator =
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
 
                 let homeS, _, _ =
-                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(homeKicker, true, kickNum)) s
+                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(homeKicker, HomeClub, kickNum)) s
 
                 let awayS, _, _ =
-                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(awayKicker, false, kickNum)) homeS
+                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(awayKicker, AwayClub, kickNum)) homeS
 
                 let homeScored = homeS.HomeScore > s.HomeScore
                 let awayScored = awayS.AwayScore > homeS.AwayScore
@@ -675,8 +710,8 @@ module MatchSimulator =
         result {
             let! homeCoach = resolveCoach home staff
             let! awayCoach = resolveCoach away staff
-            let! homeData, homeTactics, homeInstructions = extractLineup home homeCoach players true
-            let! awayData, awayTactics, awayInstructions = extractLineup away awayCoach players false
+            let! homeData, homeTactics, homeInstructions = extractLineup home homeCoach players HomeClub
+            let! awayData, awayTactics, awayInstructions = extractLineup away awayCoach players AwayClub
             do! validateLineups home homeData away awayData
 
             let ctx = buildContext homeData awayData

@@ -84,13 +84,10 @@ module MatchOutcome =
           Fixture: MatchFixture
           HomeScore: int
           AwayScore: int
-          FinalState: MatchState }
+          InjuredPlayers: Set<PlayerId> }
 
     let private injurySeverityWeights =
-        [ 0.30, Minor
-          0.40, Moderate
-          0.20, Major
-          0.10, Severe ]
+        [ 0.30, Minor; 0.40, Moderate; 0.20, Major; 0.10, Severe ]
 
     let applyOutcomes
         (fixtureToComp: Map<MatchId, CompetitionId>)
@@ -132,12 +129,7 @@ module MatchOutcome =
 
         let injuredPlayers =
             outcomes
-            |> Array.collect (fun o ->
-                o.FinalState.HomeSide.Sidelined
-                |> Map.toArray
-                |> Array.append (o.FinalState.AwaySide.Sidelined |> Map.toArray)
-                |> Array.choose (fun (pid, status) ->
-                    if status = SidelinedByInjury then Some pid else None))
+            |> Array.collect (fun o -> o.InjuredPlayers |> Set.toArray)
             |> Set.ofSeq
 
         if injuredPlayers.IsEmpty then
@@ -151,13 +143,16 @@ module MatchOutcome =
                     playerOpt
                     |> Option.map (fun p ->
                         let severity = pickWeighted injurySeverityWeights
+
                         let until =
                             match severity with
                             | Minor -> currentDate.AddDays 7.0
                             | Moderate -> currentDate.AddDays 21.0
                             | Major -> currentDate.AddDays 60.0
                             | Severe -> currentDate.AddDays 120.0
-                        { p with Status = Injured(severity, until) }))
+
+                        { p with
+                            Status = Injured(severity, until) }))
 
             { withUpdatedMorale with
                 Players = injuredPlayers |> Seq.fold applyInjury withUpdatedMorale.Players }

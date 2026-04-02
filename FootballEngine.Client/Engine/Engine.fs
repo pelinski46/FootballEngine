@@ -25,19 +25,27 @@ module Engine =
                 (fun (outs, errs, ls) (id, fixture, home, away, result) ->
                     match result with
                     | Error e -> outs, (id, e) :: errs, ls
-                    | Ok(h, a, evs, finalState) ->
+                    | Ok(h, a, _evs, finalState) ->
+                        // Extract only injured players before releasing the large MatchState
+                        let injured =
+                            finalState.HomeSide.Sidelined
+                            |> Map.toSeq
+                            |> Seq.append (finalState.AwaySide.Sidelined |> Map.toSeq)
+                            |> Seq.choose (fun (pid, status) -> if status = SidelinedByInjury then Some pid else None)
+                            |> Set.ofSeq
+
                         let updatedFixture =
                             { fixture with
                                 Played = true
                                 HomeScore = Some h
                                 AwayScore = Some a
-                                Events = evs }
+                                Events = [] } // AI matches don't need event history
 
                         { FixtureId = id
                           Fixture = updatedFixture
                           HomeScore = h
                           AwayScore = a
-                          FinalState = finalState }
+                          InjuredPlayers = injured }
                         :: outs,
                         errs,
                         $"{home.Name} {h}-{a} {away.Name}" :: ls)
@@ -217,33 +225,35 @@ module Engine =
         if fixturesByDate.IsEmpty then
             Error NoFixturesToPlay
         else
-            let sortedDates = fixturesByDate |> Map.keys |> Seq.sort |> Seq.toList
+            let sortedDates = fixturesByDate |> Map.keys |> Seq.sort |> Array.ofSeq
+            let mutable currentGs = gs
+            let mutable simError: SeasonError option = None
+            let mutable i = 0
 
-            let rec simulateDates (currentGs: GameState) (dates: DateTime list) =
-                match dates with
-                | [] ->
-                    Ok
-                        { Summary = SeasonManager.computeSeasonSummary currentGs
-                          SeasonFinalGs = currentGs
-                          NewGs = runSeasonPipeline currentGs }
-                | date :: remainingDates ->
-                    let dayFixtures = fixturesByDate.[date]
+            while i < sortedDates.Length && simError.IsNone do
+                let date = sortedDates[i]
+                let dayFixtures = fixturesByDate.[date]
 
-                    if dayFixtures.IsEmpty then
-                        simulateDates currentGs remainingDates
-                    else
-                        match processDayFixtures currentGs dayFixtures with
-                        | Ok(updatedGs, _) ->
-                            let gsWithDate = { updatedGs with CurrentDate = date }
-                            simulateDates gsWithDate remainingDates
-                        | Error errors ->
+                if not dayFixtures.IsEmpty then
+                    match processDayFixtures currentGs dayFixtures with
+                    | Ok(updatedGs, _) -> currentGs <- { updatedGs with CurrentDate = date }
+                    | Error errors ->
+                        simError <-
                             errors
                             |> List.map (fun (_, e) -> string e)
                             |> String.concat ", "
                             |> SimulationErrors
-                            |> Error
+                            |> Some
 
-            simulateDates gs sortedDates
+                i <- i + 1
+
+            match simError with
+            | Some e -> Error e
+            | None ->
+                Ok
+                    { Summary = SeasonManager.computeSeasonSummary currentGs
+                      SeasonFinalGs = currentGs
+                      NewGs = runSeasonPipeline currentGs }
 
     type UserMatchDayResult =
         { DayResult: DayResult
@@ -285,6 +295,13 @@ module Engine =
                 let h = replay.Final.HomeScore
                 let a = replay.Final.AwayScore
 
+                let injured =
+                    replay.Final.HomeSide.Sidelined
+                    |> Map.toSeq
+                    |> Seq.append (replay.Final.AwaySide.Sidelined |> Map.toSeq)
+                    |> Seq.choose (fun (pid, status) -> if status = SidelinedByInjury then Some pid else None)
+                    |> Set.ofSeq
+
                 let updatedFixture =
                     { fixture with
                         Played = true
@@ -297,7 +314,7 @@ module Engine =
                       Fixture = updatedFixture
                       HomeScore = h
                       AwayScore = a
-                      FinalState = replay.Final }
+                      InjuredPlayers = injured }
 
                 let finalGs = applyOutcomes (fixtureToCompMap gsReady) [| outcome |] gsReady
 

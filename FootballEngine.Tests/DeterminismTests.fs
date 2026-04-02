@@ -96,7 +96,7 @@ let determinismTests =
                   Expect.equal s1.Second s2.Second $"snapshot[{i}].Second mismatch"
                   Expect.equal s1.HomeScore s2.HomeScore $"snapshot[{i}].HomeScore mismatch"
                   Expect.equal s1.AwayScore s2.AwayScore $"snapshot[{i}].AwayScore mismatch"
-                  Expect.equal s1.Possession s2.Possession $"snapshot[{i}].Possession mismatch")
+                  Expect.equal s1.AttackingClub s2.AttackingClub $"snapshot[{i}].AttackingClub mismatch")
           }
 
           test "same seed produces same goal events" {

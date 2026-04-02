@@ -51,7 +51,7 @@ module UpdateSim =
                     String.concat " · " goals
 
             let title =
-                $"{outcome}  {clubName fixture.HomeClubId} {h}–{a} {clubName fixture.AwayClubId}"
+                $"{outcome}  {clubName fixture.HomeClubId} {h}-{a} {clubName fixture.AwayClubId}"
 
             state |> pushNotification icon title body
         | _ -> state
@@ -94,7 +94,7 @@ module UpdateSim =
 
         let nextState =
             { state with
-                Mode = InGame (result.GameState, managerEmployment result.GameState)
+                Mode = InGame(result.GameState, managerEmployment result.GameState)
                 IsProcessing = false
                 LogMessages = logs @ state.LogMessages |> List.truncate 30 }
             |> applyMatchNotifs result.GameState result.PlayedFixtures
@@ -115,7 +115,7 @@ module UpdateSim =
                 |> List.fold (fun acc msg -> GameState.addInboxMessage msg acc) result.GameState
 
             { nextState with
-                Mode = InGame (gs, managerEmployment gs)
+                Mode = InGame(gs, managerEmployment gs)
                 PrevUserClubSkills = None
                 PrevUserClubStatus = None }
         | _ -> nextState
@@ -170,18 +170,18 @@ module UpdateSim =
                     | None -> gsAfterSeasonStart
 
                 { state with
-                    Mode = InGame (gs, managerEmployment gs)
+                    Mode = InGame(gs, managerEmployment gs)
                     PrevUserClubSkills = None
                     PrevUserClubStatus = None }
             | None ->
                 { state with
-                    Mode = InGame (gsAfterSeasonStart, managerEmployment gsAfterSeasonStart)
+                    Mode = InGame(gsAfterSeasonStart, managerEmployment gsAfterSeasonStart)
                     PrevUserClubSkills = None
                     PrevUserClubStatus = None }
 
         let prevGs =
             match state.Mode with
-            | InGame (gs, _) -> gs
+            | InGame(gs, _) -> gs
             | _ -> result.NewGs
 
         let nextState =
@@ -200,50 +200,74 @@ module UpdateSim =
     let rec handle (msg: SimMsg) (state: State) : State * Cmd<Msg> =
         let getGs () =
             match state.Mode with
-            | InGame (gs, _) -> gs
+            | InGame(gs, _) -> gs
             | _ -> failwith "Engine call attempted outside of InGame state"
 
         match msg with
         | Advance days ->
+   
+
             if state.IsProcessing then
+  
                 state, Cmd.none
             else
                 let gs = getGs ()
+
+                let totalF =
+                    gs.Competitions
+                    |> Map.toSeq
+                    |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.count)
+
+                let playedF =
+                    gs.Competitions
+                    |> Map.toSeq
+                    |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.filter (fun _ f -> f.Played) |> Map.count)
+
+                printfn
+                    $"""[DBG] Advance OK | Date={gs.CurrentDate.ToString("dd/MM/yyyy")} Season={gs.Season} Fixtures={playedF}/{totalF}"""
+
                 let prevSkills =
                     GameState.getUserSquad gs
                     |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    GameState.getUserSquad gs
-                    |> List.map (fun p -> p.Id, p.Status)
-                    |> Map.ofList
+                    GameState.getUserSquad gs |> List.map (fun p -> p.Id, p.Status) |> Map.ofList
 
                 { state with
                     IsProcessing = true
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
-                Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> advanceDays days gs))
+                Cmd.OfTask.either
+                    (fun () -> Task.Run(fun () -> Engine.advanceDays days gs))
                     ()
                     (SimMsg << AdvanceDone)
+                    (fun ex ->
+                        printfn $"[CRASH] Advance Error: {ex.ToString()}"
+                        SetProcessing false) 
 
         | AdvanceDone result ->
+           
             let nextState = applyDayResult result state
 
             let baseCmd =
                 if result.SeasonComplete then
+           
                     Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
                 else
                     saveCmd result.GameState
 
             if hasUserFixtureToday result.GameState then
+    
                 nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateUserFixture) ]
             else
                 nextState, baseCmd
 
         | SimulateUserFixture ->
+    
+
             if state.IsProcessing then
+            
                 state, Cmd.none
             else
                 { state with IsProcessing = true },
@@ -253,6 +277,7 @@ module UpdateSim =
                     (SimMsg << UserMatchDone)
 
         | UserMatchDone(Ok matchDay) ->
+
             let nextState = applyDayResult matchDay.DayResult state
 
             let withMatch =
@@ -266,71 +291,97 @@ module UpdateSim =
             else
                 withMatch, saveCmd matchDay.DayResult.GameState
 
-        | UserMatchDone(Error _) -> { state with IsProcessing = false }, Cmd.none
+        | UserMatchDone(Error e) ->
+
+            { state with IsProcessing = false }, Cmd.none
 
         | SimulateSeason ->
+            
+
             if state.IsProcessing then
+        
                 state, Cmd.none
             else
                 let gs = getGs ()
+
+            
+
                 let prevSkills =
                     GameState.getUserSquad gs
                     |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    GameState.getUserSquad gs
-                    |> List.map (fun p -> p.Id, p.Status)
-                    |> Map.ofList
+                    GameState.getUserSquad gs |> List.map (fun p -> p.Id, p.Status) |> Map.ofList
 
                 { state with
                     IsProcessing = true
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
-                Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> simulateAndAdvanceSeason gs))
+                Cmd.OfTask.either
+                    (fun () -> Task.Run(fun () -> Engine.simulateAndAdvanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone)
+                    (fun ex ->
+                        printfn $"[CRASH] SimulateSeason Error: {ex.ToString()}"
+                        SetProcessing false)
+
 
         | SeasonAdvanceDone(Ok result) ->
+            let totalNew =
+                result.NewGs.Competitions
+                |> Map.toSeq
+                |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.count)
+
+            
             let nextState = applySeasonResult result state
+
             match nextState.Mode with
-            | InGame (gs, _) -> nextState, saveCmd gs
+            | InGame(gs, _) -> nextState, saveCmd gs
             | _ -> nextState, Cmd.none
 
         | SeasonAdvanceDone(Error NoFixturesToPlay) ->
-            { state with IsProcessing = false } |> addLog "Season already complete", Cmd.none
+
+            handle AdvanceSeason ({ state with IsProcessing = false })
 
         | SeasonAdvanceDone(Error(SimulationErrors msg)) ->
+       
+
             { state with IsProcessing = false }
             |> pushNotification NotificationIcons.error "Sim Season failed" msg,
             Cmd.none
 
         | AdvanceSeason ->
+ 
+
             if state.IsProcessing then
+               
                 state, Cmd.none
             else
                 let gs = getGs ()
+             
+
                 let prevSkills =
                     GameState.getUserSquad gs
                     |> List.map (fun p -> p.Id, p.CurrentSkill)
                     |> Map.ofList
 
                 let prevStatus =
-                    GameState.getUserSquad gs
-                    |> List.map (fun p -> p.Id, p.Status)
-                    |> Map.ofList
+                    GameState.getUserSquad gs |> List.map (fun p -> p.Id, p.Status) |> Map.ofList
 
                 { state with
                     IsProcessing = true
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
-                Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> advanceSeason gs))
+                Cmd.OfTask.either
+                    (fun () -> Task.Run(fun () -> Engine.advanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone << Ok)
+                    (fun ex ->
+                        printfn $"[CRASH] AdvanceSeason Error: {ex.ToString()}"
+                        SetProcessing false)
 
         | SaveGame ->
             match state.Mode with
-            | InGame (gs, _) -> state, saveCmd gs
+            | InGame(gs, _) -> state, saveCmd gs
             | _ -> state, Cmd.none

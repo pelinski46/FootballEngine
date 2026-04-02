@@ -2,10 +2,8 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open FootballEngine.MatchCalc
 open FootballEngine.Stats
-open MatchState
-open PitchMath
+open MatchStateOps
 
 module MatchPlayerMovement =
 
@@ -13,7 +11,7 @@ module MatchPlayerMovement =
         let pace = float p.Physical.Pace
         let accel = float p.Physical.Acceleration
         let cond = float condition / 100.0
-        Math.Clamp((pace * 0.6 + accel * 0.4) / 100.0 * cond * 0.45, 0.05, 0.45)
+        Math.Clamp((pace * 0.6 + accel * 0.4) / 100.0 * cond * BalanceConfig.MoveSpeedBase, BalanceConfig.MoveSpeedMin, BalanceConfig.MoveSpeedMax)
 
     let decideTarget
         (p: Player)
@@ -22,6 +20,7 @@ module MatchPlayerMovement =
         (ballX: float)
         (ballY: float)
         (isPossessing: bool)
+        (dir: AttackDir)
         (tactics: TacticsConfig)
         =
         let positioning = float p.Mental.Positioning / 100.0
@@ -54,19 +53,23 @@ module MatchPlayerMovement =
                 0.0
 
         let compactX =
-            shapeX + tactics.ForwardPush * (if isPossessing then 0.5 else 0.3) + forwardBias
+            shapeX
+            + AttackDir.forwardX dir
+              * tactics.ForwardPush
+              * (if isPossessing then 0.5 else 0.3)
+            + AttackDir.forwardX dir * forwardBias
 
         let compactY = shapeY + tactics.PressureDistance * 0.2
 
         let tx = Math.Clamp(compactX, 2.0, 98.0)
         let ty = Math.Clamp(compactY, 2.0, 98.0)
-        let jitterScale = 0.3 + agility * 0.5
+        let jitterScale = BalanceConfig.JitterBase + agility * BalanceConfig.JitterAgilityMultiplier
 
         Math.Clamp(tx + normalSample 0.0 jitterScale, 2.0, 98.0),
         Math.Clamp(ty + normalSample 0.0 jitterScale, 2.0, 98.0)
 
     let separationForce (myIdx: int) (myPos: float * float) (teamPositions: Spatial[]) (agility: float) =
-        let minDist = 4.0
+        let minDist = BalanceConfig.SeparationMinDistance
         let mx, my = myPos
 
         teamPositions
@@ -78,7 +81,7 @@ module MatchPlayerMovement =
                 let dist = sqrt (dx * dx + dy * dy)
 
                 if dist < minDist && dist > 0.001 then
-                    let strength = (minDist - dist) / minDist * (0.1 + agility * 0.15)
+                    let strength = (minDist - dist) / minDist * (BalanceConfig.SeparationStrength + agility * BalanceConfig.SeparationAgilityMultiplier)
                     fx + dx / dist * strength, fy + dy / dist * strength
                 else
                     fx, fy)
@@ -87,6 +90,7 @@ module MatchPlayerMovement =
     let updatePlayerVelocities (dt: float) (s: MatchState) : MatchState =
         let ballX = s.Ball.Position.X
         let ballY = s.Ball.Position.Y
+        let dir = AttackDir.ofClubSide s.AttackingClub
 
         let updateSide (ts: TeamSide) (isPossessing: bool) =
             let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
@@ -97,7 +101,10 @@ module MatchPlayerMovement =
                     let sp = ts.Positions[i]
                     let baseSp = ts.BasePositions[i]
                     let cond = ts.Conditions[i]
-                    let tx, ty = decideTarget p baseSp.X baseSp.Y ballX ballY isPossessing tacticsCfg
+
+                    let tx, ty =
+                        decideTarget p baseSp.X baseSp.Y ballX ballY isPossessing dir tacticsCfg
+
                     let speed = moveSpeed p cond
 
                     let sepX, sepY =
@@ -110,6 +117,8 @@ module MatchPlayerMovement =
 
             { ts with Positions = newPositions }
 
+        let homeIsPossessing = s.AttackingClub = HomeClub
+
         s
-        |> withSide true (updateSide (homeSide s) (s.Possession = Home))
-        |> withSide false (updateSide (awaySide s) (s.Possession = Away))
+        |> withSide s.Home.Id (updateSide (homeSide s) homeIsPossessing)
+        |> withSide s.Away.Id (updateSide (awaySide s) (not homeIsPossessing))

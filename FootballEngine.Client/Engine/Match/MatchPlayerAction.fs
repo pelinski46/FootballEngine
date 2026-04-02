@@ -4,7 +4,7 @@ open System
 open FootballEngine.Domain
 open FootballEngine.MatchCalc
 open FootballEngine.Stats
-open MatchState
+open MatchStateOps
 open MatchSpatial
 open MatchPlayerDecision
 
@@ -15,6 +15,18 @@ module MatchPlayerAction =
           PlayerId = playerId
           ClubId = clubId
           Type = t }
+
+    let private ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (s: MatchState) =
+        let bX = s.Ball.Position.X
+        let bY = s.Ball.Position.Y
+        let dx = targetX - bX
+        let dy = targetY - bY
+        let dist = sqrt (dx * dx + dy * dy)
+
+        if dist < 0.01 then
+            s |> withBallVelocity 0.0 0.0 vz
+        else
+            s |> withBallVelocity (dx / dist * speed) (dy / dist * speed) vz
 
     let private finishingBonusForPosition =
         function
@@ -43,7 +55,7 @@ module MatchPlayerAction =
 
     let private resolveShotOutcome
         (second: int)
-        (attIsHome: bool)
+        (ctx: ActionContext)
         (attSide: TeamSide)
         (defSide: TeamSide)
         (shooter: Player)
@@ -53,32 +65,43 @@ module MatchPlayerAction =
         (s: MatchState)
         =
         let shooterIdx = attSide.Players |> Array.findIndex (fun p -> p.Id = shooterId)
+        let attClubId = ClubSide.toClubId ctx.AttSide s
 
         let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
-        let composure = pressureMultiplier attIsHome s * tacticsCfg.UrgencyMultiplier
-        let u = MatchManager.urgency attIsHome s * tacticsCfg.UrgencyMultiplier
-        let dist = (if attIsHome then 100.0 - bX else bX) * 0.15
-        let clubId = if attIsHome then s.Home.Id else s.Away.Id
+        let composure = pressureMultiplier attClubId s * tacticsCfg.UrgencyMultiplier
+        let u = MatchManager.urgency attClubId s * tacticsCfg.UrgencyMultiplier
 
-        let homeComposure =
-            if attIsHome then
-                BalanceConfig.HomeShotComposureBonus
-            else
-                0.0
+        let dist =
+            AttackDir.distToGoal bX ctx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
+
+        let clubId = attClubId
+        let homeComposure = ctx.AttBonus.ShotCompos
 
         let finishing = calcShotPower shooter shooterCond composure u dist homeComposure
 
-        let dirSign = if attIsHome then 1.0 else -1.0
-        let finishingNorm = Math.Clamp(finishing / 300.0, 0.2, 1.0)
-        let speed = 20.0 + finishingNorm * 30.0
-        let angleSpread = 0.3 * (1.0 - finishingNorm)
+        let dirSign = AttackDir.forwardX ctx.Dir
+
+        let finishingNorm =
+            Math.Clamp(finishing / 300.0, BalanceConfig.ShotFinishingMin, BalanceConfig.ShotFinishingMax)
+
+        let speed =
+            BalanceConfig.ShotBaseSpeed + finishingNorm * BalanceConfig.ShotSpeedMultiplier
+
+        let angleSpread = BalanceConfig.ShotAngleSpreadBase * (1.0 - finishingNorm)
         let angle = normalSample 0.0 angleSpread
         let vx = dirSign * speed * Math.Cos(angle)
         let vy = speed * Math.Sin(angle)
-        let vz = normalSample 4.0 1.5 |> Math.Abs
+
+        let vz =
+            normalSample BalanceConfig.ShotVzBase BalanceConfig.ShotVzVariance |> Math.Abs
 
         let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
-        let onTarget = bernoulli (0.5 + finishingNorm * 0.3)
+
+        let onTarget =
+            bernoulli (
+                BalanceConfig.ShotOnTargetBase
+                + finishingNorm * BalanceConfig.ShotOnTargetMultiplier
+            )
 
         let gkSaves =
             onTarget
@@ -99,10 +122,19 @@ module MatchPlayerAction =
                 { s'' with
                     Ball =
                         { s''.Ball with
+                            Position =
+                                { s''.Ball.Position with
+                                    X = bX
+                                    Y = s''.Ball.Position.Y }
                             LastTouchBy = Some shooter.Id }
-                    Momentum = Math.Clamp(s''.Momentum + (if attIsHome then 0.5 else -0.5), -10.0, 10.0) }
+                    Momentum =
+                        Math.Clamp(
+                            s''.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.DuelMomentumBonus,
+                            -10.0,
+                            10.0
+                        ) }
 
-        let gkClubId = if attIsHome then s.Away.Id else s.Home.Id
+        let gkClubId = ClubSide.toClubId (ClubSide.flip ctx.AttSide) s
 
         let events =
             match gk with
@@ -112,49 +144,56 @@ module MatchPlayerAction =
 
         s', events, PlayerIdle
 
-    let private resolveDuel
-        (homeId: ClubId)
-        (second: int)
-        (att: Player)
-        (def: Player)
-        (s: MatchState)
-        =
-        let attIsHome = s.Possession = Home
-        let attSide = side attIsHome s
-        let defSide = side (not attIsHome) s
-        let ai = attSide.Players |> Array.tryFindIndex (fun p -> p.Id = att.Id) |> Option.defaultValue 0
-        let di = defSide.Players |> Array.tryFindIndex (fun p -> p.Id = def.Id) |> Option.defaultValue 0
+    let private resolveDuel (homeId: ClubId) (second: int) (att: Player) (def: Player) (s: MatchState) =
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let defClubId = ClubSide.toClubId ctx.DefSide s
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let defSide = ClubSide.teamSide ctx.DefSide s
+
+        let ai =
+            attSide.Players
+            |> Array.tryFindIndex (fun p -> p.Id = att.Id)
+            |> Option.defaultValue 0
+
+        let di =
+            defSide.Players
+            |> Array.tryFindIndex (fun p -> p.Id = def.Id)
+            |> Option.defaultValue 0
+
         let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
-        let homeBonus = if attIsHome then BalanceConfig.HomeDuelAttackBonus else 0.0
 
-        let homeDefBonus =
-            if not attIsHome then
-                BalanceConfig.HomeDuelDefenseBonus
-            else
-                0.0
+        let attackingBonus = ctx.AttBonus.AttackDuel
+        let homeDefBonus = ctx.DefBonus.DefendDuel
 
-        let skillBonus = float (att.CurrentSkill - def.CurrentSkill) * 0.12
-        let moraleBonus = humanPerformance 1 att.Morale att.Morale * 0.05
-        let condBonus = physicalVariation att.Condition * 3.0
+        let skillBonus =
+            float (att.CurrentSkill - def.CurrentSkill)
+            * BalanceConfig.DuelSkillBonusMultiplier
 
-        let attClubId = clubIdOf att s
-        let defClubId = clubIdOf def s
+        let moraleBonus =
+            humanPerformance 1 att.Morale att.Morale
+            * BalanceConfig.DuelMoraleBonusMultiplier
+
+        let condBonus =
+            physicalVariation att.Condition * BalanceConfig.DuelConditionBonusMultiplier
 
         let repBonus =
             let attRep = (if attClubId = s.Home.Id then s.Home else s.Away).Reputation
             let defRep = (if defClubId = s.Home.Id then s.Home else s.Away).Reputation
-            float (attRep - defRep) * 0.002
+            float (attRep - defRep) * BalanceConfig.DuelReputationBonusMultiplier
 
-        let momentum = if s.Possession = Home then s.Momentum else -s.Momentum
-        let pressure = (pressureMultiplier attIsHome s - 1.0) * 5.0
-        let u = MatchManager.urgency attIsHome s * tacticsCfg.UrgencyMultiplier
+        let momentum = ctx.Momentum
+
+        let pressure = (pressureMultiplier attClubId s - 1.0) * 5.0
+        let u = MatchManager.urgency attClubId s * tacticsCfg.UrgencyMultiplier
         let pressNoise = pressureNoise att.Mental.Composure u
         let bX, bY = ballXY s
         let aX, aY = spatialXY attSide.Positions[ai]
         let dX, dY = spatialXY defSide.Positions[di]
 
         let diff =
-            attackEffort (phaseFromBallZone bX) att attSide.Conditions[ai] * u + homeBonus
+            attackEffort (phaseFromBallZone ctx.Dir bX) att attSide.Conditions[ai] * u
+            + attackingBonus
             - homeDefBonus
             + skillBonus
             + moraleBonus
@@ -166,33 +205,33 @@ module MatchPlayerAction =
             - defenseEffort def defSide.Conditions[di]
 
         let s' =
-            if logisticBernoulli diff 0.50 then
-                let nx, ny = PitchMath.jitter bX bY aX aY 0.5 10.0 10.0
+            if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
+                let nx, ny =
+                    PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
 
                 { s with
                     Ball =
                         { s.Ball with
                             Position = { s.Ball.Position with X = nx; Y = ny } }
-                    Momentum = Math.Clamp(s.Momentum + 0.5, -10.0, 10.0) }
-            elif logisticBernoulli (-diff) 0.35 then
-                let nx, ny = PitchMath.jitter bX bY dX dY 0.5 2.0 2.0
+                    Momentum = Math.Clamp(s.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0) }
+            elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
+                let nx, ny =
+                    PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
 
                 { s with
-                    Possession = flipPossession s.Possession
+                    AttackingClub = ClubSide.flip ctx.AttSide
                     Ball =
                         { s.Ball with
                             Position = { s.Ball.Position with X = nx; Y = ny } }
                     Momentum = Math.Clamp(s.Momentum - 1.0, -10.0, 10.0) }
             else
-                let nx, ny = PitchMath.jitter bX bY bX bY 0.0 3.0 3.0
+                let nx, ny =
+                    PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
 
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position = { s.Ball.Position with X = nx; Y = ny } } }
+                s |> ballTowards nx ny BalanceConfig.DuelSpeedKeep BalanceConfig.DuelSpeedKeepVz
 
         let next =
-            if s'.Possession = s.Possession then
+            if s'.AttackingClub = ctx.AttSide then
                 decideNextAttack att s'
             else
                 PlayerIdle
@@ -201,341 +240,421 @@ module MatchPlayerAction =
 
     let private resolveShot (second: int) (attacker: Player) (s: MatchState) =
         let bX, _ = ballXY s
+        let ctx = ActionContext.build s
 
-        let inChance =
-            (s.Possession = Home && bX >= 70.0) || (s.Possession = Away && bX <= 30.0)
+        let inChance = ctx.Zone = AttackingZone || ctx.Zone = MidfieldZone
 
         if not inChance then
             s, [], PlayerIdle
         else
-            let attIsHome = s.Possession = Home
-            let quality = shotQuality bX attacker attIsHome
+            let attClubId = ClubSide.toClubId ctx.AttSide s
+            let quality = shotQuality bX attacker ctx.Dir
 
             if quality < BalanceConfig.ShotQualityGate then
                 s, [], ExecutePass attacker
             else
-                let attSide = side attIsHome s
-                let defSide = side (not attIsHome) s
+                let attSide = ClubSide.teamSide ctx.AttSide s
+                let defClubId = ClubSide.toClubId ctx.DefSide s
+                let defSide = ClubSide.teamSide ctx.DefSide s
 
-                let info =
-                    getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
-
-                resolveShotOutcome second attIsHome attSide defSide info.Player info.PlayerId info.Condition bX s
+                match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
+                | None -> s, [], PlayerIdle
+                | Some info ->
+                    resolveShotOutcome second ctx attSide defSide info.Player info.PlayerId info.Condition bX s
 
     let private resolvePass (second: int) (attacker: Player) (s: MatchState) =
-        let isHome = s.Possession = Home
-        let attSide = side isHome s
-        let defSide = side (not isHome) s
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let defClubId = ClubSide.toClubId ctx.DefSide s
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let defSide = ClubSide.teamSide ctx.DefSide s
+        let clubId = attClubId
 
-        let info =
-            getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
+        match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
+        | None -> s, [], PlayerIdle
+        | Some info ->
+            let condition = float info.Condition / 100.0
 
-        let condition = float info.Condition / 100.0
+            let passMean =
+                BalanceConfig.PassBaseMean
+                + float attacker.Technical.Passing / 100.0 * BalanceConfig.PassTechnicalWeight
+                + float attacker.Mental.Vision / 100.0 * BalanceConfig.PassVisionWeight
+                + ctx.AttBonus.PassAcc
 
-        let passMean =
-            0.65
-            + float attacker.Technical.Passing / 100.0 * 0.2
-            + float attacker.Mental.Vision / 100.0 * 0.1
-            + if isHome then BalanceConfig.HomePassAccuracyBonus else 0.0
+            let successChance =
+                betaSample
+                    passMean
+                    (BalanceConfig.PassSuccessShapeAlpha
+                     + condition * BalanceConfig.PassSuccessConditionMultiplier)
 
-        let successChance = betaSample passMean (8.0 + condition * 12.0)
+            match findBestPassTarget attacker s ctx.Dir with
+            | Some(teammate, teammateId, (teammateSpX, teammateSpY)) ->
+                let offside = isOffside teammate teammateSpX s ctx.Dir
 
-        match findBestPassTarget attacker s isHome with
-        | Some(teammate, teammateId, _) ->
-            let teammateIdx = attSide.Players |> Array.findIndex (fun p -> p.Id = teammateId)
-            let offside = isOffsideCheck teammate attSide.Positions[teammateIdx].X s isHome
-
-            if offside then
-                { s with
-                    Possession = flipPossession s.Possession
-                    Momentum = Math.Clamp(s.Momentum - (if isHome then 0.3 else -0.3), -10.0, 10.0) },
-                [ event second attacker.Id clubId (PassIncomplete attacker.Id) ],
-                ExecuteTackle attacker
-            elif bernoulli successChance then
-                let sp = attSide.Positions[teammateIdx]
-
-                let s' =
+                if offside then
                     { s with
-                        Ball =
-                            { s.Ball with
-                                Position =
-                                    { s.Ball.Position with
-                                        X = sp.X
-                                        Y = sp.Y
-                                        Z = 0.0 } }
-                        Momentum = Math.Clamp(s.Momentum + (if isHome then 0.3 else -0.3), -10.0, 10.0) }
+                        AttackingClub = ClubSide.flip ctx.AttSide
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.PassOffsideMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second attacker.Id clubId (PassIncomplete attacker.Id) ],
+                    ExecuteTackle attacker
+                elif bernoulli successChance then
 
-                let next = decideNextAttack teammate s'
+                    let s' =
+                        s
+                        |> ballTowards teammateSpX teammateSpY BalanceConfig.PassSpeed BalanceConfig.PassVz
+                        |> fun s'' ->
+                            { s'' with
+                                Momentum =
+                                    Math.Clamp(
+                                        s''.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.PassSuccessMomentum,
+                                        -10.0,
+                                        10.0
+                                    ) }
 
-                s', [ event second attacker.Id clubId (PassCompleted(attacker.Id, teammate.Id)) ], next
-            else
-                { s with
-                    Possession = flipPossession s.Possession
-                    Momentum = Math.Clamp(s.Momentum - (if isHome then 0.5 else -0.5), -10.0, 10.0) },
-                [ event second attacker.Id clubId (PassIncomplete attacker.Id) ],
-                ExecuteTackle attacker
-        | None -> s, [], ExecuteDribble attacker
+                    let next = decideNextAttack teammate s'
+                    s', [ event second attacker.Id clubId (PassCompleted(attacker.Id, teammate.Id)) ], next
+                else
+                    { s with
+                        AttackingClub = ClubSide.flip ctx.AttSide
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.PassFailMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second attacker.Id clubId (PassIncomplete attacker.Id) ],
+                    ExecuteTackle attacker
+            | None -> s, [], ExecuteDribble attacker
 
     let private resolveDribble (second: int) (attacker: Player) (s: MatchState) =
-        let isHome = s.Possession = Home
-        let attSide = side isHome s
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let clubId = attClubId
 
-        let info =
-            getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
+        match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
+        | None -> s, [], PlayerIdle
+        | Some info ->
+            let ax, ay = spatialXY info.Pos
+            let condition = float info.Condition / 100.0
+            let physVar = physicalVariation attacker.Condition
 
-        let ax, ay = spatialXY info.Pos
-        let condition = float info.Condition / 100.0
-        let physVar = physicalVariation attacker.Condition
+            let attScore =
+                float attacker.Technical.Dribbling * BalanceConfig.DribbleTechnicalWeight
+                + float attacker.Physical.Agility * BalanceConfig.DribbleAgilityWeight
+                + float attacker.Physical.Balance * BalanceConfig.DribbleBalanceWeight
+                + ctx.AttBonus.SetPlay
 
-        let attScore =
-            float attacker.Technical.Dribbling * 0.5
-            + float attacker.Physical.Agility * 0.3
-            + float attacker.Physical.Balance * 0.2
-            + if isHome then BalanceConfig.HomeDribbleBonus else 0.0
+            match findNearestOpponent attacker s ctx.Dir with
+            | None -> s, [], PlayerIdle
+            | Some(defender, _, _) ->
+                let defScore =
+                    float defender.Technical.Tackling * BalanceConfig.TackleTechnicalWeight
+                    + float defender.Physical.Strength * BalanceConfig.TackleStrengthWeight
 
-        let defender, _, _ = findNearestOpponent attacker s isHome
+                let duelScore = (attScore - defScore) / 100.0 * condition * physVar
 
-        let defScore =
-            float defender.Technical.Tackling * 0.6 + float defender.Physical.Strength * 0.4
+                if logisticBernoulli duelScore 1.5 then
+                    let targetX =
+                        Math.Clamp(ax + AttackDir.forwardX ctx.Dir * BalanceConfig.DribbleForwardDistance, 5.0, 95.0)
 
-        let duelScore = (attScore - defScore) / 100.0 * condition * physVar
+                    let s' =
+                        s
+                        |> ballTowards targetX ay BalanceConfig.DribbleSpeed BalanceConfig.DribbleVz
+                        |> fun s'' ->
+                            { s'' with
+                                Momentum =
+                                    Math.Clamp(
+                                        s''.Momentum
+                                        + AttackDir.momentumDelta ctx.Dir BalanceConfig.DribbleSuccessMomentum,
+                                        -10.0,
+                                        10.0
+                                    ) }
 
-        if logisticBernoulli duelScore 1.5 then
-            let pushX = if isHome then 5.0 else -5.0
+                    let next =
+                        pickWeighted
+                            [ BalanceConfig.DribbleCrossProbability, ExecuteCross attacker
+                              BalanceConfig.DribblePassProbability, ExecutePass attacker
+                              BalanceConfig.DribbleShotProbability, ExecuteShot attacker ]
 
-            let s' =
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position =
-                                { s.Ball.Position with
-                                    X = Math.Clamp(ax + pushX, 5.0, 95.0)
-                                    Y = ay } }
-                    Momentum = Math.Clamp(s.Momentum + (if isHome then 0.4 else -0.4), -10.0, 10.0) }
-
-            let next =
-                pickWeighted
-                    [ 0.10, ExecuteCross attacker
-                      0.60, ExecutePass attacker
-                      0.30, ExecuteShot attacker ]
-
-            s', [ event second attacker.Id clubId DribbleSuccess ], next
-        else
-            { s with
-                Possession = flipPossession s.Possession
-                Momentum = Math.Clamp(s.Momentum - (if isHome then 0.6 else -0.6), -10.0, 10.0) },
-            [ event second attacker.Id clubId DribbleFail ],
-            ExecuteTackle defender
+                    s', [ event second attacker.Id clubId DribbleSuccess ], next
+                else
+                    { s with
+                        AttackingClub = ClubSide.flip ctx.AttSide
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.DribbleFailMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second attacker.Id clubId DribbleFail ],
+                    ExecuteTackle defender
 
     let private resolveCross (second: int) (attacker: Player) (s: MatchState) =
-        let isHome = s.Possession = Home
-        let attSide = side isHome s
-        let defSide = side (not isHome) s
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let defClubId = ClubSide.toClubId ctx.DefSide s
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let defSide = ClubSide.teamSide ctx.DefSide s
+        let clubId = attClubId
 
-        let info =
-            getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
+        match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
+        | None -> s, [], PlayerIdle
+        | Some info ->
+            let condition = float info.Condition / 100.0
 
-        let condition = float info.Condition / 100.0
+            let crossMean =
+                BalanceConfig.CrossBaseMean
+                + float attacker.Technical.Crossing / 100.0 * BalanceConfig.CrossCrossingWeight
+                + float attacker.Technical.Passing / 100.0 * BalanceConfig.CrossPassingWeight
+                + ctx.AttBonus.SetPlay
 
-        let crossMean =
-            0.50
-            + float attacker.Technical.Crossing / 100.0 * 0.25
-            + float attacker.Technical.Passing / 100.0 * 0.10
-            + if isHome then
-                  BalanceConfig.HomeSetPlayAccuracyBonus
-              else
-                  0.0
+            let successChance =
+                betaSample
+                    crossMean
+                    (BalanceConfig.CrossSuccessShapeAlpha
+                     + condition * BalanceConfig.CrossSuccessConditionMultiplier)
 
-        let successChance = betaSample crossMean (6.0 + condition * 8.0)
+            let targets =
+                teamRoster attSide
+                |> Array.filter (fun (p, _, _) ->
+                    p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
+                |> Array.sortBy (fun (_, sp, _) ->
+                    let defDist =
+                        outfieldRoster defSide
+                        |> Array.map (fun (_, dSp, _) ->
+                            let dx = dSp.X - sp.X
+                            let dy = dSp.Y - sp.Y
+                            dx * dx + dy * dy)
+                        |> Array.min
 
-        let targets =
-            attSide.Players
-            |> Array.mapi (fun i p -> i, p, attSide.Positions[i])
-            |> Array.filter (fun (_, p, _) ->
-                p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
-            |> Array.sortBy (fun (_, _, sp) ->
-                let defDist =
-                    defSide.Players
-                    |> Array.filter (fun p -> p.Position <> GK)
-                    |> Array.map (fun d ->
-                        let dIdx =
-                            defSide.Players
-                            |> Array.tryFindIndex (fun x -> x.Id = d.Id)
-                            |> Option.defaultValue 0
+                    -(defDist))
 
-                        let dSp = defSide.Positions[dIdx]
-                        let dx = dSp.X - sp.X
-                        let dy = dSp.Y - sp.Y
-                        dx * dx + dy * dy)
-                    |> Array.min
+            if targets.Length > 0 && bernoulli successChance then
+                let target, targetSp, _ = targets[0]
+                let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
 
-                -(defDist))
+                let gkSkill =
+                    gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
 
-        if targets.Length > 0 && bernoulli successChance then
-            let targetIdx, target, targetSp = targets[0]
-            let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
+                let headerScore =
+                    float (target.Physical.Strength + target.Technical.Heading) / 200.0
+                    * physicalVariation info.Condition
 
-            let gkSkill =
-                gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
+                let gkScore = gkSkill / 150.0
 
-            let headerScore =
-                float (target.Physical.Strength + target.Technical.Heading) / 200.0
-                * physicalVariation attSide.Conditions[targetIdx]
+                let nearDefs =
+                    outfieldRoster defSide
+                    |> Array.sumBy (fun (p, _, _) -> float p.Mental.Positioning / 200.0)
+                    |> fun v -> v / float (max 1 (outfieldRoster defSide).Length)
 
-            let gkScore = gkSkill / 150.0
+                let blockPos =
+                    nearestOutfield defSide targetSp.X targetSp.Y
+                    |> Option.map (fun (_, dSp) -> dSp.X, dSp.Y)
+                    |> Option.defaultValue (if ctx.Dir = LeftToRight then (20.0, 50.0) else (80.0, 50.0))
 
-            let nearDefs =
-                defSide.Players
-                |> Array.filter (fun p -> p.Position <> GK)
-                |> Array.sumBy (fun p -> float p.Mental.Positioning / 200.0)
-                |> fun v -> v / float (max 1 defSide.Players.Length)
+                if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
+                    awardGoal ctx.AttSide (Some target.Id) second s
+                    |> fun (s', evs) -> s', (event second attacker.Id clubId (CrossAttempt true)) :: evs, PlayerIdle
+                else
+                    let bx, by = blockPos
 
-            if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
-                awardGoal (if isHome then Home else Away) (Some target.Id) second s
-                |> fun (s', evs) -> s', (event second attacker.Id clubId (CrossAttempt true)) :: evs, PlayerIdle
+                    let s' =
+                        s
+                        |> ballTowards bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz
+                        |> fun s'' ->
+                            { s'' with
+                                AttackingClub = ClubSide.flip ctx.AttSide
+                                Momentum =
+                                    Math.Clamp(
+                                        s''.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.CrossFailMomentum,
+                                        -10.0,
+                                        10.0
+                                    ) }
+
+                    s',
+                    [ event second attacker.Id clubId (CrossAttempt true)
+                      event second target.Id clubId ShotBlocked ],
+                    ExecuteTackle target
             else
-                { s with
-                    Possession = flipPossession s.Possession
-                    Momentum = Math.Clamp(s.Momentum - (if isHome then 0.3 else -0.3), -10.0, 10.0) },
-                [ event second attacker.Id clubId (CrossAttempt true)
-                  event second target.Id clubId ShotBlocked ],
-                ExecuteTackle target
-        else
-            { s with
-                Possession = flipPossession s.Possession
-                Ball =
-                    { s.Ball with
-                        Position =
-                            { s.Ball.Position with
-                                X = (if isHome then 85.0 else 15.0)
-                                Y = 50.0 } } },
-            [ event second attacker.Id clubId (CrossAttempt false) ],
-            if bernoulli BalanceConfig.CornerOnFailedCross then
-                ExecuteCorner
-            else
-                PlayerIdle
+                let targetX = if ctx.Dir = LeftToRight then 85.0 else 15.0
+
+                let s' =
+                    s
+                    |> ballTowards targetX 50.0 15.0 2.0
+                    |> fun s'' ->
+                        { s'' with
+                            AttackingClub = ClubSide.flip ctx.AttSide }
+
+                s',
+                [ event second attacker.Id clubId (CrossAttempt false) ],
+                if bernoulli BalanceConfig.CornerOnFailedCross then
+                    ExecuteCorner
+                else
+                    PlayerIdle
 
     let private resolveLongBall (second: int) (attacker: Player) (s: MatchState) =
-        let isHome = s.Possession = Home
-        let attSide = side isHome s
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let clubId = attClubId
 
-        let info =
-            getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id
+        match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
+        | None -> s, [], PlayerIdle
+        | Some info ->
+            let condition = float info.Condition / 100.0
 
-        let condition = float info.Condition / 100.0
+            let longMean =
+                BalanceConfig.LongBallBaseMean
+                + float attacker.Technical.LongShots / 100.0
+                  * BalanceConfig.LongBallLongShotsWeight
+                + float attacker.Technical.Passing / 100.0 * BalanceConfig.LongBallPassingWeight
+                + float attacker.Mental.Vision / 100.0 * BalanceConfig.LongBallVisionWeight
+                + ctx.AttBonus.SetPlay
 
-        let longMean =
-            0.40
-            + float attacker.Technical.LongShots / 100.0 * 0.2
-            + float attacker.Technical.Passing / 100.0 * 0.2
-            + float attacker.Mental.Vision / 100.0 * 0.15
-            + if isHome then
-                  BalanceConfig.HomeSetPlayAccuracyBonus
-              else
-                  0.0
+            let successChance =
+                betaSample
+                    longMean
+                    (BalanceConfig.LongBallSuccessShapeAlpha
+                     + condition * BalanceConfig.LongBallSuccessConditionMultiplier)
 
-        let successChance = betaSample longMean (5.0 + condition * 10.0)
+            let forwards =
+                teamRoster attSide
+                |> Array.filter (fun (p, _, _) ->
+                    p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
 
-        let forwards =
-            attSide.Players
-            |> Array.mapi (fun i p -> i, p, attSide.Positions[i])
-            |> Array.filter (fun (_, p, _) ->
-                p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
+            if bernoulli successChance && forwards.Length > 0 then
+                let target, targetSp, _ = forwards[0]
+                let offside = isOffside target targetSp.X s ctx.Dir
 
-        if bernoulli successChance && forwards.Length > 0 then
-            let targetIdx, target, targetSp = forwards[0]
-            let offside = isOffsideCheck target targetSp.X s isHome
+                if offside then
+                    { s with
+                        AttackingClub = ClubSide.flip ctx.AttSide
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum
+                                - AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallOffsideMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second attacker.Id clubId (LongBall false) ],
+                    ExecuteTackle attacker
+                else
+                    let s' =
+                        s
+                        |> ballTowards targetSp.X targetSp.Y BalanceConfig.LongBallSpeed BalanceConfig.LongBallVz
+                        |> fun s'' ->
+                            { s'' with
+                                Momentum =
+                                    Math.Clamp(
+                                        s''.Momentum
+                                        + AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallSuccessMomentum,
+                                        -10.0,
+                                        10.0
+                                    ) }
 
-            if offside then
+                    s', [ event second attacker.Id clubId (LongBall true) ], ExecuteDribble target
+            else
                 { s with
-                    Possession = flipPossession s.Possession
-                    Momentum = Math.Clamp(s.Momentum - (if isHome then 0.4 else -0.4), -10.0, 10.0) },
+                    AttackingClub = ClubSide.flip ctx.AttSide
+                    Momentum =
+                        Math.Clamp(
+                            s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallFailMomentum,
+                            -10.0,
+                            10.0
+                        ) },
                 [ event second attacker.Id clubId (LongBall false) ],
                 ExecuteTackle attacker
-            else
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position =
-                                { s.Ball.Position with
-                                    X = targetSp.X
-                                    Y = targetSp.Y } }
-                    Momentum = Math.Clamp(s.Momentum + (if isHome then 0.5 else -0.5), -10.0, 10.0) },
-                [ event second attacker.Id clubId (LongBall true) ],
-                ExecuteDribble target
-        else
-            { s with
-                Possession = flipPossession s.Possession
-                Momentum = Math.Clamp(s.Momentum - (if isHome then 0.4 else -0.4), -10.0, 10.0) },
-            [ event second attacker.Id clubId (LongBall false) ],
-            ExecuteTackle attacker
 
     let private resolveTackle (second: int) (defender: Player) (s: MatchState) =
-        let isHome = s.Possession = Home
-        let clubId = if isHome then s.Away.Id else s.Home.Id
+        let ctx = ActionContext.build s
+        let possessorClubId = ClubSide.toClubId ctx.AttSide s
+        let defenderClubId = ClubSide.toClubId ctx.DefSide s
+        let clubId = defenderClubId
 
-        let defenderIsHome = clubIdOf defender s = s.Home.Id
-        let defenderSide = side defenderIsHome s
-        let attackerSide = side (not defenderIsHome) s
+        let defenderSide = ClubSide.teamSide ctx.DefSide s
+        let attackerSide = ClubSide.teamSide ctx.AttSide s
 
-        let info =
-            getPlayerInfo defenderSide.Players defenderSide.Positions defenderSide.Conditions defender.Id
+        match getPlayerInfo defenderSide.Players defenderSide.Positions defenderSide.Conditions defender.Id with
+        | None -> s, [], PlayerIdle
+        | Some info ->
+            let condition = float info.Condition / 100.0
 
-        let condition = float info.Condition / 100.0
+            let defScore =
+                float defender.Technical.Tackling * BalanceConfig.TackleTechnicalWeight
+                + float defender.Mental.Positioning * BalanceConfig.TacklePositioningWeight
+                + float defender.Physical.Strength * BalanceConfig.TackleStrengthWeight
+                + ctx.DefBonus.Tackle
 
-        let defScore =
-            float defender.Technical.Tackling * 0.5
-            + float defender.Mental.Positioning * 0.3
-            + float defender.Physical.Strength * 0.2
-            + if not isHome then BalanceConfig.HomeTackleBonus else 0.0
+            let bX, bY = ballXY s
 
-        let bX, bY = ballXY s
+            let attacker =
+                nearestOutfield attackerSide bX bY
+                |> Option.map (fun (p, _) -> p)
+                |> Option.defaultValue (attackerSide.Players[0])
 
-        let _, attacker, _ =
-            attackerSide.Players
-            |> Array.mapi (fun i p -> i, p, attackerSide.Positions[i])
-            |> Array.minBy (fun (_, _, sp) -> let dx, dy = sp.X - bX, sp.Y - bY in sqrt (dx * dx + dy * dy))
+            let attScore =
+                float attacker.Technical.Dribbling * BalanceConfig.DribbleTechnicalWeight
+                + float attacker.Physical.Agility * BalanceConfig.DribbleAgilityWeight
+                + float attacker.Physical.Balance * BalanceConfig.DribbleBalanceWeight
 
-        let attScore =
-            float attacker.Technical.Dribbling * 0.5
-            + float attacker.Physical.Agility * 0.3
-            + float attacker.Physical.Balance * 0.2
+            let physVar = physicalVariation defender.Condition
+            let duelScore = (defScore - attScore) / 100.0 * condition * physVar
 
-        let physVar = physicalVariation defender.Condition
-        let duelScore = (defScore - attScore) / 100.0 * condition * physVar
+            if logisticBernoulli duelScore 1.5 then
+                let aggression = float defender.Mental.Aggression / 100.0
+                let positioning = float defender.Mental.Positioning / 100.0
 
-        if logisticBernoulli duelScore 1.5 then
-            let aggression = float defender.Mental.Aggression / 100.0
-            let positioning = float defender.Mental.Positioning / 100.0
+                let baseFoulRate =
+                    BalanceConfig.FoulBaseRate + aggression * BalanceConfig.TackleAggressionWeight
+                    - positioning * BalanceConfig.TacklePositioningReduction
+                    |> Math.Abs
 
-            let foulChance =
-                betaSample (BalanceConfig.FoulBaseRate + aggression * 0.15 - positioning * 0.1 |> Math.Abs) 10.0
+                let adjustedFoulRate = baseFoulRate * (1.0 - ctx.DefBonus.CardReduc)
 
-            if bernoulli foulChance then
-                { s with
-                    Possession = flipPossession s.Possession
-                    Momentum = Math.Clamp(s.Momentum - (if isHome then 0.3 else -0.3), -10.0, 10.0) },
-                [ event second defender.Id clubId FoulCommitted ],
-                ExecuteFreeKick attacker
+                let foulChance = betaSample adjustedFoulRate BalanceConfig.TackleFoulShapeBeta
+
+                if bernoulli foulChance then
+                    { s with
+                        AttackingClub = ClubSide.flip ctx.AttSide
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleFoulMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second defender.Id clubId FoulCommitted ],
+                    PlayerIdle
+                else
+                    { s with
+                        Momentum =
+                            Math.Clamp(
+                                s.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleSuccessMomentum,
+                                -10.0,
+                                10.0
+                            ) },
+                    [ event second defender.Id clubId TackleSuccess ],
+                    ExecutePass defender
             else
                 { s with
-                    Momentum = Math.Clamp(s.Momentum + (if isHome then 0.8 else -0.8), -10.0, 10.0) },
-                [ event second defender.Id clubId TackleSuccess ],
-                ExecutePass defender
-        else
-            { s with
-                Momentum = Math.Clamp(s.Momentum - (if isHome then 0.5 else -0.5), -10.0, 10.0) },
-            [ event second defender.Id clubId TackleFail ],
-            PlayerIdle
+                    Momentum =
+                        Math.Clamp(
+                            s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleFailMomentum,
+                            -10.0,
+                            10.0
+                        ) },
+                [ event second defender.Id clubId TackleFail ],
+                PlayerIdle
 
     let private resolveFreeKick (second: int) (kicker: Player) (s: MatchState) =
-        let clubId = clubIdOf kicker s
+        let ctx = ActionContext.build s
+        let clubId = ClubSide.toClubId ctx.AttSide s
         let bY = s.Ball.Position.Y
-        let isHomeKicker = clubId = s.Home.Id
 
         let shotPower =
             effectiveStat
@@ -543,23 +662,13 @@ module MatchPlayerAction =
                 kicker.Condition
                 kicker.Morale
                 (finishingBonusForPosition kicker.Position)
-            + effectiveStat
-                kicker.Mental.Composure
-                kicker.Condition
-                kicker.Morale
-                (1.5
-                 + if isHomeKicker then
-                       BalanceConfig.HomeFreeKickComposure
-                   else
-                       0.0)
+            + effectiveStat kicker.Mental.Composure kicker.Condition kicker.Morale (1.5 + ctx.AttBonus.FreeKick)
             + effectiveStat kicker.Technical.LongShots kicker.Condition kicker.Morale 1.0
-            + pressureNoise kicker.Mental.Composure 1.1
+            + pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise
 
         let gk =
-            if isHomeKicker then
-                s.AwaySide.Players |> Array.tryFind (fun p -> p.Position = GK)
-            else
-                s.HomeSide.Players |> Array.tryFind (fun p -> p.Position = GK)
+            ClubSide.teamSide (ClubSide.flip ctx.AttSide) s
+            |> fun side -> side.Players |> Array.tryFind (fun p -> p.Position = GK)
 
         let savePower =
             match gk with
@@ -569,108 +678,109 @@ module MatchPlayerAction =
                 + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale 2.0
             | None -> normalSample 50.0 10.0
 
-        let scored = shotPower > savePower + 120.0 + normalSample 0.0 25.0
+        let scored =
+            shotPower > savePower
+                        + BalanceConfig.FreeKickSavePowerThreshold
+                        + normalSample 0.0 BalanceConfig.FreeKickSaveVariance
 
-        let s' =
-            if scored then
-                let scoringTeam = if isHomeKicker then Home else Away
-                let s1, _ = awardGoal scoringTeam (Some kicker.Id) second s
-                s1
-            else
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position =
-                                { s.Ball.Position with
-                                    X = (if isHomeKicker then 75.0 else 25.0)
-                                    Y = bY } }
-                    Possession = if isHomeKicker then Away else Home }
+        if scored then
+            let s1, goalEvents = awardGoal ctx.AttSide (Some kicker.Id) second s
+            let fkEvent = event s.Second kicker.Id clubId (FreeKick true)
+            s1, fkEvent :: goalEvents, PlayerIdle
+        else
+            let targetX =
+                if ctx.Dir = LeftToRight then
+                    BalanceConfig.FreeKickTargetX
+                else
+                    25.0
 
-        let gkClubId = if isHomeKicker then s.Away.Id else s.Home.Id
+            let s' =
+                s
+                |> ballTowards targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz
+                |> fun s'' ->
+                    { s'' with
+                        AttackingClub = ClubSide.flip ctx.AttSide }
 
-        let events =
-            [ yield event s.Second kicker.Id clubId (FreeKick scored)
-              if scored then
-                  yield event s.Second kicker.Id clubId Goal
-              elif not scored then
+            let gkClubId = ClubSide.toClubId (ClubSide.flip ctx.AttSide) s
+
+            let events =
+                [ event s.Second kicker.Id clubId (FreeKick false)
                   match gk with
-                  | Some g -> yield event s.Second g.Id gkClubId Save
+                  | Some g -> event s.Second g.Id gkClubId Save
                   | None -> () ]
 
-        let s'' =
-            if bernoulli BalanceConfig.PostShotClearProbability then
-                { s' with
-                    Ball =
-                        { s'.Ball with
-                            Position =
-                                { s'.Ball.Position with
-                                    X = 50.0
-                                    Y = 50.0 + normalSample 0.0 10.0
-                                    Vx = 0.0
-                                    Vy = 0.0
-                                    Vz = 0.0 } } }
-            else
-                s'
+            let s'' =
+                if bernoulli BalanceConfig.PostShotClearProbability then
+                    let clearY = 50.0 + normalSample 0.0 10.0
+                    s' |> ballTowards 50.0 clearY 16.0 1.5
+                else
+                    s'
 
-        s'', events, PlayerIdle
+            s'', events, PlayerIdle
 
     let private resolveCorner (second: int) (s: MatchState) =
-        let isHomeCorner = s.Possession = Home
-        let clubId = if isHomeCorner then s.Home.Id else s.Away.Id
-        let attSide = side isHomeCorner s
-        let defSide = side (not isHomeCorner) s
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId ctx.AttSide s
+        let defClubId = ClubSide.toClubId ctx.DefSide s
+        let clubId = attClubId
+        let attSide = ClubSide.teamSide ctx.AttSide s
+        let defSide = ClubSide.teamSide ctx.DefSide s
 
         if attSide.Players.Length = 0 then
             s, [], PlayerIdle
         else
             let attackersInBox =
-                attSide.Players
-                |> Array.mapi (fun i p -> i, p, attSide.Positions[i])
-                |> Array.filter (fun (_, p, sp) ->
+                teamRoster attSide
+                |> Array.filter (fun (p, sp, _) ->
                     (p.Position = ST
                      || p.Position = AML
                      || p.Position = AMR
                      || p.Position = AMC
                      || p.Position = MC
                      || p.Position = DC)
-                    && sp.X > (if isHomeCorner then 75.0 else 25.0))
+                    && (if ctx.Dir = LeftToRight then
+                            sp.X > BalanceConfig.CornerBoxXThreshold
+                        else
+                            sp.X < BalanceConfig.CornerOutsideXThreshold))
 
             let defendersInBox =
-                defSide.Players
-                |> Array.filter (fun p -> p.Position <> GK)
-                |> Array.mapi (fun i p -> i, p, defSide.Positions[i])
-                |> Array.filter (fun (_, _, sp) -> sp.X > (if isHomeCorner then 70.0 else 30.0))
+                outfieldRoster defSide
+                |> Array.filter (fun (_, sp, _) ->
+                    if ctx.Dir = LeftToRight then
+                        sp.X > BalanceConfig.CornerDefenderBoxThreshold
+                    else
+                        sp.X < 30.0)
 
             let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
 
             if attackersInBox.Length = 0 then
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position =
-                                { s.Ball.Position with
-                                    X = (if isHomeCorner then 20.0 else 80.0)
-                                    Y = 50.0 } }
-                    Possession = flipPossession s.Possession },
-                [ event second attSide.Players[0].Id clubId Corner ],
-                PlayerIdle
+                let targetX = if ctx.Dir = LeftToRight then 20.0 else 80.0
+
+                let s' =
+                    s
+                    |> ballTowards targetX 50.0 BalanceConfig.CornerSpeed BalanceConfig.CornerVz
+                    |> fun s'' ->
+                        { s'' with
+                            AttackingClub = ClubSide.flip ctx.AttSide }
+
+                s', [ event second attSide.Players[0].Id clubId Corner ], PlayerIdle
             else
-                let bestAttackerIdx, bestAttacker, bestAttackerSp =
+                let bestAttacker, bestAttackerSp, bestAttackerCond =
                     attackersInBox
-                    |> Array.maxBy (fun (_, p, _) -> p.Physical.Strength + p.Technical.Heading)
+                    |> Array.maxBy (fun (p, _, _) -> p.Physical.Strength + p.Technical.Heading)
 
                 let bestDefender =
                     defendersInBox
-                    |> Array.sortByDescending (fun (_, p, _) -> p.Physical.Strength + p.Mental.Positioning)
+                    |> Array.sortByDescending (fun (p, _, _) -> p.Physical.Strength + p.Mental.Positioning)
                     |> Array.tryHead
 
                 let attackScore =
                     float (bestAttacker.Physical.Strength + bestAttacker.Technical.Heading) / 200.0
-                    * physicalVariation attSide.Conditions[bestAttackerIdx]
+                    * physicalVariation bestAttackerCond
 
                 let defScore =
                     bestDefender
-                    |> Option.map (fun (_, d, _) -> float (d.Physical.Strength + d.Mental.Positioning) / 200.0)
+                    |> Option.map (fun (d, _, _) -> float (d.Physical.Strength + d.Mental.Positioning) / 200.0)
                     |> Option.defaultValue 0.5
 
                 let gkBonus =
@@ -690,53 +800,53 @@ module MatchPlayerAction =
                         || p.Position = AMR
                         || p.Position = MC)
                     |> Option.map (fun p ->
-                        float p.Technical.Crossing / 100.0 * 0.3
-                        + float p.Technical.Passing / 100.0 * 0.2)
-                    |> Option.defaultValue 0.3
+                        float p.Technical.Crossing / 100.0 * BalanceConfig.CrossCrossingWeight
+                        + float p.Technical.Passing / 100.0 * BalanceConfig.CrossPassingWeight)
+                    |> Option.defaultValue BalanceConfig.CrossBaseMean
 
                 let scored =
                     logisticBernoulli (attackScore - defScore - gkBonus - densityPenalty + crossQuality) 2.5
 
                 if scored then
-                    awardGoal (if isHomeCorner then Home else Away) (Some bestAttacker.Id) second s
+                    awardGoal ctx.AttSide (Some bestAttacker.Id) second s
                     |> fun (s', evs) -> s', (event second bestAttacker.Id clubId Corner) :: evs, PlayerIdle
                 else
                     let secondPhase =
-                        if bernoulli 0.35 then
+                        if bernoulli BalanceConfig.CornerSecondPhaseProbability then
                             let outsidePlayers =
-                                attSide.Players
-                                |> Array.mapi (fun i p -> i, p, attSide.Positions[i])
-                                |> Array.filter (fun (_, p, sp) ->
-                                    sp.X <= (if isHomeCorner then 75.0 else 25.0)
+                                teamRoster attSide
+                                |> Array.filter (fun (p, sp, _) ->
+                                    (if ctx.Dir = LeftToRight then sp.X <= 75.0 else sp.X >= 25.0)
                                     && (p.Position = MC || p.Position = DM || p.Position = DC))
 
                             if outsidePlayers.Length > 0 then
-                                let _, p, sp = outsidePlayers[0]
+                                let p, _, _ = outsidePlayers[0]
                                 ExecuteShot p
                             else
                                 ExecutePass bestAttacker
                         else
                             ExecuteTackle bestAttacker
 
-                    { s with
-                        Ball =
-                            { s.Ball with
-                                Position =
-                                    { s.Ball.Position with
-                                        X = (if isHomeCorner then 65.0 else 35.0)
-                                        Y = 50.0 } }
-                        Possession =
-                            if bernoulli 0.55 then
-                                s.Possession
-                            else
-                                flipPossession s.Possession },
-                    [ event second bestAttacker.Id clubId Corner ],
-                    secondPhase
+                    let targetX = if ctx.Dir = LeftToRight then 65.0 else 35.0
 
-    let private resolveThrowIn (second: int) (throwTeam: Possession) (s: MatchState) =
-        let isHome = throwTeam = Home
-        let attSide = side isHome s
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+                    let s' =
+                        s
+                        |> ballTowards targetX 50.0 BalanceConfig.CornerSpeed BalanceConfig.CornerVz
+                        |> fun s'' ->
+                            { s'' with
+                                AttackingClub =
+                                    if bernoulli BalanceConfig.CornerKeepPossessionProbability then
+                                        s''.AttackingClub
+                                    else
+                                        ClubSide.flip s''.AttackingClub }
+
+                    s', [ event second bestAttacker.Id clubId Corner ], secondPhase
+
+    let private resolveThrowIn (second: int) (throwClub: ClubSide) (s: MatchState) =
+        let ctx = ActionContext.build s
+        let attClubId = ClubSide.toClubId throwClub s
+        let attSide = ClubSide.teamSide throwClub s
+        let clubId = attClubId
 
         if attSide.Players.Length = 0 then
             s, [], PlayerIdle
@@ -752,57 +862,73 @@ module MatchPlayerAction =
                     | _ -> 1)
                 |> Array.head
 
-            let nearestTeammate = findNearestTeammate thrower s isHome
+            let nearestTeammate = findNearestTeammate thrower s ctx.Dir
 
             match nearestTeammate with
             | Some(teammate, _, _) ->
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position =
-                                { s.Ball.Position with
-                                    X = (if isHome then 5.0 else 95.0)
-                                    Y = s.Ball.Position.Y } }
-                    Momentum = Math.Clamp(s.Momentum + (if isHome then 0.1 else -0.1), -10.0, 10.0) },
-                [ event second thrower.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ],
-                ExecutePass teammate
+                let targetX = if ctx.Dir = LeftToRight then 5.0 else 95.0
+
+                let s' =
+                    s
+                    |> ballTowards targetX s.Ball.Position.Y BalanceConfig.ThrowInSpeed BalanceConfig.ThrowInVz
+                    |> fun s'' ->
+                        { s'' with
+                            Momentum =
+                                Math.Clamp(
+                                    s''.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.ThrowInMomentum,
+                                    -10.0,
+                                    10.0
+                                ) }
+
+                s', [ event second thrower.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ], ExecutePass teammate
             | None -> s, [], PlayerIdle
 
-    let private resolvePenalty (second: int) (kicker: Player) (isHome: bool) (kickNum: int) (s: MatchState) =
-        let clubId = if isHome then s.Home.Id else s.Away.Id
+    let private resolvePenalty (second: int) (kicker: Player) (kickerClub: ClubSide) (kickNum: int) (s: MatchState) =
+        let clubId = ClubSide.toClubId kickerClub s
 
         let gk =
-            if isHome then
-                s.AwaySide.Players |> Array.tryFind (fun p -> p.Position = GK)
-            else
-                s.HomeSide.Players |> Array.tryFind (fun p -> p.Position = GK)
+            ClubSide.teamSide (ClubSide.flip kickerClub) s
+            |> fun side -> side.Players |> Array.tryFind (fun p -> p.Position = GK)
 
         let gkSkill =
             gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
 
-        let pressNoise = pressureNoise kicker.Mental.Composure 1.4
+        let pressNoise =
+            pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise
 
         let score =
-            (float kicker.CurrentSkill - gkSkill) * 0.04
-            + float kicker.Morale * 0.01
-            + pressNoise * 0.01
-            + if isHome then BalanceConfig.HomePenaltyBonus else 0.0
+            (float kicker.CurrentSkill - gkSkill) * BalanceConfig.PenaltySkillMultiplier
+            + float kicker.Morale * BalanceConfig.PenaltyMoraleMultiplier
+            + pressNoise * BalanceConfig.PenaltyPressureMultiplier
+            + (if kickerClub = HomeClub then
+                   BalanceConfig.HomePenaltyBonus
+               else
+                   0.0)
 
-        let scored = logisticBernoulli score 0.8
+        let scored = logisticBernoulli score BalanceConfig.PenaltyLogisticBase
 
-        let s' =
+        let result =
             if scored then
-                let scoringTeam = if isHome then Home else Away
-                let s1, _ = awardGoal scoringTeam (Some kicker.Id) (95 * 60 + kickNum) s
-                s1
-            else
-                { s with
-                    Ball =
-                        { Position = defaultSpatial 50.0 50.0
-                          LastTouchBy = None }
-                    Possession = if isHome then Away else Home }
+                let s1, goalEvents = awardGoal kickerClub (Some kicker.Id) (95 * 60 + kickNum) s
 
-        s', [ event (95 * 60 + kickNum) kicker.Id clubId (PenaltyAwarded scored) ], PlayerIdle
+                let penaltyEvent =
+                    event (95 * 60 + kickNum) kicker.Id clubId (PenaltyAwarded scored)
+
+                s1, goalEvents @ [ penaltyEvent ]
+            else
+                let s' =
+                    { s with
+                        Ball =
+                            { Position = defaultSpatial 50.0 50.0
+                              LastTouchBy = None }
+                        AttackingClub = ClubSide.flip kickerClub }
+
+                let penaltyEvent =
+                    event (95 * 60 + kickNum) kicker.Id clubId (PenaltyAwarded scored)
+
+                s', [ penaltyEvent ]
+
+        fst result, snd result, PlayerIdle
 
     let resolve
         (homeId: ClubId)
@@ -823,5 +949,5 @@ module MatchPlayerAction =
         | ExecuteTackle defender -> resolveTackle second defender s
         | ExecuteFreeKick kicker -> resolveFreeKick second kicker s
         | ExecuteCorner -> resolveCorner second s
-        | ExecuteThrowIn throwTeam -> resolveThrowIn second throwTeam s
-        | ExecutePenalty(kicker, isHome, kickNum) -> resolvePenalty second kicker isHome kickNum s
+        | ExecuteThrowIn throwClub -> resolveThrowIn second throwClub s
+        | ExecutePenalty(kicker, kickerClub, kickNum) -> resolvePenalty second kicker kickerClub kickNum s

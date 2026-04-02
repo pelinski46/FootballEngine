@@ -1,70 +1,66 @@
 namespace FootballEngine.Domain
 
-type Possession =
-    | Home
-    | Away
+/// Fixed identity of a club in this match — never changes
+type ClubSide =
+    | HomeClub
+    | AwayClub
 
-type MatchPhase =
-    | BuildUp
-    | Midfield
-    | Attack
+/// Direction of attack on the X axis — derived from ClubSide
+/// Pitch X: 0 = left goal, 100 = right goal
+/// HomeClub always attacks LeftToRight, AwayClub always RightToLeft
+type AttackDir =
+    | LeftToRight
+    | RightToLeft
 
-type PlayerOut =
-    | SidelinedByRedCard
-    | SidelinedByInjury
-    | SidelinedBySub
+/// Ball zone relative to the attacking direction — never absolute
+type PitchZone =
+    | AttackingZone
+    | MidfieldZone
+    | DefensiveZone
 
-type Spatial =
-    { X: float
-      Y: float
-      Z: float
-      Vx: float
-      Vy: float
-      Vz: float }
+module ClubSide =
+    let flip = function
+        | HomeClub -> AwayClub
+        | AwayClub -> HomeClub
 
-type BallState =
-    { Position: Spatial
-      LastTouchBy: PlayerId option }
+module AttackDir =
+    let ofClubSide (clubSide: ClubSide) : AttackDir =
+        match clubSide with
+        | HomeClub -> LeftToRight
+        | AwayClub -> RightToLeft
 
-type TeamSide =
-    { Players: Player[]
-      Conditions: int[]
-      Positions: Spatial[]
-      BasePositions: Spatial[]
-      Sidelined: Map<PlayerId, PlayerOut>
-      Yellows: Map<PlayerId, int>
-      SubsUsed: int
-      Tactics: TeamTactics
-      Instructions: TacticalInstructions option }
+    let distToGoal (x: float) (dir: AttackDir) : float =
+        match dir with
+        | LeftToRight -> 100.0 - x
+        | RightToLeft -> x
 
-type PenaltyShootout =
-    { HomeKicks: (PlayerId * bool * int) list
-      AwayKicks: (PlayerId * bool * int) list
-      CurrentKick: int
-      IsComplete: bool }
+    let isInAttackingThird (x: float) (dir: AttackDir) : bool =
+        match dir with
+        | LeftToRight -> x >= 70.0
+        | RightToLeft -> x <= 30.0
 
-type MatchState =
-    { Home: Club
-      Away: Club
-      HomeCoach: Staff
-      AwayCoach: Staff
-      Second: int
-      HomeScore: int
-      AwayScore: int
-      Ball: BallState
-      Possession: Possession
-      Momentum: float
-      HomeSide: TeamSide
-      AwaySide: TeamSide
-      PenaltyShootout: PenaltyShootout option
-      IsExtraTime: bool
-      IsKnockoutMatch: bool }
+    let isInDefensiveThird (x: float) (dir: AttackDir) : bool =
+        match dir with
+        | LeftToRight -> x <= 30.0
+        | RightToLeft -> x >= 70.0
 
-type MatchContext =
-    { HomePositions: Map<PlayerId, float * float>
-      AwayPositions: Map<PlayerId, float * float> }
+    let forwardX (dir: AttackDir) : float =
+        match dir with
+        | LeftToRight -> 1.0
+        | RightToLeft -> -1.0
 
-type MatchReplay =
-    { Final: MatchState
-      Events: MatchEvent list
-      Snapshots: MatchState[] }
+    let momentumSign (dir: AttackDir) : float = forwardX dir
+
+    let momentumDelta (dir: AttackDir) (delta: float) : float =
+        momentumSign dir * delta
+
+module PitchZone =
+    let ofBallX (x: float) (dir: AttackDir) : PitchZone =
+        let effectiveX =
+            match dir with
+            | LeftToRight -> x
+            | RightToLeft -> 100.0 - x
+
+        if effectiveX < 30.0 then DefensiveZone
+        elif effectiveX <= 70.0 then MidfieldZone
+        else AttackingZone

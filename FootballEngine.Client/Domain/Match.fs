@@ -2,6 +2,11 @@ namespace FootballEngine.Domain
 
 open System
 
+type MatchPhase =
+    | BuildUp
+    | Midfield
+    | Attack
+
 type MatchEventType =
     | Goal
     | OwnGoal

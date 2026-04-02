@@ -35,6 +35,9 @@
         <Compile Include="Engine\Stats.fs"/>
         <Compile Include="Engine\Match\MatchCalc.fs"/>
         <Compile Include="Engine\Match\BalanceConfig.fs"/>
+        <Compile Include="Engine\Match\HomeBonus.fs"/>
+        <Compile Include="Engine\Match\MatchStateTypes.fs"/>
+        <Compile Include="Engine\Match\ActionContext.fs"/>
         <Compile Include="Engine\Match\BalanceCalibrator.fs"/>
         <Compile Include="Engine\Match\MatchState.fs"/>
         <Compile Include="Engine\Match\MatchBall.fs"/>

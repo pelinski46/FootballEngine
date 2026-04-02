@@ -3,7 +3,6 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchState
 
 module MatchPlayerDecision =
 
@@ -17,40 +16,13 @@ module MatchPlayerDecision =
         | ExecuteTackle of defender: Player
         | ExecuteFreeKick of kicker: Player
         | ExecuteCorner
-        | ExecuteThrowIn of throwTeam: Possession
-        | ExecutePenalty of kicker: Player * isHome: bool * kickNum: int
+        | ExecuteThrowIn of throwClub: ClubSide
+        | ExecutePenalty of kicker: Player * kickerClub: ClubSide * kickNum: int
         | PlayerIdle
 
-    let private isOffside (player: Player) (playerX: float) (s: MatchState) (isHome: bool) =
-        if player.Position = GK then
-            false
-        else
-            let defSide = side (not isHome) s
+    let private computeShotQuality (ballX: float) (shooter: Player) (dir: AttackDir) =
+        let distToGoal = AttackDir.distToGoal ballX dir
 
-            let defenders =
-                defSide.Players
-                |> Array.mapi (fun i p -> i, p)
-                |> Array.filter (fun (_, p) -> p.Position <> GK)
-                |> Array.map (fun (i, _) -> defSide.Positions[i])
-
-            if defenders.Length < 2 then
-                false
-            else
-                let lastTwo =
-                    defenders
-                    |> Array.sortBy (fun sp -> if isHome then -sp.X else sp.X)
-                    |> Array.take 2
-
-                let secondLastX = lastTwo |> Array.last |> (fun sp -> sp.X)
-                let ballX = s.Ball.Position.X
-                let inOwnHalf = if isHome then playerX < 50.0 else playerX > 50.0
-
-                not inOwnHalf
-                && ((isHome && playerX > secondLastX && playerX > ballX)
-                    || (not isHome && playerX < secondLastX && playerX < ballX))
-
-    let private computeShotQuality (ballX: float) (shooter: Player) (attIsHome: bool) =
-        let distToGoal = if attIsHome then 100.0 - ballX else ballX
         let distNorm = Math.Clamp(distToGoal / 30.0, 0.0, 1.0)
 
         let positionBonus =
@@ -74,14 +46,14 @@ module MatchPlayerDecision =
             BalanceCalibrator.cumulative (BalanceCalibrator.computeThresholds ())
 
         let bX = s.Ball.Position.X
+        let dir = AttackDir.ofClubSide s.AttackingClub
+        let zone = PitchZone.ofBallX bX dir
 
         let shotMultiplier =
-            if (s.Possession = Home && bX >= 70.0) || (s.Possession = Away && bX <= 30.0) then
-                2.5
-            elif (s.Possession = Home && bX >= 60.0) || (s.Possession = Away && bX <= 40.0) then
-                1.5
-            else
-                0.3
+            match zone with
+            | AttackingZone -> 2.5
+            | MidfieldZone -> 1.5
+            | DefensiveZone -> 0.3
 
         let effectiveShotT = Math.Min(shotT * shotMultiplier, passT - 0.01)
 
@@ -93,8 +65,4 @@ module MatchPlayerDecision =
         elif r < crossT then ExecuteCross attacker
         else ExecuteLongBall attacker
 
-    let isOffsideCheck (player: Player) (playerX: float) (s: MatchState) (isHome: bool) =
-        isOffside player playerX s isHome
-
-    let shotQuality (ballX: float) (shooter: Player) (attIsHome: bool) =
-        computeShotQuality ballX shooter attIsHome
+    let shotQuality (ballX: float) (shooter: Player) (dir: AttackDir) = computeShotQuality ballX shooter dir
