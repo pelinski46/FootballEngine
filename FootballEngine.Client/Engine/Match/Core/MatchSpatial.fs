@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open MatchStateOps
 
 module MatchSpatial =
 
@@ -52,7 +53,7 @@ module MatchSpatial =
         | None -> None
 
     let findNearestTeammate (attacker: Player) (s: MatchState) (_dir: AttackDir) =
-        let attSide = ClubSide.teamSide s.AttackingClub s
+        let attSide = side (ClubSide.toClubId s.AttackingClub s) s
 
         match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
         | None -> None
@@ -67,8 +68,8 @@ module MatchSpatial =
             |> Option.map (fun (p, sp, _, _) -> p, p.Id, spatialXY sp)
 
     let findNearestOpponent (attacker: Player) (s: MatchState) (_dir: AttackDir) =
-        let attSide = ClubSide.teamSide s.AttackingClub s
-        let defSide = ClubSide.teamSide (ClubSide.flip s.AttackingClub) s
+        let attSide = side (ClubSide.toClubId s.AttackingClub s) s
+        let defSide = side (ClubSide.toClubId (ClubSide.flip s.AttackingClub) s) s
 
         match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
         | None -> None
@@ -79,8 +80,8 @@ module MatchSpatial =
             |> Option.map (fun (p, sp) -> p, p.Id, spatialXY sp)
 
     let findBestPassTarget (attacker: Player) (s: MatchState) (dir: AttackDir) =
-        let attSide = ClubSide.teamSide s.AttackingClub s
-        let defSide = ClubSide.teamSide (ClubSide.flip s.AttackingClub) s
+        let attSide = side (ClubSide.toClubId s.AttackingClub s) s
+        let defSide = side (ClubSide.toClubId (ClubSide.flip s.AttackingClub) s) s
 
         match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
         | None -> None
@@ -137,7 +138,7 @@ module MatchSpatial =
         if player.Position = GK then
             false
         else
-            let defSide = ClubSide.teamSide (ClubSide.flip s.AttackingClub) s
+            let defSide = side (ClubSide.toClubId (ClubSide.flip s.AttackingClub) s) s
 
             let defenders = outfieldRoster defSide |> Array.map (fun (_, sp, _) -> sp)
 
@@ -164,3 +165,48 @@ module MatchSpatial =
                 && match dir with
                    | LeftToRight -> playerX > secondLastX && playerX > ballX
                    | RightToLeft -> playerX < secondLastX && playerX < ballX
+
+    let private secondLastDefenderX (defSide: TeamSide) (dir: AttackDir) : float =
+        let defenders =
+            defSide.Players
+            |> Array.mapi (fun i p -> i, p)
+            |> Array.filter (fun (_, p) -> p.Position <> GK)
+
+        if defenders.Length < 2 then 0.0
+        else
+            defenders
+            |> Array.sortBy (fun (i, _) ->
+                match dir with
+                | LeftToRight -> -defSide.Positions[i].X
+                | RightToLeft -> defSide.Positions[i].X)
+            |> Array.take 2
+            |> Array.last
+            |> fun (i, _) -> defSide.Positions[i].X
+
+    let snapshotAtPass (passer: Player) (receiver: Player) (s: MatchState) (dir: AttackDir) : OffsideSnapshot =
+        let defSide = ClubSide.teamSide (ClubSide.flip s.AttackingClub) s
+        let receiverIdx = defSide.Players |> Array.tryFindIndex (fun p -> p.Id = receiver.Id)
+        let receiverX =
+            match receiverIdx with
+            | Some idx -> defSide.Positions[idx].X
+            | None ->
+                let attSide = ClubSide.teamSide s.AttackingClub s
+                match attSide.Players |> Array.tryFindIndex (fun p -> p.Id = receiver.Id) with
+                | Some idx -> attSide.Positions[idx].X
+                | None -> 50.0
+
+        { PasserId = passer.Id
+          ReceiverId = receiver.Id
+          ReceiverXAtPass = receiverX
+          SecondLastDefenderX = secondLastDefenderX defSide dir
+          BallXAtPass = s.Ball.Position.X
+          Dir = dir }
+
+    let isOffsideFromSnapshot (snapshot: OffsideSnapshot) : bool =
+        match snapshot.Dir with
+        | LeftToRight ->
+            snapshot.ReceiverXAtPass > snapshot.SecondLastDefenderX
+            && snapshot.ReceiverXAtPass > snapshot.BallXAtPass
+        | RightToLeft ->
+            snapshot.ReceiverXAtPass < snapshot.SecondLastDefenderX
+            && snapshot.ReceiverXAtPass < snapshot.BallXAtPass

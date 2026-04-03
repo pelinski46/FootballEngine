@@ -7,8 +7,7 @@ open FootballEngine.Domain
 open FootballEngine.MatchSimulator
 open FootballEngine.MatchStateOps
 open FootballEngine.MatchSpatial
-open FootballEngine.MatchPlayerDecision
-open FootballEngine.MatchPlayerAction
+open FootballEngine.PlayerAction
 open FootballEngine.Tests.Helpers
 
 // ============================================================================

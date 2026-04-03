@@ -34,6 +34,7 @@ module SchedulingTypes =
 
     type TickKind =
         | DuelTick of chainDepth: int
+        | PlayerActionTick of chainDepth: int * action: PlayerAction * attackerId: PlayerId option
         | PhysicsTick
         | FreeKickTick of kicker: PlayerId * position: Spatial * chainDepth: int
         | CornerTick of club: ClubSide * chainDepth: int
@@ -55,6 +56,8 @@ module SchedulingTypes =
         | InjuryTrigger of PlayerId
         | GoalConceded
         | GoalScored
+        | FatigueAlert of clubId: ClubId * playerId: PlayerId * condition: int
+        | MomentumSwing of clubId: ClubSide
 
     [<Struct; CustomComparison; CustomEquality>]
     type ScheduledTick =
@@ -87,11 +90,21 @@ module SchedulingTypes =
         override this.GetHashCode() =
             HashCode.Combine(this.Second, int this.Priority, this.SequenceId)
 
-    type TickResult =
-        { State: MatchState
-          Events: MatchEvent list
-          SpawnedTicks: ScheduledTick list
-          PlayStateTransition: PlayState option }
+    type AgentOutput =
+        { State       : MatchState
+          Events      : MatchEvent list
+          Spawned     : ScheduledTick list
+          Transition  : PlayState option }
+
+    type TickResult = AgentOutput
+
+    type Agent =
+        ClubId            // homeId
+          -> Player list  // homeSquad
+          -> Player list  // awaySquad
+          -> ScheduledTick
+          -> MatchState
+          -> AgentOutput
 
     type LoopState =
         { MatchState: MatchState

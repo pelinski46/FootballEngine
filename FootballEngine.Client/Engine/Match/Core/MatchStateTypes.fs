@@ -2,21 +2,83 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
-open TacticalInstructions
+open FootballEngine.Domain.TacticalInstructions
 
-module ClubSide =
-    let ofClubId (clubId: ClubId) (s: MatchState) : ClubSide =
-        if clubId = s.Home.Id then HomeClub else AwayClub
+type PlayerOut =
+    | SidelinedByRedCard
+    | SidelinedByInjury
+    | SidelinedBySub
 
-    let toClubId (side: ClubSide) (s: MatchState) : ClubId =
-        match side with
-        | HomeClub -> s.Home.Id
-        | AwayClub -> s.Away.Id
+type Spatial =
+    { X: float
+      Y: float
+      Z: float
+      Vx: float
+      Vy: float
+      Vz: float }
 
-    let teamSide (side: ClubSide) (s: MatchState) : TeamSide =
-        match side with
-        | HomeClub -> s.HomeSide
-        | AwayClub -> s.AwaySide
+type Spin = { Top: float; Side: float }
+
+module Spin =
+    let zero = { Top = 0.0; Side = 0.0 }
+
+type OffsideSnapshot =
+    { PasserId: PlayerId
+      ReceiverId: PlayerId
+      ReceiverXAtPass: float
+      SecondLastDefenderX: float
+      BallXAtPass: float
+      Dir: AttackDir }
+
+type TeamSide =
+    { Players: Player[]
+      Conditions: int[]
+      Positions: Spatial[]
+      BasePositions: Spatial[]
+      Sidelined: Map<PlayerId, PlayerOut>
+      Yellows: Map<PlayerId, int>
+      SubsUsed: int
+      Tactics: TeamTactics
+      Instructions: TacticalInstructions option }
+
+type PenaltyShootout =
+    { HomeKicks: (PlayerId * bool * int) list
+      AwayKicks: (PlayerId * bool * int) list
+      CurrentKick: int
+      IsComplete: bool }
+
+type BallPhysicsState =
+    { Position: Spatial
+      Spin: Spin
+      LastTouchBy: PlayerId option
+      IsInPlay: bool }
+
+type MatchState =
+    { Home: Club
+      Away: Club
+      HomeCoach: Staff
+      AwayCoach: Staff
+      Second: int
+      HomeScore: int
+      AwayScore: int
+      Ball: BallPhysicsState
+      AttackingClub: ClubSide
+      Momentum: float
+      HomeSide: TeamSide
+      AwaySide: TeamSide
+      PenaltyShootout: PenaltyShootout option
+      IsExtraTime: bool
+      IsKnockoutMatch: bool
+      PendingOffsideSnapshot: OffsideSnapshot option }
+
+type MatchContext =
+    { HomePositions: Map<PlayerId, float * float>
+      AwayPositions: Map<PlayerId, float * float> }
+
+type MatchReplay =
+    { Final: MatchState
+      Events: MatchEvent list
+      Snapshots: MatchState[] }
 
 module MatchStateOps =
 
@@ -85,7 +147,9 @@ module MatchStateOps =
 
     let adjustMomentum (dir: AttackDir) (delta: float) (s: MatchState) : MatchState =
         let signedDelta = AttackDir.momentumDelta dir delta
-        { s with Momentum = Math.Clamp(s.Momentum + signedDelta, -10.0, 10.0) }
+
+        { s with
+            Momentum = Math.Clamp(s.Momentum + signedDelta, -10.0, 10.0) }
 
     let activeIndices (players: Player[]) (sidelined: Map<PlayerId, PlayerOut>) =
         players
@@ -124,7 +188,9 @@ module MatchStateOps =
 
     let defaultBall =
         { Position = defaultSpatial 50.0 50.0
-          LastTouchBy = None }
+          Spin = Spin.zero
+          LastTouchBy = None
+          IsInPlay = true }
 
     let clubIdOf (p: Player) (s: MatchState) =
         if s.HomeSide.Players |> Array.exists (fun x -> x.Id = p.Id) then
@@ -140,7 +206,17 @@ module MatchStateOps =
             Ball =
                 { s.Ball with
                     Position = defaultSpatial 50.0 50.0
-                    LastTouchBy = None } }
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    IsInPlay = true } }
+
+    let clearOffsideSnapshot (s: MatchState) : MatchState =
+        { s with PendingOffsideSnapshot = None }
+
+    let flipPossessionAndClearOffside (clubSide: ClubSide) (s: MatchState) : MatchState =
+        { s with
+            AttackingClub = ClubSide.flip clubSide
+            PendingOffsideSnapshot = None }
 
     let awardGoal (scoringClub: ClubSide) (scorerId: PlayerId option) (second: int) (s: MatchState) =
         let isHome = scoringClub = HomeClub
@@ -152,7 +228,9 @@ module MatchStateOps =
                 AwayScore = if isHome then s.AwayScore else s.AwayScore + 1
                 Momentum = Math.Clamp(s.Momentum + (if isHome then 3.0 else -3.0), -10.0, 10.0) }
             |> resetBallToCenter
-            |> fun s'' -> { s'' with AttackingClub = ClubSide.flip scoringClub }
+            |> fun s'' ->
+                { s'' with
+                    AttackingClub = ClubSide.flip scoringClub }
 
         let events =
             match scorerId with
@@ -164,3 +242,21 @@ module MatchStateOps =
             | None -> []
 
         s', events
+
+    let matchUrgency (clubId: ClubId) (s: MatchState) : float =
+        let late = s.Second > 60 * 60
+        let ts = side clubId s
+        let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
+
+        let sit =
+            match goalDiff clubId s with
+            | d when d > 0 -> 1
+            | d when d < 0 -> -1
+            | _ -> 0
+
+        match sit, late with
+        | -1, true -> 1.35 * tacticsCfg.UrgencyMultiplier
+        | -1, false -> 1.15 * tacticsCfg.UrgencyMultiplier
+        | 1, _ -> 0.85 * tacticsCfg.UrgencyMultiplier
+        | 0, true -> 1.10 * tacticsCfg.UrgencyMultiplier
+        | _ -> 1.00 * tacticsCfg.UrgencyMultiplier

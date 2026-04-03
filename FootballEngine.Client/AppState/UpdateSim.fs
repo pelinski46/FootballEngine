@@ -205,10 +205,10 @@ module UpdateSim =
 
         match msg with
         | Advance days ->
-   
+
 
             if state.IsProcessing then
-  
+
                 state, Cmd.none
             else
                 let gs = getGs ()
@@ -239,35 +239,35 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> Engine.advanceDays days gs))
+                    (fun () -> Task.Run(fun () -> advanceDays days gs))
                     ()
                     (SimMsg << AdvanceDone)
                     (fun ex ->
                         printfn $"[CRASH] Advance Error: {ex.ToString()}"
-                        SetProcessing false) 
+                        SetProcessing false)
 
         | AdvanceDone result ->
-           
+
             let nextState = applyDayResult result state
 
             let baseCmd =
                 if result.SeasonComplete then
-           
+
                     Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
                 else
                     saveCmd result.GameState
 
             if hasUserFixtureToday result.GameState then
-    
+
                 nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateUserFixture) ]
             else
                 nextState, baseCmd
 
         | SimulateUserFixture ->
-    
+
 
             if state.IsProcessing then
-            
+
                 state, Cmd.none
             else
                 { state with IsProcessing = true },
@@ -296,15 +296,15 @@ module UpdateSim =
             { state with IsProcessing = false }, Cmd.none
 
         | SimulateSeason ->
-            
+
 
             if state.IsProcessing then
-        
+
                 state, Cmd.none
             else
                 let gs = getGs ()
 
-            
+
 
                 let prevSkills =
                     GameState.getUserSquad gs
@@ -319,7 +319,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> Engine.simulateAndAdvanceSeason gs))
+                    (fun () -> Task.Run(fun () -> simulateAndAdvanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone)
                     (fun ex ->
@@ -333,7 +333,7 @@ module UpdateSim =
                 |> Map.toSeq
                 |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.count)
 
-            
+
             let nextState = applySeasonResult result state
 
             match nextState.Mode with
@@ -345,21 +345,21 @@ module UpdateSim =
             handle AdvanceSeason ({ state with IsProcessing = false })
 
         | SeasonAdvanceDone(Error(SimulationErrors msg)) ->
-       
+
 
             { state with IsProcessing = false }
             |> pushNotification NotificationIcons.error "Sim Season failed" msg,
             Cmd.none
 
         | AdvanceSeason ->
- 
+
 
             if state.IsProcessing then
-               
+
                 state, Cmd.none
             else
                 let gs = getGs ()
-             
+
 
                 let prevSkills =
                     GameState.getUserSquad gs
@@ -374,7 +374,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> Engine.advanceSeason gs))
+                    (fun () -> Task.Run(fun () -> advanceSeason gs))
                     ()
                     (SimMsg << SeasonAdvanceDone << Ok)
                     (fun ex ->

@@ -1,13 +1,9 @@
 namespace FootballEngine
 
-open System
 open FootballEngine.Domain
-open FootballEngine.MatchPlayerMovement
-open FootballEngine.MatchPlayerDecision
-open FootballEngine.MatchPlayerAction
 open FootballEngine.MatchStateOps
 open FootballEngine.Stats
-
+open SchedulingTypes
 
 module MatchSimulator =
 
@@ -16,409 +12,65 @@ module MatchSimulator =
         | IncompleteLineup of clubName: string * playerCount: int
         | SameClub of clubName: string
 
-    let private fatigue
-        (p: Player)
-        (pressing: bool)
-        (tactics: TeamTactics)
-        (instructions: TacticalInstructions option)
-        =
-        let config = tacticsConfig tactics instructions
-        let base' = (100 - p.Physical.Stamina) / 20
-        let workRate = p.Mental.WorkRate / 15
-
-        int (
-            float (base' + workRate)
-            * (if pressing then 1.5 else 1.0)
-            * config.PressingIntensity
-        )
-
-    let private applyFatigue (s: MatchState) : MatchState =
-        let ballX = s.Ball.Position.X
-        let dir = AttackDir.ofClubSide s.AttackingClub
-
-        let drain (ts: TeamSide) (pressing: bool) (fatigueMultiplier: float) =
-            { ts with
-                Conditions =
-                    Array.map2
-                        (fun c p ->
-                            Math.Max(
-                                0,
-                                c
-                                - int (float (fatigue p pressing ts.Tactics ts.Instructions) * fatigueMultiplier)
-                            ))
-                        ts.Conditions
-                        ts.Players }
-
-        let homePressingThird =
-            match dir with
-            | LeftToRight -> ballX < 30.0
-            | RightToLeft -> ballX > 70.0
-
-        let awayPressingThird =
-            match dir with
-            | LeftToRight -> ballX > 70.0
-            | RightToLeft -> ballX < 30.0
-
-        s
-        |> withSide s.Home.Id (drain (homeSide s) homePressingThird (1.0 - BalanceConfig.HomeFatigueReduction))
-        |> withSide s.Away.Id (drain (awaySide s) awayPressingThird 1.0)
-
-    open SchedulingTypes
-
-    let private physicsDt = 0.5
-
     let private generateInitialTicks (init: MatchState) : ScheduledTick list =
-        let seqAfterDuel = 0L
-
-        let physics =
-            [ for sec in 30..30 .. (95 * 60) ->
-                  { Second = sec
-                    Priority = TickPriority.Physics
-                    SequenceId = seqAfterDuel + int64 (sec / 30)
-                    Kind = PhysicsTick } ]
-
-        let seqAfterPhysics = seqAfterDuel + int64 (95 * 60 / 30 + 1)
-
         let subs =
             [ for idx, min in List.indexed [ 60; 75; 85 ] ->
                   { Second = min * 60
                     Priority = TickPriority.Manager
-                    SequenceId = seqAfterPhysics + int64 idx
-                    Kind = SubstitutionTick init.Home.Id } ]
+                    SequenceId = int64 idx
+                    Kind = SubstitutionTick init.Home.Id }
+              for idx, min in List.indexed [ 60; 75; 85 ] ->
+                  { Second = min * 60
+                    Priority = TickPriority.Manager
+                    SequenceId = int64 (idx + 3)
+                    Kind = SubstitutionTick init.Away.Id } ]
 
-        let seqAfterSubs = seqAfterPhysics + 3L
-
-        [ { Second = 45 * 60
-            Priority = TickPriority.MatchControl
-            SequenceId = seqAfterSubs
-            Kind = HalfTimeTick }
-          { Second = 95 * 60
-            Priority = TickPriority.MatchControl
-            SequenceId = seqAfterSubs + 1L
-            Kind = FullTimeTick } ]
-        |> List.append subs
-        |> List.append physics
-
-    let private runPlayerChain
-        (homeId: ClubId)
-        (second: int)
-        (s: MatchState)
-        : MatchState * MatchEvent list * Player option * Player option =
-
-        let rec loop state events intent depth lastAtt lastDef =
-            if depth >= BalanceConfig.AvgChainLength || intent = PlayerIdle then
-                state, List.rev events, lastAtt, lastDef
-            else
-                let lastAtt' =
-                    match intent with
-                    | ResolveDuel(att, _) -> Some att
-                    | ExecuteShot att -> Some att
-                    | ExecutePass att -> Some att
-                    | ExecuteDribble att -> Some att
-                    | ExecuteCross att -> Some att
-                    | ExecuteLongBall att -> Some att
-                    | ExecuteFreeKick att -> Some att
-                    | _ -> lastAtt
-
-                let lastDef' =
-                    match intent with
-                    | ResolveDuel(_, def) -> Some def
-                    | ExecuteTackle def -> Some def
-                    | _ -> lastDef
-
-                let newState, newEvents, nextIntent = resolve homeId second intent state
-
-                let shouldTerminate =
-                    newEvents
-                    |> List.exists (fun e ->
-                        match e.Type with
-                        | MatchEventType.Goal
-                        | FoulCommitted -> true
-                        | _ -> false)
-
-                if shouldTerminate then
-                    newState, List.rev (newEvents @ events), lastAtt', lastDef'
-                else
-                    loop newState (newEvents @ events) nextIntent (depth + 1) lastAtt' lastDef'
-
-        loop s [] (decide s) 0 None None
-
-    let private runRefereeStep second att def s =
-        let intents = MatchReferee.decide second att def s
-
-        let s', evs =
-            intents
-            |> List.fold
-                (fun (accState, accEvents) intent ->
-                    let s', evs = MatchReferee.resolve second intent accState
-                    s', evs @ accEvents)
-                (s, [])
-            |> fun (s, evs) -> s, List.rev evs
-
-        s', evs, intents
-
-    let private runManagerStep second homeSquad awaySquad s =
-        MatchManager.decide second homeSquad awaySquad s
-        |> List.fold
-            (fun (accState, accEvents) intent ->
-                let s', evs = MatchManager.resolve second intent accState
-                s', evs @ accEvents)
-            (s, [])
-        |> fun (s, evs) -> s, List.rev evs
+        [ yield
+              { Second = 30
+                Priority = TickPriority.Physics
+                SequenceId = 0L
+                Kind = PhysicsTick }
+          yield! subs
+          yield
+              { Second = 45 * 60
+                Priority = TickPriority.MatchControl
+                SequenceId = 10L
+                Kind = HalfTimeTick }
+          yield
+              { Second = 95 * 60
+                Priority = TickPriority.MatchControl
+                SequenceId = 11L
+                Kind = FullTimeTick } ]
 
     let private runTick
         (homeId: ClubId)
         (homeSquad: Player list)
         (awaySquad: Player list)
-        (allPlayers: Player list)
         (tick: ScheduledTick)
         (s: MatchState)
-        : TickResult =
+        : AgentOutput =
 
-        let s = { s with Second = tick.Second }
+        let dispatchAgent (tick: ScheduledTick) : Agent =
+            match tick.Kind with
+            | PhysicsTick -> BallAgent.agent
+            | DuelTick _
+            | PlayerActionTick _ -> PlayerAgent.agent
+            | FreeKickTick _
+            | CornerTick _
+            | ThrowInTick _
+            | PenaltyTick _
+            | GoalKickTick
+            | KickOffTick -> SetPieceAgent.agent
+            | InjuryTick _
+            | ResumePlayTick
+            | HalfTimeTick
+            | FullTimeTick
+            | MatchEndTick
+            | ExtraTimeTick _ -> RefereeAgent.agent
+            | SubstitutionTick _
+            | ManagerReactionTick _ -> ManagerAgent.agent
 
-        match tick.Kind with
-        | MatchEndTick
-        | FullTimeTick ->
-            { State = s
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = None }
-
-        | HalfTimeTick ->
-            { State = s
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = None }
-
-        | PhysicsTick ->
-            let newState =
-                s
-                |> updatePlayerVelocities physicsDt
-                |> Pitch.updatePositions physicsDt
-                |> MatchBall.updatePhysics physicsDt
-                |> applyFatigue
-
-            { State = newState
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = None }
-
-        | SubstitutionTick clubId ->
-            let newState, newEvents = runManagerStep tick.Second homeSquad awaySquad s
-
-            { State = newState
-              Events = newEvents
-              SpawnedTicks = []
-              PlayStateTransition = None }
-
-        | DuelTick chainDepth ->
-            let s1 = s |> updatePlayerVelocities physicsDt
-            let s1b = s1 |> Pitch.updatePositions physicsDt
-            let s2, playerEvents, att, def = runPlayerChain homeId tick.Second s1b
-            let s3 = s2 |> MatchBall.updatePhysics physicsDt
-            let s4, refereeEvents, refereeIntents = runRefereeStep tick.Second att def s3
-            let s5, managerEvents = runManagerStep tick.Second homeSquad awaySquad s4
-            let finalState = s5 |> applyFatigue
-            let allEvents = playerEvents @ refereeEvents @ managerEvents
-
-            let throwInIntent =
-                refereeIntents
-                |> List.tryPick (function
-                    | MatchReferee.AwardThrowIn team -> Some team
-                    | _ -> None)
-
-            let transition =
-                allEvents
-                |> List.tryFind (fun e ->
-                    match e.Type with
-                    | FoulCommitted
-                    | MatchEventType.Goal
-                    | MatchEventType.Corner -> true
-                    | _ -> false)
-                |> Option.map (fun e ->
-                    match e.Type with
-                    | FoulCommitted -> Stopped Foul
-                    | MatchEventType.Goal -> Stopped Goal
-                    | MatchEventType.Corner -> SetPiece Corner
-                    | _ -> LivePlay)
-
-            let injuryIntent =
-                refereeIntents
-                |> List.tryPick (function
-                    | MatchReferee.IssueInjury(player, _) -> Some(player.Id, 1)
-                    | _ -> None)
-
-            let stoppageSeconds =
-                match injuryIntent with
-                | Some _ -> 30
-                | None -> 0
-
-
-
-            let spawned =
-                match throwInIntent with
-                | Some team when chainDepth < 6 ->
-                    [ { Second = tick.Second + 1
-                        Priority = TickPriority.SetPiece
-                        SequenceId = 0L
-                        Kind = ThrowInTick(team, chainDepth + 1) } ]
-                | Some _ -> []
-                | None ->
-                    match injuryIntent with
-                    | Some(playerId, severity) when chainDepth < 6 ->
-                        [ { Second = tick.Second + 1
-                            Priority = TickPriority.MatchControl
-                            SequenceId = 0L
-                            Kind = InjuryTick(playerId, severity) }
-                          { Second = tick.Second + stoppageSeconds
-                            Priority = TickPriority.MatchControl
-                            SequenceId = 1L
-                            Kind = ResumePlayTick } ]
-                    | Some _ -> []
-                    | None ->
-                        match transition with
-                        | Some(Stopped Foul) when chainDepth < 6 ->
-                            match att with
-                            | Some kicker ->
-                                [ { Second = tick.Second + 1
-                                    Priority = TickPriority.SetPiece
-                                    SequenceId = 0L
-                                    Kind = FreeKickTick(kicker.Id, finalState.Ball.Position, chainDepth + 1) } ]
-                            | None ->
-                                [ { Second = tick.Second + 1
-                                    Priority = TickPriority.MatchControl
-                                    SequenceId = 0L
-                                    Kind = ResumePlayTick } ]
-                        | Some(Stopped Foul) -> []
-                        | Some(SetPiece Corner) when chainDepth < 6 ->
-                            [ { Second = tick.Second + 1
-                                Priority = TickPriority.SetPiece
-                                SequenceId = 0L
-                                Kind = CornerTick(finalState.AttackingClub, chainDepth + 1) } ]
-                        | Some(SetPiece Corner) -> []
-                        | _ -> []
-
-            let managerReactions =
-                if chainDepth < 6 then
-                    let goalEvents = allEvents |> List.filter (fun e -> e.Type = MatchEventType.Goal)
-
-                    let cardEvents =
-                        allEvents
-                        |> List.filter (fun e -> e.Type = MatchEventType.RedCard || e.Type = MatchEventType.YellowCard)
-
-                    [ yield!
-                          goalEvents
-                          |> List.map (fun e ->
-                              { Second = tick.Second + 5
-                                Priority = TickPriority.Manager
-                                SequenceId = 0L
-                                Kind = ManagerReactionTick(GoalScored) })
-                      yield!
-                          cardEvents
-                          |> List.map (fun e ->
-                              { Second = tick.Second + 5
-                                Priority = TickPriority.Manager
-                                SequenceId = 0L
-                                Kind = ManagerReactionTick(RedCardTrigger e.PlayerId) }) ]
-                else
-                    []
-
-            let finalSpawned = spawned @ managerReactions
-
-            let spawnedWithNextDuel =
-                let baseInterval = normalInt 25.0 5.0 15 35
-                let momentumFactor = 1.0 - Math.Abs(finalState.Momentum) * 0.03
-                let interval = int (float baseInterval * momentumFactor) |> max 10
-
-                if tick.Second + interval < 95 * 60 then
-                    { Second = tick.Second + interval
-                      Priority = TickPriority.Duel
-                      SequenceId = 0L
-                      Kind = DuelTick 0 }
-                    :: finalSpawned
-                else
-                    finalSpawned
-
-            let finalTransition =
-                match injuryIntent with
-                | Some _ when chainDepth < 6 -> Some(Stopped Injury)
-                | Some _ -> Some LivePlay
-                | None ->
-                    match throwInIntent with
-                    | Some _ -> Some(SetPiece ThrowIn)
-                    | None -> transition
-
-            { State = finalState
-              Events = allEvents
-              SpawnedTicks = spawnedWithNextDuel
-              PlayStateTransition = finalTransition }
-
-        | FreeKickTick(kickerId, _position, _chainDepth) ->
-            let kicker =
-                seq {
-                    yield! s.HomeSide.Players
-                    yield! s.AwaySide.Players
-                }
-                |> Seq.tryFind (fun p -> p.Id = kickerId)
-                |> Option.defaultWith (fun () ->
-
-                    s.HomeSide.Players.[0])
-
-            let intent = ExecuteFreeKick kicker
-            let newState, events, _ = resolve homeId tick.Second intent s
-
-            { State = newState |> applyFatigue
-              Events = events
-              SpawnedTicks = []
-              PlayStateTransition = Some LivePlay }
-
-        | CornerTick(_club, _chainDepth) ->
-            let intent = ExecuteCorner
-            let newState, events, _ = resolve homeId tick.Second intent s
-
-            { State = newState |> applyFatigue
-              Events = events
-              SpawnedTicks = []
-              PlayStateTransition = Some LivePlay }
-
-        | ThrowInTick(team, _chainDepth) ->
-            let intent = ExecuteThrowIn team
-            let newState, events, _ = resolve homeId tick.Second intent s
-
-            { State = newState |> applyFatigue
-              Events = events
-              SpawnedTicks = []
-              PlayStateTransition = Some LivePlay }
-
-        | InjuryTick(_playerId, _severity) ->
-            { State = s
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = Some(Stopped Injury) }
-
-        | ResumePlayTick ->
-            { State = s
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = Some LivePlay }
-
-        | ManagerReactionTick _trigger ->
-            let newState, events = runManagerStep tick.Second homeSquad awaySquad s
-
-            { State = newState
-              Events = events
-              SpawnedTicks = []
-              PlayStateTransition = Some LivePlay }
-        | GoalKickTick
-        | KickOffTick
-        | PenaltyTick _
-        | ExtraTimeTick _ ->
-            { State = s
-              Events = []
-              SpawnedTicks = []
-              PlayStateTransition = None }
-
+        (dispatchAgent tick) homeId homeSquad awaySquad tick s
 
     let private runLoopDes
         (homeId: ClubId)
@@ -453,9 +105,9 @@ module MatchSimulator =
               SequenceId = -1L
               Kind = DuelTick 0 }
 
-        let allPlayers = homeSquad @ awaySquad
+        let snapshotInterval = 5
 
-        let rec loop ls (scheduler: TickScheduler) =
+        let rec loop ls (scheduler: TickScheduler) lastSnapshotAt =
             match scheduler.Dequeue() with
             | ValueNone -> ls.MatchState, List.rev ls.ReversedEvents, ls.Snapshots |> Option.map _.ToArray()
 
@@ -473,25 +125,29 @@ module MatchSimulator =
                     let shouldProcess =
                         match ls.PlayState, tick.Kind with
                         | (Stopped _ | SetPiece _), DuelTick _ -> false
+                        | (Stopped _ | SetPiece _), PlayerActionTick _ -> false
                         | (Stopped _ | SetPiece _), PhysicsTick -> false
                         | _ -> true
 
                     if not shouldProcess then
-                        loop ls scheduler
+                        loop ls scheduler lastSnapshotAt
                     else
-                        let result = runTick homeId homeSquad awaySquad allPlayers tick ls.MatchState
+                        let result = runTick homeId homeSquad awaySquad tick ls.MatchState
 
-                        match ls.Snapshots, tick.Kind with
-                        | Some snaps, DuelTick _ -> snaps.Add(result.State)
-                        | _ -> ()
+                        let newLastSnapshotAt =
+                            match ls.Snapshots with
+                            | Some snaps when tick.Second >= lastSnapshotAt + snapshotInterval ->
+                                snaps.Add(result.State)
+                                tick.Second
+                            | _ -> lastSnapshotAt
 
                         let stampedTicks, newCounter =
-                            result.SpawnedTicks
+                            result.Spawned
                             |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) ls.SequenceCounter
 
                         stampedTicks |> List.iter scheduler.Insert
 
-                        let newPlayState = result.PlayStateTransition |> Option.defaultValue ls.PlayState
+                        let newPlayState = result.Transition |> Option.defaultValue ls.PlayState
 
                         loop
                             { ls with
@@ -500,8 +156,9 @@ module MatchSimulator =
                                 PlayState = newPlayState
                                 SequenceCounter = newCounter }
                             scheduler
+                            newLastSnapshotAt
 
-        loop initialState scheduler
+        loop initialState scheduler 0
 
     let private runLoopFastDes homeId homeSquad awaySquad init =
         let s, evs, _ = runLoopDes homeId homeSquad awaySquad init false
@@ -621,7 +278,8 @@ module MatchSimulator =
               Instructions = awayInstructions |> Option.orElse (Some defaultInstructions) }
           PenaltyShootout = None
           IsExtraTime = false
-          IsKnockoutMatch = isKnockout }
+          IsKnockoutMatch = isKnockout
+          PendingOffsideSnapshot = None }
 
     let private simulatePenaltyShootout (s: MatchState) (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
         result {
@@ -639,11 +297,11 @@ module MatchSimulator =
                 let homeKicker = homePlayers |> List.item ((kickNum - 1) % homePlayers.Length)
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
 
-                let homeS, _, _ =
-                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(homeKicker, HomeClub, kickNum)) s
+                let homeAction = PlayerAction.Penalty(homeKicker, HomeClub, kickNum)
+                let homeS, _ = PlayerAgent.resolve home.Id (95 * 60 + kickNum) homeAction s
 
-                let awayS, _, _ =
-                    resolve home.Id (95 * 60 + kickNum) (ExecutePenalty(awayKicker, AwayClub, kickNum)) homeS
+                let awayAction = PlayerAction.Penalty(awayKicker, AwayClub, kickNum)
+                let awayS, _ = PlayerAgent.resolve home.Id (95 * 60 + kickNum) awayAction homeS
 
                 let homeScored = homeS.HomeScore > s.HomeScore
                 let awayScored = awayS.AwayScore > homeS.AwayScore
@@ -789,3 +447,5 @@ module MatchSimulator =
             else
                 return replay, false
         }
+
+   
