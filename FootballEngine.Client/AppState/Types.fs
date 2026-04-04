@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.World
 
 module AppTypes =
 
@@ -64,17 +65,10 @@ module AppTypes =
           SecondaryCountries: CountryCode list
           ManagerName: string }
 
-    type NegotiationStep =
-        | MakingOffer
-        | OfferRejected of reason: string
-        | NegotiatingContract of offeredSalary: decimal * offeredYears: int
-        | ContractRejected
-        | NegotiationComplete
-
-    type ActiveNegotiation =
+    type PendingOffer =
         { PlayerId: PlayerId
-          OfferedFee: decimal
-          Step: NegotiationStep }
+          Fee: decimal
+          Salary: decimal }
 
     type TransferState =
         { ActiveTab: TransferTab
@@ -89,10 +83,9 @@ module AppTypes =
           ClubNameCache: Map<PlayerId, string>
           IsLoading: bool
           Page: int
-          OutgoingOffers: TransferOffer list
           TransferHistory: TransferRecord list
-          NextOfferId: int
-          ActiveNegotiation: ActiveNegotiation option }
+          ActiveNegotiationId: int option
+          PendingOffer: PendingOffer option }
 
     type MatchLabState =
         { HomeClubId: ClubId option
@@ -132,7 +125,8 @@ module AppTypes =
           InterpolationT: float
           Inbox: InboxState
           PrevUserClubSkills: Map<PlayerId, int> option
-          PrevUserClubStatus: Map<PlayerId, PlayerStatus> option }
+          PrevUserClubStatus: Map<PlayerId, PlayerStatus> option
+          WorldClock: WorldClock }
 
     let initSetupState =
         { Step = MainMenu
@@ -153,10 +147,9 @@ module AppTypes =
           ClubNameCache = Map.empty
           IsLoading = false
           Page = 0
-          OutgoingOffers = []
           TransferHistory = []
-          NextOfferId = 1
-          ActiveNegotiation = None }
+          ActiveNegotiationId = None
+          PendingOffer = None }
 
     let initMatchLabState =
         { HomeClubId = None

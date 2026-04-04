@@ -341,4 +341,6 @@ module WorldGen =
           UserStaffId = userStaffId
           PrimaryCountry = primaryCountry
           Inbox = []
-          NextInboxId = 1 }
+          NextInboxId = 1
+          PendingNegotiations = Map.empty
+          NextNegotiationId = 1 }

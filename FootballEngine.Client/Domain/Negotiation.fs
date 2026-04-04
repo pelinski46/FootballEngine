@@ -2,11 +2,15 @@ namespace FootballEngine.Domain
 
 open System
 
+type NegotiationId = NegotiationId of int
+
 type NegotiationStage =
     | Approaching
     | OfferMade of fee: decimal
-    | CounterReceived of fee: decimal * round: int
-    | ContractDiscussion of fee: decimal * salary: decimal
+    | RejectedByClub of fee: decimal * reason: string
+    | CounterReceived of fee: decimal * counter: decimal
+    | AwaitingPlayerResponse of fee: decimal * salary: decimal
+    | RejectedByPlayer of fee: decimal * salary: decimal * reason: string
     | Agreed of fee: decimal * salary: decimal * years: int
     | Collapsed of reason: string
 

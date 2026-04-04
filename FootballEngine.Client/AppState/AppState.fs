@@ -4,6 +4,7 @@ open Elmish
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
 open AppTypes
+open FootballEngine.World
 
 
 module AppState =
@@ -29,7 +30,8 @@ module AppState =
           InterpolationT = 0.0
           Inbox = initInboxState
           PrevUserClubSkills = None
-          PrevUserClubStatus = None }
+          PrevUserClubStatus = None
+          WorldClock = WorldClockOps.init 1 }
 
     let private addLog msg (state: State) =
         { state with
@@ -158,7 +160,8 @@ module AppState =
                     Mode = InGame(gs, managerEmployment gs)
                     CurrentPage = HomePage
                     SelectedLeagueId = leagueId
-                    IsProcessing = false },
+                    IsProcessing = false
+                    WorldClock = WorldClockOps.init gs.Season },
                 Cmd.none
             | None ->
                 { state with

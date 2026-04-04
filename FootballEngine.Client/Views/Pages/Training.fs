@@ -13,6 +13,7 @@ open FootballEngine.AppTypes
 open FootballEngine.Domain
 open FootballEngine.Icons
 open FootballEngine.Components
+open FootballEngine.World.Phases
 
 module TrainingPresenter =
 

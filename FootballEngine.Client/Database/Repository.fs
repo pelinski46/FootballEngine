@@ -227,7 +227,9 @@ module Db =
                               UserStaffId = meta.UserStaffId
                               PrimaryCountry = meta.PrimaryCountry
                               Inbox = inbox
-                              NextInboxId = meta.NextInboxId }
+                              NextInboxId = meta.NextInboxId
+                              PendingNegotiations = Map.empty
+                              NextNegotiationId = 1 }
         }
 
     let initTables () =

@@ -94,6 +94,7 @@ module IconName =
     let bullhorn = MaterialIconKind.Bullhorn
     let fileDocumentEdit = MaterialIconKind.FileDocumentEditOutline
     let ambulance = MaterialIconKind.Ambulance
+    let hourglass = MaterialIconKind.Hourglass
 
 module PlayerIcon =
     let condition = MaterialIconKind.HeartPulse

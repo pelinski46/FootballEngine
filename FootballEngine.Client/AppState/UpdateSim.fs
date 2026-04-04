@@ -3,10 +3,10 @@ namespace FootballEngine
 open System.Threading.Tasks
 open Elmish
 open FootballEngine.Domain
-open FootballEngine.Engine
 open FootballEngine.Icons
 open AppTypes
 open AppMsgs
+open FootballEngine.World.WorldRunner
 
 module UpdateSim =
 
@@ -90,14 +90,15 @@ module UpdateSim =
             if result.Logs.IsEmpty then
                 []
             else
-                $"{result.PlayedFixtures.Length} matches played" :: result.Logs
+                $"{result.PlayedMatches.Length} matches played" :: result.Logs
 
         let nextState =
             { state with
                 Mode = InGame(result.GameState, managerEmployment result.GameState)
                 IsProcessing = false
+                WorldClock = result.WorldClock
                 LogMessages = logs @ state.LogMessages |> List.truncate 30 }
-            |> applyMatchNotifs result.GameState result.PlayedFixtures
+            |> applyMatchNotifs result.GameState result.PlayedMatches
 
         match state.PrevUserClubSkills, state.PrevUserClubStatus with
         | Some prevSkills, Some prevStatus ->
@@ -122,20 +123,23 @@ module UpdateSim =
 
     let private applySeasonResult (result: SeasonResult) (state: State) =
         let userLine =
-            userFinishingLine result.SeasonFinalGs state.SelectedLeagueId result.NewGs.UserClubId
+            userFinishingLine result.SeasonFinalGs state.SelectedLeagueId result.NextSeasonGs.UserClubId
 
-        let messages = $"Season {result.NewGs.Season} begins" :: userLine @ result.Summary
+        let messages =
+            $"Season {result.NextSeasonGs.Season} begins" :: userLine @ result.Summary
+
         let seasonBody = userLine |> String.concat " · "
 
         let seasonStartMsg =
-            InboxMessages.generateSeasonStartMessage result.NewGs.CurrentDate result.NewGs.Season
+            InboxMessages.generateSeasonStartMessage result.NextSeasonGs.CurrentDate result.NextSeasonGs.Season
 
-        let gsAfterSeasonStart = GameState.addInboxMessage seasonStartMsg result.NewGs
+        let gsAfterSeasonStart =
+            GameState.addInboxMessage seasonStartMsg result.NextSeasonGs
 
         let stateWithInbox =
             match state.PrevUserClubSkills with
             | Some prevSkills ->
-                let userClubPlayers = GameState.getUserSquad result.NewGs
+                let userClubPlayers = GameState.getUserSquad result.NextSeasonGs
 
                 let improved =
                     userClubPlayers
@@ -154,9 +158,9 @@ module UpdateSim =
 
                         Some(
                             Inbox.create
-                                result.NewGs.CurrentDate
+                                result.NextSeasonGs.CurrentDate
                                 "Youth Development System"
-                                $"Season {result.NewGs.Season - 1} Development Summary"
+                                $"Season {result.NextSeasonGs.Season - 1} Development Summary"
                                 $"The following players showed improvement over the season:\n\n{improvements}"
                                 InboxMessageCategory.Development
                                 false
@@ -182,16 +186,19 @@ module UpdateSim =
         let prevGs =
             match state.Mode with
             | InGame(gs, _) -> gs
-            | _ -> result.NewGs
+            | _ -> result.NextSeasonGs
 
         let nextState =
             { stateWithInbox with
                 IsProcessing = false
-                SelectedLeagueId = primaryLeagueId result.NewGs
+                SelectedLeagueId = primaryLeagueId result.NextSeasonGs
                 LogMessages = messages @ stateWithInbox.LogMessages |> List.truncate 50 }
-            |> pushNotification NotificationIcons.seasonComplete $"Season {result.NewGs.Season - 1} Complete" seasonBody
+            |> pushNotification
+                NotificationIcons.seasonComplete
+                $"Season {result.NextSeasonGs.Season - 1} Complete"
+                seasonBody
 
-        match leagueChangeNotif prevGs result.NewGs result.NewGs.UserClubId with
+        match leagueChangeNotif prevGs result.NextSeasonGs result.NextSeasonGs.UserClubId with
         | Some(title, body) when title = "Promoted!" ->
             nextState |> pushNotification NotificationIcons.promotion title body
         | Some(title, body) -> nextState |> pushNotification NotificationIcons.relegation title body
@@ -239,7 +246,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> advanceDays days gs))
+                    (fun () -> Task.Run(fun () -> advanceDays days state.WorldClock gs))
                     ()
                     (SimMsg << AdvanceDone)
                     (fun ex ->
@@ -257,7 +264,7 @@ module UpdateSim =
                 else
                     saveCmd result.GameState
 
-            if hasUserFixtureToday result.GameState then
+            if hasUserMatchToday result.GameState then
 
                 nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateUserFixture) ]
             else
@@ -272,7 +279,7 @@ module UpdateSim =
             else
                 { state with IsProcessing = true },
                 Cmd.OfTask.perform
-                    (fun () -> Task.Run(fun () -> simulateUserFixtureForDay (getGs ())))
+                    (fun () -> Task.Run(fun () -> simulateUserMatch state.WorldClock (getGs ())))
                     ()
                     (SimMsg << UserMatchDone)
 
@@ -282,7 +289,7 @@ module UpdateSim =
 
             let withMatch =
                 { nextState with
-                    ActiveMatchReplay = Some matchDay.UserMatchReplay
+                    ActiveMatchReplay = Some matchDay.MatchReplay
                     ActiveMatchSnapshot = 0
                     CurrentPage = Match }
 
@@ -319,7 +326,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> simulateAndAdvanceSeason gs))
+                    (fun () -> Task.Run(fun () -> simulateFullSeasonAndAdvance state.WorldClock gs))
                     ()
                     (SimMsg << SeasonAdvanceDone)
                     (fun ex ->
@@ -329,7 +336,7 @@ module UpdateSim =
 
         | SeasonAdvanceDone(Ok result) ->
             let totalNew =
-                result.NewGs.Competitions
+                result.NextSeasonGs.Competitions
                 |> Map.toSeq
                 |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.count)
 
@@ -344,11 +351,9 @@ module UpdateSim =
 
             handle AdvanceSeason ({ state with IsProcessing = false })
 
-        | SeasonAdvanceDone(Error(SimulationErrors msg)) ->
-
-
+        | SeasonAdvanceDone(Error(SimulationErrors errors)) ->
             { state with IsProcessing = false }
-            |> pushNotification NotificationIcons.error "Sim Season failed" msg,
+            |> pushNotification NotificationIcons.error "Sim Season failed" (String.concat "\n" errors),
             Cmd.none
 
         | AdvanceSeason ->
@@ -374,7 +379,7 @@ module UpdateSim =
                     PrevUserClubSkills = Some prevSkills
                     PrevUserClubStatus = Some prevStatus },
                 Cmd.OfTask.either
-                    (fun () -> Task.Run(fun () -> advanceSeason gs))
+                    (fun () -> Task.Run(fun () -> advanceToNextSeason state.WorldClock gs))
                     ()
                     (SimMsg << SeasonAdvanceDone << Ok)
                     (fun ex ->

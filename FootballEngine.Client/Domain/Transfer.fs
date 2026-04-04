@@ -16,6 +16,7 @@ type TransferOffer =
       PlayerId: PlayerId
       SellerClubId: ClubId
       Fee: decimal
+      Salary: decimal
       Status: OfferStatus
       CreatedOnDate: DateTime }
 
@@ -96,3 +97,26 @@ module Transfer =
                     |> Map.add toClubId updatedBuyer
                     |> Map.add fromClubId updatedSeller }
         | _ -> gs
+
+    let completeUserTransfer
+        (buyer: Club)
+        (seller: Club)
+        (player: Player)
+        (fee: decimal)
+        (salary: decimal)
+        (years: int)
+        (gs: GameState)
+        : GameState =
+        let updatedPlayer =
+            { player with
+                Affiliation =
+                    Contracted(
+                        buyer.Id,
+                        { Salary = salary
+                          ExpiryYear = gs.Season + years }
+                    )
+                Morale = min 100 (player.Morale + 10) }
+
+        let gs2 = transferPlayer player.Id seller.Id buyer.Id fee gs
+
+        { gs2 with Players = gs2.Players |> Map.add player.Id updatedPlayer }

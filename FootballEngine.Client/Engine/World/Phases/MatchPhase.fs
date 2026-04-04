@@ -1,7 +1,10 @@
-namespace FootballEngine
+namespace FootballEngine.World.Phases
 
+open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Stats
+open FootballEngine.World
+open FootballEngine.MatchSimulator
 
 module MatchOutcome =
 
@@ -156,3 +159,62 @@ module MatchOutcome =
 
             { withUpdatedMorale with
                 Players = injuredPlayers |> Seq.fold applyInjury withUpdatedMorale.Players }
+
+module MatchPhase =
+    open MatchOutcome
+
+    let private getAiFixturesToday (state: GameState) =
+        state.Competitions
+        |> Map.toSeq
+        |> Seq.collect (fun (_, comp) ->
+            comp.Fixtures
+            |> Map.toSeq
+            |> Seq.filter (fun (_, f) ->
+                f.ScheduledDate.Date = state.CurrentDate.Date
+                && not f.Played
+                && f.HomeClubId <> state.UserClubId
+                && f.AwayClubId <> state.UserClubId))
+        |> List.ofSeq
+
+    let private runFixtures (fixtures: (MatchId * MatchFixture) list) (state: GameState) =
+        let gsReady = Lineup.ensureForFixtures fixtures state
+
+        let outcomes =
+            fixtures
+            |> Array.ofList
+            |> Array.Parallel.map (fun (id, fixture) ->
+                let home = gsReady.Clubs[fixture.HomeClubId]
+                let away = gsReady.Clubs[fixture.AwayClubId]
+                id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff)
+            |> Array.choose (fun (id, fixture, result) ->
+                match result with
+                | Ok(h, a, _, finalState) ->
+                    let injured =
+                        finalState.HomeSide.Sidelined
+                        |> Map.toSeq
+                        |> Seq.append (finalState.AwaySide.Sidelined |> Map.toSeq)
+                        |> Seq.choose (fun (pid, s) -> if s = SidelinedByInjury then Some pid else None)
+                        |> Set.ofSeq
+
+                    Some
+                        { FixtureId = id
+                          Fixture =
+                            { fixture with
+                                Played = true
+                                HomeScore = Some h
+                                AwayScore = Some a
+                                Events = [] }
+                          HomeScore = h
+                          AwayScore = a
+                          InjuredPlayers = injured }
+                | Error _ -> None)
+
+        applyOutcomes (fixtureToCompMap gsReady) outcomes gsReady
+
+    let make: WorldPhase =
+        { Frequency = OnDemand
+          Run =
+            fun _clock state ->
+                match getAiFixturesToday state with
+                | [] -> state
+                | fixtures -> runFixtures fixtures state }

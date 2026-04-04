@@ -16,7 +16,9 @@ type GameState =
       UserStaffId: StaffId
       PrimaryCountry: CountryCode
       Inbox: InboxMessage list
-      NextInboxId: int }
+      NextInboxId: int
+      PendingNegotiations: Map<int, Negotiation>
+      NextNegotiationId: int }
 
 module GameState =
 

@@ -1,8 +1,9 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.Engine
+
 open AppTypes
+open FootballEngine.World.WorldRunner
 
 module AppMsgs =
 
@@ -22,7 +23,7 @@ module AppMsgs =
         | SaveGame
         | SimulateSeason
         | SimulateUserFixture
-        | UserMatchDone of Result<UserMatchDayResult, string>
+        | UserMatchDone of Result<UserMatchResult, string>
 
     type TransferMsg =
         | Load
@@ -35,13 +36,11 @@ module AppMsgs =
         | PlayerSelect of PlayerId
         | WatchToggle of PlayerId
         | PageChange of int
-        | MakeOffer of playerId: PlayerId * fee: decimal
-        | UpdateOfferedFee of fee: decimal
+        | MakeOffer of playerId: PlayerId * fee: decimal * salary: decimal
         | SubmitOffer
-        | OfferCounterSalary of salary: decimal * years: int
-        | AcceptContract
-        | WithdrawOffer of offerId: int
+        | WithdrawOffer of negotiationId: int
         | ClearNegotiation
+        | CounterOffer of negotiationId: int * newFee: decimal * newSalary: decimal option
 
     type NotificationMsg =
         | DismissNotification of id: int
