@@ -96,27 +96,9 @@ module BallAgent =
             if t.IsSome then
                 lastTouch <- t
 
-        let dir = AttackDir.ofClubSide state.AttackingClub
-
         let newState =
             { state with
-                Ball = ball
-                HomeSide =
-                    PlayerPhysics.updateTeamSide
-                        state.HomeSide
-                        (state.AttackingClub = HomeClub)
-                        lastTouch
-                        ball
-                        dir
-                        (float subSteps * subStepDt) // dt real para steering
-                AwaySide =
-                    PlayerPhysics.updateTeamSide
-                        state.AwaySide
-                        (state.AttackingClub = AwayClub)
-                        lastTouch
-                        ball
-                        dir
-                        (float subSteps * subStepDt) }
+                Ball = ball }
 
         { State = newState
           Events = []

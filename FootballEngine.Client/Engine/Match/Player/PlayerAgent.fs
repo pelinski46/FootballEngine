@@ -38,37 +38,6 @@ module PlayerAgent =
             * config.PressingIntensity
         )
 
-    let private applyFatigue (s: MatchState) : MatchState =
-        let ballX = s.Ball.Position.X
-        let dir = AttackDir.ofClubSide s.AttackingClub
-
-        let drain ts pressing fatigueMultiplier =
-            { ts with
-                Conditions =
-                    Array.map2
-                        (fun c p ->
-                            Math.Max(
-                                0,
-                                c
-                                - int (float (fatigue p pressing ts.Tactics ts.Instructions) * fatigueMultiplier)
-                            ))
-                        ts.Conditions
-                        ts.Players }
-
-        let homePressing =
-            match dir with
-            | LeftToRight -> ballX < 30.0
-            | RightToLeft -> ballX > 70.0
-
-        let awayPressing =
-            match dir with
-            | LeftToRight -> ballX > 70.0
-            | RightToLeft -> ballX < 30.0
-
-        s
-        |> MatchStateOps.withSide s.Home.Id (drain s.HomeSide homePressing (1.0 - BalanceConfig.HomeFatigueReduction))
-        |> MatchStateOps.withSide s.Away.Id (drain s.AwaySide awayPressing 1.0)
-
     let private hasTerminatingEvent (events: MatchEvent list) =
         events
         |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.FoulCommitted)
@@ -186,9 +155,7 @@ module PlayerAgent =
                       Spawned = [ spawnPlayerActionTick tick.Second (depth + 1) newAction newAtt.Id ]
                       Transition = None }
             else
-                let finalState = applyFatigue refState
-
-                { State = finalState
+                { State = refState
                   Events = allEvents
                   Spawned = [ spawnNextDuel tick.Second (Stats.delayFrom BalanceConfig.duelNextDelay) ]
                   Transition = None }

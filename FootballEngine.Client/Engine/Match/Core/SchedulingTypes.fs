@@ -50,6 +50,8 @@ module SchedulingTypes =
         | ResumePlayTick
         | SubstitutionTick of clubId: ClubId
         | ManagerReactionTick of trigger: ReactionTrigger
+        | CognitiveTick
+        | AdaptiveTick
 
     and ReactionTrigger =
         | RedCardTrigger of PlayerId

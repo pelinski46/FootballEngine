@@ -227,9 +227,9 @@ module PlayerSteering =
                 else
                     totalForce
 
-            let newVx = current.Vx + constrainedForce.Fx * dt / mass
-            let newVy = current.Vy + constrainedForce.Fy * dt / mass
-            let newVz = current.Vz + constrainedForce.Fz * dt / mass
+            let newVx = current.Vx + constrainedForce.Fx * dt
+            let newVy = current.Vy + constrainedForce.Fy * dt
+            let newVz = current.Vz + constrainedForce.Fz * dt
 
             { current with
                 X = Math.Clamp(current.X + newVx * dt, 0.0, 100.0)
@@ -238,88 +238,3 @@ module PlayerSteering =
                 Vx = newVx
                 Vy = newVy
                 Vz = newVz }
-
-        let decideTarget
-            (p: Player)
-            (baseX: float)
-            (baseY: float)
-            (ballX: float)
-            (ballY: float)
-            (isPossessing: bool)
-            (dir: AttackDir)
-            (tactics: TacticsConfig)
-            =
-            let positioning = float p.Mental.Positioning / 100.0
-            let vision = float p.Mental.Vision / 100.0
-            let workRate = float p.Mental.WorkRate / 100.0
-            let agility = float p.Physical.Agility / 100.0
-
-            let baseOff, baseDef, baseLat = MovementConstants.positionCoefficients p.Position
-            let modifier = MovementConstants.positionModifiers p.Position
-            let attrs = (positioning, workRate, vision)
-            let offPush, defPull, lateral = modifier (baseOff, baseDef, baseLat) attrs
-
-            let push = if isPossessing then offPush else defPull
-
-            let shapeX = baseX + (ballX - baseX) * push
-            let shapeY = baseY + (ballY - baseY) * lateral
-
-            let forwardBias =
-                if isPossessing then
-                    match p.Position with
-                    | ST
-                    | AML
-                    | AMR
-                    | AMC -> 6.0
-                    | MC
-                    | ML
-                    | MR -> 3.0
-                    | _ -> 0.0
-                else
-                    0.0
-
-            let compactX =
-                shapeX
-                + AttackDir.forwardX dir
-                  * tactics.ForwardPush
-                  * (if isPossessing then 0.5 else 0.3)
-                + AttackDir.forwardX dir * forwardBias
-
-            let compactY = shapeY + tactics.PressureDistance * 0.2
-
-            let jitterScale =
-                BalanceConfig.JitterBase + agility * BalanceConfig.JitterAgilityMultiplier
-
-            Math.Clamp(compactX + normalSample 0.0 jitterScale, 2.0, 98.0),
-            Math.Clamp(compactY + normalSample 0.0 jitterScale, 2.0, 98.0)
-
-        let updateTeamSide
-            (ts: TeamSide)
-            (isPossessing: bool)
-            (ballCarrierId: PlayerId option)
-            (ball: BallPhysicsState)
-            (dir: AttackDir)
-            (dt: float)
-            : TeamSide =
-            let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
-
-            let newPositions =
-                ts.Players
-                |> Array.mapi (fun i p ->
-                    let sp = ts.Positions[i]
-                    let baseSp = ts.BasePositions[i]
-                    let cond = ts.Conditions[i]
-
-                    let tx, ty =
-                        decideTarget p baseSp.X baseSp.Y ball.Position.X ball.Position.Y isPossessing dir tacticsCfg
-
-                    let teammates = ts.Positions |> Array.filter (fun sp2 -> sp2 <> sp)
-
-                    let hasBall =
-                        match ballCarrierId with
-                        | Some pid -> p.Id = pid
-                        | None -> false
-
-                    steer p cond sp (tx, ty) teammates ball.Position hasBall dt)
-
-            { ts with Positions = newPositions }

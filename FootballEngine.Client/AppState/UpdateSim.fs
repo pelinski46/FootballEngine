@@ -230,8 +230,7 @@ module UpdateSim =
                     |> Map.toSeq
                     |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.filter (fun _ f -> f.Played) |> Map.count)
 
-                printfn
-                    $"""[DBG] Advance OK | Date={gs.CurrentDate.ToString("dd/MM/yyyy")} Season={gs.Season} Fixtures={playedF}/{totalF}"""
+
 
                 let prevSkills =
                     GameState.getUserSquad gs
@@ -260,7 +259,7 @@ module UpdateSim =
             let baseCmd =
                 if result.SeasonComplete then
 
-                    Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd result.GameState ]
+                    Cmd.ofMsg (SimMsg AdvanceSeason)
                 else
                     saveCmd result.GameState
 
@@ -335,10 +334,7 @@ module UpdateSim =
 
 
         | SeasonAdvanceDone(Ok result) ->
-            let totalNew =
-                result.NextSeasonGs.Competitions
-                |> Map.toSeq
-                |> Seq.sumBy (fun (_, c) -> c.Fixtures |> Map.count)
+
 
 
             let nextState = applySeasonResult result state
@@ -349,7 +345,7 @@ module UpdateSim =
 
         | SeasonAdvanceDone(Error NoFixturesToPlay) ->
 
-            handle AdvanceSeason ({ state with IsProcessing = false })
+            handle AdvanceSeason { state with IsProcessing = false }
 
         | SeasonAdvanceDone(Error(SimulationErrors errors)) ->
             { state with IsProcessing = false }

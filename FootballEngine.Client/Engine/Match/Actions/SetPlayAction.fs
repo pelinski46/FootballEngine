@@ -47,7 +47,7 @@ module SetPlayAction =
         let kickerCond = attSide.Conditions[kickerIdx]
 
         let shotPower =
-            effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale (2.0)
+            effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale 2.0
             + effectiveStat kicker.Mental.Composure kickerCond kicker.Morale (1.5 + ctx.AttBonus.FreeKick)
             + effectiveStat kicker.Technical.LongShots kickerCond kicker.Morale 1.0
             + pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise

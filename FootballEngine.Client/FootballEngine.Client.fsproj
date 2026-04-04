@@ -48,6 +48,15 @@
         <Compile Include="Engine\Match\Core\SchedulingTypes.fs"/>
         <Compile Include="Engine\Match\Core\TickScheduler.fs"/>
         <Compile Include="Engine\Match\Player\PlayerSteering.fs"/>
+        <Compile Include="Engine\Match\Movement\OrganicDrift.fs"/>
+        <Compile Include="Engine\Match\Movement\FatiguePipeline.fs"/>
+        <Compile Include="Engine\Match\Movement\MovementTypes.fs"/>
+        <Compile Include="Engine\Match\Movement\EventWindow.fs"/>
+        <Compile Include="Engine\Match\Movement\ShapeEngine.fs"/>
+        <Compile Include="Engine\Match\Movement\CognitiveLayer.fs"/>
+        <Compile Include="Engine\Match\Movement\EmergentLoops.fs"/>
+        <Compile Include="Engine\Match\Movement\AdaptiveTactics.fs"/>
+        <Compile Include="Engine\Match\Movement\MovementEngine.fs"/>
         <Compile Include="Engine\Match\Ball\BallAgent.fs"/>
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
         <Compile Include="Engine\Match\Player\PlayerScorer.fs"/>
