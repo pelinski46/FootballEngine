@@ -21,17 +21,15 @@ module OrganicDrift =
     let compute position playerId simSecond =
         let seed = float playerId
         let posMul = positionMultiplier position
+        let freq = 2.0 * System.Math.PI
 
-        let dx =
-            Array.map3 (fun p phase ax ->
-                ax * posMul * sin (2.0 * System.Math.PI * (float simSecond / float p + seed * 0.01 + phase)))
-                primes phases ampX
-            |> Array.sum
+        let mutable dx = 0.0
+        let mutable dy = 0.0
 
-        let dy =
-            Array.map3 (fun p phase ay ->
-                ay * posMul * sin (2.0 * System.Math.PI * (float simSecond / float p + seed * 0.013 + phase)))
-                primes phases ampY
-            |> Array.sum
+        for i = 0 to 6 do
+            let p = float primes[i]
+            let phase = phases[i]
+            dx <- dx + ampX[i] * posMul * sin (freq * (float simSecond / p + seed * 0.01 + phase))
+            dy <- dy + ampY[i] * posMul * sin (freq * (float simSecond / p + seed * 0.013 + phase))
 
         (dx, dy)

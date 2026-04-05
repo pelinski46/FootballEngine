@@ -7,7 +7,10 @@ open FootballEngine.Stats
 module MatchCalc =
 
     let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
-        let base' = float stat * (float condition / 100.0) * (0.8 + float morale / 500.0)
+        let normStat = PhysicsContract.normaliseAttr stat
+        let normCond = PhysicsContract.normaliseCondition condition
+        let normMorale = PhysicsContract.normaliseCondition morale
+        let base' = normStat * normCond * (0.8 + normMorale / 2.5)
         normalSample base' (sigma * 0.6)
 
     let attackEffort (phase: MatchPhase) (att: Player) (cond: int) =
@@ -46,8 +49,8 @@ module PitchMath =
         |> fst
 
     let jitter oX oY tX tY scale nx ny =
-        Math.Clamp(oX + (tX - oX) * scale + normalSample 0.0 nx, 0.0, 100.0),
-        Math.Clamp(oY + (tY - oY) * scale + normalSample 0.0 ny, 0.0, 100.0)
+        Math.Clamp(oX + (tX - oX) * scale + normalSample 0.0 nx, 0.0, PhysicsContract.PitchLength),
+        Math.Clamp(oY + (tY - oY) * scale + normalSample 0.0 ny, 0.0, PhysicsContract.PitchWidth)
 
     type PlayerRole =
         | Defender

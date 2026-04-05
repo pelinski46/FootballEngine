@@ -7,8 +7,9 @@ open SchedulingTypes
 
 module ManagerAgent =
 
-    let private event second playerId clubId t =
-        { Second = second
+    // Phase 0: Second -> SubTick
+    let private event subTick playerId clubId t =
+        { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
@@ -25,14 +26,13 @@ module ManagerAgent =
         | _ -> Drawing
 
     let urgency (clubId: ClubId) (s: MatchState) : float =
-        let late = s.Second > 60 * 60
+        let late = PhysicsContract.subTicksToSeconds s.SubTick > 60.0 * 60.0
         let ts = side clubId s
         let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
-
         match situation clubId s, late with
-        | Losing, true -> 1.35 * tacticsCfg.UrgencyMultiplier
+        | Losing, true  -> 1.35 * tacticsCfg.UrgencyMultiplier
         | Losing, false -> 1.15 * tacticsCfg.UrgencyMultiplier
-        | Winning, _ -> 0.85 * tacticsCfg.UrgencyMultiplier
+        | Winning, _    -> 0.85 * tacticsCfg.UrgencyMultiplier
         | Drawing, true -> 1.10 * tacticsCfg.UrgencyMultiplier
         | Drawing, false -> 1.00 * tacticsCfg.UrgencyMultiplier
 
@@ -40,27 +40,24 @@ module ManagerAgent =
 
     let private conditionThreshold =
         function
-        | Losing -> 75
+        | Losing  -> 75
         | Drawing -> 65
         | Winning -> 55
 
     let private preferredPositions =
         function
-        | Losing -> [ ST; AML; AMR; AMC ]
+        | Losing  -> [ ST; AML; AMR; AMC ]
         | Drawing -> [ MC; AMC; ST ]
         | Winning -> [ DC; DM; MC ]
 
     let private reactiveTactics (sit: Situation) (current: TeamTactics) : TeamTactics =
         match sit, current with
-        | Losing, TeamTactics.Defensive -> TeamTactics.Attacking
-        | Losing, TeamTactics.Balanced -> TeamTactics.Attacking
-        | Losing, TeamTactics.Counter -> TeamTactics.Attacking
-        | Losing, _ -> TeamTactics.Attacking
+        | Losing, _  -> TeamTactics.Attacking
         | Drawing, TeamTactics.Defensive -> TeamTactics.Balanced
-        | Drawing, TeamTactics.Balanced -> TeamTactics.Attacking
+        | Drawing, TeamTactics.Balanced  -> TeamTactics.Attacking
         | Drawing, _ -> TeamTactics.Balanced
         | Winning, TeamTactics.Attacking -> TeamTactics.Balanced
-        | Winning, TeamTactics.Counter -> TeamTactics.Balanced
+        | Winning, TeamTactics.Counter   -> TeamTactics.Balanced
         | Winning, _ -> TeamTactics.Defensive
 
     let private pickOutgoing (ts: TeamSide) (threshold: int) : int option =
@@ -104,7 +101,6 @@ module ManagerAgent =
         (sit: Situation)
         : ManagerAction =
         let ts = side clubId s
-
         if ts.SubsUsed >= maxSubs then
             AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
         else
@@ -115,48 +111,26 @@ module ManagerAgent =
                 | None -> AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
             | None -> AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
 
-    let private handleFatigueAlert
-        (clubId: ClubId)
-        (s: MatchState)
-        (squad: Player list)
-        (coach: Staff)
-        : ManagerAction =
-        let sit = situation clubId s
-        trySub clubId s squad coach sit
+    let private handleFatigueAlert (clubId: ClubId) (s: MatchState) (squad: Player list) (coach: Staff) : ManagerAction =
+        trySub clubId s squad coach (situation clubId s)
 
-    let private handleMomentumSwing
-        (disadvantagedClub: ClubSide)
-        (s: MatchState)
-        (squad: Player list)
-        (coach: Staff)
-        : ManagerAction =
+    let private handleMomentumSwing (disadvantagedClub: ClubSide) (s: MatchState) (squad: Player list) (coach: Staff) : ManagerAction =
         let clubId = ClubSide.toClubId disadvantagedClub s
-        let sit = situation clubId s
-        trySub clubId s squad coach sit
+        trySub clubId s squad coach (situation clubId s)
 
     let private handleRedCard (playerId: PlayerId) (s: MatchState) : ManagerAction list =
         let clubId =
-            if s.HomeSide.Players |> Array.exists (fun p -> p.Id = playerId) then
-                s.Home.Id
-            else
-                s.Away.Id
-
+            if s.HomeSide.Players |> Array.exists (fun p -> p.Id = playerId) then s.Home.Id
+            else s.Away.Id
         let ts = side clubId s
-
         let compactTactics =
             match ts.Tactics with
-            | TeamTactics.Attacking -> TeamTactics.Balanced
-            | TeamTactics.Pressing -> TeamTactics.Balanced
+            | TeamTactics.Attacking | TeamTactics.Pressing -> TeamTactics.Balanced
             | TeamTactics.Counter -> TeamTactics.Defensive
-            | _ -> ts.Tactics
-
+            | t -> t
         [ AdjustTactics(clubId, compactTactics) ]
 
-    let private handleSubstitutionWindow
-        (homeSquad: Player list)
-        (awaySquad: Player list)
-        (s: MatchState)
-        : ManagerAction list =
+    let private handleSubstitutionWindow (homeSquad: Player list) (awaySquad: Player list) (s: MatchState) : ManagerAction list =
         let homeCoachRating = float s.HomeCoach.CurrentSkill / 100.0
         let awayCoachRating = float s.AwayCoach.CurrentSkill / 100.0
 
@@ -177,12 +151,15 @@ module ManagerAgent =
               | None -> yield ManagerIdle ]
 
     let decide
-        (second: int)
+        (subTick: int)
         (homeSquad: Player list)
         (awaySquad: Player list)
         (s: MatchState)
         (trigger: ReactionTrigger option)
         : ManagerAction list =
+        // Phase 0: use subTick, convert to seconds for minute checks
+        let elapsedSec = int (PhysicsContract.subTicksToSeconds subTick)
+        let isSubMinute = elapsedSec = 60 * 60 || elapsedSec = 75 * 60 || elapsedSec = 85 * 60
 
         match trigger with
         | Some(FatigueAlert(clubId, _playerId, _condition)) ->
@@ -191,63 +168,58 @@ module ManagerAgent =
             [ handleFatigueAlert clubId s squad coach ]
 
         | Some(MomentumSwing disadvantagedClub) ->
-            let squad =
-                if disadvantagedClub = HomeClub then
-                    homeSquad
-                else
-                    awaySquad
-
-            let coach =
-                if disadvantagedClub = HomeClub then
-                    s.HomeCoach
-                else
-                    s.AwayCoach
-
+            let squad = if disadvantagedClub = HomeClub then homeSquad else awaySquad
+            let coach = if disadvantagedClub = HomeClub then s.HomeCoach else s.AwayCoach
             [ handleMomentumSwing disadvantagedClub s squad coach ]
 
         | Some(RedCardTrigger playerId) -> handleRedCard playerId s
 
         | Some(GoalScored | GoalConceded | InjuryTrigger _) ->
-            let isSubMinute = second = 60 * 60 || second = 75 * 60 || second = 85 * 60
-
-            if isSubMinute then
-                handleSubstitutionWindow homeSquad awaySquad s
-            else
-                [ ManagerIdle ]
+            if isSubMinute then handleSubstitutionWindow homeSquad awaySquad s
+            else [ ManagerIdle ]
 
         | None ->
-            let isSubMinute = second = 60 * 60 || second = 75 * 60 || second = 85 * 60
+            if isSubMinute then handleSubstitutionWindow homeSquad awaySquad s
+            else [ ManagerIdle ]
 
-            if isSubMinute then
-                handleSubstitutionWindow homeSquad awaySquad s
-            else
-                [ ManagerIdle ]
-
-    let resolve (second: int) (action: ManagerAction) (s: MatchState) : MatchState * MatchEvent list =
+    // Phase 4: substitution — incoming player inherits position and cognitive state
+    let resolve (subTick: int) (action: ManagerAction) (s: MatchState) : MatchState * MatchEvent list =
         match action with
         | ManagerIdle -> s, []
 
         | MakeSubstitution(clubId, outIdx, incoming) ->
             let ts = side clubId s
-
-            if ts.SubsUsed >= maxSubs then
-                s, []
+            if ts.SubsUsed >= maxSubs then s, []
             else
                 let playerOut = ts.Players[outIdx]
                 let inheritedPos = ts.Positions[outIdx]
 
                 let ts' =
                     { ts with
-                        Players = Array.append ts.Players [| incoming |]
-                        Conditions = Array.append ts.Conditions [| incoming.Condition |]
-                        Positions = Array.append ts.Positions [| inheritedPos |]
+                        Players      = Array.append ts.Players      [| incoming |]
+                        Conditions   = Array.append ts.Conditions   [| incoming.Condition |]
+                        Positions    = Array.append ts.Positions    [| inheritedPos |]
                         BasePositions = Array.append ts.BasePositions [| inheritedPos |]
-                        Sidelined = Map.add playerOut.Id SidelinedBySub ts.Sidelined
-                        SubsUsed = ts.SubsUsed + 1 }
+                        Sidelined    = Map.add playerOut.Id SidelinedBySub ts.Sidelined
+                        SubsUsed     = ts.SubsUsed + 1 }
 
-                withSide clubId ts' s,
-                [ event second playerOut.Id clubId SubstitutionOut
-                  event second incoming.Id clubId SubstitutionIn ]
+                // Phase 4: extend cognitive arrays for new player
+                let isHome = clubId = s.Home.Id
+                let s1 = withSide clubId ts' s
+
+                let s2 =
+                    if isHome then
+                        { s1 with
+                            HomeMentalStates = Array.append s1.HomeMentalStates [| MentalState.initial incoming |]
+                            HomeDirectives   = Array.append s1.HomeDirectives   [| Array.empty |] }
+                    else
+                        { s1 with
+                            AwayMentalStates = Array.append s1.AwayMentalStates [| MentalState.initial incoming |]
+                            AwayDirectives   = Array.append s1.AwayDirectives   [| Array.empty |] }
+
+                s2,
+                [ event subTick playerOut.Id clubId SubstitutionOut
+                  event subTick incoming.Id clubId SubstitutionIn ]
 
         | AdjustTactics(clubId, newTactics) ->
             let ts = side clubId s
@@ -256,39 +228,28 @@ module ManagerAgent =
     let agent homeId homeSquad awaySquad tick state : AgentOutput =
         match tick.Kind with
         | SubstitutionTick _clubId ->
-            let actions = decide tick.Second homeSquad awaySquad state None
-
+            let actions = decide tick.SubTick homeSquad awaySquad state None
             let newState, events =
                 actions
                 |> List.fold
                     (fun (accState, accEvents) action ->
-                        let s', evs = resolve tick.Second action accState
+                        let s', evs = resolve tick.SubTick action accState
                         s', evs @ accEvents)
                     (state, [])
                 |> fun (s, evs) -> s, List.rev evs
+            { State = newState; Events = events; Spawned = []; Transition = None }
 
-            { State = newState
-              Events = events
-              Spawned = []
-              Transition = None }
         | ManagerReactionTick trigger ->
-            let actions = decide tick.Second homeSquad awaySquad state (Some trigger)
-
+            let actions = decide tick.SubTick homeSquad awaySquad state (Some trigger)
             let newState, events =
                 actions
                 |> List.fold
                     (fun (accState, accEvents) action ->
-                        let s', evs = resolve tick.Second action accState
+                        let s', evs = resolve tick.SubTick action accState
                         s', evs @ accEvents)
                     (state, [])
                 |> fun (s, evs) -> s, List.rev evs
+            { State = newState; Events = events; Spawned = []; Transition = Some LivePlay }
 
-            { State = newState
-              Events = events
-              Spawned = []
-              Transition = Some LivePlay }
         | _ ->
-            { State = state
-              Events = []
-              Spawned = []
-              Transition = None }
+            { State = state; Events = []; Spawned = []; Transition = None }

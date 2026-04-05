@@ -8,8 +8,9 @@ open MatchSpatial
 
 module PassAction =
 
-    let private event second playerId clubId t =
-        { Second = second
+    // Phase 0: Second -> SubTick
+    let private event subTick playerId clubId t =
+        { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
@@ -26,16 +27,18 @@ module PassAction =
         else
             s |> withBallVelocity (dx / dist * speed) (dy / dist * speed) vz
 
-    let resolve (second: int) (s: MatchState) (target: Player) : MatchState * MatchEvent list =
+    // Phase 5: JIT — target position resolved at execution time
+    // Phase 3: normaliseAttr for passer attributes
+    let resolve (subTick: int) (s: MatchState) (target: Player) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let attClubId = ClubSide.toClubId ctx.AttSide s
         let attSide = side (ClubSide.toClubId ctx.AttSide s) s
-        let defSide = side (ClubSide.toClubId ctx.DefSide s) s
         let clubId = attClubId
 
         match attSide.Players |> Array.tryFindIndex (fun p -> p.Id = target.Id) with
         | None -> s, []
         | Some targetIdx ->
+            // JIT: use CURRENT position at execution time
             let targetSp = attSide.Positions[targetIdx]
             let offside = isOffside target targetSp.X s ctx.Dir
 
@@ -50,8 +53,7 @@ module PassAction =
                                 -10.0,
                                 10.0
                             ) },
-                    [ event second target.Id clubId (PassIncomplete target.Id) ]
-
+                    [ event subTick target.Id clubId (PassIncomplete target.Id) ]
             else
                 let passer =
                     attSide.Players
@@ -59,21 +61,27 @@ module PassAction =
                     |> Option.defaultValue attSide.Players[0]
 
                 let passerCond =
-                    attSide.Conditions |> Array.tryFind (fun _ -> true) |> Option.defaultValue 70
+                    attSide.Players
+                    |> Array.tryFindIndex (fun p -> p.Id = passer.Id)
+                    |> Option.map (fun i -> attSide.Conditions[i])
+                    |> Option.defaultValue 70
 
-                let condition = float passerCond / 100.0
+                let condNorm = PhysicsContract.normaliseCondition passerCond
 
+                // Phase 3: normaliseAttr instead of /100.0
                 let passMean =
                     BalanceConfig.PassBaseMean
-                    + float passer.Technical.Passing / 100.0 * BalanceConfig.PassTechnicalWeight
-                    + float passer.Mental.Vision / 100.0 * BalanceConfig.PassVisionWeight
+                    + PhysicsContract.normaliseAttr passer.Technical.Passing
+                      * BalanceConfig.PassTechnicalWeight
+                    + PhysicsContract.normaliseAttr passer.Mental.Vision
+                      * BalanceConfig.PassVisionWeight
                     + ctx.AttBonus.PassAcc
 
                 let successChance =
                     betaSample
                         passMean
                         (BalanceConfig.PassSuccessShapeAlpha
-                         + condition * BalanceConfig.PassSuccessConditionMultiplier)
+                         + condNorm * BalanceConfig.PassSuccessConditionMultiplier)
 
                 if bernoulli successChance then
                     let snapshot = snapshotAtPass passer target s ctx.Dir
@@ -94,7 +102,7 @@ module PassAction =
                                     { s''.Ball with
                                         Spin = { Top = 0.0; Side = 0.0 } } }
 
-                    s', [ event second passer.Id clubId (PassCompleted(passer.Id, target.Id)) ]
+                    s', [ event subTick passer.Id clubId (PassCompleted(passer.Id, target.Id)) ]
                 else
                     s
                     |> flipPossessionAndClearOffside ctx.AttSide
@@ -106,10 +114,11 @@ module PassAction =
                                     -10.0,
                                     10.0
                                 ) },
-                        [ event second passer.Id clubId (PassIncomplete passer.Id) ]
+                        [ event subTick passer.Id clubId (PassIncomplete passer.Id) ]
 
-
-    let resolveLong (second: int) (s: MatchState) : MatchState * MatchEvent list =
+    // Phase 3: normaliseAttr for long ball attributes
+    // Phase 5: JIT — target resolved from current positions
+    let resolveLong (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let attClubId = ClubSide.toClubId ctx.AttSide s
         let attSide = side (ClubSide.toClubId ctx.AttSide s) s
@@ -117,31 +126,38 @@ module PassAction =
 
         let bX, bY = s.Ball.Position.X, s.Ball.Position.Y
 
-        let passerIdx =
-            attSide.Positions
-            |> Array.mapi (fun i _ -> i)
-            |> Array.minBy (fun i ->
-                let dx = attSide.Positions[i].X - bX
-                let dy = attSide.Positions[i].Y - bY
-                dx * dx + dy * dy)
+        let mutable passerIdx = 0
+        let mutable passerDistSq = System.Double.MaxValue
+        for i = 0 to attSide.Positions.Length - 1 do
+            let dx = attSide.Positions[i].X - bX
+            let dy = attSide.Positions[i].Y - bY
+            let dSq = dx * dx + dy * dy
+            if dSq < passerDistSq then
+                passerDistSq <- dSq
+                passerIdx <- i
 
         let passer = attSide.Players[passerIdx]
         let passerCond = attSide.Conditions[passerIdx]
-        let condition = float passerCond / 100.0
+        let condNorm = PhysicsContract.normaliseCondition passerCond
 
+        // Phase 3: normaliseAttr
         let longMean =
             BalanceConfig.LongBallBaseMean
-            + float passer.Technical.LongShots / 100.0 * BalanceConfig.LongBallLongShotsWeight
-            + float passer.Technical.Passing / 100.0 * BalanceConfig.LongBallPassingWeight
-            + float passer.Mental.Vision / 100.0 * BalanceConfig.LongBallVisionWeight
+            + PhysicsContract.normaliseAttr passer.Technical.LongShots
+              * BalanceConfig.LongBallLongShotsWeight
+            + PhysicsContract.normaliseAttr passer.Technical.Passing
+              * BalanceConfig.LongBallPassingWeight
+            + PhysicsContract.normaliseAttr passer.Mental.Vision
+              * BalanceConfig.LongBallVisionWeight
             + ctx.AttBonus.SetPlay
 
         let successChance =
             betaSample
                 longMean
                 (BalanceConfig.LongBallSuccessShapeAlpha
-                 + condition * BalanceConfig.LongBallSuccessConditionMultiplier)
+                 + condNorm * BalanceConfig.LongBallSuccessConditionMultiplier)
 
+        // JIT: current positions of forwards
         let forwards =
             teamRoster attSide
             |> Array.filter (fun (p, _, _) ->
@@ -163,13 +179,9 @@ module PassAction =
                                 -10.0,
                                 10.0
                             ) },
-                    [ event second passer.Id clubId (LongBall false) ]
-
+                    [ event subTick passer.Id clubId (LongBall false) ]
             else
                 let snapshot = snapshotAtPass passer target s ctx.Dir
-
-                let targetIdx =
-                    attSide |> teamRoster |> Array.findIndex (fun (p, _, _) -> p.Id = target.Id)
 
                 let s' =
                     s
@@ -185,7 +197,7 @@ module PassAction =
                                 )
                             PendingOffsideSnapshot = Some snapshot }
 
-                s', [ event second passer.Id clubId (LongBall true) ]
+                s', [ event subTick passer.Id clubId (LongBall true) ]
         else
             s
             |> flipPossessionAndClearOffside ctx.AttSide
@@ -198,4 +210,4 @@ module PassAction =
                             -10.0,
                             10.0
                         ) },
-                [ event second passer.Id clubId (LongBall false) ]
+                [ event subTick passer.Id clubId (LongBall false) ]

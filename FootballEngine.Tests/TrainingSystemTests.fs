@@ -1,9 +1,9 @@
 module FootballEngine.Tests.TrainingSystemTests
 
 open Expecto
-open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Tests.Helpers
+open FootballEngine.World.Phases
 
 // =============================================================================
 // Helpers

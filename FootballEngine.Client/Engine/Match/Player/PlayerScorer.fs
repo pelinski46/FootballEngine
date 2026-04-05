@@ -4,6 +4,7 @@ open System
 open FootballEngine.Domain
 open MatchCalc
 
+[<Struct>]
 type ActionScores =
     { Shoot: float
       Pass: float

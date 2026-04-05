@@ -3,163 +3,171 @@ namespace FootballEngine.Movement
 open FootballEngine.Domain
 
 module EventWindow =
-
     open FootballEngine
 
-    let recentEvents windowSeconds (reversedEvents: MatchEvent list) =
-        match reversedEvents with
-        | [] -> []
-        | first :: _ ->
-            let cutoff = first.Second - windowSeconds
-            reversedEvents |> List.takeWhile (fun (e: MatchEvent) -> e.Second >= cutoff)
+    let recentEvents (windowSubTicks: int) (events: ResizeArray<MatchEvent>) : MatchEvent list =
+        let n = events.Count
+
+        if n = 0 then
+            []
+        else
+            let cutoff = events[n - 1].SubTick - windowSubTicks
+
+            let rec build idx acc =
+                if idx < 0 || events[idx].SubTick < cutoff then
+                    acc
+                else
+                    build (idx - 1) (events[idx] :: acc)
+
+            build (n - 1) []
+
+    [<Struct>]
+    type EventRates =
+        { ShortPassRate: float
+          PressRate: float
+          FlankRate: float }
+
+    let computeRates (windowSubTicks: int) (events: ResizeArray<MatchEvent>) : EventRates * MatchEvent list =
+        let n = events.Count
+
+        if n = 0 then
+            { ShortPassRate = 0.5
+              PressRate = 0.5
+              FlankRate = 0.5 },
+            []
+        else
+            let cutoff = events[n - 1].SubTick - windowSubTicks
+            let mutable spTotal, spSuccess = 0, 0
+            let mutable pressTotal, pressSuccess = 0, 0
+            let mutable flankTotal, flankSuccess = 0, 0
+
+            let recentList = System.Collections.Generic.List<MatchEvent>()
+
+            for i = n - 1 downto 0 do
+                let e = events.[i]
+
+                if e.SubTick >= cutoff then
+                    recentList.Add(e)
+
+                    match e.Type with
+                    | MatchEventType.PassCompleted _ ->
+                        spTotal <- spTotal + 1
+                        spSuccess <- spSuccess + 1
+                    | MatchEventType.PassIncomplete _ -> spTotal <- spTotal + 1
+                    | MatchEventType.TackleSuccess ->
+                        pressTotal <- pressTotal + 1
+                        pressSuccess <- pressSuccess + 1
+                    | MatchEventType.TackleFail -> pressTotal <- pressTotal + 1
+                    | MatchEventType.DribbleFail ->
+                        pressTotal <- pressTotal + 1
+                        pressSuccess <- pressSuccess + 1
+                    | MatchEventType.CrossAttempt true ->
+                        flankTotal <- flankTotal + 1
+                        flankSuccess <- flankSuccess + 1
+                    | MatchEventType.CrossAttempt false -> flankTotal <- flankTotal + 1
+                    | _ -> ()
+
+            let result = List.ofSeq recentList |> List.rev // Volver al orden cronológico
+
+            let calcRate total success =
+                if total = 0 then 0.5 else float success / float total
+
+            { ShortPassRate = calcRate spTotal spSuccess
+              PressRate = calcRate pressTotal pressSuccess
+              FlankRate = calcRate flankTotal flankSuccess },
+            result
+
 
     let shortPassSuccessRate (events: MatchEvent list) =
-        let passes =
-            events
-            |> List.filter (fun (e: MatchEvent) ->
-                match e.Type with
-                | MatchEventType.PassCompleted _
-                | MatchEventType.PassIncomplete _ -> true
-                | _ -> false)
+        let mutable total, success = 0, 0
 
-        if List.isEmpty passes then
-            0.5
-        else
-            let successes =
-                passes
-                |> List.filter (fun (e: MatchEvent) ->
-                    match e.Type with
-                    | MatchEventType.PassCompleted _ -> true
-                    | _ -> false)
-                |> List.length
+        for e in events do
+            match e.Type with
+            | MatchEventType.PassCompleted _ ->
+                total <- total + 1
+                success <- success + 1
+            | MatchEventType.PassIncomplete _ -> total <- total + 1
+            | _ -> ()
 
-            float successes / float passes.Length
+        if total = 0 then 0.5 else float success / float total
 
     let pressSuccessRate (events: MatchEvent list) =
-        let pressEvents =
-            events
-            |> List.filter (fun (e: MatchEvent) ->
-                match e.Type with
-                | MatchEventType.TackleSuccess
-                | MatchEventType.TackleFail
-                | MatchEventType.DribbleSuccess
-                | MatchEventType.DribbleFail -> true
-                | _ -> false)
+        let mutable total, success = 0, 0
 
-        if List.isEmpty pressEvents then
-            0.5
-        else
-            let successes =
-                pressEvents
-                |> List.filter (fun (e: MatchEvent) ->
-                    match e.Type with
-                    | MatchEventType.TackleSuccess
-                    | MatchEventType.DribbleFail -> true
-                    | _ -> false)
-                |> List.length
+        for e in events do
+            match e.Type with
+            | MatchEventType.TackleSuccess
+            | MatchEventType.DribbleFail ->
+                total <- total + 1
+                success <- success + 1
+            | MatchEventType.TackleFail
+            | MatchEventType.DribbleSuccess -> total <- total + 1
+            | _ -> ()
 
-            float successes / float pressEvents.Length
+        if total = 0 then 0.5 else float success / float total
 
-    let flankSuccessRate dir (events: MatchEvent list) =
-        let flankEvents =
-            events
-            |> List.filter (fun (e: MatchEvent) ->
-                match e.Type with
-                | MatchEventType.CrossAttempt _ -> true
-                | _ -> false)
+    let flankSuccessRate (dir: AttackDir) (events: MatchEvent list) =
+        let mutable total, success = 0, 0
 
-        if List.isEmpty flankEvents then
-            0.5
-        else
-            let successes =
-                flankEvents
-                |> List.filter (fun (e: MatchEvent) ->
-                    match e.Type with
-                    | MatchEventType.CrossAttempt true -> true
-                    | _ -> false)
-                |> List.length
+        for e in events do
+            match e.Type with
+            | MatchEventType.CrossAttempt true ->
+                total <- total + 1
+                success <- success + 1
+            | MatchEventType.CrossAttempt false -> total <- total + 1
+            | _ -> ()
 
-            float successes / float flankEvents.Length
-
-    let avgCondition (teamSide: TeamSide) =
-        if Array.isEmpty teamSide.Conditions then
-            50.0
-        else
-            teamSide.Conditions |> Array.averageBy float
+        if total = 0 then 0.5 else float success / float total
 
     let consecutivePossessionLosses (events: MatchEvent list) =
-        let rec loop (evts: MatchEvent list) count =
-            match evts with
-            | [] -> count
-            | e :: rest ->
-                match e.Type with
-                | PassIncomplete _
-                | DribbleFail
-                | FoulCommitted -> loop rest (count + 1)
-                | _ -> count
+        let mutable count = 0
+        let mutable counting = true
 
-        loop events 0
+        let revEvents = List.rev events
 
-    let patternResults pattern (events: MatchEvent list) =
-        let relevant =
-            events
-            |> List.filter (fun (e: MatchEvent) ->
+        for e in revEvents do
+            if counting then
                 match e.Type with
-                | MatchEventType.PassCompleted _
                 | MatchEventType.PassIncomplete _
-                | MatchEventType.LongBall _
-                | MatchEventType.ShotBlocked
-                | MatchEventType.ShotOffTarget
-                | MatchEventType.Save
-                | MatchEventType.Goal -> true
-                | _ -> false)
+                | MatchEventType.DribbleFail
+                | MatchEventType.FoulCommitted -> count <- count + 1
+                | _ -> counting <- false
 
-        let isPatternMatch (evType: MatchEventType) =
-            match pattern with
-            | AttackPattern.LeftFlank
-            | AttackPattern.RightFlank ->
-                match evType with
-                | MatchEventType.CrossAttempt _ -> true
-                | _ -> false
-            | AttackPattern.Central ->
-                match evType with
-                | MatchEventType.PassCompleted _
-                | MatchEventType.PassIncomplete _ -> true
-                | _ -> false
-            | AttackPattern.LongBall ->
-                match evType with
-                | MatchEventType.LongBall _ -> true
-                | _ -> false
-            | AttackPattern.ShortPass ->
-                match evType with
-                | MatchEventType.PassCompleted _
-                | MatchEventType.PassIncomplete _ -> true
-                | _ -> false
+        count
 
-        let attempts =
-            relevant |> List.filter (fun e -> isPatternMatch e.Type) |> List.length
+    let patternResults (pattern: AttackPattern) (events: MatchEvent list) : PatternRecord =
+        let mutable attempts = 0
+        let mutable successes = 0
+        let mutable totalXG = 0.0
 
-        let successes =
-            relevant
-            |> List.filter (fun e ->
-                isPatternMatch e.Type
-                && match e.Type with
-                   | MatchEventType.PassCompleted _
-                   | MatchEventType.CrossAttempt true
-                   | MatchEventType.LongBall true
-                   | MatchEventType.Goal -> true
-                   | _ -> false)
-            |> List.length
+        for e in events do
+            let isMatch, isSuccess =
+                match pattern, e.Type with
+                | AttackPattern.LeftFlank, MatchEventType.CrossAttempt ok
+                | AttackPattern.RightFlank, MatchEventType.CrossAttempt ok -> true, ok
 
-        let totalXG =
-            relevant
-            |> List.sumBy (fun (e: MatchEvent) ->
-                match e.Type with
-                | MatchEventType.Goal -> 0.3
-                | MatchEventType.ShotOffTarget
-                | MatchEventType.ShotBlocked
-                | MatchEventType.Save -> 0.1
-                | _ -> 0.0)
+                | AttackPattern.Central, MatchEventType.PassCompleted _ -> true, true
+                | AttackPattern.Central, MatchEventType.PassIncomplete _ -> true, false
+
+                | AttackPattern.LongBall, MatchEventType.LongBall ok -> true, ok
+
+                | AttackPattern.ShortPass, MatchEventType.PassCompleted _ -> true, true
+                | AttackPattern.ShortPass, MatchEventType.PassIncomplete _ -> true, false
+
+                | _ -> false, false
+
+            if isMatch then
+                attempts <- attempts + 1
+
+                if isSuccess then
+                    successes <- successes + 1
+
+            match e.Type with
+            | MatchEventType.Goal -> totalXG <- totalXG + 0.3
+            | MatchEventType.ShotOffTarget
+            | MatchEventType.ShotBlocked
+            | MatchEventType.Save -> totalXG <- totalXG + 0.1
+            | _ -> ()
 
         { Pattern = pattern
           Attempts = max attempts 1

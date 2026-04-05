@@ -7,6 +7,7 @@ open MatchStateOps
 
 module PlayerSteering =
 
+    [<Struct>]
     type Force = { Fx: float; Fy: float; Fz: float }
 
     module Force =
@@ -125,23 +126,22 @@ module PlayerSteering =
                   Fy = dy / dist * maxSpeed - agent.Vy
                   Fz = dz / dist * maxSpeed - agent.Vz }
 
-        let separation (agent: Spatial) (teammates: Spatial[]) (minDist: float) : Force =
-            teammates
-            |> Array.fold
-                (fun acc tm ->
+        let separation (agent: Spatial) (positions: Spatial[]) (myIdx: int) (minDist: float) : Force =
+            let mutable fx = 0.0
+            let mutable fy = 0.0
+            let minDistSq = minDist * minDist
+            for i = 0 to positions.Length - 1 do
+                if i <> myIdx then
+                    let tm = positions[i]
                     let dx = agent.X - tm.X
                     let dy = agent.Y - tm.Y
-                    let dist = sqrt (dx * dx + dy * dy)
-
-                    if dist < minDist && dist > 0.001 then
+                    let dSq = dx * dx + dy * dy
+                    if dSq < minDistSq && dSq > 1e-6 then
+                        let dist = sqrt dSq
                         let strength = (minDist - dist) / minDist
-
-                        { acc with
-                            Fx = acc.Fx + dx / dist * strength
-                            Fy = acc.Fy + dy / dist * strength }
-                    else
-                        acc)
-                Force.zero
+                        fx <- fx + dx / dist * strength
+                        fy <- fy + dy / dist * strength
+            { Fx = fx; Fy = fy; Fz = 0.0 }
 
         let alignment (agent: Spatial) (reference: Spatial) : Force =
             { Fx = (reference.Vx - agent.Vx) * BalanceConfig.SteeringAlignmentWeight
@@ -158,7 +158,7 @@ module PlayerSteering =
         let turnConstraintLimit (p: Player) (currentSpeed: float) : float =
             let agilityFactor =
                 1.0
-                - float p.Physical.Agility / 100.0 * BalanceConfig.TurnConstraintAgilityCoeff
+                - PhysicsContract.normaliseAttr p.Physical.Agility * BalanceConfig.TurnConstraintAgilityCoeff
 
             let speedFactor = Math.Clamp(currentSpeed / BalanceConfig.MoveSpeedMax, 0.0, 1.0)
 
@@ -167,22 +167,15 @@ module PlayerSteering =
             * (1.0 - speedFactor * 0.5)
 
         let maxSpeed (p: Player) (condition: int) : float =
-            let pace = float p.Physical.Pace
-            let accel = float p.Physical.Acceleration
-            let cond = float condition / 100.0
-
-            Math.Clamp(
-                (pace * 0.6 + accel * 0.4) / 100.0 * cond * BalanceConfig.MoveSpeedBase,
-                BalanceConfig.MoveSpeedMin,
-                BalanceConfig.MoveSpeedMax
-            )
+            PhysicsContract.playerMaxSpeed p.Physical.Pace condition
 
         let steer
             (p: Player)
             (condition: int)
             (current: Spatial)
+            (myIdx: int)
+            (positions: Spatial[])
             (tacticalTarget: float * float)
-            (teammates: Spatial[])
             (ballPos: Spatial)
             (hasBall: bool)
             (dt: float)
@@ -195,7 +188,7 @@ module PlayerSteering =
             let arriveForce = Behaviours.arrive current target ms
 
             let sepForce =
-                Behaviours.separation current teammates BalanceConfig.SeparationMinDistance
+                Behaviours.separation current positions myIdx BalanceConfig.SeparationMinDistance
 
             let ballForce =
                 if hasBall then
@@ -232,8 +225,8 @@ module PlayerSteering =
             let newVz = current.Vz + constrainedForce.Fz * dt
 
             { current with
-                X = Math.Clamp(current.X + newVx * dt, 0.0, 100.0)
-                Y = Math.Clamp(current.Y + newVy * dt, 0.0, 100.0)
+                X = Math.Clamp(current.X + newVx * dt, 0.0, PhysicsContract.PitchLength)
+                Y = Math.Clamp(current.Y + newVy * dt, 0.0, PhysicsContract.PitchWidth)
                 Z = Math.Max(0.0, current.Z + newVz * dt)
                 Vx = newVx
                 Vy = newVy

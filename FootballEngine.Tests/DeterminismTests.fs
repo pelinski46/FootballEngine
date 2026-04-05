@@ -56,7 +56,7 @@ let determinismTests =
 
               evs1 |> List.iteri (fun i e1 ->
                   let e2 = evs2[i]
-                  Expect.equal e1.Second e2.Second $"event[{i}].Second mismatch"
+                  Expect.equal e1.SubTick e2.SubTick $"event[{i}].SubTick mismatch"
                   Expect.equal e1.PlayerId e2.PlayerId $"event[{i}].PlayerId mismatch"
                   Expect.equal e1.ClubId e2.ClubId $"event[{i}].ClubId mismatch"
                   Expect.equal e1.Type e2.Type $"event[{i}].Type mismatch")
@@ -72,8 +72,8 @@ let determinismTests =
                       let _, _, evs1, _ = sim home away players staff
                       setSeed seed2
                       let _, _, evs2, _ = sim home away players staff
-                      let sig1 = evs1 |> List.map (fun e -> e.Second, e.Type)
-                      let sig2 = evs2 |> List.map (fun e -> e.Second, e.Type)
+                      let sig1 = evs1 |> List.map (fun e -> e.SubTick, e.Type)
+                      let sig2 = evs2 |> List.map (fun e -> e.SubTick, e.Type)
                       sig1 <> sig2)
               Expect.isTrue anyDiffers "at least one seed pair should produce different event sequences"
           }
@@ -93,7 +93,7 @@ let determinismTests =
 
               replay1.Snapshots |> Array.iteri (fun i s1 ->
                   let s2 = replay2.Snapshots[i]
-                  Expect.equal s1.Second s2.Second $"snapshot[{i}].Second mismatch"
+                  Expect.equal s1.SubTick s2.SubTick $"snapshot[{i}].SubTick mismatch"
                   Expect.equal s1.HomeScore s2.HomeScore $"snapshot[{i}].HomeScore mismatch"
                   Expect.equal s1.AwayScore s2.AwayScore $"snapshot[{i}].AwayScore mismatch"
                   Expect.equal s1.AttackingClub s2.AttackingClub $"snapshot[{i}].AttackingClub mismatch")
@@ -117,7 +117,7 @@ let determinismTests =
               goals1 |> List.iteri (fun i g1 ->
                   let g2 = goals2[i]
                   Expect.equal g1.PlayerId g2.PlayerId $"goal[{i}].PlayerId mismatch"
-                  Expect.equal g1.Second g2.Second $"goal[{i}].Second mismatch")
+                  Expect.equal g1.SubTick g2.SubTick $"goal[{i}].SubTick mismatch")
           }
 
           test "same seed produces same foul count" {

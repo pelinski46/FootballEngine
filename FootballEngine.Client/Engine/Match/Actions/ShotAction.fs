@@ -8,8 +8,9 @@ open MatchCalc
 
 module ShotAction =
 
-    let private event second playerId clubId t =
-        { Second = second
+    // Phase 0: Second -> SubTick
+    let private event subTick playerId clubId t =
+        { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
@@ -23,6 +24,8 @@ module ShotAction =
         | MC -> 1.2
         | _ -> 0.5
 
+    // Phase 3: normaliseAttr — replaces old /300.0 normalization
+    // Phase 5: JIT — shooter/GK resolved from current positions at execution time
     let private calcShotPower
         (player: Player)
         (condition: int)
@@ -39,7 +42,7 @@ module ShotAction =
         + effectiveStat player.Physical.Pace condition player.Morale 0.5
         - dist
 
-    let resolve (second: int) (s: MatchState) : MatchState * MatchEvent list =
+    let resolve (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let attClubId = ClubSide.toClubId ctx.AttSide s
         let attSide = side (ClubSide.toClubId ctx.AttSide s) s
@@ -53,20 +56,26 @@ module ShotAction =
         else
             let ballPt = bX, s.Ball.Position.Y
 
-            let shooterIdx =
-                attSide.Positions
-                |> Array.mapi (fun i _ -> i)
-                |> Array.minBy (fun i ->
-                    let dx = attSide.Positions[i].X - fst ballPt
-                    let dy = attSide.Positions[i].Y - snd ballPt
-                    dx * dx + dy * dy)
+            // JIT: current shooter position — for-loop, no allocation
+            let mutable shooterIdx = 0
+            let mutable shooterDistSq = System.Double.MaxValue
+            for i = 0 to attSide.Positions.Length - 1 do
+                let dx = attSide.Positions[i].X - bX
+                let dy = attSide.Positions[i].Y - s.Ball.Position.Y
+                let dSq = dx * dx + dy * dy
+                if dSq < shooterDistSq then
+                    shooterDistSq <- dSq
+                    shooterIdx <- i
 
             let shooter = attSide.Players[shooterIdx]
             let shooterCond = attSide.Conditions[shooterIdx]
 
             let quality =
+                // Phase 2: distToGoal already in metres (PhysicsContract)
                 let distToGoal = AttackDir.distToGoal bX ctx.Dir
-                let distNorm = Math.Clamp(distToGoal / 30.0, 0.0, 1.0)
+
+                let distNorm =
+                    Math.Clamp(distToGoal / BalanceConfig.ShotNormalisationDistance, 0.0, 1.0)
 
                 let positionBonus =
                     match shooter.Position with
@@ -90,15 +99,19 @@ module ShotAction =
                     AttackDir.distToGoal bX ctx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
 
                 let homeComposure = ctx.AttBonus.ShotCompos
-
                 let finishing = calcShotPower shooter shooterCond composure u dist homeComposure
                 let dirSign = AttackDir.forwardX ctx.Dir
 
+                // Phase 3: normaliseAttr-based finishing norm (replaces /300.0)
                 let finishingNorm =
-                    Math.Clamp(finishing / 300.0, BalanceConfig.ShotFinishingMin, BalanceConfig.ShotFinishingMax)
+                    Math.Clamp(
+                        PhysicsContract.normaliseAttr shooter.Technical.Finishing,
+                        BalanceConfig.ShotFinishingMin,
+                        BalanceConfig.ShotFinishingMax
+                    )
 
-                let speed =
-                    BalanceConfig.ShotBaseSpeed + finishingNorm * BalanceConfig.ShotSpeedMultiplier
+                // Phase 2: speed from PhysicsContract
+                let speed = PhysicsContract.shotSpeed shooter.Technical.Finishing
 
                 let angleSpread = BalanceConfig.ShotAngleSpreadBase * (1.0 - finishingNorm)
                 let angle = normalSample 0.0 angleSpread
@@ -107,9 +120,10 @@ module ShotAction =
                 let vz = abs (normalSample BalanceConfig.ShotVzBase BalanceConfig.ShotVzVariance)
 
                 let spin =
-                    { Top = -(float shooter.Technical.Finishing / 20.0) * 0.4
+                    { Top = -(PhysicsContract.normaliseAttr shooter.Technical.Finishing) * 0.4
                       Side = 0.0 }
 
+                // JIT: current GK position
                 let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
 
                 let onTarget =
@@ -154,9 +168,9 @@ module ShotAction =
                 let events =
                     match gk with
                     | Some g when gkSaves ->
-                        [ event second shooter.Id attClubId ShotBlocked
-                          event second g.Id gkClubId Save ]
-                    | _ when not onTarget -> [ event second shooter.Id attClubId ShotOffTarget ]
+                        [ event subTick shooter.Id attClubId ShotBlocked
+                          event subTick g.Id gkClubId Save ]
+                    | _ when not onTarget -> [ event subTick shooter.Id attClubId ShotOffTarget ]
                     | _ -> []
 
                 s', events

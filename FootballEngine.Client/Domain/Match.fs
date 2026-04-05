@@ -32,8 +32,10 @@ type MatchEventType =
     | Save
     | FoulCommitted
 
+// Phase 0 — Second renamed to SubTick everywhere.
+// All action files pass tick.SubTick; MatchViewer converts via PhysicsContract.SubTicksPerSecond.
 type MatchEvent =
-    { Second: int
+    { SubTick: int
       PlayerId: PlayerId
       ClubId: ClubId
       Type: MatchEventType }

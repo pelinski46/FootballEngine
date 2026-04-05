@@ -5,18 +5,26 @@ open FootballEngine.Domain
 
 module SchedulingTypes =
 
+    // -------------------------------------------------------------------------
+    // Priority — lower value = higher priority within the same SubTick
+    // -------------------------------------------------------------------------
+
     type TickPriority =
-        | Physics = 0
-        | Referee = 1
-        | Duel = 2
-        | SetPiece = 3
-        | Manager = 4
-        | MatchControl = 5
+        | Physics     = 0   // ball + player positions — must run before any decision
+        | Referee     = 1   // goal detection, offside, out-of-play
+        | Duel        = 2   // contested ball actions
+        | SetPiece    = 3
+        | Manager     = 4
+        | MatchControl = 5  // halftime, fulltime, structure
+
+    // -------------------------------------------------------------------------
+    // Play state machine
+    // -------------------------------------------------------------------------
 
     type PlayState =
         | LivePlay
-        | Stopped of StopReason
-        | SetPiece of SetPieceKind
+        | Stopped   of StopReason
+        | SetPiece  of SetPieceKind
 
     and StopReason =
         | Foul
@@ -32,47 +40,55 @@ module SchedulingTypes =
         | KickOff
         | Penalty
 
+    // -------------------------------------------------------------------------
+    // Tick kinds
+    // -------------------------------------------------------------------------
+
     type TickKind =
-        | DuelTick of chainDepth: int
-        | PlayerActionTick of chainDepth: int * action: PlayerAction * attackerId: PlayerId option
         | PhysicsTick
-        | FreeKickTick of kicker: PlayerId * position: Spatial * chainDepth: int
-        | CornerTick of club: ClubSide * chainDepth: int
-        | PenaltyTick of kicker: PlayerId * isHome: bool
-        | ThrowInTick of club: ClubSide * chainDepth: int
+        | DuelTick          of chainDepth: int
+        | PlayerActionTick  of chainDepth: int * action: PlayerAction * attackerId: PlayerId option
+        | FreeKickTick      of kicker: PlayerId * position: Spatial * chainDepth: int
+        | CornerTick        of club: ClubSide * chainDepth: int
+        | PenaltyTick       of kicker: PlayerId * isHome: bool
+        | ThrowInTick       of club: ClubSide * chainDepth: int
         | GoalKickTick
         | KickOffTick
         | HalfTimeTick
         | FullTimeTick
-        | ExtraTimeTick of period: int
+        | ExtraTimeTick     of period: int
         | MatchEndTick
-        | InjuryTick of player: PlayerId * severity: int
+        | InjuryTick        of player: PlayerId * severity: int
         | ResumePlayTick
-        | SubstitutionTick of clubId: ClubId
+        | SubstitutionTick  of clubId: ClubId
         | ManagerReactionTick of trigger: ReactionTrigger
         | CognitiveTick
         | AdaptiveTick
 
     and ReactionTrigger =
-        | RedCardTrigger of PlayerId
-        | InjuryTrigger of PlayerId
+        | RedCardTrigger    of PlayerId
+        | InjuryTrigger     of PlayerId
         | GoalConceded
         | GoalScored
-        | FatigueAlert of clubId: ClubId * playerId: PlayerId * condition: int
-        | MomentumSwing of clubId: ClubSide
+        | FatigueAlert      of clubId: ClubId * playerId: PlayerId * condition: int
+        | MomentumSwing     of clubId: ClubSide
+
+    // -------------------------------------------------------------------------
+    // ScheduledTick — the unit the scheduler operates on
+    // -------------------------------------------------------------------------
 
     [<Struct; CustomComparison; CustomEquality>]
     type ScheduledTick =
-        { Second: int
-          Priority: TickPriority
-          SequenceId: int64
-          Kind: TickKind }
+        { SubTick:    int           // timeline position
+          Priority:   TickPriority
+          SequenceId: int64         // tiebreaker within same SubTick + Priority
+          Kind:       TickKind }
 
         interface IComparable with
             member this.CompareTo other =
                 match other with
                 | :? ScheduledTick as o ->
-                    match compare this.Second o.Second with
+                    match compare this.SubTick o.SubTick with
                     | 0 ->
                         match compare this.Priority o.Priority with
                         | 0 -> compare this.SequenceId o.SequenceId
@@ -83,35 +99,43 @@ module SchedulingTypes =
         override this.Equals other =
             match other with
             | :? ScheduledTick as o ->
-                this.Second = o.Second
-                && this.Priority = o.Priority
+                this.SubTick    = o.SubTick
+                && this.Priority   = o.Priority
                 && this.SequenceId = o.SequenceId
-                && this.Kind = o.Kind
+                && this.Kind       = o.Kind
             | _ -> false
 
         override this.GetHashCode() =
-            HashCode.Combine(this.Second, int this.Priority, this.SequenceId)
+            HashCode.Combine(this.SubTick, int this.Priority, this.SequenceId)
+
+    // -------------------------------------------------------------------------
+    // Agent contract
+    // -------------------------------------------------------------------------
 
     type AgentOutput =
-        { State       : MatchState
-          Events      : MatchEvent list
-          Spawned     : ScheduledTick list
-          Transition  : PlayState option }
+        { State      : MatchState
+          Events     : MatchEvent list
+          Spawned    : ScheduledTick list
+          Transition : PlayState option }
 
     type TickResult = AgentOutput
 
     type Agent =
-        ClubId            // homeId
-          -> Player list  // homeSquad
-          -> Player list  // awaySquad
+        ClubId           // homeId
+          -> Player list // homeSquad
+          -> Player list // awaySquad
           -> ScheduledTick
           -> MatchState
           -> AgentOutput
 
+    // -------------------------------------------------------------------------
+    // Loop state
+    // -------------------------------------------------------------------------
+
     type LoopState =
-        { MatchState: MatchState
-          ReversedEvents: MatchEvent list
-          PlayState: PlayState
-          Snapshots: System.Collections.Generic.List<MatchState> option
+        { MatchState:        MatchState
+          Events:            ResizeArray<MatchEvent>
+          PlayState:         PlayState
+          Snapshots:         System.Collections.Generic.List<MatchState> option
           MatchEndScheduled: bool
-          SequenceCounter: int64 }
+          SequenceCounter:   int64 }

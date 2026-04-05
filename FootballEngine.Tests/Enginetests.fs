@@ -2,8 +2,10 @@ module FootballEngine.Tests.EngineTests
 
 open Expecto
 open FootballEngine.Domain
-open FootballEngine.Engine
+
 open FootballEngine.Tests.Helpers
+open FootballEngine.World
+open FootballEngine.World.WorldRunner
 
 let private unplayedFixtures (game: GameState) limit =
     game.Competitions
@@ -15,7 +17,8 @@ let private unplayedFixtures (game: GameState) limit =
 let private advanceToSimulate (game: GameState) (fixtures: (MatchId * MatchFixture) list) : DayResult =
     let maxDate = fixtures |> List.map (fun (_, f) -> f.ScheduledDate) |> List.max
     let days = int (maxDate.Date - game.CurrentDate.Date).TotalDays + 1
-    advanceDays days game
+    let gameClock = WorldClockOps.init game.Season
+    advanceDays days gameClock game
 
 let batchTests =
     testList
@@ -30,7 +33,7 @@ let batchTests =
 
               let result = advanceToSimulate game fixtures
               Expect.isTrue (result.Logs.Length > 0) "no fixtures were simulated"
-              Expect.isTrue (result.PlayedFixtures.Length > 0) "no played fixtures recorded"
+              Expect.isTrue (result.PlayedMatches.Length > 0) "no played fixtures recorded"
 
           testCase "standings are mathematically sane"
           <| fun () ->
@@ -102,15 +105,17 @@ let doubleSimGuardTests =
 
               // Prepare clubs with lineups in staff - process sequentially to accumulate staff updates
               let initialStaff = game.Staff
+
               let clubsArray, finalStaff =
                   game.Clubs
                   |> Map.toArray
                   |> Array.map snd
-                  |> Array.fold (fun (accClubs, accStaff) club ->
-                      let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
-                      (Array.append accClubs [|updatedClub|]), updatedStaff
-                  ) ([||], initialStaff)
-              
+                  |> Array.fold
+                      (fun (accClubs, accStaff) club ->
+                          let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
+                          (Array.append accClubs [| updatedClub |]), updatedStaff)
+                      ([||], initialStaff)
+
               let gameWithLineups =
                   { game with
                       Clubs = clubsArray |> Array.map (fun c -> c.Id, c) |> Map.ofArray
@@ -146,7 +151,7 @@ let doubleSimGuardTests =
               Expect.isTrue unchanged "standings changed — fixture was processed twice"
               Expect.equal maxPts2 maxPts1 "points doubled — alreadyPlayed guard is not working"
               Expect.isEmpty result2.Logs "second advance added log entries for already-played fixtures"
-              Expect.isEmpty result2.PlayedFixtures "second advance replayed already-played fixtures" ]
+              Expect.isEmpty result2.PlayedMatches "second advance replayed already-played fixtures" ]
 
 let standingUpdateTests =
     testList
@@ -168,7 +173,8 @@ let standingUpdateTests =
               let fixtureId, fixture = unplayed[0]
 
               let days = int (fixture.ScheduledDate.Date - game.CurrentDate.Date).TotalDays + 1
-              let result = advanceDays days game
+              let gameClock = WorldClockOps.init game.Season
+              let result = advanceDays days gameClock game
 
               let comp =
                   game.Competitions

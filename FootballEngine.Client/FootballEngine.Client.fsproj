@@ -33,6 +33,7 @@
         <Compile Include="FormationData.fs"/>
         <Compile Include="Lineup.fs"/>
 
+        <Compile Include="Engine\Match\Core\PhysicsContract.fs"/>
         <Compile Include="Engine\Match\Core\MatchStateTypes.fs"/>
         <Compile Include="Engine\Match\Core\BalanceConfig.fs"/>
         <Compile Include="Engine\Stats.fs"/>

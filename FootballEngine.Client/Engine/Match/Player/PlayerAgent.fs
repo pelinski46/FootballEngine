@@ -56,35 +56,39 @@ module PlayerAgent =
             | _ -> LivePlay)
 
     let private nearestAttackerIdx ballX ballY (attSide: TeamSide) =
-        attSide.Positions
-        |> Array.mapi (fun i _ -> i)
-        |> Array.minBy (fun i ->
+        let mutable bestIdx = 0
+        let mutable bestDistSq = System.Double.MaxValue
+        for i = 0 to attSide.Positions.Length - 1 do
             let dx = attSide.Positions[i].X - ballX
             let dy = attSide.Positions[i].Y - ballY
-            dx * dx + dy * dy)
+            let dSq = dx * dx + dy * dy
+            if dSq < bestDistSq then
+                bestDistSq <- dSq
+                bestIdx <- i
+        bestIdx
 
     let private nearestDefender ballX ballY (defSide: TeamSide) : Player option =
-        if defSide.Players.Length = 0 then
-            None
+        if defSide.Players.Length = 0 then None
         else
-            let idx =
-                defSide.Positions
-                |> Array.mapi (fun i _ -> i)
-                |> Array.minBy (fun i ->
-                    let dx = defSide.Positions[i].X - ballX
-                    let dy = defSide.Positions[i].Y - ballY
-                    dx * dx + dy * dy)
+            let mutable bestIdx = 0
+            let mutable bestDistSq = System.Double.MaxValue
+            for i = 0 to defSide.Positions.Length - 1 do
+                let dx = defSide.Positions[i].X - ballX
+                let dy = defSide.Positions[i].Y - ballY
+                let dSq = dx * dx + dy * dy
+                if dSq < bestDistSq then
+                    bestDistSq <- dSq
+                    bestIdx <- i
+            Some defSide.Players[bestIdx]
 
-            Some defSide.Players[idx]
-
-    let private spawnNextDuel second interval =
-        { Second = second + interval
+    let private spawnNextDuel subTick interval =
+        { SubTick = subTick + interval
           Priority = TickPriority.Duel
           SequenceId = 0L
           Kind = DuelTick 0 }
 
-    let private spawnPlayerActionTick second depth action attackerId =
-        { Second = second + Stats.delayFrom BalanceConfig.duelChainDelay
+    let private spawnPlayerActionTick subTick depth action attackerId =
+        { SubTick = subTick + Stats.delayFrom BalanceConfig.duelChainDelay
           Priority = TickPriority.Duel
           SequenceId = 0L
           Kind = PlayerActionTick(depth, action, Some attackerId) }
@@ -97,7 +101,7 @@ module PlayerAgent =
             if attSide.Players.Length = 0 then
                 { State = state
                   Events = []
-                  Spawned = [ spawnNextDuel tick.Second (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                  Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
                   Transition = None }
             else
                 let bx, by = state.Ball.Position.X, state.Ball.Position.Y
@@ -107,11 +111,11 @@ module PlayerAgent =
 
                 { State = state
                   Events = []
-                  Spawned = [ spawnPlayerActionTick tick.Second 0 action att.Id ]
+                  Spawned = [ spawnPlayerActionTick tick.SubTick 0 action att.Id ]
                   Transition = None }
 
         | PlayerActionTick(depth, action, attId) ->
-            let newState, playerEvents = resolve homeId tick.Second action state
+            let newState, playerEvents = resolve homeId tick.SubTick action state
 
             let att =
                 attId
@@ -125,7 +129,7 @@ module PlayerAgent =
             let def = nearestDefender bx by defSide
 
             let refState, refEvents, _refActions =
-                RefereeAgent.runRefereeStep tick.Second att def newState
+                RefereeAgent.runRefereeStep tick.SubTick att def newState
 
             let allEvents = playerEvents @ refEvents
 
@@ -134,7 +138,7 @@ module PlayerAgent =
 
                 { State = refState
                   Events = allEvents
-                  Spawned = [ spawnNextDuel tick.Second (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                  Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
                   Transition = transition }
             elif depth < BalanceConfig.AvgChainLength - 1 then
                 let attSide = ClubSide.teamSide refState.AttackingClub refState
@@ -142,7 +146,7 @@ module PlayerAgent =
                 if attSide.Players.Length = 0 then
                     { State = refState
                       Events = allEvents
-                      Spawned = [ spawnNextDuel tick.Second (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                      Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
                       Transition = None }
                 else
                     let bx', by' = refState.Ball.Position.X, refState.Ball.Position.Y
@@ -152,12 +156,12 @@ module PlayerAgent =
 
                     { State = refState
                       Events = allEvents
-                      Spawned = [ spawnPlayerActionTick tick.Second (depth + 1) newAction newAtt.Id ]
+                      Spawned = [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
                       Transition = None }
             else
                 { State = refState
                   Events = allEvents
-                  Spawned = [ spawnNextDuel tick.Second (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                  Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
                   Transition = None }
 
         | _ ->

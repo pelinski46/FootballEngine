@@ -1,46 +1,39 @@
 namespace FootballEngine.Movement
 
-type EmergentState =
-    { CompactnessLevel: float
-      PressingIntensity: float
-      WingPlayPreference: float
-      TempoLevel: float
-      RiskAppetite: float }
+
+open FootballEngine
 
 module EmergentLoops =
-    let initial =
-        { CompactnessLevel = 0.5
-          PressingIntensity = 0.5
-          WingPlayPreference = 0.5
-          TempoLevel = 0.5
-          RiskAppetite = 0.5 }
 
-    let updateCompactness current shortPassSuccess =
+    let updateCompactness (current: EmergentState) (shortPassSuccess: float) : EmergentState =
         let adjustment =
             if shortPassSuccess > 0.7 then 0.05
             elif shortPassSuccess < 0.5 then -0.05
             else 0.0
+
         { current with
             CompactnessLevel = System.Math.Clamp(current.CompactnessLevel + adjustment, 0.1, 1.0) }
 
-    let updatePressing current pressSuccessRate =
+    let updatePressing (current: EmergentState) (pressSuccessRate: float) : EmergentState =
         let adjustment =
             if pressSuccessRate > 0.6 then 0.05
             elif pressSuccessRate < 0.4 then -0.08
             else 0.0
+
         { current with
             PressingIntensity = System.Math.Clamp(current.PressingIntensity + adjustment, 0.1, 1.0) }
 
-    let updateWingPlay current flankSuccessRate =
+    let updateWingPlay (current: EmergentState) (flankSuccessRate: float) : EmergentState =
         let adjustment =
             if flankSuccessRate > 0.55 then 0.05
             elif flankSuccessRate < 0.4 then -0.05
             else 0.0
+
         { current with
             WingPlayPreference = System.Math.Clamp(current.WingPlayPreference + adjustment, 0.1, 1.0) }
 
-    let updateFatigueSpiral current avgCondition consecutiveLosses =
-        let conditionFactor = float avgCondition / 100.0
+    let updateFatigueSpiral (current: EmergentState) (avgCondition: float) (consecutiveLosses: int) : EmergentState =
+        let conditionFactor = avgCondition / 100.0
         let lossPenalty = float consecutiveLosses * 0.03
         let fatigueEffect = max 0.0 (1.0 - conditionFactor) * 0.1 + lossPenalty
 
@@ -50,7 +43,7 @@ module EmergentLoops =
             TempoLevel = max 0.1 (current.TempoLevel - fatigueEffect * 0.6)
             RiskAppetite = max 0.1 (current.RiskAppetite - fatigueEffect * 0.5) }
 
-    let toDirectiveModifiers (state: EmergentState) =
+    let toDirectiveModifiers (state: EmergentState) : DirectiveModifiers =
         { Shape = 1.0
           Run = state.TempoLevel
           MarkMan = state.CompactnessLevel

@@ -32,6 +32,7 @@ module AgentContext =
         let ballState =
             { Position = s.Ball.Position
               Spin = s.Ball.Spin
+              ControlledBy = s.Ball.ControlledBy
               LastTouchBy = s.Ball.LastTouchBy
               IsInPlay = s.Ball.IsInPlay }
 
@@ -83,6 +84,6 @@ module AgentContext =
           BestPassTarget = bestPass
           DistToGoal = distToGoal
           GoalDiff = gd
-          Minute = s.Second / 60
+          Minute = int (PhysicsContract.subTicksToSeconds s.SubTick / 60.0)
           Urgency = 1.0
           Tactics = tacticsCfg }

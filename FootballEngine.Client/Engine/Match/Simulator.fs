@@ -3,9 +3,9 @@ namespace FootballEngine
 open FootballEngine.Domain
 open FootballEngine.MatchStateOps
 open FootballEngine.Movement
+open FootballEngine.PhysicsContract
 open FootballEngine.Stats
 open SchedulingTypes
-
 
 module MatchSimulator =
 
@@ -14,66 +14,62 @@ module MatchSimulator =
         | IncompleteLineup of clubName: string * playerCount: int
         | SameClub of clubName: string
 
+    // Phase 0: all times in SubTicks
     let private generateInitialTicks (init: MatchState) : ScheduledTick list =
+        let sub min = secondsToSubTicks (float min * 60.0)
+
         let subs =
             [ for idx, min in List.indexed [ 60; 75; 85 ] ->
-                  { Second = min * 60
+                  { SubTick = sub min
                     Priority = TickPriority.Manager
                     SequenceId = int64 idx
                     Kind = SubstitutionTick init.Home.Id }
               for idx, min in List.indexed [ 60; 75; 85 ] ->
-                  { Second = min * 60
+                  { SubTick = sub min
                     Priority = TickPriority.Manager
                     SequenceId = int64 (idx + 3)
                     Kind = SubstitutionTick init.Away.Id } ]
 
         [ yield
-              { Second = 30
+              { SubTick = secondsToSubTicks 30.0
                 Priority = TickPriority.Physics
                 SequenceId = 0L
                 Kind = PhysicsTick }
           yield
-              { Second = 12
+              { SubTick = secondsToSubTicks 12.0
                 Priority = TickPriority.Manager
                 SequenceId = 1L
                 Kind = CognitiveTick }
           yield
-              { Second = 60
+              { SubTick = secondsToSubTicks 60.0
                 Priority = TickPriority.Manager
                 SequenceId = 2L
                 Kind = AdaptiveTick }
           yield! subs
           yield
-              { Second = 45 * 60
+              { SubTick = HalfTimeSubTick
                 Priority = TickPriority.MatchControl
                 SequenceId = 10L
                 Kind = HalfTimeTick }
           yield
-              { Second = 95 * 60
+              { SubTick = FullTimeSubTick
                 Priority = TickPriority.MatchControl
                 SequenceId = 11L
                 Kind = FullTimeTick } ]
 
     let private spawnCognitiveTick (tick: ScheduledTick) =
-        { Second = tick.Second + CognitiveLayer.CognitiveInterval
+        { SubTick = tick.SubTick + PhysicsContract.CognitiveIntervalSubTicks
           Priority = TickPriority.Manager
           SequenceId = 0L
           Kind = CognitiveTick }
 
     let private spawnAdaptiveTick (tick: ScheduledTick) =
-        { Second = tick.Second + AdaptiveTactics.AdaptiveCheckInterval
+        { SubTick = tick.SubTick + PhysicsContract.AdaptiveIntervalSubTicks
           Priority = TickPriority.Manager
           SequenceId = 0L
           Kind = AdaptiveTick }
 
-    let private runTick
-        (homeId: ClubId)
-        (homeSquad: Player list)
-        (awaySquad: Player list)
-        (tick: ScheduledTick)
-        (s: MatchState)
-        : AgentOutput =
-
+    let private runTick homeId homeSquad awaySquad (tick: ScheduledTick) (s: MatchState) : AgentOutput =
         let dispatchAgent (tick: ScheduledTick) : Agent =
             match tick.Kind with
             | PhysicsTick -> BallAgent.agent
@@ -98,15 +94,14 @@ module MatchSimulator =
 
         (dispatchAgent tick) homeId homeSquad awaySquad tick s
 
-    let private runLoopDes
-        (homeId: ClubId)
-        (homeSquad: Player list)
-        (awaySquad: Player list)
-        (init: MatchState)
-        (saveSnapshots: bool)
-        =
+    // -------------------------------------------------------------------------
+    // Phase 1: main loop — ball @ 40Hz, players @ 10Hz, cognitive @ 1Hz
+    // Phase 4: fatigue applied on CognitiveTick via FatiguePipeline
+    // Phase 5: JIT — all action resolutions use current positions at dispatch
+    // -------------------------------------------------------------------------
 
-        let scheduler = TickScheduler(95 * 60)
+    let runLoopDes homeId homeSquad awaySquad (init: MatchState) (saveSnapshots: bool) =
+        let scheduler = TickScheduler(PhysicsContract.MaxMatchSubTicks)
         generateInitialTicks init |> List.iter scheduler.Insert
 
         let snapshots =
@@ -117,50 +112,52 @@ module MatchSimulator =
 
         let initialState =
             { MatchState = init
-              ReversedEvents = []
+              Events = ResizeArray()
               PlayState = LivePlay
               Snapshots = snapshots
               MatchEndScheduled = false
               SequenceCounter = scheduler.Count |> int64 }
 
-        let homeMov = MovementEngine.initMovementState init.HomeSide.Players.Length
-        let awayMov = MovementEngine.initMovementState init.AwaySide.Players.Length
-
-        let firstDuelInterval = normalInt 25.0 5.0 15 35
+        let firstDuelInterval =
+            normalInt
+                (float BalanceConfig.duelNextDelay.MeanST)
+                (float BalanceConfig.duelNextDelay.StdST)
+                BalanceConfig.duelNextDelay.MinST
+                BalanceConfig.duelNextDelay.MaxST
 
         scheduler.Insert
-            { Second = firstDuelInterval
+            { SubTick = firstDuelInterval
               Priority = TickPriority.Duel
               SequenceId = -1L
               Kind = DuelTick 0 }
 
-        let snapshotInterval = 1
+        // Phase 1: snapshot every 40 SubTicks = 1 real second
+        let snapshotInterval = PhysicsContract.SubTicksPerSecond
+        // Phase 1: player dt = 4 SubTicks × 0.025s = 0.1s
+        let dtPlayer = PhysicsContract.Dt * 4.0
 
-        let rec loop ls homeMov awayMov (scheduler: TickScheduler) lastSnapshotAt =
+        let rec loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt =
             match scheduler.Dequeue() with
-            | ValueNone ->
-                ls.MatchState, List.rev ls.ReversedEvents, ls.Snapshots |> Option.map _.ToArray(), homeMov, awayMov
+            | ValueNone -> ls.MatchState, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
 
             | ValueSome tick ->
-
                 match tick.Kind with
                 | FullTimeTick ->
                     let finalState =
                         { ls.MatchState with
-                            Second = tick.Second }
+                            SubTick = tick.SubTick }
 
-                    finalState, List.rev ls.ReversedEvents, ls.Snapshots |> Option.map _.ToArray(), homeMov, awayMov
+                    finalState, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
 
                 | _ ->
                     let shouldProcess =
                         match ls.PlayState, tick.Kind with
                         | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
                         | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
-                        | (Stopped _ | PlayState.SetPiece _), PhysicsTick -> false
-                        | _ -> true
+                        | _ -> true // PhysicsTick always runs — ball moves during stoppages
 
                     if not shouldProcess then
-                        loop ls homeMov awayMov scheduler lastSnapshotAt
+                        loop ls scheduler lastSnapshotAt
                     else
                         let result = runTick homeId homeSquad awaySquad tick ls.MatchState
 
@@ -170,95 +167,41 @@ module MatchSimulator =
                             | AdaptiveTick -> [ spawnAdaptiveTick tick ]
                             | _ -> []
 
-                        let newHomeMov, newAwayMov, finalState =
+                        let finalState =
                             match tick.Kind with
                             | PhysicsTick ->
-                                let dt = 1.0
-                                let ms = ls.MatchState
+                                // Phase 1: player movement gated to SteeringIntervalSubTicks
+                                if tick.SubTick % PhysicsContract.SteeringIntervalSubTicks = 0 then
+                                    result.State
+                                    |> fun s -> MovementEngine.updateTeamSide tick.SubTick s HomeClub dtPlayer
+                                    |> fun s -> MovementEngine.updateTeamSide tick.SubTick s AwayClub dtPlayer
+                                else
+                                    result.State
 
-                                let hm, hs =
-                                    MovementEngine.updateTeamSide
-                                        tick.Second
-                                        homeMov
-                                        ms.HomeSide
-                                        ms.AwaySide
-                                        result.State.Ball
-                                        (AttackDir.ofClubSide ms.AttackingClub)
-                                        ms.Momentum
-                                        dt
-
-                                let am, as_ =
-                                    MovementEngine.updateTeamSide
-                                        tick.Second
-                                        awayMov
-                                        ms.AwaySide
-                                        ms.HomeSide
-                                        result.State.Ball
-                                        (AttackDir.ofClubSide (ClubSide.flip ms.AttackingClub))
-                                        (-ms.Momentum)
-                                        dt
-
-                                hm,
-                                am,
-                                { result.State with
-                                    HomeSide = hs
-                                    AwaySide = as_ }
                             | CognitiveTick ->
-                                let ms = ls.MatchState
+                                // Phase 4: cognitive update — mental states + fatigue-weighted directives
+                                result.State
+                                |> fun s -> MovementEngine.updateCognitive tick.SubTick s HomeClub ls.Events
+                                |> fun s -> MovementEngine.updateCognitive tick.SubTick s AwayClub ls.Events
 
-                                let hm =
-                                    MovementEngine.updateCognitive
-                                        tick.Second
-                                        homeMov
-                                        ms.HomeSide
-                                        ms.AwaySide
-                                        ms.Ball.Position.X
-                                        ms.Ball.Position.Y
-                                        (AttackDir.ofClubSide ms.AttackingClub)
-                                        ms.Momentum
-                                        ls.ReversedEvents
-
-                                let am =
-                                    MovementEngine.updateCognitive
-                                        tick.Second
-                                        awayMov
-                                        ms.AwaySide
-                                        ms.HomeSide
-                                        ms.Ball.Position.X
-                                        ms.Ball.Position.Y
-                                        (AttackDir.ofClubSide (ClubSide.flip ms.AttackingClub))
-                                        (-ms.Momentum)
-                                        ls.ReversedEvents
-
-                                hm, am, result.State
                             | AdaptiveTick ->
-                                let ms = ls.MatchState
+                                result.State
+                                |> fun s -> MovementEngine.updateAdaptive tick.SubTick s HomeClub ls.Events
+                                |> fun s -> MovementEngine.updateAdaptive tick.SubTick s AwayClub ls.Events
 
-                                let hm =
-                                    MovementEngine.updateAdaptive
-                                        tick.Second
-                                        homeMov
-                                        (AttackDir.ofClubSide ms.AttackingClub)
-                                        ls.ReversedEvents
-
-                                let am =
-                                    MovementEngine.updateAdaptive
-                                        tick.Second
-                                        awayMov
-                                        (AttackDir.ofClubSide (ClubSide.flip ms.AttackingClub))
-                                        ls.ReversedEvents
-
-                                hm, am, result.State
-                            | _ -> homeMov, awayMov, result.State
+                            | _ -> result.State
 
                         let newLastSnapshotAt =
                             match ls.Snapshots with
-                            | Some snaps when tick.Second >= lastSnapshotAt + snapshotInterval ->
+                            | Some snaps when tick.SubTick >= lastSnapshotAt + snapshotInterval ->
                                 snaps.Add(finalState)
-                                tick.Second
+                                tick.SubTick + snapshotInterval
                             | _ -> lastSnapshotAt
 
-                        let allSpawned = result.Spawned @ autoSpawned
+                        let allSpawned =
+                            match autoSpawned with
+                            | [] -> result.Spawned
+                            | _ -> autoSpawned @ result.Spawned
 
                         let stampedTicks, newCounter =
                             allSpawned
@@ -268,27 +211,26 @@ module MatchSimulator =
 
                         let newPlayState = result.Transition |> Option.defaultValue ls.PlayState
 
+                        result.Events |> List.iter ls.Events.Add
+
                         loop
                             { ls with
                                 MatchState = finalState
-                                ReversedEvents = result.Events @ ls.ReversedEvents
                                 PlayState = newPlayState
                                 SequenceCounter = newCounter }
-                            newHomeMov
-                            newAwayMov
                             scheduler
                             newLastSnapshotAt
 
-        loop initialState homeMov awayMov scheduler 0
+        loop initialState scheduler 0
 
-    let private runLoopFastDes homeId homeSquad awaySquad init =
-        let s, evs, _, _, _ = runLoopDes homeId homeSquad awaySquad init false
+    let runLoopFastDes homeId homeSquad awaySquad init =
+        let s, evs, _ = runLoopDes homeId homeSquad awaySquad init false
         s, evs
 
     let private runLoopFullDes homeId homeSquad awaySquad init =
         match runLoopDes homeId homeSquad awaySquad init true with
-        | s, evs, Some snaps, _, _ -> s, evs, snaps
-        | s, evs, None, _, _ -> s, evs, [||]
+        | s, evs, Some snaps -> s, evs, snaps
+        | s, evs, None -> s, evs, [||]
 
     open FsToolkit.ErrorHandling
 
@@ -299,10 +241,11 @@ module MatchSimulator =
         |> Option.map Ok
         |> Option.defaultValue (Error(MissingLineup club.Name))
 
+    // Phase 2: toCoords maps formation slots → metric pitch coordinates
     let private toCoords slotX slotY (clubSide: ClubSide) =
         match clubSide with
-        | HomeClub -> slotY * 100.0, slotX * 100.0
-        | AwayClub -> (1.0 - slotY) * 100.0, slotX * 100.0
+        | HomeClub -> slotY * PhysicsContract.PitchLength, slotX * PhysicsContract.PitchWidth
+        | AwayClub -> (1.0 - slotY) * PhysicsContract.PitchLength, slotX * PhysicsContract.PitchWidth
 
     let private extractLineup
         (club: Club)
@@ -344,7 +287,11 @@ module MatchSimulator =
     let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float * float>) : Spatial[] =
         players
         |> Array.map (fun p ->
-            let x, y = posMap |> Map.tryFind p.Id |> Option.defaultValue (50.0, 50.0)
+            let x, y =
+                posMap
+                |> Map.tryFind p.Id
+                |> Option.defaultValue (PhysicsContract.HalfwayLineX, PhysicsContract.PitchWidth / 2.0)
+
             defaultSpatial x y)
 
     let private initState
@@ -365,13 +312,15 @@ module MatchSimulator =
 
         let hPos = positionArrayOf hp hPosMap
         let aPos = positionArrayOf ap aPosMap
-        let defaultInstructions = TacticalInstructions.defaultInstructions
+        let defaultInstr = TacticalInstructions.defaultInstructions
+        let hCount = hp |> Array.length
+        let aCount = ap |> Array.length
 
         { Home = home
           Away = away
           HomeCoach = homeCoach
           AwayCoach = awayCoach
-          Second = 0
+          SubTick = 0 // Phase 0: was Second = 0
           HomeScore = 0
           AwayScore = 0
           Ball = defaultBall
@@ -386,7 +335,7 @@ module MatchSimulator =
               Yellows = Map.empty
               SubsUsed = 0
               Tactics = homeTactics
-              Instructions = homeInstructions |> Option.orElse (Some defaultInstructions) }
+              Instructions = homeInstructions |> Option.orElse (Some defaultInstr) }
           AwaySide =
             { Players = ap
               Conditions = ap |> Array.map _.Condition
@@ -396,12 +345,36 @@ module MatchSimulator =
               Yellows = Map.empty
               SubsUsed = 0
               Tactics = awayTactics
-              Instructions = awayInstructions |> Option.orElse (Some defaultInstructions) }
+              Instructions = awayInstructions |> Option.orElse (Some defaultInstr) }
           PenaltyShootout = None
           IsExtraTime = false
           IsKnockoutMatch = isKnockout
-          PendingOffsideSnapshot = None }
+          PendingOffsideSnapshot = None
 
+          // Phase 0/4 — SSOT cognitive/movement state embedded in MatchState
+          HomeMentalStates = Array.zeroCreate hCount
+          HomeDirectives = Array.zeroCreate hCount
+          HomeActiveRuns = []
+          HomeChemistry = ChemistryGraph.init hCount
+          HomeEmergentState = EmergentState.initial
+          HomeAdaptiveState = AdaptiveTactics.initial
+          HomeLastCognitiveSubTick = 0
+          HomeLastShapeSubTick = 0
+          HomeLastMarkingSubTick = 0
+          HomeLastAdaptiveSubTick = 0
+
+          AwayMentalStates = Array.zeroCreate aCount
+          AwayDirectives = Array.zeroCreate aCount
+          AwayActiveRuns = []
+          AwayChemistry = ChemistryGraph.init aCount
+          AwayEmergentState = EmergentState.initial
+          AwayAdaptiveState = AdaptiveTactics.initial
+          AwayLastCognitiveSubTick = 0
+          AwayLastShapeSubTick = 0
+          AwayLastMarkingSubTick = 0
+          AwayLastAdaptiveSubTick = 0 }
+
+    // Phase 0: shootout events use SubTick field
     let private simulatePenaltyShootout (s: MatchState) (home: Club) (away: Club) (players: Map<PlayerId, Player>) =
         result {
             let homePlayers =
@@ -419,10 +392,14 @@ module MatchSimulator =
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
 
                 let homeAction = PlayerAction.Penalty(homeKicker, HomeClub, kickNum)
-                let homeS, _ = PlayerAgent.resolve home.Id (95 * 60 + kickNum) homeAction s
+
+                let homeS, _ =
+                    PlayerAgent.resolve home.Id (PhysicsContract.FullTimeSubTick + kickNum) homeAction s
 
                 let awayAction = PlayerAction.Penalty(awayKicker, AwayClub, kickNum)
-                let awayS, _ = PlayerAgent.resolve home.Id (95 * 60 + kickNum) awayAction homeS
+
+                let awayS, _ =
+                    PlayerAgent.resolve home.Id (PhysicsContract.FullTimeSubTick + kickNum) awayAction homeS
 
                 let homeScored = homeS.HomeScore > s.HomeScore
                 let awayScored = awayS.AwayScore > homeS.AwayScore
@@ -459,14 +436,17 @@ module MatchSimulator =
 
             let shootout = simulateKicks [] [] 1
 
+            // Phase 0: SubTick field (was Second)
+            let baseSubTick = PhysicsContract.secondsToSubTicks (95.0 * 60.0)
+
             let events =
                 [ for pid, scored, k in shootout.HomeKicks ->
-                      { Second = 95 * 60 + k
+                      { SubTick = baseSubTick + k
                         PlayerId = pid
                         ClubId = home.Id
                         Type = PenaltyAwarded scored }
                   for pid, scored, k in shootout.AwayKicks ->
-                      { Second = 95 * 60 + k
+                      { SubTick = baseSubTick + k
                         PlayerId = pid
                         ClubId = away.Id
                         Type = PenaltyAwarded scored } ]
@@ -479,13 +459,7 @@ module MatchSimulator =
                   Snapshots = [||] }
         }
 
-    let private setup
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        (isKnockout: bool)
-        : Result<MatchState * Player list * Player list, SimulationError> =
+    let setup home away players staff isKnockout : Result<MatchState * Player list * Player list, SimulationError> =
         result {
             let! homeCoach = resolveCoach home staff
             let! awayCoach = resolveCoach away staff
@@ -519,24 +493,14 @@ module MatchSimulator =
             return init, homeSquad, awaySquad
         }
 
-    let trySimulateMatch
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        : Result<int * int * MatchEvent list * MatchState, SimulationError> =
+    let trySimulateMatch home away players staff : Result<int * int * MatchEvent list * MatchState, SimulationError> =
         result {
             let! init, homeSquad, awaySquad = setup home away players staff false
             let final, events = runLoopFastDes home.Id homeSquad awaySquad init
             return final.HomeScore, final.AwayScore, events, final
         }
 
-    let trySimulateMatchFull
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        : Result<MatchReplay, SimulationError> =
+    let trySimulateMatchFull home away players staff : Result<MatchReplay, SimulationError> =
         result {
             let! init, homeSquad, awaySquad = setup home away players staff false
             let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad init
@@ -547,12 +511,7 @@ module MatchSimulator =
                   Snapshots = snapshots }
         }
 
-    let trySimulateMatchKnockout
-        (home: Club)
-        (away: Club)
-        (players: Map<PlayerId, Player>)
-        (staff: Map<StaffId, Staff>)
-        : Result<MatchReplay * bool, SimulationError> =
+    let trySimulateMatchKnockout home away players staff : Result<MatchReplay * bool, SimulationError> =
         result {
             let! init, homeSquad, awaySquad = setup home away players staff true
             let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad init
@@ -568,3 +527,8 @@ module MatchSimulator =
             else
                 return replay, false
         }
+
+    let buildInitState home away players staff =
+        match setup home away players staff false with
+        | Ok(init, homeSquad, awaySquad) -> Some(init, homeSquad, awaySquad)
+        | Error _ -> None

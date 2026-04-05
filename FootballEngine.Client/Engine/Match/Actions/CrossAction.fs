@@ -8,8 +8,9 @@ open MatchSpatial
 
 module CrossAction =
 
-    let private event second playerId clubId t =
-        { Second = second
+    // Phase 0: Second -> SubTick
+    let private event subTick playerId clubId t =
+        { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
@@ -20,45 +21,49 @@ module CrossAction =
         let dx = targetX - bX
         let dy = targetY - bY
         let dist = sqrt (dx * dx + dy * dy)
+        if dist < 0.01 then s |> withBallVelocity 0.0 0.0 vz
+        else s |> withBallVelocity (dx / dist * speed) (dy / dist * speed) vz
 
-        if dist < 0.01 then
-            s |> withBallVelocity 0.0 0.0 vz
-        else
-            s |> withBallVelocity (dx / dist * speed) (dy / dist * speed) vz
-
-    let resolve (second: int) (s: MatchState) : MatchState * MatchEvent list =
+    // Phase 3: normaliseAttr for crosser attributes
+    // Phase 5: JIT — all positions resolved at execution time
+    let resolve (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let attClubId = ClubSide.toClubId ctx.AttSide s
-        let defClubId = ClubSide.toClubId ctx.DefSide s
         let attSide = side (ClubSide.toClubId ctx.AttSide s) s
         let defSide = side (ClubSide.toClubId ctx.DefSide s) s
         let clubId = attClubId
 
         let bX, bY = ballXY s
 
-        let crosserIdx =
-            attSide.Positions
-            |> Array.mapi (fun i _ -> i)
-            |> Array.minBy (fun i ->
-                let dx = attSide.Positions[i].X - bX
-                let dy = attSide.Positions[i].Y - bY
-                dx * dx + dy * dy)
+        // JIT: current nearest player to ball
+        let mutable crosserIdx = 0
+        let mutable crosserDistSq = System.Double.MaxValue
+        for i = 0 to attSide.Positions.Length - 1 do
+            let dx = attSide.Positions[i].X - bX
+            let dy = attSide.Positions[i].Y - bY
+            let dSq = dx * dx + dy * dy
+            if dSq < crosserDistSq then
+                crosserDistSq <- dSq
+                crosserIdx <- i
 
         let crosser = attSide.Players[crosserIdx]
         let crosserCond = attSide.Conditions[crosserIdx]
-        let condition = float crosserCond / 100.0
+        let condNorm = PhysicsContract.normaliseCondition crosserCond
 
+        // Phase 3: normaliseAttr
         let crossMean =
             BalanceConfig.CrossBaseMean
-            + float crosser.Technical.Crossing / 100.0 * BalanceConfig.CrossCrossingWeight
-            + float crosser.Technical.Passing / 100.0 * BalanceConfig.CrossPassingWeight
+            + PhysicsContract.normaliseAttr crosser.Technical.Crossing * BalanceConfig.CrossCrossingWeight
+            + PhysicsContract.normaliseAttr crosser.Technical.Passing * BalanceConfig.CrossPassingWeight
             + ctx.AttBonus.SetPlay
 
         let successChance =
             betaSample
                 crossMean
-                (BalanceConfig.CrossSuccessShapeAlpha
-                 + condition * BalanceConfig.CrossSuccessConditionMultiplier)
+                (BalanceConfig.CrossSuccessShapeAlpha + condNorm * BalanceConfig.CrossSuccessConditionMultiplier)
+
+        // JIT: current positions of targets and defenders
+        let defOutfield = outfieldRoster defSide
 
         let targets =
             teamRoster attSide
@@ -66,13 +71,12 @@ module CrossAction =
                 p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
             |> Array.sortBy (fun (_, sp, _) ->
                 let defDist =
-                    outfieldRoster defSide
+                    defOutfield
                     |> Array.map (fun (_, dSp, _) ->
                         let dx = dSp.X - sp.X
                         let dy = dSp.Y - sp.Y
                         dx * dx + dy * dy)
                     |> Array.min
-
                 -(defDist))
 
         if targets.Length > 0 && bernoulli successChance then
@@ -83,31 +87,32 @@ module CrossAction =
                 gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
 
             let headerScore =
-                float (target.Physical.Strength + target.Technical.Heading) / 200.0
+                PhysicsContract.normaliseAttr (target.Physical.Strength + target.Technical.Heading |> min 20)
                 * physicalVariation crosserCond
 
             let gkScore = gkSkill / 150.0
 
             let nearDefs =
-                outfieldRoster defSide
-                |> Array.sumBy (fun (p, _, _) -> float p.Mental.Positioning / 200.0)
-                |> fun v -> v / float (max 1 (outfieldRoster defSide).Length)
+                defOutfield
+                |> Array.sumBy (fun (p, _, _) -> PhysicsContract.normaliseAttr p.Mental.Positioning)
+                |> fun v -> v / float (max 1 defOutfield.Length)
 
             let spin =
-                { Top = -(float crosser.Technical.Crossing / 20.0) * 0.2
-                  Side = (float crosser.Technical.Crossing / 20.0) * 0.8 }
-
-            let targetIdx =
-                attSide |> teamRoster |> Array.findIndex (fun (p, _, _) -> p.Id = target.Id)
+                { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.2
+                  Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.8 }
 
             if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
-                let s1, goalEvents = awardGoal ctx.AttSide (Some target.Id) second s
-                s1, (event second crosser.Id clubId (CrossAttempt true)) :: goalEvents
+                let s1, goalEvents = awardGoal ctx.AttSide (Some target.Id) subTick s
+                s1, (event subTick crosser.Id clubId (CrossAttempt true)) :: goalEvents
             else
                 let blockPos =
                     nearestOutfield defSide targetSp.X targetSp.Y
                     |> Option.map (fun (_, dSp) -> dSp.X, dSp.Y)
-                    |> Option.defaultValue (if ctx.Dir = LeftToRight then (20.0, 50.0) else (80.0, 50.0))
+                    |> Option.defaultValue (
+                        if ctx.Dir = LeftToRight then
+                            (PhysicsContract.PenaltyAreaDepth, PhysicsContract.PitchWidth / 2.0)
+                        else
+                            (PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth, PhysicsContract.PitchWidth / 2.0))
 
                 let bx, by = blockPos
 
@@ -121,20 +126,23 @@ module CrossAction =
                                 Math.Clamp(
                                     s''.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.CrossFailMomentum,
                                     -10.0,
-                                    10.0
-                                )
+                                    10.0)
                             Ball = { s''.Ball with Spin = spin } }
 
                 s',
-                [ event second crosser.Id clubId (CrossAttempt true)
-                  event second target.Id clubId ShotBlocked ]
-
+                [ event subTick crosser.Id clubId (CrossAttempt true)
+                  event subTick target.Id clubId ShotBlocked ]
         else
-            let targetX = if ctx.Dir = LeftToRight then 85.0 else 15.0
+            // Phase 2: target positions in metres
+            let targetX =
+                if ctx.Dir = LeftToRight then
+                    PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
+                else
+                    PhysicsContract.PenaltyAreaDepth
 
             let s' =
                 s
-                |> ballTowards targetX 50.0 15.0 2.0
+                |> ballTowards targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0
                 |> flipPossessionAndClearOffside ctx.AttSide
 
-            s', [ event second crosser.Id clubId (CrossAttempt false) ]
+            s', [ event subTick crosser.Id clubId (CrossAttempt false) ]

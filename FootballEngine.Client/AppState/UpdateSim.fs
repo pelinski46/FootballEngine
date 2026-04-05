@@ -36,11 +36,13 @@ module UpdateSim =
                 fixture.Events
                 |> List.choose (fun ev ->
                     if ev.Type = Goal || ev.Type = OwnGoal then
+                        let minutes = int (PhysicsContract.subTicksToSeconds ev.SubTick / 60.0)
+
                         gs.Players
                         |> Map.tryFind ev.PlayerId
                         |> Option.map (fun p ->
                             let suffix = if ev.Type = OwnGoal then " (OG)" else ""
-                            $"{p.Name}{suffix} {ev.Second / 60}'")
+                            $"{p.Name}{suffix} {minutes}'")
                     else
                         None)
 

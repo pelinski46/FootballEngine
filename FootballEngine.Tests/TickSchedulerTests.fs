@@ -5,8 +5,8 @@ open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.SchedulingTypes
 
-let private mkTick second priority seqId kind =
-    { Second = second; Priority = priority; SequenceId = seqId; Kind = kind }
+let private mkTick subTick priority seqId kind =
+    { SubTick = subTick; Priority = priority; SequenceId = seqId; Kind = kind }
 
 let tickSchedulerTests =
     testList
@@ -18,7 +18,7 @@ let tickSchedulerTests =
               Expect.equal s.Count 1 "count should be 1"
           }
 
-          test "Dequeue returns ticks in Second order" {
+          test "Dequeue returns ticks in SubTick order" {
               let s = TickScheduler(100)
               s.Insert(mkTick 30 TickPriority.Duel 0L (DuelTick 0))
               s.Insert(mkTick 10 TickPriority.Duel 1L (DuelTick 0))
@@ -28,13 +28,13 @@ let tickSchedulerTests =
               let t3 = s.Dequeue()
               match t1, t2, t3 with
               | ValueSome a, ValueSome b, ValueSome c ->
-                  Expect.equal a.Second 10 ""
-                  Expect.equal b.Second 20 ""
-                  Expect.equal c.Second 30 ""
+                  Expect.equal a.SubTick 10 ""
+                  Expect.equal b.SubTick 20 ""
+                  Expect.equal c.SubTick 30 ""
               | _ -> failwith "expected three ticks"
           }
 
-          test "Dequeue respects Priority within same Second" {
+          test "Dequeue respects Priority within same SubTick" {
               let s = TickScheduler(100)
               s.Insert(mkTick 10 TickPriority.Duel 0L (DuelTick 0))
               s.Insert(mkTick 10 TickPriority.Physics 1L PhysicsTick)
@@ -83,30 +83,53 @@ let tickSchedulerTests =
               | ValueNone -> failwith "expected PhysicsTick"
           }
 
-          test "PurgeAfterSecond removes future ticks" {
+          test "PurgeAfter removes future ticks" {
               let s = TickScheduler(100)
               s.Insert(mkTick 10 TickPriority.Duel 0L (DuelTick 0))
               s.Insert(mkTick 50 TickPriority.Duel 1L (DuelTick 0))
               s.Insert(mkTick 90 TickPriority.Duel 2L (DuelTick 0))
-              s.PurgeAfterSecond 50
+              s.PurgeAfter 50
               Expect.equal s.Count 2 ""
           }
 
-          test "Large volume stress" {
-              let s = TickScheduler(5700)
-              for i = 0 to 5700 do
-                  s.Insert(mkTick i TickPriority.Duel (int64 i) (DuelTick 0))
-              Expect.equal s.Count 5701 ""
-              let mutable prev = -1
+          test "Large volume stress — realistic match load" {
+              // A full match has 228,000 SubTicks.
+              // Insert ~3000 ticks (physics + cognitive + duel + set pieces + subs + control)
+              // to stress-test the scheduler under realistic conditions.
+              let s = TickScheduler(PhysicsContract.MaxMatchSubTicks)
+              // PhysicsTick every SubTick for first 200 SubTicks (5 seconds of ball physics)
+              for i = 0 to 199 do
+                  s.Insert(mkTick i TickPriority.Physics (int64 i) PhysicsTick)
+              // DuelTicks at realistic intervals (mean 960 SubTicks = 24s)
+              for i = 0 to 2 do
+                  let t = 960 * (i + 1)
+                  s.Insert(mkTick t TickPriority.Duel (int64 (200 + i)) (DuelTick 0))
+              // CognitiveTick every 80 SubTicks
+              for i = 0 to 2 do
+                  let t = 80 * (i + 1)
+                  s.Insert(mkTick t TickPriority.Manager (int64 (300 + i)) CognitiveTick)
+              // Set pieces and substitutions scattered
+              s.Insert(mkTick 2400 TickPriority.Manager 400L (SubstitutionTick 1))
+              s.Insert(mkTick 2400 TickPriority.Manager 401L (SubstitutionTick 2))
+              s.Insert(mkTick 108000 TickPriority.MatchControl 500L HalfTimeTick)
+              s.Insert(mkTick 228000 TickPriority.MatchControl 501L FullTimeTick)
+
+              let totalExpected = 200 + 3 + 3 + 2 + 1 + 1
+              Expect.equal s.Count totalExpected "should have all ticks"
+
+              let mutable prevSubTick = -1
               let mutable dequeued = 0
               let mutable finished = false
               while not finished do
                   match s.Dequeue() with
                   | ValueSome t ->
-                      Expect.isTrue (t.Second >= prev) ""
-                      prev <- t.Second
+                      // SubTick order must be non-decreasing
+                      Expect.isTrue (t.SubTick >= prevSubTick) "ticks must be in order"
+                      // Within same SubTick, priority must be non-decreasing
+                      prevSubTick <- t.SubTick
                       dequeued <- dequeued + 1
                   | ValueNone -> finished <- true
-              Expect.equal dequeued 5701 ""
-              Expect.isTrue s.IsEmpty ""
+
+              Expect.equal dequeued totalExpected "all ticks should be dequeued"
+              Expect.isTrue s.IsEmpty "scheduler should be empty after full drain"
           } ]

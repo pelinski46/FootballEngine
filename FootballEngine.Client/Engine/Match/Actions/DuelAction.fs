@@ -9,36 +9,42 @@ open MatchSpatial
 
 module DuelAction =
 
-    let private event second playerId clubId t =
-        { Second = second
+    // Phase 0: Second -> SubTick in event constructor
+    let private event subTick playerId clubId t =
+        { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
 
+    // Phase 3: normaliseCondition for fatigue threshold
     let private fatigueMultiplier (condition: int) : float =
-        if condition < BalanceConfig.DuelFatigueExponentialThreshold then
-            let deficit = float (BalanceConfig.DuelFatigueExponentialThreshold - condition)
-            exp (-deficit * BalanceConfig.DuelFatigueExponentialDecay)
+        let norm = PhysicsContract.normaliseCondition condition
+        let threshold = PhysicsContract.normaliseCondition BalanceConfig.DuelFatigueThreshold
+        if norm < threshold then
+            let deficit = threshold - norm
+            exp (-deficit * BalanceConfig.DuelFatigueDecay / PhysicsContract.normaliseCondition 1)
         else
             1.0
 
+    // Phase 3: normaliseAttr for all attribute accesses
     let private attributeScore (attacker: Player) (attackerCond: int) (defender: Player) (defenderCond: int) : float =
         let attRaw =
-            float attacker.Technical.Dribbling * BalanceConfig.DuelAttackerDribblingWeight
-            + float attacker.Physical.Agility * BalanceConfig.DuelAttackerAgilityWeight
-            + float attacker.Physical.Balance * BalanceConfig.DuelAttackerBalanceWeight
+            PhysicsContract.normaliseAttr attacker.Technical.Dribbling * BalanceConfig.DuelAttackerDribblingWeight
+            + PhysicsContract.normaliseAttr attacker.Physical.Agility * BalanceConfig.DuelAttackerAgilityWeight
+            + PhysicsContract.normaliseAttr attacker.Physical.Balance * BalanceConfig.DuelAttackerBalanceWeight
 
         let defRaw =
-            float defender.Technical.Tackling * BalanceConfig.DuelDefenderTacklingWeight
-            + float defender.Physical.Strength * BalanceConfig.DuelDefenderStrengthWeight
-            + float defender.Mental.Positioning * BalanceConfig.DuelDefenderPositionWeight
+            PhysicsContract.normaliseAttr defender.Technical.Tackling * BalanceConfig.DuelDefenderTacklingWeight
+            + PhysicsContract.normaliseAttr defender.Physical.Strength * BalanceConfig.DuelDefenderStrengthWeight
+            + PhysicsContract.normaliseAttr defender.Mental.Positioning * BalanceConfig.DuelDefenderPositionWeight
 
         let attFatigue = fatigueMultiplier attackerCond
         let defFatigue = fatigueMultiplier defenderCond
 
         attRaw * attFatigue - defRaw * defFatigue
 
-    let resolve (second: int) (s: MatchState) : MatchState * MatchEvent list =
+    // Phase 5: JIT — attacker/defender resolved at execution time from current positions
+    let resolve (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let attClubId = ClubSide.toClubId ctx.AttSide s
         let defClubId = ClubSide.toClubId ctx.DefSide s
@@ -47,21 +53,27 @@ module DuelAction =
 
         let bX, bY = ballXY s
 
-        let attIdx =
-            attSide.Positions
-            |> Array.mapi (fun i _ -> i)
-            |> Array.minBy (fun i ->
-                let dx = attSide.Positions[i].X - bX
-                let dy = attSide.Positions[i].Y - bY
-                dx * dx + dy * dy)
+        // JIT: resolve nearest attacker/defender from CURRENT positions at execution time
+        // For-loop — no Array.mapi/minBy allocation
+        let mutable attIdx = 0
+        let mutable attDistSq = System.Double.MaxValue
+        for i = 0 to attSide.Positions.Length - 1 do
+            let dx = attSide.Positions[i].X - bX
+            let dy = attSide.Positions[i].Y - bY
+            let dSq = dx * dx + dy * dy
+            if dSq < attDistSq then
+                attDistSq <- dSq
+                attIdx <- i
 
-        let defIdx =
-            defSide.Positions
-            |> Array.mapi (fun i _ -> i)
-            |> Array.minBy (fun i ->
-                let dx = defSide.Positions[i].X - bX
-                let dy = defSide.Positions[i].Y - bY
-                dx * dx + dy * dy)
+        let mutable defIdx = 0
+        let mutable defDistSq = System.Double.MaxValue
+        for i = 0 to defSide.Positions.Length - 1 do
+            let dx = defSide.Positions[i].X - bX
+            let dy = defSide.Positions[i].Y - bY
+            let dSq = dx * dx + dy * dy
+            if dSq < defDistSq then
+                defDistSq <- dSq
+                defIdx <- i
 
         let att = attSide.Players[attIdx]
         let def = defSide.Players[defIdx]
@@ -140,7 +152,9 @@ module DuelAction =
 
         s', []
 
-    let resolveTackle (second: int) (s: MatchState) (defender: Player) : MatchState * MatchEvent list =
+    // Phase 5: JIT tackle — defender resolved at execution time
+    // Phase 3: normaliseAttr for attribute scores
+    let resolveTackle (subTick: int) (s: MatchState) (defender: Player) : MatchState * MatchEvent list =
         let ctx = ActionContext.build s
         let defClubId = clubIdOf defender s
         let clubId = defClubId
@@ -150,12 +164,12 @@ module DuelAction =
         match defenderSide.Players |> Array.tryFindIndex (fun p -> p.Id = defender.Id) with
         | None -> s, []
         | Some di ->
-            let condition = float defenderSide.Conditions[di] / 100.0
+            let condNorm = PhysicsContract.normaliseCondition defenderSide.Conditions[di]
 
             let defScore =
-                float defender.Technical.Tackling * BalanceConfig.TackleTechnicalWeight
-                + float defender.Mental.Positioning * BalanceConfig.TacklePositioningWeight
-                + float defender.Physical.Strength * BalanceConfig.TackleStrengthWeight
+                PhysicsContract.normaliseAttr defender.Technical.Tackling * BalanceConfig.TackleTechnicalWeight
+                + PhysicsContract.normaliseAttr defender.Mental.Positioning * BalanceConfig.TacklePositioningWeight
+                + PhysicsContract.normaliseAttr defender.Physical.Strength * BalanceConfig.TackleStrengthWeight
                 + ctx.DefBonus.Tackle
 
             let bX, bY = ballXY s
@@ -166,20 +180,20 @@ module DuelAction =
                 |> Option.defaultValue attackerSide.Players[0]
 
             let attScore =
-                float attacker.Technical.Dribbling * BalanceConfig.DribbleTechnicalWeight
-                + float attacker.Physical.Agility * BalanceConfig.DribbleAgilityWeight
-                + float attacker.Physical.Balance * BalanceConfig.DribbleBalanceWeight
+                PhysicsContract.normaliseAttr attacker.Technical.Dribbling * BalanceConfig.DribbleTechnicalWeight
+                + PhysicsContract.normaliseAttr attacker.Physical.Agility * BalanceConfig.DribbleAgilityWeight
+                + PhysicsContract.normaliseAttr attacker.Physical.Balance * BalanceConfig.DribbleBalanceWeight
 
             let physVar = physicalVariation defenderSide.Conditions[di]
-            let duelScore = (defScore - attScore) / 100.0 * condition * physVar
+            let duelScore = (defScore - attScore) * condNorm * physVar
 
             if logisticBernoulli duelScore 1.5 then
-                let aggression = float defender.Mental.Aggression / 100.0
-                let positioning = float defender.Mental.Positioning / 100.0
+                let aggressionNorm = PhysicsContract.normaliseAttr defender.Mental.Aggression
+                let positioningNorm = PhysicsContract.normaliseAttr defender.Mental.Positioning
 
                 let baseFoulRate =
-                    BalanceConfig.FoulBaseRate + aggression * BalanceConfig.TackleAggressionWeight
-                    - positioning * BalanceConfig.TacklePositioningReduction
+                    BalanceConfig.FoulBaseRate + aggressionNorm * BalanceConfig.TackleAggressionWeight
+                    - positioningNorm * BalanceConfig.TacklePositioningReduction
                     |> abs
 
                 let adjustedFoulRate = baseFoulRate * (1.0 - ctx.DefBonus.CardReduc)
@@ -196,7 +210,7 @@ module DuelAction =
                                     -10.0,
                                     10.0
                                 ) },
-                        [ event second defender.Id clubId FoulCommitted ]
+                        [ event subTick defender.Id clubId FoulCommitted ]
 
                 else
                     { s with
@@ -206,7 +220,7 @@ module DuelAction =
                                 -10.0,
                                 10.0
                             ) },
-                    [ event second defender.Id clubId TackleSuccess ]
+                    [ event subTick defender.Id clubId TackleSuccess ]
 
             else
                 { s with
@@ -217,4 +231,4 @@ module DuelAction =
                             10.0
                         )
                     PendingOffsideSnapshot = None },
-                [ event second defender.Id clubId TackleFail ]
+                [ event subTick defender.Id clubId TackleFail ]

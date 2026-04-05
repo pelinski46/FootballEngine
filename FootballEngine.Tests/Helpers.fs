@@ -53,7 +53,7 @@ let loadClubs () =
     clubs, game.Players, finalStaff
 
 let inBounds (x: float, y: float) =
-    x >= 0.0 && x <= 100.0 && y >= 0.0 && y <= 100.0
+    x >= 0.0 && x <= PhysicsContract.PitchLength && y >= 0.0 && y <= PhysicsContract.PitchWidth
 
 let allPositionsInBounds (positions: Map<PlayerId, float * float>) =
     positions |> Map.forall (fun _ pos -> inBounds pos)

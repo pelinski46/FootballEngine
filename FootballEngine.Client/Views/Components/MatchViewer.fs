@@ -297,7 +297,7 @@ module MatchViewer =
               StackPanel.children
                   [ Icons.iconSm IconName.calendar Theme.Warning
                     TextBlock.create
-                        [ TextBlock.text $"{s.Second / 60}'"
+                        [ TextBlock.text $"{s.SubTick / PhysicsContract.SubTicksPerSecond / 60}'"
                           TextBlock.foreground Theme.Warning
                           TextBlock.fontSize 11.0
                           TextBlock.fontWeight FontWeight.Black
@@ -519,7 +519,7 @@ module MatchDayView =
             |> Option.map _.Name
             |> Option.defaultValue ""
 
-        let minute = ev.Second / 60
+        let minute = ev.SubTick / PhysicsContract.SubTicksPerSecond / 60
 
         Border.create
             [ Border.padding (Thickness(10.0, 7.0))
@@ -585,7 +585,6 @@ module MatchDayView =
     let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
         let relevant =
             replay.Events
-            |> List.rev
             |> List.filter (fun ev ->
                 match ev.Type with
                 | Goal

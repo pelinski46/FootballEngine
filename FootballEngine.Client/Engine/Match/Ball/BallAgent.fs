@@ -1,109 +1,100 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.PlayerSteering
-open FootballEngine.SchedulingTypes
-
+open SchedulingTypes
 
 module BallAgent =
 
-    let private contactRadius (playerHeight: int) : float =
-        float playerHeight * BalanceConfig.PlayerContactRadiusFactor
+    let private resolveContact (ball: BallPhysicsState) (playerPos: Spatial) : BallPhysicsState =
 
-    let resolvePlayerContact (ball: BallPhysicsState) (playerPos: Spatial) (playerHeight: int) : BallPhysicsState =
-        let r = contactRadius playerHeight
-        let bPos = ball.Position
-        let dx = bPos.X - playerPos.X
-        let dy = bPos.Y - playerPos.Y
-        let dz = bPos.Z - playerPos.Z
+        let r = BalanceConfig.BallContactRadius
+        let bp = ball.Position
+        let dx = bp.X - playerPos.X
+        let dy = bp.Y - playerPos.Y
+        let dz = bp.Z - playerPos.Z
         let dist = sqrt (dx * dx + dy * dy + dz * dz)
 
         if dist < r && dist > 0.001 then
             let nx = dx / dist
             let ny = dy / dist
             let nz = dz / dist
-            let dot = bPos.Vx * nx + bPos.Vy * ny + bPos.Vz * nz
+            let dot = bp.Vx * nx + bp.Vy * ny + bp.Vz * nz
 
             if dot > 0.0 then
                 let restitution = 0.5
 
                 { ball with
                     Position =
-                        { bPos with
-                            Vx = bPos.Vx - (1.0 + restitution) * dot * nx
-                            Vy = bPos.Vy - (1.0 + restitution) * dot * ny
-                            Vz = bPos.Vz - (1.0 + restitution) * dot * nz } }
+                        { bp with
+                            Vx = bp.Vx - (1.0 + restitution) * dot * nx
+                            Vy = bp.Vy - (1.0 + restitution) * dot * ny
+                            Vz = bp.Vz - (1.0 + restitution) * dot * nz } }
             else
                 ball
         else
             ball
 
-    let resolveContacts (ball: BallPhysicsState) (players: (Player * Spatial)[]) : BallPhysicsState * PlayerId option =
-        let mutable closestDist = System.Double.MaxValue
-        let mutable closestIdx = -1
+    let private resolveContacts
+        (ball: BallPhysicsState)
+        (homePlayers: Player[])
+        (homePositions: Spatial[])
+        (awayPlayers: Player[])
+        (awayPositions: Spatial[])
+        : BallPhysicsState * PlayerId option =
 
-        for i = 0 to players.Length - 1 do
-            let _, pPos = players[i]
-            let bPos = ball.Position
-            let dx = bPos.X - pPos.X
-            let dy = bPos.Y - pPos.Y
-            let dz = bPos.Z - pPos.Z
-            let dist = dx * dx + dy * dy + dz * dz
+        let r = BalanceConfig.BallContactRadius
+        let rSq = r * r
+        let mutable closestDistSq = System.Double.MaxValue
+        let mutable closestPlayer: Player option = None
+        let mutable closestPos = { X = 0.0; Y = 0.0; Z = 0.0; Vx = 0.0; Vy = 0.0; Vz = 0.0 }
+        let bp = ball.Position
 
-            if dist < closestDist then
-                closestDist <- dist
-                closestIdx <- i
+        let inline checkContact (player: Player) (pPos: Spatial) =
+            let dx = bp.X - pPos.X
+            let dy = bp.Y - pPos.Y
+            let dz = bp.Z - pPos.Z
+            let dSq = dx * dx + dy * dy + dz * dz
+            if dSq < closestDistSq then
+                closestDistSq <- dSq
+                closestPlayer <- Some player
+                closestPos <- pPos
 
-        if closestIdx >= 0 then
-            let player, pPos = players[closestIdx]
-            let r = contactRadius player.Height
+        for i = 0 to homePlayers.Length - 1 do
+            checkContact homePlayers[i] homePositions[i]
 
-            if closestDist < r * r then
-                let resolved = resolvePlayerContact ball pPos player.Height
-                resolved, Some player.Id
-            else
+        for i = 0 to awayPlayers.Length - 1 do
+            checkContact awayPlayers[i] awayPositions[i]
+
+        if closestDistSq < rSq then
+            match closestPlayer with
+            | Some player ->
+                let resolved = resolveContact ball closestPos
+                let canControl = ball.Position.Z < 0.6
+                let controller = if canControl then Some player.Id else None
+                resolved, controller
+            | None ->
                 ball, None
         else
             ball, None
 
-    let update
-        (dt: float)
-        (players: (Player * Spatial)[])
-        (ball: BallPhysicsState)
-        : BallPhysicsState * PlayerId option =
-        let physicsBall = BallPhysics.update dt ball
-        resolveContacts physicsBall players
-
     let agent homeId homeSquad awaySquad tick state : AgentOutput =
-        let subStepDt = 0.1
-        let subSteps = 25 // simula ~2.5s de física real por tick
+        let stepped = BallPhysics.update state.Ball
+        let resolved, ctrl =
+            resolveContacts stepped
+                state.HomeSide.Players state.HomeSide.Positions
+                state.AwaySide.Players state.AwaySide.Positions
 
-        let allPlayersArr =
-            Array.append
-                (Array.zip state.HomeSide.Players state.HomeSide.Positions)
-                (Array.zip state.AwaySide.Players state.AwaySide.Positions)
+        let newBall =
+            { resolved with
+                ControlledBy = ctrl
+                LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
 
-        let mutable ball = state.Ball
-        let mutable lastTouch = state.Ball.LastTouchBy
+        let nextSubTick = tick.SubTick + 1
 
-        for _ in 1..subSteps do
-            let b, t = update subStepDt allPlayersArr ball
-
-            ball <-
-                { b with
-                    LastTouchBy = t |> Option.orElse lastTouch }
-
-            if t.IsSome then
-                lastTouch <- t
-
-        let newState =
-            { state with
-                Ball = ball }
-
-        { State = newState
+        { State = { state with Ball = newBall }
           Events = []
           Spawned =
-            [ { Second = tick.Second + 5
+            [ { SubTick = nextSubTick
                 Priority = TickPriority.Physics
                 SequenceId = 0L
                 Kind = PhysicsTick } ]

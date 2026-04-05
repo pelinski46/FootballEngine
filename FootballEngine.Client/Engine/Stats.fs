@@ -4,11 +4,8 @@ open System
 open FSharp.Stats
 open FSharp.Stats.Distributions
 
-// Stats es el motor de imperfección humana y variación física del sistema de agentes.
-// Cada función modela por qué los jugadores no rinden siempre al 100% de sus atributos.
-module Stats =
 
-    // ── Primitivas base ────────────────────────────────────────────────────────
+module Stats =
 
     let clamp (lo: int) hi v = Math.Clamp(v, lo, hi)
 
@@ -70,7 +67,7 @@ module Stats =
         |> Option.defaultWith (fun () -> weights |> List.last |> snd)
 
     let delayFrom (d: BalanceConfig.TickDelay) : int =
-        normalInt d.Mean d.Std d.Min d.Max
+        normalInt d.MeanST d.StdST d.MinST d.MaxST
 
     let setSeed (seed: int) =
         Random.SetSampleGenerator(Random.RandThreadSafe(seed))
@@ -78,34 +75,22 @@ module Stats =
     let clearSeed () =
         Random.SetSampleGenerator(Random.RandThreadSafe())
 
-    // ── Imperfección humana ────────────────────────────────────────────────────
-    // Modela por qué un jugador de 80 de pase no siempre completa el pase.
-    // La varianza aumenta con la fatiga, la presión y la situación táctica.
-
-    /// Rendimiento efectivo de un atributo dado condición física y estado mental.
-    /// La concentración sube cuando hay frescos, baja cuando están agotados.
     let humanPerformance (stat: int) (condition: int) (morale: int) : float =
         let base' = float stat * (float condition / 100.0) * (0.8 + float morale / 500.0)
-        // Un jugador fresco varía menos; uno agotado es impredecible
         let variability = 1.0 + (1.0 - float condition / 100.0) * 0.4
         normalSample base' (variability * 0.6)
 
-    /// Variación física pura — el cuerpo no responde igual cada vez.
-    /// Modela el "buen día / mal día" independiente de los atributos.
     let physicalVariation (condition: int) : float =
         let base' = float condition / 100.0
-        // Beta da asimetría natural: es más fácil rendir al 60% que al 100%
         betaSample base' (5.0 + base' * 10.0)
 
-    /// Imprecisión bajo presión — cuanta más urgencia táctica, más varianza.
-    /// Un jugador con mucha composure resiste mejor la presión.
+
     let pressureNoise (composure: int) (urgencyMultiplier: float) : float =
         let resistance = float composure / 100.0
         let noise = (urgencyMultiplier - 1.0) * (1.0 - resistance) * 15.0
         normalSample 0.0 (Math.Max(0.5, noise))
 
-    /// Consistencia por posición — un DC comete menos errores graves que un extremo.
-    /// Modela la naturaleza de cada rol: defensores más conservadores, atacantes más arriesgados.
+
     let positionalConsistency (position: FootballEngine.Domain.Position) : float =
         match position with
         | FootballEngine.Domain.GK -> betaSample 0.85 12.0
@@ -123,16 +108,12 @@ module Stats =
         | FootballEngine.Domain.AMC -> betaSample 0.65 6.0
         | FootballEngine.Domain.ST -> betaSample 0.60 5.0
 
-    /// Variación de energía durante el partido — los jugadores se fatigan de forma no lineal.
-    /// El esfuerzo en pressing consume más que el juego posicional.
+
     let fatigueVariation (stamina: int) (isPressing: bool) : float =
         let base' = float stamina / 100.0
         let pressingPenalty = if isPressing then betaSample 0.3 5.0 else 0.0
         normalSample (base' - pressingPenalty) 0.05 |> fun v -> Math.Clamp(v, 0.0, 1.0)
 
-    /// Momento psicológico — el momentum del partido afecta la toma de decisiones.
-    /// Un equipo que va ganando juega con más calma; uno que pierde se apresura.
     let momentumEffect (momentum: float) (isAttacking: bool) : float =
         let m = if isAttacking then momentum else -momentum
-        // Momentum positivo reduce varianza (más calma), negativo la aumenta
         normalSample (m * 0.5) (3.0 + Math.Abs(m) * 0.5)

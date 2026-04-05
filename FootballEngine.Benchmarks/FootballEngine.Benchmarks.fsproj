@@ -9,8 +9,6 @@
     <ItemGroup>
         <Compile Include="Helpers.fs"/>
         <Compile Include="MatchSimulatorBenchmarks.fs"/>
-        <Compile Include="PitchBenchmarks.fs"/>
-        <Compile Include="EngineBenchmarks.fs"/>
         <Compile Include="Program.fs"/>
     </ItemGroup>
 

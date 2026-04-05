@@ -16,18 +16,51 @@ module MatchSpatial =
     let ballXY (s: MatchState) = s.Ball.Position.X, s.Ball.Position.Y
 
     let teamRoster (ts: TeamSide) : (Player * Spatial * int)[] =
-        Array.zip3 ts.Players ts.Positions ts.Conditions
+        let len = ts.Players.Length
+        let arr = Array.zeroCreate len
+
+        for i = 0 to len - 1 do
+            arr[i] <- (ts.Players[i], ts.Positions[i], ts.Conditions[i])
+
+        arr
 
     let outfieldRoster (ts: TeamSide) : (Player * Spatial * int)[] =
-        teamRoster ts |> Array.filter (fun (p, _, _) -> p.Position <> GK)
+        let mutable count = 0
+
+        for i = 0 to ts.Players.Length - 1 do
+            if ts.Players[i].Position <> GK then
+                count <- count + 1
+
+        let arr = Array.zeroCreate count
+        let mutable j = 0
+
+        for i = 0 to ts.Players.Length - 1 do
+            if ts.Players[i].Position <> GK then
+                arr[j] <- (ts.Players[i], ts.Positions[i], ts.Conditions[i])
+                j <- j + 1
+
+        arr
 
     let nearestOutfield (ts: TeamSide) (x: float) (y: float) : (Player * Spatial) option =
-        outfieldRoster ts
-        |> Array.map (fun (p, sp, _) -> p, sp)
-        |> Array.sortBy (fun (_, sp) ->
-            let dx, dy = sp.X - x, sp.Y - y
-            dx * dx + dy * dy)
-        |> Array.tryHead
+        let mutable bestPlayer: Player option = None
+        let mutable bestSp: Spatial option = None
+        let mutable bestDistSq = System.Double.MaxValue
+
+        for i = 0 to ts.Players.Length - 1 do
+            if ts.Players[i].Position <> GK then
+                let sp = ts.Positions[i]
+                let dx = sp.X - x
+                let dy = sp.Y - y
+                let distSq = dx * dx + dy * dy
+
+                if distSq < bestDistSq then
+                    bestDistSq <- distSq
+                    bestPlayer <- Some ts.Players[i]
+                    bestSp <- Some sp
+
+        match bestPlayer, bestSp with
+        | Some p, Some sp -> Some (p, sp)
+        | _ -> None
 
     let withBallVelocity (vx: float) (vy: float) (vz: float) (s: MatchState) =
         let pos = s.Ball.Position
@@ -55,17 +88,38 @@ module MatchSpatial =
     let findNearestTeammate (attacker: Player) (s: MatchState) (_dir: AttackDir) =
         let attSide = side (ClubSide.toClubId s.AttackingClub s) s
 
-        match getPlayerInfo attSide.Players attSide.Positions attSide.Conditions attacker.Id with
-        | None -> None
-        | Some info ->
-            let tx, ty = spatialXY info.Pos
+        // Pass 1: find attacker's position
+        let mutable attackerX = 0.0
+        let mutable attackerY = 0.0
+        let mutable attackerFound = false
+        for i = 0 to attSide.Players.Length - 1 do
+            if attSide.Players[i].Id = attacker.Id then
+                attackerX <- attSide.Positions[i].X
+                attackerY <- attSide.Positions[i].Y
+                attackerFound <- true
 
-            outfieldRoster attSide
-            |> Array.filter (fun (p, _, _) -> p.Id <> attacker.Id)
-            |> Array.map (fun (p, sp, _) -> p, sp, sp.X - tx, sp.Y - ty)
-            |> Array.sortBy (fun (_, _, dx, dy) -> dx * dx + dy * dy)
-            |> Array.tryHead
-            |> Option.map (fun (p, sp, _, _) -> p, p.Id, spatialXY sp)
+        if not attackerFound then None
+        else
+            // Pass 2: find nearest teammate (skip attacker + GK)
+            let mutable bestPlayer: Player option = None
+            let mutable bestSp: Spatial option = None
+            let mutable bestDistSq = System.Double.MaxValue
+
+            for i = 0 to attSide.Players.Length - 1 do
+                let p = attSide.Players[i]
+                if p.Id <> attacker.Id && p.Position <> GK then
+                    let sp = attSide.Positions[i]
+                    let dx = sp.X - attackerX
+                    let dy = sp.Y - attackerY
+                    let distSq = dx * dx + dy * dy
+                    if distSq < bestDistSq then
+                        bestDistSq <- distSq
+                        bestPlayer <- Some p
+                        bestSp <- Some sp
+
+            match bestPlayer, bestSp with
+            | Some p, Some sp -> Some(p, p.Id, spatialXY sp)
+            | _ -> None
 
     let findNearestOpponent (attacker: Player) (s: MatchState) (_dir: AttackDir) =
         let attSide = side (ClubSide.toClubId s.AttackingClub s) s
@@ -94,45 +148,54 @@ module MatchSpatial =
                 | RightToLeft -> sp.X < ballX
 
             let passLaneClear (targetSp: Spatial) =
-                let defendersNearLine =
-                    outfieldRoster defSide
-                    |> Array.sumBy (fun (_, dSp, _) ->
+                let mutable defendersNearLine = 0.0
+
+                for i = 0 to defSide.Players.Length - 1 do
+                    if defSide.Players[i].Position <> GK then
+                        let dSp = defSide.Positions[i]
                         let dx = dSp.X - ballX
                         let dy = dSp.Y - ballY
                         let tdx = targetSp.X - ballX
                         let tdy = targetSp.Y - ballY
                         let lenSq = tdx * tdx + tdy * tdy
 
-                        if lenSq < 0.01 then
-                            0.0
-                        else
+                        if lenSq >= 0.01 then
                             let t = (dx * tdx + dy * tdy) / lenSq
 
-                            if t < 0.0 || t > 1.0 then
-                                0.0
-                            else
+                            if t >= 0.0 && t <= 1.0 then
                                 let projX = ballX + t * tdx
                                 let projY = ballY + t * tdy
                                 let dist = sqrt ((dSp.X - projX) ** 2.0 + (dSp.Y - projY) ** 2.0)
-                                if dist < 3.0 then 1.0 else 0.0)
+                                if dist < 3.0 then
+                                    defendersNearLine <- defendersNearLine + 1.0
 
                 defendersNearLine = 0.0
 
-            teamRoster attSide
-            |> Array.filter (fun (p, _, _) -> p.Id <> attacker.Id)
-            |> Array.map (fun (p, sp, _) ->
-                let dist = sqrt ((sp.X - ballX) ** 2.0 + (sp.Y - ballY) ** 2.0)
-                let forwardBonus = if isForward sp then 0.15 else 0.0
-                let laneBonus = if passLaneClear sp then 0.2 else 0.0
-                let visionWeight = float attacker.Mental.Vision / 100.0
+            let visionWeight = float attacker.Mental.Vision / 100.0
+            let mutable bestPlayer: Player option = None
+            let mutable bestSp: Spatial option = None
+            let mutable bestScore = System.Double.MinValue
 
-                let score =
-                    (1.0 / (1.0 + dist * 0.1)) + forwardBonus + laneBonus + visionWeight * 0.1
+            for i = 0 to attSide.Players.Length - 1 do
+                let p = attSide.Players[i]
 
-                p, sp, score)
-            |> Array.sortByDescending (fun (_, _, score) -> score)
-            |> Array.tryHead
-            |> Option.map (fun (p, sp, _) -> p, p.Id, spatialXY sp)
+                if p.Id <> attacker.Id then
+                    let sp = attSide.Positions[i]
+                    let dist = sqrt ((sp.X - ballX) ** 2.0 + (sp.Y - ballY) ** 2.0)
+                    let forwardBonus = if isForward sp then 0.15 else 0.0
+                    let laneBonus = if passLaneClear sp then 0.2 else 0.0
+
+                    let score =
+                        (1.0 / (1.0 + dist * 0.1)) + forwardBonus + laneBonus + visionWeight * 0.1
+
+                    if score > bestScore then
+                        bestScore <- score
+                        bestPlayer <- Some p
+                        bestSp <- Some sp
+
+            match bestPlayer, bestSp with
+            | Some p, Some sp -> Some (p, p.Id, spatialXY sp)
+            | _ -> None
 
     let isOffside (player: Player) (playerX: float) (s: MatchState) (dir: AttackDir) =
         if player.Position = GK then
@@ -140,20 +203,31 @@ module MatchSpatial =
         else
             let defSide = side (ClubSide.toClubId (ClubSide.flip s.AttackingClub) s) s
 
-            let defenders = outfieldRoster defSide |> Array.map (fun (_, sp, _) -> sp)
+            // Find two deepest defenders in a single pass — no allocations
+            let mutable firstX  = if dir = LeftToRight then -1.0 else 106.0
+            let mutable secondX = if dir = LeftToRight then -1.0 else 106.0
+            let mutable found   = 0
 
-            if defenders.Length < 2 then
-                false
+            for i = 0 to defSide.Players.Length - 1 do
+                if defSide.Players[i].Position <> GK then
+                    let x = defSide.Positions[i].X
+                    found <- found + 1
+                    if dir = LeftToRight then
+                        if x > firstX then
+                            secondX <- firstX
+                            firstX  <- x
+                        elif x > secondX then
+                            secondX <- x
+                    else
+                        if x < firstX then
+                            secondX <- firstX
+                            firstX  <- x
+                        elif x < secondX then
+                            secondX <- x
+
+            if found < 2 then false
             else
-                let lastTwo =
-                    defenders
-                    |> Array.sortBy (fun sp ->
-                        match dir with
-                        | LeftToRight -> -sp.X
-                        | RightToLeft -> sp.X)
-                    |> Array.take 2
-
-                let secondLastX = lastTwo |> Array.last |> (fun sp -> sp.X)
+                let secondLastX = secondX
                 let ballX = s.Ball.Position.X
 
                 let inOwnHalf =
@@ -167,21 +241,28 @@ module MatchSpatial =
                    | RightToLeft -> playerX < secondLastX && playerX < ballX
 
     let private secondLastDefenderX (defSide: TeamSide) (dir: AttackDir) : float =
-        let defenders =
-            defSide.Players
-            |> Array.mapi (fun i p -> i, p)
-            |> Array.filter (fun (_, p) -> p.Position <> GK)
+        let mutable firstX  = if dir = LeftToRight then -1.0 else 106.0
+        let mutable secondX = if dir = LeftToRight then -1.0 else 106.0
+        let mutable found   = 0
 
-        if defenders.Length < 2 then 0.0
-        else
-            defenders
-            |> Array.sortBy (fun (i, _) ->
-                match dir with
-                | LeftToRight -> -defSide.Positions[i].X
-                | RightToLeft -> defSide.Positions[i].X)
-            |> Array.take 2
-            |> Array.last
-            |> fun (i, _) -> defSide.Positions[i].X
+        for i = 0 to defSide.Players.Length - 1 do
+            if defSide.Players[i].Position <> GK then
+                let x = defSide.Positions[i].X
+                found <- found + 1
+                if dir = LeftToRight then
+                    if x > firstX then
+                        secondX <- firstX
+                        firstX  <- x
+                    elif x > secondX then
+                        secondX <- x
+                else
+                    if x < firstX then
+                        secondX <- firstX
+                        firstX  <- x
+                    elif x < secondX then
+                        secondX <- x
+
+        if found < 2 then 0.0 else secondX
 
     let snapshotAtPass (passer: Player) (receiver: Player) (s: MatchState) (dir: AttackDir) : OffsideSnapshot =
         let defSide = ClubSide.teamSide (ClubSide.flip s.AttackingClub) s
