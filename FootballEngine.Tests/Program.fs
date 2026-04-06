@@ -14,7 +14,7 @@ let main argv =
 
     let allMatchTests =
         testList
-            "Match Engine"
+            "Match"
             [ matchStateOpsTests
               matchSpatialTests
               matchPlayerActionTests

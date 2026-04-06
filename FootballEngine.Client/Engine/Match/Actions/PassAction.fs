@@ -1,81 +1,89 @@
 namespace FootballEngine
 
-open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchStateOps
+open SimStateOps
 open MatchSpatial
 
 module PassAction =
 
-    // Phase 0: Second -> SubTick
     let private event subTick playerId clubId t =
         { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
 
-    let private ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (s: MatchState) =
-        let bX = s.Ball.Position.X
-        let bY = s.Ball.Position.Y
+    let private ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (state: SimState) =
+        let bX = state.Ball.Position.X
+        let bY = state.Ball.Position.Y
         let dx = targetX - bX
         let dy = targetY - bY
         let dist = sqrt (dx * dx + dy * dy)
 
         if dist < 0.01 then
-            s |> withBallVelocity 0.0 0.0 vz
+            withBallVelocity 0.0 0.0 vz state
         else
-            s |> withBallVelocity (dx / dist * speed) (dy / dist * speed) vz
+            withBallVelocity (dx / dist * speed) (dy / dist * speed) vz state
 
-    // Phase 5: JIT — target position resolved at execution time
-    // Phase 3: normaliseAttr for passer attributes
-    let resolve (subTick: int) (s: MatchState) (target: Player) : MatchState * MatchEvent list =
-        let ctx = ActionContext.build s
-        let attClubId = ClubSide.toClubId ctx.AttSide s
-        let attSide = side (ClubSide.toClubId ctx.AttSide s) s
-        let clubId = attClubId
+    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) (target: Player) : MatchEvent list =
+        let actx = ActionContext.build state
+        let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        match attSide.Players |> Array.tryFindIndex (fun p -> p.Id = target.Id) with
-        | None -> s, []
-        | Some targetIdx ->
-            // JIT: use CURRENT position at execution time
-            let targetSp = attSide.Positions[targetIdx]
-            let offside = isOffside target targetSp.X s ctx.Dir
+        let attSlots =
+            if actx.AttSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let mutable targetIdx = -1
+        let mutable targetSp = kickOffSpatial
+
+        for i = 0 to attSlots.Length - 1 do
+            match attSlots[i] with
+            | PlayerSlot.Active s when s.Player.Id = target.Id ->
+                targetIdx <- i
+                targetSp <- s.Pos
+            | _ -> ()
+
+        if targetIdx < 0 then
+            []
+        else
+            let offside = isOffside target targetSp.X ctx state actx.Dir
 
             if offside then
-                s
-                |> flipPossessionAndClearOffside ctx.AttSide
-                |> fun s'' ->
-                    { s'' with
-                        Momentum =
-                            Math.Clamp(
-                                s''.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.PassOffsideMomentum,
-                                -10.0,
-                                10.0
-                            ) },
-                    [ event subTick target.Id clubId (PassIncomplete target.Id) ]
+                flipPossession state
+                adjustMomentum actx.Dir (-BalanceConfig.PassOffsideMomentum) state
+                [ event subTick target.Id attClubId (PassIncomplete target.Id) ]
             else
-                let passer =
-                    attSide.Players
-                    |> Array.tryFind (fun p -> p.Id = (s.Ball.LastTouchBy |> Option.defaultValue -1))
-                    |> Option.defaultValue attSide.Players[0]
+                let mutable passerIdx = 0
+                let mutable passerFound = false
 
-                let passerCond =
-                    attSide.Players
-                    |> Array.tryFindIndex (fun p -> p.Id = passer.Id)
-                    |> Option.map (fun i -> attSide.Conditions[i])
-                    |> Option.defaultValue 70
+                for i = 0 to attSlots.Length - 1 do
+                    match attSlots[i] with
+                    | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id ->
+                        passerIdx <- i
+                        passerFound <- true
+                    | _ -> ()
+
+                let passer, passerCond =
+                    if passerFound then
+                        match attSlots[passerIdx] with
+                        | PlayerSlot.Active s -> s.Player, s.Condition
+                        | _ -> Unchecked.defaultof<Player>, 70
+                    else
+                        match attSlots[0] with
+                        | PlayerSlot.Active s -> s.Player, s.Condition
+                        | _ -> Unchecked.defaultof<Player>, 70
 
                 let condNorm = PhysicsContract.normaliseCondition passerCond
 
-                // Phase 3: normaliseAttr instead of /100.0
                 let passMean =
                     BalanceConfig.PassBaseMean
                     + PhysicsContract.normaliseAttr passer.Technical.Passing
                       * BalanceConfig.PassTechnicalWeight
                     + PhysicsContract.normaliseAttr passer.Mental.Vision
                       * BalanceConfig.PassVisionWeight
-                    + ctx.AttBonus.PassAcc
+                    + actx.AttBonus.PassAcc
 
                 let successChance =
                     betaSample
@@ -84,63 +92,56 @@ module PassAction =
                          + condNorm * BalanceConfig.PassSuccessConditionMultiplier)
 
                 if bernoulli successChance then
-                    let snapshot = snapshotAtPass passer target s ctx.Dir
+                    let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                    let s' =
-                        s
-                        |> ballTowards targetSp.X targetSp.Y BalanceConfig.PassSpeed BalanceConfig.PassVz
-                        |> fun s'' ->
-                            { s'' with
-                                Momentum =
-                                    Math.Clamp(
-                                        s''.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.PassSuccessMomentum,
-                                        -10.0,
-                                        10.0
-                                    )
-                                PendingOffsideSnapshot = Some snapshot
-                                Ball =
-                                    { s''.Ball with
-                                        Spin = { Top = 0.0; Side = 0.0 } } }
+                    ballTowards targetSp.X targetSp.Y BalanceConfig.PassSpeed BalanceConfig.PassVz state
+                    adjustMomentum actx.Dir BalanceConfig.PassSuccessMomentum state
+                    state.PendingOffsideSnapshot <- Some snapshot
 
-                    s', [ event subTick passer.Id clubId (PassCompleted(passer.Id, target.Id)) ]
+                    state.Ball <-
+                        { state.Ball with
+                            Spin = { Top = 0.0; Side = 0.0 } }
+
+                    [ event subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
                 else
-                    s
-                    |> flipPossessionAndClearOffside ctx.AttSide
-                    |> fun s'' ->
-                        { s'' with
-                            Momentum =
-                                Math.Clamp(
-                                    s''.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.PassFailMomentum,
-                                    -10.0,
-                                    10.0
-                                ) },
-                        [ event subTick passer.Id clubId (PassIncomplete passer.Id) ]
+                    flipPossession state
+                    adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
+                    [ event subTick passer.Id attClubId (PassIncomplete passer.Id) ]
 
-    // Phase 3: normaliseAttr for long ball attributes
-    // Phase 5: JIT — target resolved from current positions
-    let resolveLong (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
-        let ctx = ActionContext.build s
-        let attClubId = ClubSide.toClubId ctx.AttSide s
-        let attSide = side (ClubSide.toClubId ctx.AttSide s) s
-        let clubId = attClubId
+    let resolveLong (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        let actx = ActionContext.build state
+        let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let bX, bY = s.Ball.Position.X, s.Ball.Position.Y
+        let attSlots =
+            if actx.AttSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
         let mutable passerIdx = 0
         let mutable passerDistSq = System.Double.MaxValue
-        for i = 0 to attSide.Positions.Length - 1 do
-            let dx = attSide.Positions[i].X - bX
-            let dy = attSide.Positions[i].Y - bY
-            let dSq = dx * dx + dy * dy
-            if dSq < passerDistSq then
-                passerDistSq <- dSq
-                passerIdx <- i
 
-        let passer = attSide.Players[passerIdx]
-        let passerCond = attSide.Conditions[passerIdx]
+        for i = 0 to attSlots.Length - 1 do
+            match attSlots[i] with
+            | PlayerSlot.Active s ->
+                let dx = s.Pos.X - bX
+                let dy = s.Pos.Y - bY
+                let dSq = dx * dx + dy * dy
+
+                if dSq < passerDistSq then
+                    passerDistSq <- dSq
+                    passerIdx <- i
+            | _ -> ()
+
+        let passer, passerCond =
+            match attSlots[passerIdx] with
+            | PlayerSlot.Active s -> s.Player, s.Condition
+            | _ -> Unchecked.defaultof<Player>, 0
+
         let condNorm = PhysicsContract.normaliseCondition passerCond
 
-        // Phase 3: normaliseAttr
         let longMean =
             BalanceConfig.LongBallBaseMean
             + PhysicsContract.normaliseAttr passer.Technical.LongShots
@@ -149,7 +150,7 @@ module PassAction =
               * BalanceConfig.LongBallPassingWeight
             + PhysicsContract.normaliseAttr passer.Mental.Vision
               * BalanceConfig.LongBallVisionWeight
-            + ctx.AttBonus.SetPlay
+            + actx.AttBonus.SetPlay
 
         let successChance =
             betaSample
@@ -157,57 +158,32 @@ module PassAction =
                 (BalanceConfig.LongBallSuccessShapeAlpha
                  + condNorm * BalanceConfig.LongBallSuccessConditionMultiplier)
 
-        // JIT: current positions of forwards
         let forwards =
-            teamRoster attSide
-            |> Array.filter (fun (p, _, _) ->
-                p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
+            attSlots
+            |> Array.mapi (fun i slot ->
+                match slot with
+                | PlayerSlot.Active s -> Some(s.Player, s.Pos)
+                | _ -> None)
+            |> Array.choose id
+            |> Array.filter (fun (p, _) -> p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
 
         if bernoulli successChance && forwards.Length > 0 then
-            let target, targetSp, _ = forwards[0]
-            let offside = isOffside target targetSp.X s ctx.Dir
+            let target, targetSp = forwards[0]
+            let offside = isOffside target targetSp.X ctx state actx.Dir
 
             if offside then
-                s
-                |> flipPossessionAndClearOffside ctx.AttSide
-                |> fun s'' ->
-                    { s'' with
-                        Momentum =
-                            Math.Clamp(
-                                s''.Momentum
-                                - AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallOffsideMomentum,
-                                -10.0,
-                                10.0
-                            ) },
-                    [ event subTick passer.Id clubId (LongBall false) ]
+                flipPossession state
+                adjustMomentum actx.Dir (-BalanceConfig.LongBallOffsideMomentum) state
+                [ event subTick passer.Id attClubId (LongBall false) ]
             else
-                let snapshot = snapshotAtPass passer target s ctx.Dir
+                let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                let s' =
-                    s
-                    |> ballTowards targetSp.X targetSp.Y BalanceConfig.LongBallSpeed BalanceConfig.LongBallVz
-                    |> fun s'' ->
-                        { s'' with
-                            Momentum =
-                                Math.Clamp(
-                                    s''.Momentum
-                                    + AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallSuccessMomentum,
-                                    -10.0,
-                                    10.0
-                                )
-                            PendingOffsideSnapshot = Some snapshot }
+                ballTowards targetSp.X targetSp.Y BalanceConfig.LongBallSpeed BalanceConfig.LongBallVz state
+                adjustMomentum actx.Dir BalanceConfig.LongBallSuccessMomentum state
+                state.PendingOffsideSnapshot <- Some snapshot
 
-                s', [ event subTick passer.Id clubId (LongBall true) ]
+                [ event subTick passer.Id attClubId (LongBall true) ]
         else
-            s
-            |> flipPossessionAndClearOffside ctx.AttSide
-            |> fun s'' ->
-                { s'' with
-                    Momentum =
-                        Math.Clamp(
-                            s''.Momentum
-                            - AttackDir.momentumDelta ctx.Dir BalanceConfig.LongBallFailMomentum,
-                            -10.0,
-                            10.0
-                        ) },
-                [ event subTick passer.Id clubId (LongBall false) ]
+            flipPossession state
+            adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
+            [ event subTick passer.Id attClubId (LongBall false) ]

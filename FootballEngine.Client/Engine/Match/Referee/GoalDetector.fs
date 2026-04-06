@@ -6,12 +6,16 @@ module GoalDetector =
 
     [<Literal>]
     let GoalLineHome = 100.0
+
     [<Literal>]
     let GoalLineAway = 0.0
+
     [<Literal>]
     let PostMin = 36.8
+
     [<Literal>]
     let PostMax = 63.2
+
     [<Literal>]
     let Crossbar = 2.44
 
@@ -27,14 +31,26 @@ module GoalDetector =
         else
             None
 
-    let scorer (scoringClub: ClubSide) (ball: BallPhysicsState) (s: MatchState) : PlayerId option * bool =
+    let scorer
+        (scoringClub: ClubSide)
+        (ball: BallPhysicsState)
+        (ctx: MatchContext)
+        (state: SimState)
+        : PlayerId option * bool =
         let lastTouchId = ball.LastTouchBy
+
         match lastTouchId with
         | Some pid ->
-            let touchIsHome = s.HomeSide.Players |> Array.exists (fun p -> p.Id = pid)
+            let touchIsHome =
+                state.HomeSlots
+                |> Array.exists (function
+                    | PlayerSlot.Active s -> s.Player.Id = pid
+                    | _ -> false)
+
             let isOwnGoal =
                 match scoringClub with
                 | HomeClub -> not touchIsHome
                 | AwayClub -> touchIsHome
+
             lastTouchId, isOwnGoal
         | None -> None, false

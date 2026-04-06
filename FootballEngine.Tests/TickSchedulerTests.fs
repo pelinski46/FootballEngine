@@ -2,11 +2,13 @@ module FootballEngine.Tests.TickSchedulerTests
 
 open Expecto
 open FootballEngine
-open FootballEngine.Domain
 open FootballEngine.SchedulingTypes
 
 let private mkTick subTick priority seqId kind =
-    { SubTick = subTick; Priority = priority; SequenceId = seqId; Kind = kind }
+    { SubTick = subTick
+      Priority = priority
+      SequenceId = seqId
+      Kind = kind }
 
 let tickSchedulerTests =
     testList
@@ -26,6 +28,7 @@ let tickSchedulerTests =
               let t1 = s.Dequeue()
               let t2 = s.Dequeue()
               let t3 = s.Dequeue()
+
               match t1, t2, t3 with
               | ValueSome a, ValueSome b, ValueSome c ->
                   Expect.equal a.SubTick 10 ""
@@ -42,6 +45,7 @@ let tickSchedulerTests =
               let t1 = s.Dequeue()
               let t2 = s.Dequeue()
               let t3 = s.Dequeue()
+
               match t1, t2, t3 with
               | ValueSome a, ValueSome b, ValueSome c ->
                   Expect.equal a.Priority TickPriority.Physics ""
@@ -58,6 +62,7 @@ let tickSchedulerTests =
               let t1 = s.Dequeue()
               let t2 = s.Dequeue()
               let t3 = s.Dequeue()
+
               match t1, t2, t3 with
               | ValueSome a, ValueSome b, ValueSome c ->
                   Expect.equal a.SequenceId 1L ""
@@ -76,8 +81,13 @@ let tickSchedulerTests =
               s.Insert(mkTick 10 TickPriority.Duel 0L (DuelTick 0))
               s.Insert(mkTick 20 TickPriority.Physics 1L PhysicsTick)
               s.Insert(mkTick 30 TickPriority.Duel 2L (DuelTick 0))
-              s.CancelTicks(function | DuelTick _ -> true | _ -> false)
+
+              s.CancelTicks (function
+                  | DuelTick _ -> true
+                  | _ -> false)
+
               Expect.equal s.Count 1 ""
+
               match s.Dequeue() with
               | ValueSome tick -> Expect.equal tick.Kind PhysicsTick ""
               | ValueNone -> failwith "expected PhysicsTick"
@@ -93,22 +103,19 @@ let tickSchedulerTests =
           }
 
           test "Large volume stress — realistic match load" {
-              // A full match has 228,000 SubTicks.
-              // Insert ~3000 ticks (physics + cognitive + duel + set pieces + subs + control)
-              // to stress-test the scheduler under realistic conditions.
               let s = TickScheduler(PhysicsContract.MaxMatchSubTicks)
-              // PhysicsTick every SubTick for first 200 SubTicks (5 seconds of ball physics)
+
               for i = 0 to 199 do
                   s.Insert(mkTick i TickPriority.Physics (int64 i) PhysicsTick)
-              // DuelTicks at realistic intervals (mean 960 SubTicks = 24s)
+
               for i = 0 to 2 do
                   let t = 960 * (i + 1)
                   s.Insert(mkTick t TickPriority.Duel (int64 (200 + i)) (DuelTick 0))
-              // CognitiveTick every 80 SubTicks
+
               for i = 0 to 2 do
                   let t = 80 * (i + 1)
                   s.Insert(mkTick t TickPriority.Manager (int64 (300 + i)) CognitiveTick)
-              // Set pieces and substitutions scattered
+
               s.Insert(mkTick 2400 TickPriority.Manager 400L (SubstitutionTick 1))
               s.Insert(mkTick 2400 TickPriority.Manager 401L (SubstitutionTick 2))
               s.Insert(mkTick 108000 TickPriority.MatchControl 500L HalfTimeTick)
@@ -120,6 +127,7 @@ let tickSchedulerTests =
               let mutable prevSubTick = -1
               let mutable dequeued = 0
               let mutable finished = false
+
               while not finished do
                   match s.Dequeue() with
                   | ValueSome t ->

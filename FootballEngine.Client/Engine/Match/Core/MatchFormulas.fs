@@ -4,7 +4,7 @@ open System
 open FootballEngine.Domain
 open FootballEngine.Stats
 
-module MatchCalc =
+module MatchFormulas =
 
     let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
         let normStat = PhysicsContract.normaliseAttr stat

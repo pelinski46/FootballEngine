@@ -2,7 +2,9 @@ namespace FootballEngine
 
 open System
 open System.IO
+open System.Threading.Tasks
 open FootballEngine.Domain
+open FootballEngine.World
 open TacticalInstructions
 open FootballEngine.Database
 open FootballEngine.Database.Mappers
@@ -15,7 +17,7 @@ module Db =
 
     let private db = lazy SQLiteAsyncConnection(dbPath)
 
-    let saveGameAsync (state: GameState) =
+    let saveGameAsync (state: GameState) (clock: WorldClock) =
         task {
             do!
                 db.Value.RunInTransactionAsync(fun (conn: SQLiteConnection) ->
@@ -28,7 +30,10 @@ module Db =
                           UserClubId = state.UserClubId
                           UserStaffId = state.UserStaffId
                           PrimaryCountry = state.PrimaryCountry
-                          NextInboxId = state.NextInboxId }
+                          NextInboxId = state.NextInboxId
+                          ClockDay = clock.Current.Day
+                          ClockWeek = clock.Current.Week
+                          ClockMonth = clock.Current.Month }
                     )
                     |> ignore
 
@@ -100,7 +105,7 @@ module Db =
                         conn.InsertOrReplace(toCountryEntity country) |> ignore)
         }
 
-    let loadGame () =
+    let loadGame () : Task<(GameState * WorldClock) option> =
         task {
             if not (File.Exists dbPath) then
                 return None
@@ -213,8 +218,16 @@ module Db =
 
                     let inbox = inboxEntities |> Seq.map fromInboxMessageEntity |> List.ofSeq
 
+                    let restoredClock: WorldClock =
+                        { Current =
+                            { Day = meta.ClockDay
+                              Week = meta.ClockWeek
+                              Month = meta.ClockMonth
+                              Season = meta.Season }
+                          PendingEvents = [] }
+
                     return
-                        Some
+                        Some(
                             { CurrentDate = meta.CurrentDate
                               Season = meta.Season
                               TrainingWeeksApplied = meta.TrainingWeeksApplied
@@ -229,7 +242,9 @@ module Db =
                               Inbox = inbox
                               NextInboxId = meta.NextInboxId
                               PendingNegotiations = Map.empty
-                              NextNegotiationId = 1 }
+                              NextNegotiationId = 1 },
+                            restoredClock
+                        )
         }
 
     let initTables () =

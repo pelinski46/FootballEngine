@@ -102,7 +102,7 @@ module PhysicsContract =
         (PlayerAccelMin + (PlayerAccelMax - PlayerAccelMin) * aNorm) * condFactor
 
     [<Literal>]
-    let PlayerSeparationRadius = 1.2
+    let PlayerSeparationRadius = 2.5
 
     [<Literal>]
     let BallContactRadius = 0.35
@@ -199,7 +199,7 @@ module PhysicsContract =
     let DuelChainDelayMaxSubTicks = secondsToSubTicks 5.0 // 200
 
 
-    let SteeringIntervalSubTicks = secondsToSubTicks 0.2 // 8
+    let SteeringIntervalSubTicks = secondsToSubTicks 0.1 // 8
 
 
     let MarkingIntervalSubTicks = secondsToSubTicks 3.0 // 120

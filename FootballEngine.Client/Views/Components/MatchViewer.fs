@@ -14,25 +14,28 @@ open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
 open FootballEngine.Domain
 open FootballEngine.Icons
+open FootballEngine.SimStateOps
 
 module MatchViewer =
 
     [<Literal>]
-    let private PitchW = 820.0
+    let PitchW = 820.0
 
     [<Literal>]
-    let private PitchH = 540.0
+    let PitchH = 540.0
 
-    let private positionLabel (p: Position) = $"%A{p}"
-    let private toCanvas (x: float, y: float) = x * PitchW / 100.0, y * PitchH / 100.0
+    let positionLabel (p: Position) = $"%A{p}"
 
-    let private lerpFloat (t: float) (a: float) (b: float) =
+    let toCanvas (x: float, y: float) =
+        x * PitchW / PhysicsContract.PitchLength, y * PitchH / PhysicsContract.PitchWidth
+
+    let lerpFloat (t: float) (a: float) (b: float) =
         let t' = t * t * (3.0 - 2.0 * t)
         a + (b - a) * t'
 
-    let private lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
+    let lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
 
-    let interpolateState (t: float) (curr: MatchState) (next: MatchState) =
+    let interpolateState (t: float) (curr: SimSnapshot) (next: SimSnapshot) =
         let lerpFloat (t: float) (a: float) (b: float) =
             let t' = t * t * (3.0 - 2.0 * t)
             a + (b - a) * t'
@@ -45,10 +48,9 @@ module MatchViewer =
             let len = min a.Length b.Length
             Array.init len (fun i -> lerpSpatial a[i] b[i])
 
-        {| HomePosLerped = lerpArr curr.HomeSide.Positions next.HomeSide.Positions
-           AwayPosLerped = lerpArr curr.AwaySide.Positions next.AwaySide.Positions
-           BallLerped =
-            lerpPos t (curr.Ball.Position.X, curr.Ball.Position.Y) (next.Ball.Position.X, next.Ball.Position.Y) |}
+        {| HomePosLerped = lerpArr curr.HomePositions next.HomePositions
+           AwayPosLerped = lerpArr curr.AwayPositions next.AwayPositions
+           BallLerped = lerpPos t (curr.BallX, curr.BallY) (next.BallX, next.BallY) |}
 
     let private conditionColor c =
         if c >= 75 then Theme.Success
@@ -236,11 +238,11 @@ module MatchViewer =
               Border.padding (Thickness(10.0, 5.0))
               Border.child child ]
 
-    let private possessionOverlay (s: MatchState) : IView =
+    let private possessionOverlay (ctx: MatchContext) (snap: SimSnapshot) : IView =
         let name, color =
-            match s.AttackingClub with
-            | HomeClub -> s.Home.Name, Theme.AccentAlt
-            | AwayClub -> s.Away.Name, Theme.Danger
+            match snap.AttackingClub with
+            | HomeClub -> ctx.Home.Name, Theme.AccentAlt
+            | AwayClub -> ctx.Away.Name, Theme.Danger
 
         hudPill 10.0 10.0
         <| StackPanel.create
@@ -264,32 +266,32 @@ module MatchViewer =
                           TextBlock.fontSize 9.0
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-    let private scoreOverlay (s: MatchState) : IView =
+    let private scoreOverlay (ctx: MatchContext) (snap: SimSnapshot) : IView =
         hudPill (PitchW / 2.0 - 75.0) 10.0
         <| StackPanel.create
             [ StackPanel.orientation Orientation.Horizontal
               StackPanel.spacing 8.0
               StackPanel.children
                   [ TextBlock.create
-                        [ TextBlock.text s.Home.Name
+                        [ TextBlock.text ctx.Home.Name
                           TextBlock.foreground Theme.AccentAlt
                           TextBlock.fontSize 11.0
                           TextBlock.fontWeight FontWeight.SemiBold
                           TextBlock.verticalAlignment VerticalAlignment.Center ]
                     TextBlock.create
-                        [ TextBlock.text $"{s.HomeScore} – {s.AwayScore}"
+                        [ TextBlock.text $"{snap.HomeScore} – {snap.AwayScore}"
                           TextBlock.foreground Theme.TextMain
                           TextBlock.fontSize 15.0
                           TextBlock.fontWeight FontWeight.Black
                           TextBlock.verticalAlignment VerticalAlignment.Center ]
                     TextBlock.create
-                        [ TextBlock.text s.Away.Name
+                        [ TextBlock.text ctx.Away.Name
                           TextBlock.foreground Theme.Danger
                           TextBlock.fontSize 11.0
                           TextBlock.fontWeight FontWeight.SemiBold
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-    let private minuteOverlay (s: MatchState) : IView =
+    let private minuteOverlay (snap: SimSnapshot) : IView =
         hudPill (PitchW - 72.0) 10.0
         <| StackPanel.create
             [ StackPanel.orientation Orientation.Horizontal
@@ -297,15 +299,15 @@ module MatchViewer =
               StackPanel.children
                   [ Icons.iconSm IconName.calendar Theme.Warning
                     TextBlock.create
-                        [ TextBlock.text $"{s.SubTick / PhysicsContract.SubTicksPerSecond / 60}'"
+                        [ TextBlock.text $"{snap.SubTick / PhysicsContract.SubTicksPerSecond / 60}'"
                           TextBlock.foreground Theme.Warning
                           TextBlock.fontSize 11.0
                           TextBlock.fontWeight FontWeight.Black
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-    let private momentumBar (s: MatchState) : IView =
+    let private momentumBar (ctx: MatchContext) (snap: SimSnapshot) : IView =
         let barW = 240.0
-        let homeW = ((s.Momentum + 10.0) / 20.0) * barW |> max 4.0 |> min (barW - 4.0)
+        let homeW = ((snap.Momentum + 10.0) / 20.0) * barW |> max 4.0 |> min (barW - 4.0)
         let awayW = barW - homeW
 
         hudPill (PitchW / 2.0 - 135.0) (PitchH - 42.0)
@@ -317,7 +319,7 @@ module MatchViewer =
                         [ StackPanel.orientation Orientation.Horizontal
                           StackPanel.children
                               [ TextBlock.create
-                                    [ TextBlock.text (s.Home.Name.ToUpper())
+                                    [ TextBlock.text (ctx.Home.Name.ToUpper())
                                       TextBlock.foreground Theme.AccentAlt
                                       TextBlock.fontSize 8.0
                                       TextBlock.fontWeight FontWeight.Black
@@ -331,7 +333,7 @@ module MatchViewer =
                                       TextBlock.width (barW / 2.0)
                                       TextBlock.textAlignment TextAlignment.Center ]
                                 TextBlock.create
-                                    [ TextBlock.text (s.Away.Name.ToUpper())
+                                    [ TextBlock.text (ctx.Away.Name.ToUpper())
                                       TextBlock.foreground Theme.Danger
                                       TextBlock.fontSize 8.0
                                       TextBlock.fontWeight FontWeight.Black
@@ -366,7 +368,8 @@ module MatchViewer =
                           ) ] ] ]
 
     let view
-        (s: MatchState)
+        (ctx: MatchContext)
+        (snap: SimSnapshot)
         (homePositions: (float * float)[])
         (awayPositions: (float * float)[])
         (ballPos: float * float)
@@ -374,7 +377,7 @@ module MatchViewer =
         : IView =
         let bcx, bcy = toCanvas ballPos
 
-        let isUserAway = userClubId |> Option.exists (fun id -> id = s.Away.Id)
+        let isUserAway = userClubId |> Option.exists (fun id -> id = ctx.Away.Id)
 
         let homeColor, awayColor =
             if isUserAway then
@@ -396,23 +399,24 @@ module MatchViewer =
                             [ yield! pitchMarkings ()
                               yield!
                                   drawTeam
-                                      s.HomeSide.Players
-                                      s.HomeSide.Conditions
+                                      ctx.HomePlayers
+                                      snap.HomeConditions
                                       homePositions
-                                      s.HomeSide.Sidelined
+                                      snap.HomeSidelined
                                       homeColor
                               yield!
                                   drawTeam
-                                      s.AwaySide.Players
-                                      s.AwaySide.Conditions
+                                      ctx.AwayPlayers
+                                      snap.AwayConditions
                                       awayPositions
-                                      s.AwaySide.Sidelined
+                                      snap.AwaySidelined
                                       awayColor
-                              yield! drawBall bcx bcy
-                              possessionOverlay s
-                              scoreOverlay s
-                              minuteOverlay s
-                              momentumBar s ] ]
+
+                              possessionOverlay ctx snap
+                              scoreOverlay ctx snap
+                              minuteOverlay snap
+                              momentumBar ctx snap
+                              yield! drawBall bcx bcy ] ]
               ) ]
 
 open MatchViewer
@@ -458,19 +462,19 @@ module MatchDayView =
                                     TextBlock.fontWeight FontWeight.Black
                                     TextBlock.verticalAlignment VerticalAlignment.Center ]
                               TextBlock.create
-                                  [ TextBlock.text replay.Final.Home.Name
+                                  [ TextBlock.text replay.Context.Home.Name
                                     TextBlock.foreground Theme.AccentAlt
                                     TextBlock.fontSize 12.0
                                     TextBlock.fontWeight FontWeight.SemiBold
                                     TextBlock.verticalAlignment VerticalAlignment.Center ]
                               TextBlock.create
-                                  [ TextBlock.text $"{replay.Final.HomeScore} – {replay.Final.AwayScore}"
+                                  [ TextBlock.text $"{replay.Final.HomeScore} –{replay.Final.AwayScore}"
                                     TextBlock.foreground Theme.TextMain
                                     TextBlock.fontSize 16.0
                                     TextBlock.fontWeight FontWeight.Black
                                     TextBlock.verticalAlignment VerticalAlignment.Center ]
                               TextBlock.create
-                                  [ TextBlock.text replay.Final.Away.Name
+                                  [ TextBlock.text replay.Context.Away.Name
                                     TextBlock.foreground Theme.Danger
                                     TextBlock.fontSize 12.0
                                     TextBlock.fontWeight FontWeight.SemiBold
@@ -582,88 +586,83 @@ module MatchDayView =
                                     ) ] ] ]
               ) ]
 
-    let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
-        let relevant =
-            replay.Events
-            |> List.filter (fun ev ->
-                match ev.Type with
-                | Goal
-                | OwnGoal
-                | Assist
-                | YellowCard
-                | RedCard
-                | Injury _
-                | SubstitutionIn
-                | SubstitutionOut
-                | PenaltyAwarded _
-                | FreeKick _
-                | Corner
-                | PassCompleted _
-                | PassIncomplete _
-                | DribbleSuccess
-                | DribbleFail
-                | TackleSuccess
-                | TackleFail
-                | CrossAttempt _
-                | LongBall _
-                | ShotBlocked
-                | ShotOffTarget
-                | Save
-                | FoulCommitted -> true)
+    let private relevantEventTypes (ev: MatchEvent) =
+        match ev.Type with
+        | Goal
+        | OwnGoal
+        | Assist
+        | YellowCard
+        | RedCard
+        | Injury _
+        | SubstitutionIn
+        | SubstitutionOut
+        | PenaltyAwarded _
+        | FreeKick _ -> true
+        | _ -> false
 
-        DockPanel.create
-            [ DockPanel.width 270.0
-              DockPanel.lastChildFill true
-              DockPanel.background Theme.BgSidebar
-              DockPanel.children
-                  [ Border.create
-                        [ DockPanel.dock Dock.Top
-                          Border.padding (Thickness(12.0, 10.0))
-                          Border.borderBrush Theme.Border
-                          Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
-                          Border.child (
-                              StackPanel.create
-                                  [ StackPanel.orientation Orientation.Horizontal
-                                    StackPanel.spacing 8.0
-                                    StackPanel.verticalAlignment VerticalAlignment.Center
-                                    StackPanel.children
-                                        [ TextBlock.create
-                                              [ TextBlock.text "MATCH EVENTS"
-                                                TextBlock.foreground Theme.TextMuted
-                                                TextBlock.fontSize 9.0
-                                                TextBlock.fontWeight FontWeight.Black
-                                                TextBlock.verticalAlignment VerticalAlignment.Center ]
-                                          Border.create
-                                              [ Border.background Theme.AccentLight
-                                                Border.cornerRadius 10.0
-                                                Border.padding (Thickness(7.0, 2.0))
-                                                Border.child (
-                                                    TextBlock.create
-                                                        [ TextBlock.text $"{relevant.Length}"
-                                                          TextBlock.foreground Theme.Accent
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.Black ]
-                                                ) ] ] ]
-                          ) ]
-                    ScrollViewer.create
-                        [ ScrollViewer.padding (Thickness(10.0, 8.0))
-                          ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                          ScrollViewer.content (
-                              StackPanel.create
-                                  [ StackPanel.orientation Orientation.Vertical
-                                    StackPanel.children (
-                                        if relevant.IsEmpty then
-                                            [ TextBlock.create
-                                                  [ TextBlock.text "No events recorded"
-                                                    TextBlock.foreground Theme.TextMuted
-                                                    TextBlock.fontSize 11.0
-                                                    TextBlock.margin (Thickness(0.0, 12.0)) ]
-                                              :> IView ]
-                                        else
-                                            [ yield! relevant |> List.map (eventRow clubs players)
-                                              Border.create [ Border.height 24.0 ] ]
-                                    ) ]
-                          ) ] ] ]
+    let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
+        let relevant = replay.Events |> List.filter relevantEventTypes
+
+        let key =
+            $"eventlog-{replay.Final.HomeScore}-{replay.Final.AwayScore}-{relevant.Length}"
+
+        Component.create (
+            key,
+            fun _ ->
+                DockPanel.create
+                    [ DockPanel.width 270.0
+                      DockPanel.lastChildFill true
+                      DockPanel.background Theme.BgSidebar
+                      DockPanel.children
+                          [ Border.create
+                                [ DockPanel.dock Dock.Top
+                                  Border.padding (Thickness(12.0, 10.0))
+                                  Border.borderBrush Theme.Border
+                                  Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
+                                  Border.child (
+                                      StackPanel.create
+                                          [ StackPanel.orientation Orientation.Horizontal
+                                            StackPanel.spacing 8.0
+                                            StackPanel.verticalAlignment VerticalAlignment.Center
+                                            StackPanel.children
+                                                [ TextBlock.create
+                                                      [ TextBlock.text "MATCH EVENTS"
+                                                        TextBlock.foreground Theme.TextMuted
+                                                        TextBlock.fontSize 9.0
+                                                        TextBlock.fontWeight FontWeight.Black
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center ]
+                                                  Border.create
+                                                      [ Border.background Theme.AccentLight
+                                                        Border.cornerRadius 10.0
+                                                        Border.padding (Thickness(7.0, 2.0))
+                                                        Border.child (
+                                                            TextBlock.create
+                                                                [ TextBlock.text $"{relevant.Length}"
+                                                                  TextBlock.foreground Theme.Accent
+                                                                  TextBlock.fontSize 10.0
+                                                                  TextBlock.fontWeight FontWeight.Black ]
+                                                        ) ] ] ]
+                                  ) ]
+                            ScrollViewer.create
+                                [ ScrollViewer.padding (Thickness(10.0, 8.0))
+                                  ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
+                                  ScrollViewer.content (
+                                      StackPanel.create
+                                          [ StackPanel.orientation Orientation.Vertical
+                                            StackPanel.children (
+                                                if relevant.IsEmpty then
+                                                    [ TextBlock.create
+                                                          [ TextBlock.text "No events recorded"
+                                                            TextBlock.foreground Theme.TextMuted
+                                                            TextBlock.fontSize 11.0
+                                                            TextBlock.margin (Thickness(0.0, 12.0)) ]
+                                                      :> IView ]
+                                                else
+                                                    [ yield! relevant |> List.map (eventRow clubs players)
+                                                      Border.create [ Border.height 24.0 ] ]
+                                            ) ]
+                                  ) ] ] ]
+        )
 
     let private toolbar
         (idx: int)
@@ -808,16 +807,51 @@ module MatchDayView =
             let idx = state.ActiveMatchSnapshot
             let total = max 1 (replay.Snapshots.Length - 1)
 
+            let finalSnapshot =
+                { SubTick = replay.Final.SubTick
+                  HomePositions =
+                    replay.Final.HomeSlots
+                    |> Array.map (function
+                        | PlayerSlot.Active s -> s.Pos
+                        | Sidelined _ -> kickOffSpatial)
+                  AwayPositions =
+                    replay.Final.AwaySlots
+                    |> Array.map (function
+                        | PlayerSlot.Active s -> s.Pos
+                        | Sidelined _ -> kickOffSpatial)
+                  BallX = replay.Final.Ball.Position.X
+                  BallY = replay.Final.Ball.Position.Y
+                  BallVx = replay.Final.Ball.Position.Vx
+                  BallVy = replay.Final.Ball.Position.Vy
+                  BallControlledBy = replay.Final.Ball.ControlledBy
+                  HomeScore = replay.Final.HomeScore
+                  AwayScore = replay.Final.AwayScore
+                  HomeConditions =
+                    replay.Final.HomeSlots
+                    |> Array.map (function
+                        | PlayerSlot.Active s -> s.Condition
+                        | Sidelined _ -> 0)
+                  AwayConditions =
+                    replay.Final.AwaySlots
+                    |> Array.map (function
+                        | PlayerSlot.Active s -> s.Condition
+                        | Sidelined _ -> 0)
+                  HomeSidelined = replay.Final.HomeSidelined
+                  AwaySidelined = replay.Final.AwaySidelined
+                  AttackingClub = replay.Final.AttackingClub
+                  HomeAttackDir = replay.Final.HomeAttackDir
+                  Momentum = replay.Final.Momentum }
+
             let current =
-                replay.Snapshots |> Array.tryItem idx |> Option.defaultValue replay.Final
+                replay.Snapshots |> Array.tryItem idx |> Option.defaultValue finalSnapshot
 
             let nextSnap =
-                replay.Snapshots |> Array.tryItem (idx + 1) |> Option.defaultValue current
+                replay.Snapshots |> Array.tryItem (idx + 1) |> Option.defaultValue finalSnapshot
 
             let interp = interpolateState state.InterpolationT current nextSnap
 
             let replayKey =
-                $"{replay.Snapshots.Length}-{replay.Final.HomeScore}-{replay.Final.AwayScore}"
+                $"{replay.Snapshots.Length}-${replay.Final.HomeScore}-${replay.Final.AwayScore}"
 
             DockPanel.create
                 [ DockPanel.background Theme.BgMain
@@ -870,5 +904,11 @@ module MatchDayView =
                                         | InGame(gs, _) -> Some gs.UserClubId
                                         | _ -> None
 
-                                    view current interp.HomePosLerped interp.AwayPosLerped interp.BallLerped userClubId ] ] ] ]
+                                    MatchViewer.view
+                                        replay.Context
+                                        current
+                                        interp.HomePosLerped
+                                        interp.AwayPosLerped
+                                        interp.BallLerped
+                                        userClubId ] ] ] ]
             :> IView

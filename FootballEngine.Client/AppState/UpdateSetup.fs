@@ -49,13 +49,13 @@ module UpdateSetup =
                     generateNewGame primaryCountry state.Setup.ManagerName state.Setup.SecondaryCountries
 
                 { state with
-                    Mode = InGame (newGameState, managerEmployment newGameState)
+                    Mode = InGame(newGameState, managerEmployment newGameState)
                     State.Setup.Step = ClubSelection },
-                saveCmd newGameState
+                saveCmd newGameState state.WorldClock
 
         | ConfirmClub clubId ->
             match state.Mode with
-            | InGame (gs, _) ->
+            | InGame(gs, _) ->
                 let updatedStaff =
                     gs.Staff
                     |> Map.tryFind gs.UserStaffId
@@ -77,8 +77,8 @@ module UpdateSetup =
                 let managerName = GameState.userManagerName newGameState
 
                 { state with
-                    Mode = InGame (newGameState, managerEmployment newGameState)
+                    Mode = InGame(newGameState, managerEmployment newGameState)
                     CurrentPage = HomePage
                     LogMessages = [ $"Career started by {managerName}" ] },
-                saveCmd newGameState
+                saveCmd newGameState state.WorldClock
             | _ -> state, Cmd.none

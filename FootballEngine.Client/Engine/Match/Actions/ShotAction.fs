@@ -3,12 +3,11 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchStateOps
-open MatchCalc
+open SimStateOps
+open MatchFormulas
 
 module ShotAction =
 
-    // Phase 0: Second -> SubTick
     let private event subTick playerId clubId t =
         { SubTick = subTick
           PlayerId = playerId
@@ -24,8 +23,6 @@ module ShotAction =
         | MC -> 1.2
         | _ -> 0.5
 
-    // Phase 3: normaliseAttr — replaces old /300.0 normalization
-    // Phase 5: JIT — shooter/GK resolved from current positions at execution time
     let private calcShotPower
         (player: Player)
         (condition: int)
@@ -42,37 +39,57 @@ module ShotAction =
         + effectiveStat player.Physical.Pace condition player.Morale 0.5
         - dist
 
-    let resolve (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
-        let ctx = ActionContext.build s
-        let attClubId = ClubSide.toClubId ctx.AttSide s
-        let attSide = side (ClubSide.toClubId ctx.AttSide s) s
-        let defSide = side (ClubSide.toClubId ctx.DefSide s) s
-        let bX = s.Ball.Position.X
+    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        let actx = ActionContext.build state
+        let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let inChance = ctx.Zone = AttackingZone || ctx.Zone = MidfieldZone
+        let attSlots =
+            if actx.AttSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let defSlots =
+            if actx.DefSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let bX = state.Ball.Position.X
+
+        let inChance = actx.Zone = AttackingZone || actx.Zone = MidfieldZone
 
         if not inChance then
-            s, []
+            []
         else
-            let ballPt = bX, s.Ball.Position.Y
-
-            // JIT: current shooter position — for-loop, no allocation
             let mutable shooterIdx = 0
             let mutable shooterDistSq = System.Double.MaxValue
-            for i = 0 to attSide.Positions.Length - 1 do
-                let dx = attSide.Positions[i].X - bX
-                let dy = attSide.Positions[i].Y - s.Ball.Position.Y
-                let dSq = dx * dx + dy * dy
-                if dSq < shooterDistSq then
-                    shooterDistSq <- dSq
-                    shooterIdx <- i
 
-            let shooter = attSide.Players[shooterIdx]
-            let shooterCond = attSide.Conditions[shooterIdx]
+            for i = 0 to attSlots.Length - 1 do
+                match attSlots[i] with
+                | PlayerSlot.Active s ->
+                    let dx = s.Pos.X - bX
+                    let dy = s.Pos.Y - state.Ball.Position.Y
+                    let dSq = dx * dx + dy * dy
+
+                    if dSq < shooterDistSq then
+                        shooterDistSq <- dSq
+                        shooterIdx <- i
+                | _ -> ()
+
+            let shooter, shooterCond =
+                match attSlots[shooterIdx] with
+                | PlayerSlot.Active s -> s.Player, s.Condition
+                | _ -> Unchecked.defaultof<Player>, 0
+
+            let defPlayers =
+                Array.init defSlots.Length (fun i ->
+                    match defSlots[i] with
+                    | PlayerSlot.Active s -> s.Player
+                    | _ -> Unchecked.defaultof<Player>)
 
             let quality =
-                // Phase 2: distToGoal already in metres (PhysicsContract)
-                let distToGoal = AttackDir.distToGoal bX ctx.Dir
+                let distToGoal = AttackDir.distToGoal bX actx.Dir
 
                 let distNorm =
                     Math.Clamp(distToGoal / BalanceConfig.ShotNormalisationDistance, 0.0, 1.0)
@@ -89,20 +106,34 @@ module ShotAction =
                 (1.0 - distNorm) * 0.7 + positionBonus * 0.3
 
             if quality < BalanceConfig.ShotQualityGate then
-                s, []
+                []
             else
-                let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
-                let composure = pressureMultiplier attClubId s * tacticsCfg.UrgencyMultiplier
-                let u = matchUrgency attClubId s * tacticsCfg.UrgencyMultiplier
+                let attTactics =
+                    if actx.AttSide = HomeClub then
+                        state.HomeTactics
+                    else
+                        state.AwayTactics
+
+                let attInstructions =
+                    if actx.AttSide = HomeClub then
+                        state.HomeInstructions
+                    else
+                        state.AwayInstructions
+
+                let tacticsCfg = tacticsConfig attTactics attInstructions
+
+                let composure =
+                    pressureMultiplier attClubId ctx state * tacticsCfg.UrgencyMultiplier
+
+                let u = matchUrgency attClubId ctx state * tacticsCfg.UrgencyMultiplier
 
                 let dist =
-                    AttackDir.distToGoal bX ctx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
+                    AttackDir.distToGoal bX actx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
 
-                let homeComposure = ctx.AttBonus.ShotCompos
+                let homeComposure = actx.AttBonus.ShotCompos
                 let finishing = calcShotPower shooter shooterCond composure u dist homeComposure
-                let dirSign = AttackDir.forwardX ctx.Dir
+                let dirSign = AttackDir.forwardX actx.Dir
 
-                // Phase 3: normaliseAttr-based finishing norm (replaces /300.0)
                 let finishingNorm =
                     Math.Clamp(
                         PhysicsContract.normaliseAttr shooter.Technical.Finishing,
@@ -110,7 +141,6 @@ module ShotAction =
                         BalanceConfig.ShotFinishingMax
                     )
 
-                // Phase 2: speed from PhysicsContract
                 let speed = PhysicsContract.shotSpeed shooter.Technical.Finishing
 
                 let angleSpread = BalanceConfig.ShotAngleSpreadBase * (1.0 - finishingNorm)
@@ -123,8 +153,7 @@ module ShotAction =
                     { Top = -(PhysicsContract.normaliseAttr shooter.Technical.Finishing) * 0.4
                       Side = 0.0 }
 
-                // JIT: current GK position
-                let gk = defSide.Players |> Array.tryFind (fun p -> p.Position = GK)
+                let gk = defPlayers |> Array.tryFind (fun p -> p.Position = GK)
 
                 let onTarget =
                     bernoulli (
@@ -143,34 +172,25 @@ module ShotAction =
                         onTarget && bernoulli (adjustedSave / (adjustedSave + finishing + 1.0))
                     | None -> false
 
-                let s' =
-                    { s with
-                        Ball =
-                            { s.Ball with
-                                Position =
-                                    { s.Ball.Position with
-                                        Vx = vx
-                                        Vy = vy
-                                        Vz = vz
-                                        X = bX }
-                                Spin = spin
-                                LastTouchBy = Some shooter.Id }
-                        Momentum =
-                            Math.Clamp(
-                                s.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.DuelMomentumBonus,
-                                -10.0,
-                                10.0
-                            ) }
-                    |> clearOffsideSnapshot
+                state.Ball <-
+                    { state.Ball with
+                        Position =
+                            { state.Ball.Position with
+                                Vx = vx
+                                Vy = vy
+                                Vz = vz
+                                X = bX }
+                        Spin = spin
+                        LastTouchBy = Some shooter.Id }
 
-                let gkClubId = ClubSide.toClubId (ClubSide.flip ctx.AttSide) s
+                adjustMomentum actx.Dir BalanceConfig.DuelMomentumBonus state
+                clearOffsideSnapshot state
 
-                let events =
-                    match gk with
-                    | Some g when gkSaves ->
-                        [ event subTick shooter.Id attClubId ShotBlocked
-                          event subTick g.Id gkClubId Save ]
-                    | _ when not onTarget -> [ event subTick shooter.Id attClubId ShotOffTarget ]
-                    | _ -> []
+                let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-                s', events
+                match gk with
+                | Some g when gkSaves ->
+                    [ event subTick shooter.Id attClubId ShotBlocked
+                      event subTick g.Id gkClubId Save ]
+                | _ when not onTarget -> [ event subTick shooter.Id attClubId ShotOffTarget ]
+                | _ -> []

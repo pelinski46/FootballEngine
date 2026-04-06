@@ -263,7 +263,7 @@ module UpdateSim =
 
                     Cmd.ofMsg (SimMsg AdvanceSeason)
                 else
-                    saveCmd result.GameState
+                    saveCmd result.GameState state.WorldClock
 
             if hasUserMatchToday result.GameState then
 
@@ -295,9 +295,12 @@ module UpdateSim =
                     CurrentPage = Match }
 
             if matchDay.DayResult.SeasonComplete then
-                withMatch, Cmd.batch [ Cmd.ofMsg (SimMsg AdvanceSeason); saveCmd matchDay.DayResult.GameState ]
+                withMatch,
+                Cmd.batch
+                    [ Cmd.ofMsg (SimMsg AdvanceSeason)
+                      saveCmd matchDay.DayResult.GameState state.WorldClock ]
             else
-                withMatch, saveCmd matchDay.DayResult.GameState
+                withMatch, saveCmd matchDay.DayResult.GameState state.WorldClock
 
         | UserMatchDone(Error e) ->
 
@@ -342,7 +345,7 @@ module UpdateSim =
             let nextState = applySeasonResult result state
 
             match nextState.Mode with
-            | InGame(gs, _) -> nextState, saveCmd gs
+            | InGame(gs, _) -> nextState, saveCmd gs state.WorldClock
             | _ -> nextState, Cmd.none
 
         | SeasonAdvanceDone(Error NoFixturesToPlay) ->
@@ -386,5 +389,5 @@ module UpdateSim =
 
         | SaveGame ->
             match state.Mode with
-            | InGame(gs, _) -> state, saveCmd gs
+            | InGame(gs, _) -> state, saveCmd gs state.WorldClock
             | _ -> state, Cmd.none

@@ -206,7 +206,10 @@ type GameSaveMeta =
       UserClubId: int
       UserStaffId: int
       PrimaryCountry: string
-      NextInboxId: int }
+      NextInboxId: int
+      ClockDay: int
+      ClockWeek: int
+      ClockMonth: int }
 
 [<CLIMutable>]
 type InboxMessageEntity =

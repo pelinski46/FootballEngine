@@ -3,105 +3,158 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchStateOps
-open MatchCalc
+open SimStateOps
+open MatchFormulas
 open MatchSpatial
 
 module DuelAction =
 
-    // Phase 0: Second -> SubTick in event constructor
     let private event subTick playerId clubId t =
         { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
           Type = t }
 
-    // Phase 3: normaliseCondition for fatigue threshold
     let private fatigueMultiplier (condition: int) : float =
         let norm = PhysicsContract.normaliseCondition condition
-        let threshold = PhysicsContract.normaliseCondition BalanceConfig.DuelFatigueThreshold
+
+        let threshold =
+            PhysicsContract.normaliseCondition BalanceConfig.DuelFatigueThreshold
+
         if norm < threshold then
             let deficit = threshold - norm
             exp (-deficit * BalanceConfig.DuelFatigueDecay / PhysicsContract.normaliseCondition 1)
         else
             1.0
 
-    // Phase 3: normaliseAttr for all attribute accesses
     let private attributeScore (attacker: Player) (attackerCond: int) (defender: Player) (defenderCond: int) : float =
         let attRaw =
-            PhysicsContract.normaliseAttr attacker.Technical.Dribbling * BalanceConfig.DuelAttackerDribblingWeight
-            + PhysicsContract.normaliseAttr attacker.Physical.Agility * BalanceConfig.DuelAttackerAgilityWeight
-            + PhysicsContract.normaliseAttr attacker.Physical.Balance * BalanceConfig.DuelAttackerBalanceWeight
+            PhysicsContract.normaliseAttr attacker.Technical.Dribbling
+            * BalanceConfig.DuelAttackerDribblingWeight
+            + PhysicsContract.normaliseAttr attacker.Physical.Agility
+              * BalanceConfig.DuelAttackerAgilityWeight
+            + PhysicsContract.normaliseAttr attacker.Physical.Balance
+              * BalanceConfig.DuelAttackerBalanceWeight
 
         let defRaw =
-            PhysicsContract.normaliseAttr defender.Technical.Tackling * BalanceConfig.DuelDefenderTacklingWeight
-            + PhysicsContract.normaliseAttr defender.Physical.Strength * BalanceConfig.DuelDefenderStrengthWeight
-            + PhysicsContract.normaliseAttr defender.Mental.Positioning * BalanceConfig.DuelDefenderPositionWeight
+            PhysicsContract.normaliseAttr defender.Technical.Tackling
+            * BalanceConfig.DuelDefenderTacklingWeight
+            + PhysicsContract.normaliseAttr defender.Physical.Strength
+              * BalanceConfig.DuelDefenderStrengthWeight
+            + PhysicsContract.normaliseAttr defender.Mental.Positioning
+              * BalanceConfig.DuelDefenderPositionWeight
 
         let attFatigue = fatigueMultiplier attackerCond
         let defFatigue = fatigueMultiplier defenderCond
 
         attRaw * attFatigue - defRaw * defFatigue
 
-    // Phase 5: JIT — attacker/defender resolved at execution time from current positions
-    let resolve (subTick: int) (s: MatchState) : MatchState * MatchEvent list =
-        let ctx = ActionContext.build s
-        let attClubId = ClubSide.toClubId ctx.AttSide s
-        let defClubId = ClubSide.toClubId ctx.DefSide s
-        let attSide = side (ClubSide.toClubId ctx.AttSide s) s
-        let defSide = side (ClubSide.toClubId ctx.DefSide s) s
+    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        let actx = ActionContext.build state
+        let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let defClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let bX, bY = ballXY s
+        let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        // JIT: resolve nearest attacker/defender from CURRENT positions at execution time
-        // For-loop — no Array.mapi/minBy allocation
+        let attSlots =
+            if actx.AttSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let defSlots =
+            if actx.DefSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
         let mutable attIdx = 0
         let mutable attDistSq = System.Double.MaxValue
-        for i = 0 to attSide.Positions.Length - 1 do
-            let dx = attSide.Positions[i].X - bX
-            let dy = attSide.Positions[i].Y - bY
-            let dSq = dx * dx + dy * dy
-            if dSq < attDistSq then
-                attDistSq <- dSq
-                attIdx <- i
+
+        for i = 0 to attSlots.Length - 1 do
+            match attSlots[i] with
+            | PlayerSlot.Active s ->
+                let dx = s.Pos.X - bX
+                let dy = s.Pos.Y - bY
+                let dSq = dx * dx + dy * dy
+
+                if dSq < attDistSq then
+                    attDistSq <- dSq
+                    attIdx <- i
+            | _ -> ()
 
         let mutable defIdx = 0
         let mutable defDistSq = System.Double.MaxValue
-        for i = 0 to defSide.Positions.Length - 1 do
-            let dx = defSide.Positions[i].X - bX
-            let dy = defSide.Positions[i].Y - bY
-            let dSq = dx * dx + dy * dy
-            if dSq < defDistSq then
-                defDistSq <- dSq
-                defIdx <- i
 
-        let att = attSide.Players[attIdx]
-        let def = defSide.Players[defIdx]
+        for i = 0 to defSlots.Length - 1 do
+            match defSlots[i] with
+            | PlayerSlot.Active s ->
+                let dx = s.Pos.X - bX
+                let dy = s.Pos.Y - bY
+                let dSq = dx * dx + dy * dy
 
-        let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
+                if dSq < defDistSq then
+                    defDistSq <- dSq
+                    defIdx <- i
+            | _ -> ()
 
-        let attackingBonus = ctx.AttBonus.AttackDuel
-        let homeDefBonus = ctx.DefBonus.DefendDuel
+        let att =
+            match attSlots[attIdx] with
+            | PlayerSlot.Active s -> s.Player
+            | _ -> Unchecked.defaultof<Player>
 
-        let attrDiff =
-            attributeScore att attSide.Conditions[attIdx] def defSide.Conditions[defIdx]
+        let def =
+            match defSlots[defIdx] with
+            | PlayerSlot.Active s -> s.Player
+            | _ -> Unchecked.defaultof<Player>
+
+        let attConditions =
+            Array.init attSlots.Length (fun i ->
+                match attSlots[i] with
+                | PlayerSlot.Active s -> s.Condition
+                | _ -> 0)
+
+        let defConditions =
+            Array.init defSlots.Length (fun i ->
+                match defSlots[i] with
+                | PlayerSlot.Active s -> s.Condition
+                | _ -> 0)
+
+        let attTactics =
+            if actx.AttSide = HomeClub then
+                state.HomeTactics
+            else
+                state.AwayTactics
+
+        let attInstructions =
+            if actx.AttSide = HomeClub then
+                state.HomeInstructions
+            else
+                state.AwayInstructions
+
+        let tacticsCfg = tacticsConfig attTactics attInstructions
+
+        let attackingBonus = actx.AttBonus.AttackDuel
+        let homeDefBonus = actx.DefBonus.DefendDuel
+
+        let attrDiff = attributeScore att attConditions[attIdx] def defConditions[defIdx]
 
         let moraleBonus =
             humanPerformance 1 att.Morale att.Morale
             * BalanceConfig.DuelMoraleBonusMultiplier
 
         let repBonus =
-            let attRep = (if attClubId = s.Home.Id then s.Home else s.Away).Reputation
-            let defRep = (if defClubId = s.Home.Id then s.Home else s.Away).Reputation
+            let attRep = (if attClubId = ctx.Home.Id then ctx.Home else ctx.Away).Reputation
+            let defRep = (if defClubId = ctx.Home.Id then ctx.Home else ctx.Away).Reputation
             float (attRep - defRep) * BalanceConfig.DuelReputationBonusMultiplier
 
-        let momentum = ctx.Momentum
-        let pressure = (pressureMultiplier attClubId s - 1.0) * 5.0
-        let u = matchUrgency attClubId s * tacticsCfg.UrgencyMultiplier
+        let momentum = actx.Momentum
+        let pressure = (pressureMultiplier attClubId ctx state - 1.0) * 5.0
+        let u = matchUrgency attClubId ctx state * tacticsCfg.UrgencyMultiplier
         let pressNoise = pressureNoise att.Mental.Composure u
 
         let diff =
-            attackEffort (phaseFromBallZone ctx.Dir bX) att attSide.Conditions[attIdx] * u
+            attackEffort (phaseFromBallZone actx.Dir bX) att attConditions[attIdx] * u
             + attackingBonus
             - homeDefBonus
             + attrDiff
@@ -110,81 +163,148 @@ module DuelAction =
             + momentum
             + pressure
             + pressNoise
-            - defenseEffort def defSide.Conditions[defIdx]
+            - defenseEffort def defConditions[defIdx]
 
-        let aX, aY = spatialXY attSide.Positions[attIdx]
-        let dX, dY = spatialXY defSide.Positions[defIdx]
+        let aX, aY =
+            match attSlots[attIdx] with
+            | PlayerSlot.Active s -> s.Pos.X, s.Pos.Y
+            | _ -> bX, bY
 
-        let s' =
-            if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
-                let nx, ny =
-                    PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
+        let dX, dY =
+            match defSlots[defIdx] with
+            | PlayerSlot.Active s -> s.Pos.X, s.Pos.Y
+            | _ -> bX, bY
 
-                { s with
-                    Ball =
-                        { s.Ball with
-                            Position = { s.Ball.Position with X = nx; Y = ny } }
-                    Momentum = Math.Clamp(s.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0) }
-            elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
-                let nx, ny =
-                    PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
+        if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
+            let nx, ny =
+                PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
 
-                s
-                |> flipPossessionAndClearOffside ctx.AttSide
-                |> fun s'' ->
-                    { s'' with
-                        Ball =
-                            { s''.Ball with
-                                Position =
-                                    { s''.Ball.Position with
-                                        X = nx
-                                        Y = ny } }
-                        Momentum = Math.Clamp(s''.Momentum - 1.0, -10.0, 10.0) }
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            X = nx
+                            Y = ny } }
+
+            state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
+        elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
+            let nx, ny =
+                PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
+
+            flipPossession state
+
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            X = nx
+                            Y = ny } }
+
+            state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
+        else
+            let nx, ny =
+                PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
+
+            withBallVelocity
+                ((nx - bX) * BalanceConfig.DuelSpeedKeep)
+                ((ny - bY) * BalanceConfig.DuelSpeedKeep)
+                BalanceConfig.DuelSpeedKeepVz
+                state
+
+        []
+
+    let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list =
+        let actx = ActionContext.build state
+
+        let defClubId =
+            if
+                state.HomeSlots
+                |> Array.exists (function
+                    | PlayerSlot.Active s -> s.Player.Id = defender.Id
+                    | _ -> false)
+            then
+                ctx.Home.Id
             else
-                let nx, ny =
-                    PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
+                ctx.Away.Id
 
-                s
-                |> withBallVelocity
-                    ((nx - bX) * BalanceConfig.DuelSpeedKeep)
-                    ((ny - bY) * BalanceConfig.DuelSpeedKeep)
-                    BalanceConfig.DuelSpeedKeepVz
-
-        s', []
-
-    // Phase 5: JIT tackle — defender resolved at execution time
-    // Phase 3: normaliseAttr for attribute scores
-    let resolveTackle (subTick: int) (s: MatchState) (defender: Player) : MatchState * MatchEvent list =
-        let ctx = ActionContext.build s
-        let defClubId = clubIdOf defender s
         let clubId = defClubId
-        let defenderSide = side (ClubSide.toClubId ctx.DefSide s) s
-        let attackerSide = side (ClubSide.toClubId ctx.AttSide s) s
 
-        match defenderSide.Players |> Array.tryFindIndex (fun p -> p.Id = defender.Id) with
-        | None -> s, []
-        | Some di ->
-            let condNorm = PhysicsContract.normaliseCondition defenderSide.Conditions[di]
+        let defSlots =
+            if actx.DefSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let attSlots =
+            if actx.AttSide = HomeClub then
+                state.HomeSlots
+            else
+                state.AwaySlots
+
+        let defConditions =
+            Array.init defSlots.Length (fun i ->
+                match defSlots[i] with
+                | PlayerSlot.Active s -> s.Condition
+                | _ -> 0)
+
+        let mutable di = 0
+        let mutable found = false
+
+        for i = 0 to defSlots.Length - 1 do
+            match defSlots[i] with
+            | PlayerSlot.Active s when s.Player.Id = defender.Id ->
+                di <- i
+                found <- true
+            | _ -> ()
+
+        if not found then
+            []
+        else
+            let condNorm = PhysicsContract.normaliseCondition defConditions[di]
 
             let defScore =
-                PhysicsContract.normaliseAttr defender.Technical.Tackling * BalanceConfig.TackleTechnicalWeight
-                + PhysicsContract.normaliseAttr defender.Mental.Positioning * BalanceConfig.TacklePositioningWeight
-                + PhysicsContract.normaliseAttr defender.Physical.Strength * BalanceConfig.TackleStrengthWeight
-                + ctx.DefBonus.Tackle
+                PhysicsContract.normaliseAttr defender.Technical.Tackling
+                * BalanceConfig.TackleTechnicalWeight
+                + PhysicsContract.normaliseAttr defender.Mental.Positioning
+                  * BalanceConfig.TacklePositioningWeight
+                + PhysicsContract.normaliseAttr defender.Physical.Strength
+                  * BalanceConfig.TackleStrengthWeight
+                + actx.DefBonus.Tackle
 
-            let bX, bY = ballXY s
+            let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
+
+            let mutable bestPlayer: Player option = None
+            let mutable bestDistSq = System.Double.MaxValue
+
+            for i = 0 to attSlots.Length - 1 do
+                match attSlots[i] with
+                | PlayerSlot.Active s when s.Player.Position <> GK ->
+                    let dx = s.Pos.X - bX
+                    let dy = s.Pos.Y - bY
+                    let dSq = dx * dx + dy * dy
+
+                    if dSq < bestDistSq then
+                        bestDistSq <- dSq
+                        bestPlayer <- Some s.Player
+                | _ -> ()
 
             let attacker =
-                nearestOutfield attackerSide bX bY
-                |> Option.map fst
-                |> Option.defaultValue attackerSide.Players[0]
+                match bestPlayer with
+                | Some p -> p
+                | None ->
+                    match attSlots[0] with
+                    | PlayerSlot.Active s -> s.Player
+                    | _ -> Unchecked.defaultof<Player>
 
             let attScore =
-                PhysicsContract.normaliseAttr attacker.Technical.Dribbling * BalanceConfig.DribbleTechnicalWeight
-                + PhysicsContract.normaliseAttr attacker.Physical.Agility * BalanceConfig.DribbleAgilityWeight
-                + PhysicsContract.normaliseAttr attacker.Physical.Balance * BalanceConfig.DribbleBalanceWeight
+                PhysicsContract.normaliseAttr attacker.Technical.Dribbling
+                * BalanceConfig.DribbleTechnicalWeight
+                + PhysicsContract.normaliseAttr attacker.Physical.Agility
+                  * BalanceConfig.DribbleAgilityWeight
+                + PhysicsContract.normaliseAttr attacker.Physical.Balance
+                  * BalanceConfig.DribbleBalanceWeight
 
-            let physVar = physicalVariation defenderSide.Conditions[di]
+            let physVar = physicalVariation defConditions[di]
             let duelScore = (defScore - attScore) * condNorm * physVar
 
             if logisticBernoulli duelScore 1.5 then
@@ -192,43 +312,22 @@ module DuelAction =
                 let positioningNorm = PhysicsContract.normaliseAttr defender.Mental.Positioning
 
                 let baseFoulRate =
-                    BalanceConfig.FoulBaseRate + aggressionNorm * BalanceConfig.TackleAggressionWeight
+                    BalanceConfig.FoulBaseRate
+                    + aggressionNorm * BalanceConfig.TackleAggressionWeight
                     - positioningNorm * BalanceConfig.TacklePositioningReduction
                     |> abs
 
-                let adjustedFoulRate = baseFoulRate * (1.0 - ctx.DefBonus.CardReduc)
+                let adjustedFoulRate = baseFoulRate * (1.0 - actx.DefBonus.CardReduc)
                 let foulChance = betaSample adjustedFoulRate BalanceConfig.TackleFoulShapeBeta
 
                 if bernoulli foulChance then
-                    s
-                    |> flipPossessionAndClearOffside ctx.AttSide
-                    |> fun s'' ->
-                        { s'' with
-                            Momentum =
-                                Math.Clamp(
-                                    s''.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleFoulMomentum,
-                                    -10.0,
-                                    10.0
-                                ) },
-                        [ event subTick defender.Id clubId FoulCommitted ]
-
+                    flipPossession state
+                    adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
+                    [ event subTick defender.Id clubId FoulCommitted ]
                 else
-                    { s with
-                        Momentum =
-                            Math.Clamp(
-                                s.Momentum + AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleSuccessMomentum,
-                                -10.0,
-                                10.0
-                            ) },
+                    adjustMomentum actx.Dir BalanceConfig.TackleSuccessMomentum state
                     [ event subTick defender.Id clubId TackleSuccess ]
-
             else
-                { s with
-                    Momentum =
-                        Math.Clamp(
-                            s.Momentum - AttackDir.momentumDelta ctx.Dir BalanceConfig.TackleFailMomentum,
-                            -10.0,
-                            10.0
-                        )
-                    PendingOffsideSnapshot = None },
+                adjustMomentum actx.Dir (-BalanceConfig.TackleFailMomentum) state
+                state.PendingOffsideSnapshot <- None
                 [ event subTick defender.Id clubId TackleFail ]

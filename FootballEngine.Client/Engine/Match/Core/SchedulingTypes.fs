@@ -113,29 +113,26 @@ module SchedulingTypes =
     // -------------------------------------------------------------------------
 
     type AgentOutput =
-        { State      : MatchState
-          Events     : MatchEvent list
+        { Events     : MatchEvent list
           Spawned    : ScheduledTick list
           Transition : PlayState option }
 
     type TickResult = AgentOutput
 
     type Agent =
-        ClubId           // homeId
-          -> Player list // homeSquad
-          -> Player list // awaySquad
+        ClubId
+          -> Player list
+          -> Player list
           -> ScheduledTick
-          -> MatchState
+          -> MatchContext
+          -> SimState
           -> AgentOutput
 
-    // -------------------------------------------------------------------------
-    // Loop state
-    // -------------------------------------------------------------------------
-
     type LoopState =
-        { MatchState:        MatchState
+        { Context:           MatchContext
+          State:             SimState
           Events:            ResizeArray<MatchEvent>
           PlayState:         PlayState
-          Snapshots:         System.Collections.Generic.List<MatchState> option
+          Snapshots:         System.Collections.Generic.List<SimSnapshot> option
           MatchEndScheduled: bool
           SequenceCounter:   int64 }

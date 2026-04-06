@@ -1,17 +1,17 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.MatchSpatial
 open SchedulingTypes
 
 module SetPieceAgent =
 
-    // Phase 0: all tick times use SubTick via BalanceConfig delays
-    let agent homeId homeSquad awaySquad tick state : AgentOutput =
+    let agent homeId homeSquad awaySquad tick ctx state : AgentOutput =
         match tick.Kind with
         | FreeKickTick(_kickerId, _position, _chainDepth) ->
-            let newState, events = SetPlayAction.resolveFreeKick tick.SubTick state
-            { State = newState
-              Events = events
+            let events = SetPlayAction.resolveFreeKick tick.SubTick ctx state
+
+            { Events = events
               Spawned =
                 [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.freeKickDelay
                     Priority = TickPriority.Duel
@@ -20,9 +20,9 @@ module SetPieceAgent =
               Transition = Some LivePlay }
 
         | CornerTick(_club, _chainDepth) ->
-            let newState, events = SetPlayAction.resolveCorner tick.SubTick state
-            { State = newState
-              Events = events
+            let events = SetPlayAction.resolveCorner tick.SubTick ctx state
+
+            { Events = events
               Spawned =
                 [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.cornerDelay
                     Priority = TickPriority.Duel
@@ -31,9 +31,9 @@ module SetPieceAgent =
               Transition = Some LivePlay }
 
         | ThrowInTick(team, _chainDepth) ->
-            let newState, events = SetPlayAction.resolveThrowIn tick.SubTick state team
-            { State = newState
-              Events = events
+            let events = SetPlayAction.resolveThrowIn tick.SubTick ctx state team
+
+            { Events = events
               Spawned =
                 [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.throwInDelay
                     Priority = TickPriority.Duel
@@ -43,13 +43,24 @@ module SetPieceAgent =
 
         | PenaltyTick(kicker, isHome) ->
             let kickerPlayer =
-                (if isHome then state.HomeSide else state.AwaySide).Players
-                |> Array.tryFind (fun p -> p.Id = kicker)
-                |> Option.defaultWith (fun () -> state.HomeSide.Players.[0])
+                let slots = if isHome then state.HomeSlots else state.AwaySlots
+
+                slots
+                |> Array.tryPick (function
+                    | PlayerSlot.Active s when s.Player.Id = kicker -> Some s.Player
+                    | _ -> None)
+                |> Option.defaultWith (fun () ->
+                    state.HomeSlots
+                    |> Array.pick (function
+                        | PlayerSlot.Active s -> Some s.Player
+                        | _ -> None))
+
             let kickClub = if isHome then HomeClub else AwayClub
-            let newState, events = SetPlayAction.resolvePenalty tick.SubTick state kickerPlayer kickClub 1
-            { State = newState
-              Events = events
+
+            let events =
+                SetPlayAction.resolvePenalty tick.SubTick ctx state kickerPlayer kickClub 1
+
+            { Events = events
               Spawned =
                 [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.foulDelay
                     Priority = TickPriority.Duel
@@ -57,5 +68,103 @@ module SetPieceAgent =
                     Kind = DuelTick 0 } ]
               Transition = Some LivePlay }
 
-        | GoalKickTick | KickOffTick | _ ->
-            { State = state; Events = []; Spawned = []; Transition = None }
+        | GoalKickTick
+        | KickOffTick ->
+            let centerX = PhysicsContract.HalfwayLineX
+            let centerY = PhysicsContract.PitchWidth / 2.0
+
+            let isHomeKickOff = state.HomeAttackDir = LeftToRight
+            let kickingSlots = if isHomeKickOff then state.HomeSlots else state.AwaySlots
+            let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
+
+            state.AttackingClub <- if isHomeKickOff then HomeClub else AwayClub
+
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            X = centerX
+                            Y = centerY
+                            Vx = 0.0
+                            Vy = 0.0
+                            Vz = 0.0 }
+                    ControlledBy = None
+                    LastTouchBy = None
+                    IsInPlay = true }
+
+            let kickerOpt =
+                kickingSlots
+                |> Array.tryPick (function
+                    | PlayerSlot.Active s when s.Player.Position = ST -> Some s
+                    | _ -> None)
+                |> Option.orElse (
+                    kickingSlots
+                    |> Array.tryPick (function
+                        | PlayerSlot.Active s when s.Player.Position = AMC -> Some s
+                        | _ -> None)
+                )
+                |> Option.orElse (
+                    kickingSlots
+                    |> Array.tryPick (function
+                        | PlayerSlot.Active s when s.Player.Position <> GK -> Some s
+                        | _ -> None)
+                )
+
+            let partnerOpt =
+                kickingSlots
+                |> Array.tryPick (function
+                    | PlayerSlot.Active s when
+                        (s.Player.Position = AMC || s.Player.Position = MC || s.Player.Position = ST)
+                        && (kickerOpt
+                            |> Option.map (fun k -> k.Player.Id <> s.Player.Id)
+                            |> Option.defaultValue true)
+                        ->
+                        Some s
+                    | _ -> None)
+
+            match kickerOpt with
+            | None ->
+                { Events = []
+                  Spawned = []
+                  Transition = Some LivePlay }
+            | Some kicker ->
+                let targetX, targetY =
+                    match partnerOpt with
+                    | Some partner -> partner.Pos.X, partner.Pos.Y
+                    | None -> centerX - 3.0, centerY + 2.0
+
+                state.Ball <-
+                    { state.Ball with
+                        LastTouchBy = Some kicker.Player.Id
+                        ControlledBy = None }
+
+                let dx = targetX - centerX
+                let dy = targetY - centerY
+                let dist = sqrt (dx * dx + dy * dy)
+                let speed = BalanceConfig.PassSpeed
+
+                if dist > 0.1 then
+                    withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0 state
+
+                { Events =
+                    [ { SubTick = tick.SubTick
+                        PlayerId = kicker.Player.Id
+                        ClubId = kickingClubId
+                        Type =
+                          PassCompleted(
+                              kicker.Player.Id,
+                              partnerOpt
+                              |> Option.map (fun p -> p.Player.Id)
+                              |> Option.defaultValue kicker.Player.Id
+                          ) } ]
+                  Spawned =
+                    [ { SubTick = tick.SubTick + PhysicsContract.secondsToSubTicks 1.5
+                        Priority = TickPriority.Duel
+                        SequenceId = 0L
+                        Kind = DuelTick 0 } ]
+                  Transition = Some LivePlay }
+
+        | _ ->
+            { Events = []
+              Spawned = []
+              Transition = None }

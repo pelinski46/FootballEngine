@@ -2,12 +2,11 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchStateOps
+open SimStateOps
 open SchedulingTypes
 
 module ManagerAgent =
 
-    // Phase 0: Second -> SubTick
     let private event subTick playerId clubId t =
         { SubTick = subTick
           PlayerId = playerId
@@ -19,57 +18,76 @@ module ManagerAgent =
         | Drawing
         | Losing
 
-    let private situation (clubId: ClubId) (s: MatchState) =
-        match goalDiff clubId s with
+    let private situation (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
+        match goalDiff clubId ctx state with
         | d when d > 0 -> Winning
         | d when d < 0 -> Losing
         | _ -> Drawing
 
-    let urgency (clubId: ClubId) (s: MatchState) : float =
-        let late = PhysicsContract.subTicksToSeconds s.SubTick > 60.0 * 60.0
-        let ts = side clubId s
-        let tacticsCfg = tacticsConfig ts.Tactics ts.Instructions
-        match situation clubId s, late with
-        | Losing, true  -> 1.35 * tacticsCfg.UrgencyMultiplier
-        | Losing, false -> 1.15 * tacticsCfg.UrgencyMultiplier
-        | Winning, _    -> 0.85 * tacticsCfg.UrgencyMultiplier
-        | Drawing, true -> 1.10 * tacticsCfg.UrgencyMultiplier
-        | Drawing, false -> 1.00 * tacticsCfg.UrgencyMultiplier
+    let urgency (clubId: ClubId) (ctx: MatchContext) (state: SimState) : float =
+        let late = PhysicsContract.subTicksToSeconds state.SubTick > 60.0 * 60.0
+        let isHome = clubId = ctx.Home.Id
+
+        let ts =
+            tacticsConfig
+                (if isHome then state.HomeTactics else state.AwayTactics)
+                (if isHome then
+                     state.HomeInstructions
+                 else
+                     state.AwayInstructions)
+
+        match situation clubId ctx state, late with
+        | Losing, true -> 1.35 * ts.UrgencyMultiplier
+        | Losing, false -> 1.15 * ts.UrgencyMultiplier
+        | Winning, _ -> 0.85 * ts.UrgencyMultiplier
+        | Drawing, true -> 1.10 * ts.UrgencyMultiplier
+        | Drawing, false -> 1.00 * ts.UrgencyMultiplier
 
     let private maxSubs = 3
 
     let private conditionThreshold =
         function
-        | Losing  -> 75
+        | Losing -> 75
         | Drawing -> 65
         | Winning -> 55
 
     let private preferredPositions =
         function
-        | Losing  -> [ ST; AML; AMR; AMC ]
+        | Losing -> [ ST; AML; AMR; AMC ]
         | Drawing -> [ MC; AMC; ST ]
         | Winning -> [ DC; DM; MC ]
 
     let private reactiveTactics (sit: Situation) (current: TeamTactics) : TeamTactics =
         match sit, current with
-        | Losing, _  -> TeamTactics.Attacking
+        | Losing, _ -> TeamTactics.Attacking
         | Drawing, TeamTactics.Defensive -> TeamTactics.Balanced
-        | Drawing, TeamTactics.Balanced  -> TeamTactics.Attacking
+        | Drawing, TeamTactics.Balanced -> TeamTactics.Attacking
         | Drawing, _ -> TeamTactics.Balanced
         | Winning, TeamTactics.Attacking -> TeamTactics.Balanced
-        | Winning, TeamTactics.Counter   -> TeamTactics.Balanced
+        | Winning, TeamTactics.Counter -> TeamTactics.Balanced
         | Winning, _ -> TeamTactics.Defensive
 
-    let private pickOutgoing (ts: TeamSide) (threshold: int) : int option =
-        activeIndices ts.Players ts.Sidelined
-        |> Array.filter (fun i -> ts.Players[i].Position <> GK && ts.Conditions[i] < threshold)
-        |> Array.sortBy (fun i -> ts.Conditions[i])
+    let private pickOutgoing
+        (players: Player[])
+        (positions: Spatial[])
+        (conditions: int[])
+        (sidelined: Map<PlayerId, PlayerOut>)
+        (subsUsed: int)
+        (threshold: int)
+        : int option =
+        players
+        |> Array.mapi (fun i p -> i, p)
+        |> Array.filter (fun (i, p) -> not (Map.containsKey p.Id sidelined))
+        |> Array.filter (fun (i, p) -> p.Position <> GK && conditions[i] < threshold)
+        |> Array.sortBy (fun (i, _) -> conditions[i])
         |> Array.tryHead
+        |> Option.map fst
 
     let private pickIncoming
         (squadPlayers: Player list)
         (manager: Staff)
-        (ts: TeamSide)
+        (players: Player[])
+        (sidelined: Map<PlayerId, PlayerOut>)
         (preferred: Position list)
         : Player option =
         let startingIds =
@@ -77,14 +95,14 @@ module ManagerAgent =
             |> Option.map (fun lu -> lu.Slots |> List.choose _.PlayerId |> Set.ofList)
             |> Option.defaultValue Set.empty
 
-        let onPitchIds = ts.Players |> Array.map _.Id |> Set.ofArray
+        let onPitchIds = players |> Array.map _.Id |> Set.ofArray
 
         let bench =
             squadPlayers
             |> List.filter (fun p ->
                 not (Set.contains p.Id startingIds)
                 && not (Set.contains p.Id onPitchIds)
-                && not (Map.containsKey p.Id ts.Sidelined)
+                && not (Map.containsKey p.Id sidelined)
                 && p.Status = Available)
 
         bench
@@ -95,58 +113,196 @@ module ManagerAgent =
 
     let private trySub
         (clubId: ClubId)
-        (s: MatchState)
+        (ctx: MatchContext)
+        (state: SimState)
         (squad: Player list)
         (coach: Staff)
         (sit: Situation)
         : ManagerAction =
-        let ts = side clubId s
-        if ts.SubsUsed >= maxSubs then
-            AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
+        let subsUsed, sidelined, slots =
+            if clubId = ctx.Home.Id then
+                state.HomeSubsUsed, state.HomeSidelined, state.HomeSlots
+            else
+                state.AwaySubsUsed, state.AwaySidelined, state.AwaySlots
+
+        if subsUsed >= maxSubs then
+            AdjustTactics(
+                clubId,
+                reactiveTactics
+                    sit
+                    (if clubId = ctx.Home.Id then
+                         state.HomeTactics
+                     else
+                         state.AwayTactics)
+            )
         else
-            match pickOutgoing ts (conditionThreshold sit) with
+            let outgoingIdx =
+                slots
+                |> Array.mapi (fun i slot ->
+                    match slot with
+                    | PlayerSlot.Active s ->
+                        if s.Player.Position <> GK && s.Condition < conditionThreshold sit then
+                            Some(i, s.Condition)
+                        else
+                            None
+                    | Sidelined _ -> None)
+                |> Array.choose id
+                |> Array.sortBy snd
+                |> Array.tryHead
+                |> Option.map fst
+
+            match outgoingIdx with
             | Some outIdx ->
-                match pickIncoming squad coach ts (preferredPositions sit) with
+                match pickIncoming squad coach (activePlayers slots) sidelined (preferredPositions sit) with
                 | Some incoming -> MakeSubstitution(clubId, outIdx, incoming)
-                | None -> AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
-            | None -> AdjustTactics(clubId, reactiveTactics sit ts.Tactics)
+                | None ->
+                    AdjustTactics(
+                        clubId,
+                        reactiveTactics
+                            sit
+                            (if clubId = ctx.Home.Id then
+                                 state.HomeTactics
+                             else
+                                 state.AwayTactics)
+                    )
+            | None ->
+                AdjustTactics(
+                    clubId,
+                    reactiveTactics
+                        sit
+                        (if clubId = ctx.Home.Id then
+                             state.HomeTactics
+                         else
+                             state.AwayTactics)
+                )
 
-    let private handleFatigueAlert (clubId: ClubId) (s: MatchState) (squad: Player list) (coach: Staff) : ManagerAction =
-        trySub clubId s squad coach (situation clubId s)
+    let private handleFatigueAlert
+        (clubId: ClubId)
+        (ctx: MatchContext)
+        (state: SimState)
+        (squad: Player list)
+        (coach: Staff)
+        : ManagerAction =
+        trySub clubId ctx state squad coach (situation clubId ctx state)
 
-    let private handleMomentumSwing (disadvantagedClub: ClubSide) (s: MatchState) (squad: Player list) (coach: Staff) : ManagerAction =
-        let clubId = ClubSide.toClubId disadvantagedClub s
-        trySub clubId s squad coach (situation clubId s)
-
-    let private handleRedCard (playerId: PlayerId) (s: MatchState) : ManagerAction list =
+    let private handleMomentumSwing
+        (disadvantagedClub: ClubSide)
+        (ctx: MatchContext)
+        (state: SimState)
+        (squad: Player list)
+        (coach: Staff)
+        : ManagerAction =
         let clubId =
-            if s.HomeSide.Players |> Array.exists (fun p -> p.Id = playerId) then s.Home.Id
-            else s.Away.Id
-        let ts = side clubId s
+            if disadvantagedClub = HomeClub then
+                ctx.Home.Id
+            else
+                ctx.Away.Id
+
+        trySub clubId ctx state squad coach (situation clubId ctx state)
+
+    let private handleRedCard (playerId: PlayerId) (ctx: MatchContext) (state: SimState) : ManagerAction list =
+        let clubId =
+            if
+                state.HomeSlots
+                |> Array.exists (function
+                    | PlayerSlot.Active s -> s.Player.Id = playerId
+                    | _ -> false)
+            then
+                ctx.Home.Id
+            else
+                ctx.Away.Id
+
+        let currentTactics =
+            if clubId = ctx.Home.Id then
+                state.HomeTactics
+            else
+                state.AwayTactics
+
         let compactTactics =
-            match ts.Tactics with
-            | TeamTactics.Attacking | TeamTactics.Pressing -> TeamTactics.Balanced
+            match currentTactics with
+            | TeamTactics.Attacking
+            | TeamTactics.Pressing -> TeamTactics.Balanced
             | TeamTactics.Counter -> TeamTactics.Defensive
             | t -> t
+
         [ AdjustTactics(clubId, compactTactics) ]
 
-    let private handleSubstitutionWindow (homeSquad: Player list) (awaySquad: Player list) (s: MatchState) : ManagerAction list =
-        let homeCoachRating = float s.HomeCoach.CurrentSkill / 100.0
-        let awayCoachRating = float s.AwayCoach.CurrentSkill / 100.0
+    let private handleSubstitutionWindow
+        (homeSquad: Player list)
+        (awaySquad: Player list)
+        (ctx: MatchContext)
+        (state: SimState)
+        : ManagerAction list =
+        let homeCoachRating = float ctx.HomeCoach.CurrentSkill / 100.0
+        let awayCoachRating = float ctx.AwayCoach.CurrentSkill / 100.0
 
-        [ if s.HomeSide.SubsUsed < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
-              match pickOutgoing s.HomeSide (conditionThreshold (situation s.Home.Id s)) with
+        [ if state.HomeSubsUsed < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
+              let homeSlots = state.HomeSlots
+
+              let outgoingIdx =
+                  homeSlots
+                  |> Array.mapi (fun i slot ->
+                      match slot with
+                      | PlayerSlot.Active s ->
+                          if
+                              s.Player.Position <> GK
+                              && s.Condition < conditionThreshold (situation ctx.Home.Id ctx state)
+                          then
+                              Some(i, s.Condition)
+                          else
+                              None
+                      | Sidelined _ -> None)
+                  |> Array.choose id
+                  |> Array.sortBy snd
+                  |> Array.tryHead
+                  |> Option.map fst
+
+              match outgoingIdx with
               | Some outIdx ->
-                  match pickIncoming homeSquad s.HomeCoach s.HomeSide (preferredPositions (situation s.Home.Id s)) with
-                  | Some incoming -> yield MakeSubstitution(s.Home.Id, outIdx, incoming)
+                  match
+                      pickIncoming
+                          homeSquad
+                          ctx.HomeCoach
+                          (activePlayers homeSlots)
+                          state.HomeSidelined
+                          (preferredPositions (situation ctx.Home.Id ctx state))
+                  with
+                  | Some incoming -> yield MakeSubstitution(ctx.Home.Id, outIdx, incoming)
                   | None -> yield ManagerIdle
               | None -> yield ManagerIdle
 
-          if s.AwaySide.SubsUsed < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
-              match pickOutgoing s.AwaySide (conditionThreshold (situation s.Away.Id s)) with
+          if state.AwaySubsUsed < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
+              let awaySlots = state.AwaySlots
+
+              let outgoingIdx =
+                  awaySlots
+                  |> Array.mapi (fun i slot ->
+                      match slot with
+                      | PlayerSlot.Active s ->
+                          if
+                              s.Player.Position <> GK
+                              && s.Condition < conditionThreshold (situation ctx.Away.Id ctx state)
+                          then
+                              Some(i, s.Condition)
+                          else
+                              None
+                      | Sidelined _ -> None)
+                  |> Array.choose id
+                  |> Array.sortBy snd
+                  |> Array.tryHead
+                  |> Option.map fst
+
+              match outgoingIdx with
               | Some outIdx ->
-                  match pickIncoming awaySquad s.AwayCoach s.AwaySide (preferredPositions (situation s.Away.Id s)) with
-                  | Some incoming -> yield MakeSubstitution(s.Away.Id, outIdx, incoming)
+                  match
+                      pickIncoming
+                          awaySquad
+                          ctx.AwayCoach
+                          (activePlayers awaySlots)
+                          state.AwaySidelined
+                          (preferredPositions (situation ctx.Away.Id ctx state))
+                  with
+                  | Some incoming -> yield MakeSubstitution(ctx.Away.Id, outIdx, incoming)
                   | None -> yield ManagerIdle
               | None -> yield ManagerIdle ]
 
@@ -154,102 +310,138 @@ module ManagerAgent =
         (subTick: int)
         (homeSquad: Player list)
         (awaySquad: Player list)
-        (s: MatchState)
+        (ctx: MatchContext)
+        (state: SimState)
         (trigger: ReactionTrigger option)
         : ManagerAction list =
-        // Phase 0: use subTick, convert to seconds for minute checks
         let elapsedSec = int (PhysicsContract.subTicksToSeconds subTick)
-        let isSubMinute = elapsedSec = 60 * 60 || elapsedSec = 75 * 60 || elapsedSec = 85 * 60
+
+        let isSubMinute =
+            elapsedSec = 60 * 60 || elapsedSec = 75 * 60 || elapsedSec = 85 * 60
 
         match trigger with
         | Some(FatigueAlert(clubId, _playerId, _condition)) ->
-            let squad = if clubId = s.Home.Id then homeSquad else awaySquad
-            let coach = if clubId = s.Home.Id then s.HomeCoach else s.AwayCoach
-            [ handleFatigueAlert clubId s squad coach ]
+            let squad = if clubId = ctx.Home.Id then homeSquad else awaySquad
+
+            let coach =
+                if clubId = ctx.Home.Id then
+                    ctx.HomeCoach
+                else
+                    ctx.AwayCoach
+
+            [ handleFatigueAlert clubId ctx state squad coach ]
 
         | Some(MomentumSwing disadvantagedClub) ->
-            let squad = if disadvantagedClub = HomeClub then homeSquad else awaySquad
-            let coach = if disadvantagedClub = HomeClub then s.HomeCoach else s.AwayCoach
-            [ handleMomentumSwing disadvantagedClub s squad coach ]
+            let squad =
+                if disadvantagedClub = HomeClub then
+                    homeSquad
+                else
+                    awaySquad
 
-        | Some(RedCardTrigger playerId) -> handleRedCard playerId s
+            let coach =
+                if disadvantagedClub = HomeClub then
+                    ctx.HomeCoach
+                else
+                    ctx.AwayCoach
+
+            [ handleMomentumSwing disadvantagedClub ctx state squad coach ]
+
+        | Some(RedCardTrigger playerId) -> handleRedCard playerId ctx state
 
         | Some(GoalScored | GoalConceded | InjuryTrigger _) ->
-            if isSubMinute then handleSubstitutionWindow homeSquad awaySquad s
-            else [ ManagerIdle ]
+            if isSubMinute then
+                handleSubstitutionWindow homeSquad awaySquad ctx state
+            else
+                [ ManagerIdle ]
 
         | None ->
-            if isSubMinute then handleSubstitutionWindow homeSquad awaySquad s
-            else [ ManagerIdle ]
+            if isSubMinute then
+                handleSubstitutionWindow homeSquad awaySquad ctx state
+            else
+                [ ManagerIdle ]
 
-    // Phase 4: substitution — incoming player inherits position and cognitive state
-    let resolve (subTick: int) (action: ManagerAction) (s: MatchState) : MatchState * MatchEvent list =
+    let resolve (subTick: int) (action: ManagerAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         match action with
-        | ManagerIdle -> s, []
+        | ManagerIdle -> []
 
         | MakeSubstitution(clubId, outIdx, incoming) ->
-            let ts = side clubId s
-            if ts.SubsUsed >= maxSubs then s, []
+            let isHome = clubId = ctx.Home.Id
+            let subsUsed = if isHome then state.HomeSubsUsed else state.AwaySubsUsed
+
+            if subsUsed >= maxSubs then
+                []
             else
-                let playerOut = ts.Players[outIdx]
-                let inheritedPos = ts.Positions[outIdx]
+                let slots = if isHome then state.HomeSlots else state.AwaySlots
 
-                let ts' =
-                    { ts with
-                        Players      = Array.append ts.Players      [| incoming |]
-                        Conditions   = Array.append ts.Conditions   [| incoming.Condition |]
-                        Positions    = Array.append ts.Positions    [| inheritedPos |]
-                        BasePositions = Array.append ts.BasePositions [| inheritedPos |]
-                        Sidelined    = Map.add playerOut.Id SidelinedBySub ts.Sidelined
-                        SubsUsed     = ts.SubsUsed + 1 }
+                match slots[outIdx] with
+                | Sidelined _ -> []
+                | PlayerSlot.Active s ->
+                    let playerOut = s.Player
+                    let inheritedPos = s.Pos
 
-                // Phase 4: extend cognitive arrays for new player
-                let isHome = clubId = s.Home.Id
-                let s1 = withSide clubId ts' s
+                    let newSlot =
+                        PlayerSlot.Active
+                            { Player = incoming
+                              Pos = inheritedPos
+                              Condition = incoming.Condition
+                              Mental = MentalState.initial incoming
+                              Directives = Array.empty }
 
-                let s2 =
+                    slots[outIdx] <- newSlot
+
                     if isHome then
-                        { s1 with
-                            HomeMentalStates = Array.append s1.HomeMentalStates [| MentalState.initial incoming |]
-                            HomeDirectives   = Array.append s1.HomeDirectives   [| Array.empty |] }
+                        state.HomeSubsUsed <- state.HomeSubsUsed + 1
+                        state.HomeSidelined <- Map.add playerOut.Id SidelinedBySub state.HomeSidelined
                     else
-                        { s1 with
-                            AwayMentalStates = Array.append s1.AwayMentalStates [| MentalState.initial incoming |]
-                            AwayDirectives   = Array.append s1.AwayDirectives   [| Array.empty |] }
+                        state.AwaySubsUsed <- state.AwaySubsUsed + 1
+                        state.AwaySidelined <- Map.add playerOut.Id SidelinedBySub state.AwaySidelined
 
-                s2,
-                [ event subTick playerOut.Id clubId SubstitutionOut
-                  event subTick incoming.Id clubId SubstitutionIn ]
+                    [ event subTick playerOut.Id clubId SubstitutionOut
+                      event subTick incoming.Id clubId SubstitutionIn ]
 
         | AdjustTactics(clubId, newTactics) ->
-            let ts = side clubId s
-            withSide clubId { ts with Tactics = newTactics } s, []
+            if clubId = ctx.Home.Id then
+                state.HomeTactics <- newTactics
+            else
+                state.AwayTactics <- newTactics
 
-    let agent homeId homeSquad awaySquad tick state : AgentOutput =
+            []
+
+    let agent homeId homeSquad awaySquad tick ctx state : AgentOutput =
         match tick.Kind with
         | SubstitutionTick _clubId ->
-            let actions = decide tick.SubTick homeSquad awaySquad state None
-            let newState, events =
+            let actions = decide tick.SubTick homeSquad awaySquad ctx state None
+
+            let events =
                 actions
                 |> List.fold
-                    (fun (accState, accEvents) action ->
-                        let s', evs = resolve tick.SubTick action accState
-                        s', evs @ accEvents)
-                    (state, [])
-                |> fun (s, evs) -> s, List.rev evs
-            { State = newState; Events = events; Spawned = []; Transition = None }
+                    (fun accEvents action ->
+                        let evs = resolve tick.SubTick action ctx state
+                        evs @ accEvents)
+                    []
+                |> List.rev
+
+            { Events = events
+              Spawned = []
+              Transition = None }
 
         | ManagerReactionTick trigger ->
-            let actions = decide tick.SubTick homeSquad awaySquad state (Some trigger)
-            let newState, events =
+            let actions = decide tick.SubTick homeSquad awaySquad ctx state (Some trigger)
+
+            let events =
                 actions
                 |> List.fold
-                    (fun (accState, accEvents) action ->
-                        let s', evs = resolve tick.SubTick action accState
-                        s', evs @ accEvents)
-                    (state, [])
-                |> fun (s, evs) -> s, List.rev evs
-            { State = newState; Events = events; Spawned = []; Transition = Some LivePlay }
+                    (fun accEvents action ->
+                        let evs = resolve tick.SubTick action ctx state
+                        evs @ accEvents)
+                    []
+                |> List.rev
+
+            { Events = events
+              Spawned = []
+              Transition = Some LivePlay }
 
         | _ ->
-            { State = state; Events = []; Spawned = []; Transition = None }
+            { Events = []
+              Spawned = []
+              Transition = None }

@@ -8,7 +8,7 @@ open FootballEngine.Lineup
 let loadGame () =
     match Db.loadGame().GetAwaiter().GetResult() with
     | None -> failtest "No saved game — run generateNewGame first."
-    | Some game -> game
+    | Some(game, _clock) -> game
 
 let clubPlayers (game: GameState) (club: Club) : Player list =
     club.PlayerIds |> List.choose (fun pid -> game.Players |> Map.tryFind pid)
@@ -16,12 +16,12 @@ let clubPlayers (game: GameState) (club: Club) : Player list =
 let makeReadyClubAndStaff (game: GameState) (club: Club) (staff: Map<StaffId, Staff>) : Club * Map<StaffId, Staff> =
     let players = clubPlayers game club
     let formation = bestFormation players
-    
+
     // Find the head coach for this club
-    let headCoachId = 
-        club.StaffIds 
+    let headCoachId =
+        club.StaffIds
         |> List.tryFind (fun sid -> staff |> Map.tryFind sid |> Option.map _.Role = Some HeadCoach)
-    
+
     let updatedStaff =
         match headCoachId with
         | Some hcId ->
@@ -29,31 +29,35 @@ let makeReadyClubAndStaff (game: GameState) (club: Club) (staff: Map<StaffId, St
             let lineup = autoLineup coach players formation
             staff |> Map.add hcId lineup
         | None -> staff
-    
+
     club, updatedStaff
 
 
 let loadClubs () =
     let game = loadGame ()
     let initialStaff = game.Staff
-    
+
     // Process each club and accumulate staff updates
     let clubs, finalStaff =
-        game.Clubs 
-        |> Map.toArray 
+        game.Clubs
+        |> Map.toArray
         |> Array.map snd
-        |> Array.fold (fun (accClubs, accStaff) club ->
-            let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
-            (Array.append accClubs [|updatedClub|]), updatedStaff
-        ) ([||], initialStaff)
-    
+        |> Array.fold
+            (fun (accClubs, accStaff) club ->
+                let updatedClub, updatedStaff = makeReadyClubAndStaff game club accStaff
+                (Array.append accClubs [| updatedClub |]), updatedStaff)
+            ([||], initialStaff)
+
     if clubs.Length < 2 then
         failtest "Need at least 2 clubs."
 
     clubs, game.Players, finalStaff
 
 let inBounds (x: float, y: float) =
-    x >= 0.0 && x <= PhysicsContract.PitchLength && y >= 0.0 && y <= PhysicsContract.PitchWidth
+    x >= 0.0
+    && x <= PhysicsContract.PitchLength
+    && y >= 0.0
+    && y <= PhysicsContract.PitchWidth
 
 let allPositionsInBounds (positions: Map<PlayerId, float * float>) =
     positions |> Map.forall (fun _ pos -> inBounds pos)

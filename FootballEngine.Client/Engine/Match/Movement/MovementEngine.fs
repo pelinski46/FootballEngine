@@ -2,128 +2,106 @@ namespace FootballEngine.Movement
 
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.MatchStateOps
+open SimStateOps
 open FootballEngine.PlayerSteering
 
 module MovementEngine =
 
     let private isHome (clubSide: ClubSide) = clubSide = HomeClub
 
-    let private getMySide (s: MatchState) (clubSide: ClubSide) =
-        if isHome clubSide then s.HomeSide else s.AwaySide
+    let private getSlots (state: SimState) (clubSide: ClubSide) =
+        if isHome clubSide then state.HomeSlots else state.AwaySlots
 
-    let private getOppSide (s: MatchState) (clubSide: ClubSide) =
-        if isHome clubSide then s.AwaySide else s.HomeSide
-
-    let private getMentalStates (s: MatchState) (clubSide: ClubSide) =
+    let private getActiveRuns (state: SimState) (clubSide: ClubSide) : RunAssignment list =
         if isHome clubSide then
-            s.HomeMentalStates
+            state.HomeActiveRuns
         else
-            s.AwayMentalStates
+            state.AwayActiveRuns
 
-    let private getDirectives (s: MatchState) (clubSide: ClubSide) =
+    let private getChemistry (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeDirectives
+            state.HomeChemistry
         else
-            s.AwayDirectives
+            state.AwayChemistry
 
-    let private getActiveRuns (s: MatchState) (clubSide: ClubSide) =
+    let private getEmergentState (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeActiveRuns
+            state.HomeEmergentState
         else
-            s.AwayActiveRuns
+            state.AwayEmergentState
 
-    let private getChemistry (s: MatchState) (clubSide: ClubSide) =
-        if isHome clubSide then s.HomeChemistry else s.AwayChemistry
-
-    let private getEmergentState (s: MatchState) (clubSide: ClubSide) =
+    let private getAdaptiveState (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeEmergentState
+            state.HomeAdaptiveState
         else
-            s.AwayEmergentState
+            state.AwayAdaptiveState
 
-    let private getAdaptiveState (s: MatchState) (clubSide: ClubSide) =
+    let private getLastCognitiveSubTick (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeAdaptiveState
+            state.HomeLastCognitiveSubTick
         else
-            s.AwayAdaptiveState
+            state.AwayLastCognitiveSubTick
 
-    let private getLastCognitiveSubTick (s: MatchState) (clubSide: ClubSide) =
+    let private getLastShapeSubTick (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeLastCognitiveSubTick
+            state.HomeLastShapeSubTick
         else
-            s.AwayLastCognitiveSubTick
+            state.AwayLastShapeSubTick
 
-    let private getLastShapeSubTick (s: MatchState) (clubSide: ClubSide) =
+    let private getLastAdaptiveSubTick (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeLastShapeSubTick
+            state.HomeLastAdaptiveSubTick
         else
-            s.AwayLastShapeSubTick
+            state.AwayLastAdaptiveSubTick
 
-    let private getLastAdaptiveSubTick (s: MatchState) (clubSide: ClubSide) =
+    let private getLastMarkingSubTick (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeLastAdaptiveSubTick
+            state.HomeLastMarkingSubTick
         else
-            s.AwayLastAdaptiveSubTick
+            state.AwayLastMarkingSubTick
 
-    let private getLastMarkingSubTick (s: MatchState) (clubSide: ClubSide) =
+    let private getTactics (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            s.HomeLastMarkingSubTick
+            state.HomeTactics
         else
-            s.AwayLastMarkingSubTick
+            state.AwayTactics
 
-    let private withMySide (s: MatchState) (clubSide: ClubSide) (ts: TeamSide) =
+    let private getInstructions (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            { s with HomeSide = ts }
+            state.HomeInstructions
         else
-            { s with AwaySide = ts }
+            state.AwayInstructions
 
-    let private withMovementFields
-        (s: MatchState)
-        (clubSide: ClubSide)
-        (mentalStates: MentalState[])
-        (directives: Directive[][])
-        (activeRuns: RunAssignment list)
-        (chemistry: ChemistryGraph)
-        (emergentState: EmergentState)
-        (adaptiveState: AdaptiveState)
-        (lastCogSubTick: int)
-        (lastShapeSubTick: int)
-        (lastMarkingSubTick: int)
-        (lastAdaptiveSubTick: int)
-        : MatchState =
+    let private getBasePositions (state: SimState) (clubSide: ClubSide) =
+        if clubSide = HomeClub then
+            state.HomeBasePositions
+        else
+            state.AwayBasePositions
+
+    let private getSubsUsed (state: SimState) (clubSide: ClubSide) =
         if isHome clubSide then
-            { s with
-                HomeMentalStates = mentalStates
-                HomeDirectives = directives
-                HomeActiveRuns = activeRuns
-                HomeChemistry = chemistry
-                HomeEmergentState = emergentState
-                HomeAdaptiveState = adaptiveState
-                HomeLastCognitiveSubTick = lastCogSubTick
-                HomeLastShapeSubTick = lastShapeSubTick
-                HomeLastMarkingSubTick = lastMarkingSubTick
-                HomeLastAdaptiveSubTick = lastAdaptiveSubTick }
+            state.HomeSubsUsed
         else
-            { s with
-                AwayMentalStates = mentalStates
-                AwayDirectives = directives
-                AwayActiveRuns = activeRuns
-                AwayChemistry = chemistry
-                AwayEmergentState = emergentState
-                AwayAdaptiveState = adaptiveState
-                AwayLastCognitiveSubTick = lastCogSubTick
-                AwayLastShapeSubTick = lastShapeSubTick
-                AwayLastMarkingSubTick = lastMarkingSubTick
-                AwayLastAdaptiveSubTick = lastAdaptiveSubTick }
+            state.AwaySubsUsed
 
-    let private computeMarkingTargets (mySide: TeamSide) (oppSide: TeamSide) : Option<int * Player>[] =
-        let oppOutfield = Array.zeroCreate<Player> oppSide.Players.Length
+    let private getSidelined (state: SimState) (clubSide: ClubSide) =
+        if isHome clubSide then
+            state.HomeSidelined
+        else
+            state.AwaySidelined
+
+    let private computeMarkingTargets
+        (myPlayers: Player[])
+        (myPositions: Spatial[])
+        (oppPlayers: Player[])
+        (oppPositions: Spatial[])
+        : Option<int * Player>[] =
+        let oppOutfield = Array.zeroCreate<Player> oppPlayers.Length
         let mutable oppCount = 0
 
-        for i = 0 to oppSide.Players.Length - 1 do
-            if oppSide.Players[i].Position <> GK then
-                oppOutfield[oppCount] <- oppSide.Players[i]
+        for i = 0 to oppPlayers.Length - 1 do
+            if oppPlayers[i].Position <> GK then
+                oppOutfield[oppCount] <- oppPlayers[i]
                 oppCount <- oppCount + 1
 
         for i = 1 to oppCount - 1 do
@@ -136,11 +114,11 @@ module MovementEngine =
 
             oppOutfield[j] <- tmp
 
-        let result = Array.zeroCreate<Option<int * Player>> mySide.Players.Length
+        let result = Array.zeroCreate<Option<int * Player>> myPlayers.Length
         let mutable myOutfieldCount = 0
 
-        for i = 0 to mySide.Players.Length - 1 do
-            if mySide.Players[i].Position = GK then
+        for i = 0 to myPlayers.Length - 1 do
+            if myPlayers[i].Position = GK then
                 result[i] <- None
             else
                 let n = max 1 oppCount
@@ -150,7 +128,6 @@ module MovementEngine =
 
         result
 
-    // Acumula peso/posición de un array de directives sobre mutables existentes, sin alocar.
     let inline foldDirectives
         currentSubTick
         (modifiers: DirectiveModifiers)
@@ -161,6 +138,7 @@ module MovementEngine =
         =
         for i = 0 to ds.Length - 1 do
             let d = ds[i]
+
             if not (Directive.expired currentSubTick d) && d.Weight > 0.0 then
                 let w =
                     match d.Kind with
@@ -207,7 +185,6 @@ module MovementEngine =
             sx <- d.TargetX * w + sx
             sy <- d.TargetY * w + sy
 
-    // Filtra runs activos sin alocar si todos están activos (caso común).
     let private filterActiveRuns currentSubTick (runs: RunAssignment list) =
         let mutable allActive = true
         let mutable node = runs
@@ -223,130 +200,142 @@ module MovementEngine =
         else
             runs |> List.filter (RunAssignment.isActive currentSubTick)
 
-    let updateTeamSide (currentSubTick: int) (s: MatchState) (clubSide: ClubSide) (dt: float) : MatchState =
-        let mySide = getMySide s clubSide
-        let oppSide = getOppSide s clubSide
-        let dir = AttackDir.ofClubSide (if isHome clubSide then HomeClub else AwayClub)
+    let updateTeamSide (currentSubTick: int) (ctx: MatchContext) (state: SimState) (clubSide: ClubSide) (dt: float) =
+        let slots = getSlots state clubSide
+        let oppSlots = getSlots state (ClubSide.flip clubSide)
+        let dir = attackDirFor clubSide state
 
-        let lastShapeSubTick = getLastShapeSubTick s clubSide
+        let lastShapeSubTick = getLastShapeSubTick state clubSide
         let shapeNeedsUpdate = currentSubTick - lastShapeSubTick >= 600
 
-        let lastMarkingSubTick = getLastMarkingSubTick s clubSide
-        let markingNeedsUpdate = currentSubTick - lastMarkingSubTick >= PhysicsContract.MarkingIntervalSubTicks
+        let lastMarkingSubTick = getLastMarkingSubTick state clubSide
 
-        // Gate steering to SteeringIntervalSubTicks — skip entirely if not time
+        let markingNeedsUpdate =
+            currentSubTick - lastMarkingSubTick >= PhysicsContract.MarkingIntervalSubTicks
+
         if currentSubTick % PhysicsContract.SteeringIntervalSubTicks <> 0 then
-            s
+            ()
         else
-            let activeRuns = filterActiveRuns currentSubTick (getActiveRuns s clubSide)
+            let activeRuns = filterActiveRuns currentSubTick (getActiveRuns state clubSide)
 
-            let phase = phaseFromBallZone dir s.Ball.Position.X
+            let phase = phaseFromBallZone dir state.Ball.Position.X
 
             let shapeTargets =
                 if shapeNeedsUpdate then
                     ShapeEngine.computeShapeTargets
-                        mySide.BasePositions
+                        (getBasePositions state clubSide)
                         dir
                         phase
-                        s.Ball.Position.X
-                        (tacticsConfig mySide.Tactics mySide.Instructions)
+                        state.Ball.Position.X
+                        (tacticsConfig (getTactics state clubSide) (getInstructions state clubSide))
                 else
-                    let n = mySide.Positions.Length
+                    let n = slots.Length
                     let arr = Array.zeroCreate<float * float> n
+                    let basePos = getBasePositions state clubSide
 
                     for i = 0 to n - 1 do
-                        let sp = mySide.Positions[i]
-                        arr[i] <- (sp.X, sp.Y)
+                        match slots[i] with
+                        | PlayerSlot.Active _ -> arr[i] <- (basePos[i].X, basePos[i].Y)
+                        | Sidelined _ -> arr[i] <- (52.5, 34.0)
 
                     arr
 
             let markingTargets =
                 if markingNeedsUpdate then
-                    computeMarkingTargets mySide oppSide
+                    let myPlayers =
+                        Array.init slots.Length (fun i ->
+                            match slots[i] with
+                            | PlayerSlot.Active s -> s.Player
+                            | Sidelined _ -> Unchecked.defaultof<Player>)
+
+                    let myPositions =
+                        Array.init slots.Length (fun i ->
+                            match slots[i] with
+                            | PlayerSlot.Active s -> s.Pos
+                            | Sidelined _ -> kickOffSpatial)
+
+                    let oppPlayers =
+                        Array.init oppSlots.Length (fun i ->
+                            match oppSlots[i] with
+                            | PlayerSlot.Active s -> s.Player
+                            | Sidelined _ -> Unchecked.defaultof<Player>)
+
+                    let oppPositions =
+                        Array.init oppSlots.Length (fun i ->
+                            match oppSlots[i] with
+                            | PlayerSlot.Active s -> s.Pos
+                            | Sidelined _ -> kickOffSpatial)
+
+                    computeMarkingTargets myPlayers myPositions oppPlayers oppPositions
                 else
-                    // Reuse current positions as marking targets (no reassignment)
-                    Array.init mySide.Players.Length (fun i ->
-                        if mySide.Players[i].Position <> GK then
-                            let mutable bestIdx = 0
-                            let mutable bestDistSq = System.Double.MaxValue
-                            for j = 0 to oppSide.Players.Length - 1 do
-                                if oppSide.Players[j].Position <> GK then
-                                    let dx = mySide.Positions[i].X - oppSide.Positions[j].X
-                                    let dy = mySide.Positions[i].Y - oppSide.Positions[j].Y
-                                    let dSq = dx * dx + dy * dy
-                                    if dSq < bestDistSq then
-                                        bestDistSq <- dSq
-                                        bestIdx <- j
-                            Some(bestIdx, oppSide.Players[bestIdx])
-                        else
-                            None
-                    )
+                    Array.init slots.Length (fun i ->
+                        match slots[i] with
+                        | PlayerSlot.Active s ->
+                            if s.Player.Position <> GK then
+                                let mutable bestIdx = 0
+                                let mutable bestDistSq = System.Double.MaxValue
 
-            let emergentState = getEmergentState s clubSide
+                                for j = 0 to oppSlots.Length - 1 do
+                                    match oppSlots[j] with
+                                    | PlayerSlot.Active os when os.Player.Position <> GK ->
+                                        let dx = s.Pos.X - os.Pos.X
+                                        let dy = s.Pos.Y - os.Pos.Y
+                                        let dSq = dx * dx + dy * dy
+
+                                        if dSq < bestDistSq then
+                                            bestDistSq <- dSq
+                                            bestIdx <- j
+                                    | _ -> ()
+
+                                Some(
+                                    bestIdx,
+                                    match oppSlots[bestIdx] with
+                                    | PlayerSlot.Active os -> os.Player
+                                    | _ -> Unchecked.defaultof<Player>
+                                )
+                            else
+                                None
+                        | Sidelined _ -> None)
+
+            let emergentState = getEmergentState state clubSide
             let emergentModifiers = EmergentLoops.toDirectiveModifiers emergentState
-            let directives = getDirectives s clubSide
-            let ballX = s.Ball.Position.X
-            let ballY = s.Ball.Position.Y
+            let ballX = state.Ball.Position.X
+            let ballY = state.Ball.Position.Y
 
-            // Pre-compute closest-to-ball index once per tick (same for all players).
             let mutable closestIdx = 0
             let mutable closestDistSq = System.Double.MaxValue
 
-            for j = 0 to mySide.Positions.Length - 1 do
-                let sp = mySide.Positions[j]
-                let dx = sp.X - ballX
-                let dy = sp.Y - ballY
-                let dSq = dx * dx + dy * dy
+            for j = 0 to slots.Length - 1 do
+                match slots[j] with
+                | PlayerSlot.Active s ->
+                    let sp = s.Pos
+                    let dx = sp.X - ballX
+                    let dy = sp.Y - ballY
+                    let dSq = dx * dx + dy * dy
 
-                if dSq < closestDistSq then
-                    closestDistSq <- dSq
-                    closestIdx <- j
+                    if dSq < closestDistSq then
+                        closestDistSq <- dSq
+                        closestIdx <- j
+                | Sidelined _ -> ()
 
-            let newPositions = Array.copy mySide.Positions
+            let currentPositions =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> s.Pos
+                    | Sidelined _ -> kickOffSpatial)
 
-            for i = 0 to mySide.Players.Length - 1 do
-                let p = mySide.Players[i]
-                let currentPos = mySide.Positions[i]
-                let cond = mySide.Conditions[i]
-                let stX, stY = shapeTargets[i]
+            for i = 0 to slots.Length - 1 do
+                match slots[i] with
+                | Sidelined _ -> ()
+                | PlayerSlot.Active s ->
+                    let p = s.Player
+                    let currentPos = s.Pos
+                    let cond = s.Condition
+                    let stX, stY = shapeTargets[i]
 
-                let mutable tw = 0.0
-                let mutable sx = 0.0
-                let mutable sy = 0.0
-
-                // base — 1 directive, 0 allocs
-                foldSingleDirective
-                    currentSubTick
-                    emergentModifiers
-                    &tw
-                    &sx
-                    &sy
-                    (Directive.create Shape stX stY 0.4 0.5 (currentSubTick + 120) "shape")
-
-                // run — 0 o 1 directive, 0 allocs
-                let mutable node = activeRuns
-
-                while not (List.isEmpty node) do
-                    let r = node.Head
-
-                    if r.PlayerId = p.Id then
-                        let t = RunAssignment.progress currentSubTick r
-                        let rx, ry = RunAssignment.evaluateTrajectory t r.Trajectory
-
-                        foldSingleDirective
-                            currentSubTick
-                            emergentModifiers
-                            &tw
-                            &sx
-                            &sy
-                            (Directive.create Run rx ry r.Intensity 0.8 (r.StartSubTick + r.DurationSubTicks) "run")
-
-                    node <- node.Tail
-
-                // marking — 0 o 1 directive, 0 allocs
-                match markingTargets[i] with
-                | Some(oppIdx, _) ->
-                    let oppPos = oppSide.Positions[oppIdx]
+                    let mutable tw = 0.0
+                    let mutable sx = 0.0
+                    let mutable sy = 0.0
 
                     foldSingleDirective
                         currentSubTick
@@ -354,118 +343,211 @@ module MovementEngine =
                         &tw
                         &sx
                         &sy
-                        (Directive.create MarkMan oppPos.X oppPos.Y 0.6 0.5 (currentSubTick + 80) "marking")
-                | None -> ()
+                        (Directive.create Shape stX stY 0.4 0.5 (currentSubTick + 120) "shape")
 
-                // existing directives
-                foldDirectives currentSubTick emergentModifiers &tw &sx &sy directives[i]
+                    let mutable node = activeRuns
 
-                let finalTargetX, finalTargetY =
-                    if tw = 0.0 then (52.5, 34.0) else (sx / tw, sy / tw)
+                    while not (List.isEmpty node) do
+                        let r = node.Head
 
-                let driftX, driftY = OrganicDrift.compute p.Position p.Id currentSubTick
-                let adjustedTargetX = finalTargetX + driftX * 0.15
-                let adjustedTargetY = finalTargetY + driftY * 0.15
+                        if r.PlayerId = p.Id then
+                            let t = RunAssignment.progress currentSubTick r
+                            let rx, ry = RunAssignment.evaluateTrajectory t r.Trajectory
 
-                newPositions[i] <-
-                    PlayerPhysics.steer
-                        p
-                        cond
-                        currentPos
-                        i
-                        mySide.Positions
-                        (adjustedTargetX, adjustedTargetY)
-                        s.Ball.Position
-                        (i = closestIdx)
-                        dt
+                            foldSingleDirective
+                                currentSubTick
+                                emergentModifiers
+                                &tw
+                                &sx
+                                &sy
+                                (Directive.create Run rx ry r.Intensity 0.8 (r.StartSubTick + r.DurationSubTicks) "run")
 
-            let newLastShapeSubTick =
-                if shapeNeedsUpdate then
-                    currentSubTick
-                else
-                    lastShapeSubTick
+                        node <- node.Tail
 
-            let newLastMarkingSubTick =
-                if markingNeedsUpdate then
-                    currentSubTick
-                else
-                    lastMarkingSubTick
+                    match markingTargets[i] with
+                    | Some(oppIdx, _) ->
+                        let oppPos =
+                            match oppSlots[oppIdx] with
+                            | PlayerSlot.Active os -> os.Pos
+                            | _ -> kickOffSpatial
 
-            let s2 = withMySide s clubSide { mySide with Positions = newPositions }
+                        foldSingleDirective
+                            currentSubTick
+                            emergentModifiers
+                            &tw
+                            &sx
+                            &sy
+                            (Directive.create MarkMan oppPos.X oppPos.Y 0.6 0.5 (currentSubTick + 80) "marking")
+                    | None -> ()
+
+                    if not (isNull s.Directives) then
+                        foldDirectives currentSubTick emergentModifiers &tw &sx &sy s.Directives
+
+                    if i = closestIdx then
+                        foldSingleDirective
+                            currentSubTick
+                            emergentModifiers
+                            &tw
+                            &sx
+                            &sy
+                            (Directive.create Run ballX ballY 4.0 1.0 (currentSubTick + 40) "chase")
+
+                    let finalTargetX, finalTargetY =
+                        if tw = 0.0 then (52.5, 34.0) else (sx / tw, sy / tw)
+
+                    let driftX, driftY = OrganicDrift.compute p.Position p.Id currentSubTick
+                    let adjustedTargetX = finalTargetX + driftX * 0.15
+                    let adjustedTargetY = finalTargetY + driftY * 0.15
+
+                    let newPos =
+                        PlayerPhysics.steer
+                            p
+                            cond
+                            currentPos
+                            i
+                            currentPositions
+                            (adjustedTargetX, adjustedTargetY)
+                            state.Ball.Position
+                            (i = closestIdx)
+                            dt
+
+                    slots[i] <- PlayerSlot.Active { s with Pos = newPos }
 
             if isHome clubSide then
-                { s2 with
-                    HomeActiveRuns = activeRuns
-                    HomeLastShapeSubTick = newLastShapeSubTick
-                    HomeLastMarkingSubTick = newLastMarkingSubTick }
+                state.HomeActiveRuns <- activeRuns
+
+                state.HomeLastShapeSubTick <-
+                    if shapeNeedsUpdate then
+                        currentSubTick
+                    else
+                        lastShapeSubTick
+
+                state.HomeLastMarkingSubTick <-
+                    if markingNeedsUpdate then
+                        currentSubTick
+                    else
+                        lastMarkingSubTick
             else
-                { s2 with
-                    AwayActiveRuns = activeRuns
-                    AwayLastShapeSubTick = newLastShapeSubTick
-                    AwayLastMarkingSubTick = newLastMarkingSubTick }
+                state.AwayActiveRuns <- activeRuns
+
+                state.AwayLastShapeSubTick <-
+                    if shapeNeedsUpdate then
+                        currentSubTick
+                    else
+                        lastShapeSubTick
+
+                state.AwayLastMarkingSubTick <-
+                    if markingNeedsUpdate then
+                        currentSubTick
+                    else
+                        lastMarkingSubTick
 
     let updateCognitive
         (currentSubTick: int)
-        (s: MatchState)
+        (ctx: MatchContext)
+        (state: SimState)
         (clubSide: ClubSide)
         (events: ResizeArray<MatchEvent>)
-        : MatchState =
+        =
 
-        let lastCogSubTick = getLastCognitiveSubTick s clubSide
+        let lastCogSubTick = getLastCognitiveSubTick state clubSide
 
         if currentSubTick - lastCogSubTick < PhysicsContract.CognitiveIntervalSubTicks then
-            s
+            ()
         else
-            let mySide = getMySide s clubSide
-            let oppSide = getOppSide s clubSide
-            let dir = AttackDir.ofClubSide (if isHome clubSide then HomeClub else AwayClub)
-            let momentum = if isHome clubSide then s.Momentum else -s.Momentum
-            let mentalStates = getMentalStates s clubSide
-            let directives = getDirectives s clubSide
-            let chemistry = getChemistry s clubSide
-            let emergentState = getEmergentState s clubSide
+            let slots = getSlots state clubSide
+            let oppSlots = getSlots state (ClubSide.flip clubSide)
+            let dir = attackDirFor clubSide state
+            let momentum = if isHome clubSide then state.Momentum else -state.Momentum
 
-            let newMentalStates = Array.zeroCreate mySide.Players.Length
-            let newDirectiveMap = Array.zeroCreate<Directive[]> mySide.Players.Length
+            let players =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> s.Player
+                    | Sidelined _ -> Unchecked.defaultof<Player>)
+
+            let positions =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> s.Pos
+                    | Sidelined _ -> kickOffSpatial)
+
+            let conditions =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> s.Condition
+                    | Sidelined _ -> 0)
+
+            let mentalStates =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> s.Mental
+                    | Sidelined _ -> MentalState.initial players[i])
+
+            let directives =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | PlayerSlot.Active s -> if isNull s.Directives then Array.empty else s.Directives
+                    | Sidelined _ -> Array.empty)
+
+            let oppPlayers =
+                Array.init oppSlots.Length (fun i ->
+                    match oppSlots[i] with
+                    | PlayerSlot.Active s -> s.Player
+                    | Sidelined _ -> Unchecked.defaultof<Player>)
+
+            let oppPositions =
+                Array.init oppSlots.Length (fun i ->
+                    match oppSlots[i] with
+                    | PlayerSlot.Active s -> s.Pos
+                    | Sidelined _ -> kickOffSpatial)
+
+            let chemistry = getChemistry state clubSide
+            let emergentState = getEmergentState state clubSide
+
+            let newMentalStates = Array.zeroCreate slots.Length
+            let newDirectiveMap = Array.zeroCreate<Directive[]> slots.Length
             let newRuns = System.Collections.Generic.List<RunAssignment>()
+            let basePositions = getBasePositions state clubSide
 
-            mySide.Players
-            |> Array.iteri (fun i p ->
-                let mental =
-                    if i < mentalStates.Length && not (obj.ReferenceEquals(box mentalStates[i], null)) then
-                        mentalStates[i]
-                    else
-                        MentalState.initial p
+            for i = 0 to slots.Length - 1 do
+                match slots[i] with
+                | Sidelined _ -> ()
+                | PlayerSlot.Active s ->
+                    let p = s.Player
+                    let mental = mentalStates[i]
+                    let dq = FatiguePipeline.decisionQuality p conditions[i]
 
-                let dq = FatiguePipeline.decisionQuality p mySide.Conditions[i]
+                    let update =
+                        CognitiveLayer.evaluate
+                            currentSubTick
+                            p
+                            i
+                            players
+                            positions
+                            conditions
+                            oppPlayers
+                            oppPositions
+                            state.Ball.Position.X
+                            state.Ball.Position.Y
+                            dir
+                            momentum
+                            mental
+                            chemistry
+                            directives[i]
+                            basePositions[i]
 
-                let update =
-                    CognitiveLayer.evaluate
-                        currentSubTick
-                        p
-                        i
-                        mySide
-                        oppSide
-                        s.Ball.Position.X
-                        s.Ball.Position.Y
-                        dir
-                        momentum
-                        mental
-                        chemistry
-                        (if i < directives.Length && not (isNull directives[i]) then directives[i] else Array.empty)
+                    newMentalStates[i] <-
+                        match update.MentalStateDelta with
+                        | Some ms -> ms
+                        | None -> mental
 
-                newMentalStates[i] <-
-                    match update.MentalStateDelta with
-                    | Some ms -> ms
-                    | None -> mental
+                    let removedKinds = update.RemovedKinds
+                    let existing = directives[i]
 
-                let removedKinds = update.RemovedKinds
-                let existing = if i < directives.Length then directives[i] else null
+                    let buf =
+                        System.Collections.Generic.List<Directive>(existing.Length + update.NewDirectives.Length)
 
-                let buf = System.Collections.Generic.List<Directive>(
-                    (if isNull existing then 0 else existing.Length) + update.NewDirectives.Length)
-
-                if not (isNull existing) then
                     for d in existing do
                         if
                             not (Directive.expired currentSubTick d)
@@ -473,30 +555,32 @@ module MovementEngine =
                         then
                             buf.Add(d)
 
-                for d in update.NewDirectives do
-                    buf.Add({ d with Urgency = d.Urgency * dq })
+                    for d in update.NewDirectives do
+                        buf.Add({ d with Urgency = d.Urgency * dq })
 
-                newDirectiveMap[i] <- buf.ToArray()
-                update.RunAssignments |> List.iter newRuns.Add)
+                    newDirectiveMap[i] <- if buf.Count = 0 then Array.empty else buf.ToArray()
+
+                    update.RunAssignments |> List.iter newRuns.Add
 
             let matchMinute = PhysicsContract.subTicksToSeconds currentSubTick / 60.0
 
             let isPressing =
-                mySide.Tactics = TeamTactics.Pressing
-                || mySide.Instructions |> Option.exists (fun instr -> instr.PressingIntensity >= 4)
+                getTactics state clubSide = TeamTactics.Pressing
+                || getInstructions state clubSide
+                   |> Option.exists (fun instr -> instr.PressingIntensity >= 4)
 
-            let degradedConditions = Array.copy mySide.Conditions
+            let degradedConditions =
+                Array.init slots.Length (fun i ->
+                    match slots[i] with
+                    | Sidelined _ -> 0
+                    | PlayerSlot.Active s ->
+                        let player = s.Player
+                        let currentCond = s.Condition
 
-            for i = 0 to mySide.Players.Length - 1 do
-                let player = mySide.Players[i]
-                let currentCond = mySide.Conditions[i]
-
-                if player.Position <> GK then
-                    degradedConditions[i] <- FatiguePipeline.degradeCondition player currentCond isPressing matchMinute
-
-            let updatedMySide =
-                { mySide with
-                    Conditions = degradedConditions }
+                        if player.Position <> GK then
+                            FatiguePipeline.degradeCondition player currentCond isPressing matchMinute
+                        else
+                            currentCond)
 
             let rates, emergentEvents = EventWindow.computeRates 4800 events
             let shortPassRate = rates.ShortPassRate
@@ -510,7 +594,7 @@ module MovementEngine =
                 |> EmergentLoops.updateWingPlay
                 <| flankRate
 
-            let existingRuns = getActiveRuns s clubSide
+            let existingRuns = getActiveRuns state clubSide
 
             let allRuns =
                 if newRuns.Count = 0 then
@@ -523,36 +607,38 @@ module MovementEngine =
 
                     acc
 
-            withMovementFields
-                s
-                clubSide
-                newMentalStates
-                newDirectiveMap
-                allRuns
-                chemistry
-                updatedEmergent
-                (getAdaptiveState s clubSide)
-                currentSubTick
-                (getLastShapeSubTick s clubSide)
-                (getLastMarkingSubTick s clubSide)
-                (getLastAdaptiveSubTick s clubSide)
-            |> fun st ->
-                if isHome clubSide then
-                    { st with HomeSide = updatedMySide }
-                else
-                    { st with AwaySide = updatedMySide }
+            for i = 0 to slots.Length - 1 do
+                match slots[i] with
+                | Sidelined _ -> ()
+                | PlayerSlot.Active s ->
+                    slots[i] <-
+                        PlayerSlot.Active
+                            { s with
+                                Mental = newMentalStates[i]
+                                Directives = newDirectiveMap[i]
+                                Condition = degradedConditions[i] }
+
+            if isHome clubSide then
+                state.HomeActiveRuns <- allRuns
+                state.HomeEmergentState <- updatedEmergent
+                state.HomeLastCognitiveSubTick <- currentSubTick
+            else
+                state.AwayActiveRuns <- allRuns
+                state.AwayEmergentState <- updatedEmergent
+                state.AwayLastCognitiveSubTick <- currentSubTick
 
     let updateAdaptive
         (currentSubTick: int)
-        (s: MatchState)
+        (ctx: MatchContext)
+        (state: SimState)
         (clubSide: ClubSide)
         (events: ResizeArray<MatchEvent>)
-        : MatchState =
+        =
 
-        let lastAdaptiveSubTick = getLastAdaptiveSubTick s clubSide
+        let lastAdaptiveSubTick = getLastAdaptiveSubTick state clubSide
 
         if currentSubTick - lastAdaptiveSubTick < PhysicsContract.AdaptiveIntervalSubTicks then
-            s
+            ()
         else
             let recentEvts = EventWindow.recentEvents 12000 events
 
@@ -569,13 +655,11 @@ module MovementEngine =
                                 LostPossession
 
                         AdaptiveTactics.recordAttempt pattern result st)
-                    (getAdaptiveState s clubSide)
+                    (getAdaptiveState state clubSide)
 
             if isHome clubSide then
-                { s with
-                    HomeAdaptiveState = updatedAdaptive
-                    HomeLastAdaptiveSubTick = currentSubTick }
+                state.HomeAdaptiveState <- updatedAdaptive
+                state.HomeLastAdaptiveSubTick <- currentSubTick
             else
-                { s with
-                    AwayAdaptiveState = updatedAdaptive
-                    AwayLastAdaptiveSubTick = currentSubTick }
+                state.AwayAdaptiveState <- updatedAdaptive
+                state.AwayLastAdaptiveSubTick <- currentSubTick

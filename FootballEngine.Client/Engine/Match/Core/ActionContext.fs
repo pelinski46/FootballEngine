@@ -1,8 +1,8 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.SimStateOps
 
-/// Pre-computed context for a single attacking action
 type ActionContext =
     { Dir: AttackDir
       AttSide: ClubSide
@@ -10,16 +10,16 @@ type ActionContext =
       Zone: PitchZone
       AttBonus: HomeBonus
       DefBonus: HomeBonus
-      Momentum: float } // already sign-adjusted for the attacking team
+      Momentum: float }
 
 module ActionContext =
-    let build (s: MatchState) : ActionContext =
-        let dir = AttackDir.ofClubSide s.AttackingClub
-        let attSide = s.AttackingClub
+    let build (state: SimState) : ActionContext =
+        let dir = attackDirFor state.AttackingClub state
+        let attSide = state.AttackingClub
         let defSide = ClubSide.flip attSide
-        let zone = PitchZone.ofBallX s.Ball.Position.X dir
+        let zone = PitchZone.ofBallX state.Ball.Position.X dir
 
-        let momentum = AttackDir.momentumDelta dir s.Momentum
+        let momentum = AttackDir.momentumDelta dir state.Momentum
 
         { Dir = dir
           AttSide = attSide

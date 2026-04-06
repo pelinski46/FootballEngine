@@ -1,7 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open MatchStateOps
+open SimStateOps
 open MatchSpatial
 
 type AgentContext =
@@ -22,22 +22,33 @@ type AgentContext =
 
 module AgentContext =
 
-    let build (me: Player) (meIdx: int) (s: MatchState) : AgentContext =
-        let dir = AttackDir.ofClubSide s.AttackingClub
-        let attSide = ClubSide.teamSide s.AttackingClub s
-        let myPos = attSide.Positions[meIdx]
-        let myCond = attSide.Conditions[meIdx]
-        let zone = PitchZone.ofBallX myPos.X dir
+    let build (me: Player) (meIdx: int) (ctx: MatchContext) (state: SimState) : AgentContext =
+        let dir = attackDirFor state.AttackingClub state
 
-        let ballState =
-            { Position = s.Ball.Position
-              Spin = s.Ball.Spin
-              ControlledBy = s.Ball.ControlledBy
-              LastTouchBy = s.Ball.LastTouchBy
-              IsInPlay = s.Ball.IsInPlay }
+        let isHome =
+            state.HomeSlots
+            |> Array.exists (function
+                | PlayerSlot.Active s -> s.Player.Id = me.Id
+                | _ -> false)
+
+        let slots = if isHome then state.HomeSlots else state.AwaySlots
+
+        let mutable myPos = kickOffSpatial
+        let mutable myCond = 100
+
+        for i = 0 to slots.Length - 1 do
+            match slots[i] with
+            | PlayerSlot.Active s when s.Player.Id = me.Id ->
+                myPos <- s.Pos
+                myCond <- s.Condition
+            | _ -> ()
+
+        let zone = PitchZone.ofBallX state.Ball.Position.X dir
+
+        let ballState = state.Ball
 
         let nearestTM =
-            findNearestTeammate me s dir
+            findNearestTeammate me ctx state dir
             |> Option.map (fun (p, _, xy) ->
                 p,
                 { X = fst xy
@@ -48,7 +59,7 @@ module AgentContext =
                   Vz = 0.0 })
 
         let nearestOpp =
-            findNearestOpponent me s dir
+            findNearestOpponent me ctx state dir
             |> Option.map (fun (p, _, xy) ->
                 p,
                 { X = fst xy
@@ -59,7 +70,7 @@ module AgentContext =
                   Vz = 0.0 })
 
         let bestPass =
-            findBestPassTarget me s dir
+            findBestPassTarget me ctx state dir
             |> Option.map (fun (p, _, xy) ->
                 p,
                 { X = fst xy
@@ -70,8 +81,16 @@ module AgentContext =
                   Vz = 0.0 })
 
         let distToGoal = AttackDir.distToGoal myPos.X dir
-        let gd = goalDiff (ClubSide.toClubId s.AttackingClub s) s
-        let tacticsCfg = tacticsConfig attSide.Tactics attSide.Instructions
+        let clubId = if isHome then ctx.Home.Id else ctx.Away.Id
+        let gd = goalDiff clubId ctx state
+
+        let tacticsCfg =
+            tacticsConfig
+                (if isHome then state.HomeTactics else state.AwayTactics)
+                (if isHome then
+                     state.HomeInstructions
+                 else
+                     state.AwayInstructions)
 
         { Me = me
           MyCondition = myCond
@@ -84,6 +103,6 @@ module AgentContext =
           BestPassTarget = bestPass
           DistToGoal = distToGoal
           GoalDiff = gd
-          Minute = int (PhysicsContract.subTicksToSeconds s.SubTick / 60.0)
+          Minute = int (PhysicsContract.subTicksToSeconds state.SubTick / 60.0)
           Urgency = 1.0
           Tactics = tacticsCfg }

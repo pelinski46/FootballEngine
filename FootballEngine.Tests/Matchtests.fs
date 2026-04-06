@@ -5,15 +5,10 @@ open Expecto
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.MatchSimulator
-open FootballEngine.MatchStateOps
+open SimStateOps
 open FootballEngine.MatchSpatial
-
 open FootballEngine.PlayerAgent
 open FootballEngine.Tests.Helpers
-
-// ============================================================================
-// Shared state builders — SubTick + Metric system
-// ============================================================================
 
 let private defaultPhysical =
     { Acceleration = 10
@@ -125,81 +120,27 @@ let private defaultSpatialAt x y =
 
 let private defaultInstructions = TacticalInstructions.defaultInstructions
 
-let private makeTeamSide (players: Player[]) (positions: (float * float)[]) =
-    { Players = players
-      Conditions = players |> Array.map (fun _ -> 100)
-      Positions = positions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
-      BasePositions = positions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
-      Sidelined = Map.empty
-      Yellows = Map.empty
-      SubsUsed = 0
-      Tactics = Balanced
-      Instructions = Some defaultInstructions }
-
 let private homeClub = makeClub 1
 let private awayClub = makeClub 2
 
-let private minimalState homeScore awayScore =
-    let dummyCoach = Unchecked.defaultof<Staff>
-
+let private makeCtx homePlayers awayPlayers =
     { Home = homeClub
       Away = awayClub
-      HomeCoach = dummyCoach
-      AwayCoach = dummyCoach
-      SubTick = 0
-      HomeScore = homeScore
-      AwayScore = awayScore
-      Ball = defaultBall
-      AttackingClub = HomeClub
-      Momentum = 0.0
-      HomeSide =
-        { Players = Array.empty
-          Conditions = Array.empty
-          Positions = Array.empty
-          BasePositions = Array.empty
-          Sidelined = Map.empty
-          Yellows = Map.empty
-          SubsUsed = 0
-          Tactics = Balanced
-          Instructions = Some defaultInstructions }
-      AwaySide =
-        { Players = Array.empty
-          Conditions = Array.empty
-          Positions = Array.empty
-          BasePositions = Array.empty
-          Sidelined = Map.empty
-          Yellows = Map.empty
-          SubsUsed = 0
-          Tactics = Balanced
-          Instructions = Some defaultInstructions }
-      PenaltyShootout = None
-      IsExtraTime = false
-      IsKnockoutMatch = false
-      PendingOffsideSnapshot = None
-      // Home movement state
-      HomeMentalStates = [||]
-      HomeDirectives = [||]
-      HomeActiveRuns = []
-      HomeChemistry = ChemistryGraph.init 0
-      HomeEmergentState = EmergentState.initial
-      HomeAdaptiveState = AdaptiveTactics.initial
-      HomeLastCognitiveSubTick = 0
-      HomeLastShapeSubTick = 0
-      HomeLastMarkingSubTick = 0
-      HomeLastAdaptiveSubTick = 0
-      // Away movement state
-      AwayMentalStates = [||]
-      AwayDirectives = [||]
-      AwayActiveRuns = []
-      AwayChemistry = ChemistryGraph.init 0
-      AwayEmergentState = EmergentState.initial
-      AwayAdaptiveState = AdaptiveTactics.initial
-      AwayLastCognitiveSubTick = 0
-      AwayLastShapeSubTick = 0
-      AwayLastMarkingSubTick = 0
-      AwayLastAdaptiveSubTick = 0 }
+      HomeCoach = Unchecked.defaultof<Staff>
+      AwayCoach = Unchecked.defaultof<Staff>
+      HomePlayers = homePlayers
+      AwayPlayers = awayPlayers
+      HomeBasePositions = Array.empty
+      AwayBasePositions = Array.empty
+      IsKnockoutMatch = false }
 
-let private buildMatchState
+let private minimalState homeScore awayScore =
+    let state = SimState()
+    state.HomeScore <- homeScore
+    state.AwayScore <- awayScore
+    state
+
+let private buildSimState
     (homePlayers: Player[])
     (homePositions: (float * float)[])
     (awayPlayers: Player[])
@@ -208,70 +149,78 @@ let private buildMatchState
     (ballY: float)
     (attacking: ClubSide)
     =
-    let dummyCoach = Unchecked.defaultof<Staff>
+    let ctx =
+        { Home = homeClub
+          Away = awayClub
+          HomeCoach = Unchecked.defaultof<Staff>
+          AwayCoach = Unchecked.defaultof<Staff>
+          HomePlayers = homePlayers
+          AwayPlayers = awayPlayers
+          HomeBasePositions = homePositions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
+          AwayBasePositions = awayPositions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
+          IsKnockoutMatch = false }
 
-    { Home = homeClub
-      Away = awayClub
-      HomeCoach = dummyCoach
-      AwayCoach = dummyCoach
-      SubTick = 0
-      HomeScore = 0
-      AwayScore = 0
-      Ball =
+    let state = SimState()
+    let hPos = homePositions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
+    let aPos = awayPositions |> Array.map (fun (x, y) -> defaultSpatialAt x y)
+
+    state.HomeSlots <-
+        Array.init homePlayers.Length (fun i ->
+            let p = homePlayers[i]
+
+            PlayerSlot.Active
+                { Player = p
+                  Pos = hPos[i]
+                  Condition = p.Condition
+                  Mental = MentalState.initial p
+                  Directives = Array.empty })
+
+    state.AwaySlots <-
+        Array.init awayPlayers.Length (fun i ->
+            let p = awayPlayers[i]
+
+            PlayerSlot.Active
+                { Player = p
+                  Pos = aPos[i]
+                  Condition = p.Condition
+                  Mental = MentalState.initial p
+                  Directives = Array.empty })
+
+    state.HomeSidelined <- Map.empty
+    state.AwaySidelined <- Map.empty
+    state.HomeYellows <- Map.empty
+    state.AwayYellows <- Map.empty
+    state.HomeInstructions <- Some defaultInstructions
+    state.AwayInstructions <- Some defaultInstructions
+    state.HomeActiveRuns <- []
+    state.AwayActiveRuns <- []
+    state.HomeChemistry <- ChemistryGraph.init homePlayers.Length
+    state.AwayChemistry <- ChemistryGraph.init awayPlayers.Length
+    state.HomeEmergentState <- EmergentState.initial
+    state.AwayEmergentState <- EmergentState.initial
+    state.HomeAdaptiveState <- AdaptiveTactics.initial
+    state.AwayAdaptiveState <- AdaptiveTactics.initial
+
+    state.Ball <-
         { Position = defaultSpatialAt ballX ballY
           Spin = Spin.zero
           ControlledBy = None
           LastTouchBy = None
           IsInPlay = true }
-      AttackingClub = attacking
-      Momentum = 0.0
-      HomeSide = makeTeamSide homePlayers homePositions
-      AwaySide = makeTeamSide awayPlayers awayPositions
-      PenaltyShootout = None
-      IsExtraTime = false
-      IsKnockoutMatch = false
-      PendingOffsideSnapshot = None
-      // Home movement state
-      HomeMentalStates = Array.zeroCreate homePlayers.Length
-      HomeDirectives = Array.zeroCreate homePlayers.Length
-      HomeActiveRuns = []
-      HomeChemistry = ChemistryGraph.init homePlayers.Length
-      HomeEmergentState = EmergentState.initial
-      HomeAdaptiveState = AdaptiveTactics.initial
-      HomeLastCognitiveSubTick = 0
-      HomeLastShapeSubTick = 0
-      HomeLastMarkingSubTick = 0
-      HomeLastAdaptiveSubTick = 0
-      // Away movement state
-      AwayMentalStates = Array.zeroCreate awayPlayers.Length
-      AwayDirectives = Array.zeroCreate awayPlayers.Length
-      AwayActiveRuns = []
-      AwayChemistry = ChemistryGraph.init awayPlayers.Length
-      AwayEmergentState = EmergentState.initial
-      AwayAdaptiveState = AdaptiveTactics.initial
-      AwayLastCognitiveSubTick = 0
-      AwayLastShapeSubTick = 0
-      AwayLastMarkingSubTick = 0
-      AwayLastAdaptiveSubTick = 0 }
 
-// ============================================================================
-// Action helpers — resolve now returns (MatchState * MatchEvent list)
-// ============================================================================
+    state.AttackingClub <- attacking
+    ctx, state
 
-let private resolveAction intent state = resolve homeClub.Id 1 intent state
+let private resolveAction intent (ctx, state) = resolve homeClub.Id 1 intent ctx state
 
 let private hasEvent eventType events =
     events |> List.exists (fun e -> e.Type = eventType)
 
 let private hasEventMatching pred events = events |> List.exists pred
 
-// ============================================================================
-// Category 1: Pure Unit Tests — MatchStateOps
-// ============================================================================
-
 let matchStateOpsTests =
     testList
-        "MatchStateOps Unit Tests"
+        "SimStateOps Unit Tests"
         [ test "ClubSide.flip HomeClub → AwayClub" { Expect.equal (ClubSide.flip HomeClub) AwayClub "" }
           test "ClubSide.flip AwayClub → HomeClub" { Expect.equal (ClubSide.flip AwayClub) HomeClub "" }
           test "ClubSide.flip is involution" {
@@ -279,7 +228,6 @@ let matchStateOpsTests =
               Expect.equal (ClubSide.flip (ClubSide.flip AwayClub)) AwayClub ""
           }
 
-          // phaseFromBallZone — metric thresholds (35m / 70m on 105m pitch)
           test "phaseFromBallZone LeftToRight x=10 → BuildUp" {
               Expect.equal (phaseFromBallZone LeftToRight 10.0) BuildUp ""
           }
@@ -295,117 +243,153 @@ let matchStateOpsTests =
           }
 
           test "pressureMultiplier home losing → > 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 0 2
-              Expect.isTrue (pressureMultiplier s.Home.Id s > 1.0) ""
+              Expect.isTrue (pressureMultiplier homeClub.Id ctx s > 1.0) ""
           }
           test "pressureMultiplier home winning → < 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 2 0
-              Expect.isTrue (pressureMultiplier s.Home.Id s < 1.0) ""
+              Expect.isTrue (pressureMultiplier homeClub.Id ctx s < 1.0) ""
           }
           test "pressureMultiplier away losing → > 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 2 0
-              Expect.isTrue (pressureMultiplier s.Away.Id s > 1.0) ""
+              Expect.isTrue (pressureMultiplier awayClub.Id ctx s > 1.0) ""
           }
           test "pressureMultiplier values in [0.1, 2.0]" {
-              let losing = pressureMultiplier homeClub.Id (minimalState 0 3)
-              let winning = pressureMultiplier homeClub.Id (minimalState 3 0)
+              let ctx = makeCtx Array.empty Array.empty
+              let losing = pressureMultiplier homeClub.Id ctx (minimalState 0 3)
+              let winning = pressureMultiplier homeClub.Id ctx (minimalState 3 0)
               Expect.isTrue (losing >= 0.1 && losing <= 2.0) $"losing={losing}"
               Expect.isTrue (winning >= 0.1 && winning <= 2.0) $"winning={winning}"
           }
 
+          test "matchUrgency home losing late → > 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
+              let s = minimalState 0 2
+              s.SubTick <- 1800
+              Expect.isTrue (matchUrgency homeClub.Id ctx s > 1.0) ""
+          }
+          test "matchUrgency home winning → < 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
+              let s = minimalState 2 0
+              Expect.isTrue (matchUrgency homeClub.Id ctx s < 1.0) ""
+          }
+          test "matchUrgency 0-0 early → ~1.0" {
+              let ctx = makeCtx Array.empty Array.empty
+              let s = minimalState 0 0
+              let u = matchUrgency homeClub.Id ctx s
+              Expect.isTrue (u >= 0.8 && u <= 1.2) $"urgency={u}"
+          }
+          test "matchUrgency 0-0 late → > 1.0" {
+              let ctx = makeCtx Array.empty Array.empty
+              let s = minimalState 0 0
+              s.SubTick <- 1800
+              Expect.isTrue (matchUrgency homeClub.Id ctx s > 1.0) ""
+          }
+
+          test "adjustMomentum positive delta increases" {
+              let s = minimalState 0 0
+              s.Momentum <- 0.0
+              adjustMomentum LeftToRight 2.0 s
+              Expect.isTrue (s.Momentum > 0.0) $"momentum={s.Momentum}"
+          }
+          test "adjustMomentum clamps to [-10, 10]" {
+              let s = minimalState 0 0
+              s.Momentum <- 9.0
+              adjustMomentum LeftToRight 5.0 s
+              Expect.isTrue (s.Momentum <= 10.0) $"momentum={s.Momentum}"
+          }
+
           test "goalDiff homeClub = HomeScore - AwayScore" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 3 1
-              Expect.equal (goalDiff s.Home.Id s) 2 ""
+              Expect.equal (goalDiff homeClub.Id ctx s) 2 ""
           }
           test "goalDiff awayClub = AwayScore - HomeScore" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 3 1
-              Expect.equal (goalDiff s.Away.Id s) -2 ""
+              Expect.equal (goalDiff awayClub.Id ctx s) -2 ""
           }
 
           test "awardGoal HomeClub increments HomeScore" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 0 0
-              let s', _ = awardGoal HomeClub None 0 s
-              Expect.equal s'.HomeScore 1 ""
-              Expect.equal s'.AwayScore 0 ""
+              let events = awardGoal HomeClub None 0 ctx s
+              Expect.equal s.HomeScore 1 ""
+              Expect.equal s.AwayScore 0 ""
+              Expect.isEmpty events ""
           }
           test "awardGoal AwayClub increments AwayScore" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 0 0
-              let s', _ = awardGoal AwayClub None 0 s
-              Expect.equal s'.AwayScore 1 ""
-              Expect.equal s'.HomeScore 0 ""
+              let events = awardGoal AwayClub None 0 ctx s
+              Expect.equal s.AwayScore 1 ""
+              Expect.equal s.HomeScore 0 ""
+              Expect.isEmpty events ""
           }
-          test "awardGoal resets ball to centre (metric)" {
+          test "awardGoal resets ball to centre" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 0 0
-              let s', _ = awardGoal HomeClub None 0 s
-              Expect.equal s'.Ball.Position.X PhysicsContract.HalfwayLineX ""
-              Expect.equal s'.Ball.Position.Y (PhysicsContract.PitchWidth / 2.0) ""
+              awardGoal HomeClub None 0 ctx s |> ignore
+              Expect.equal s.Ball.Position.X PhysicsContract.HalfwayLineX ""
+              Expect.equal s.Ball.Position.Y (PhysicsContract.PitchWidth / 2.0) ""
           }
           test "awardGoal with scorerId emits Goal event" {
+              let ctx = makeCtx Array.empty Array.empty
               let s = minimalState 0 0
-              let _, events = awardGoal HomeClub (Some 99) 0 s
+              let events = awardGoal HomeClub (Some 99) 0 ctx s
               Expect.exists events (fun e -> e.Type = Goal) ""
           }
 
           test "resetBallToCenter sets metric centre" {
-              let s =
-                  { minimalState 0 0 with
-                      Ball =
-                          { Position = defaultSpatialAt 80.0 30.0
-                            Spin = Spin.zero
-                            ControlledBy = Some 1
-                            LastTouchBy = Some 1
-                            IsInPlay = true } }
+              let s = minimalState 0 0
 
-              let s' = resetBallToCenter s
-              Expect.equal s'.Ball.Position.X PhysicsContract.HalfwayLineX ""
-              Expect.equal s'.Ball.Position.Y (PhysicsContract.PitchWidth / 2.0) ""
-              Expect.equal s'.Ball.Position.Vx 0.0 ""
-              Expect.equal s'.Ball.Position.Vy 0.0 ""
-              Expect.equal s'.Ball.LastTouchBy None ""
-              Expect.equal s'.Ball.ControlledBy None ""
+              s.Ball <-
+                  { Position = defaultSpatialAt 80.0 30.0
+                    Spin = Spin.zero
+                    ControlledBy = Some 1
+                    LastTouchBy = Some 1
+                    IsInPlay = true }
+
+              resetBallToCenter s
+              Expect.equal s.Ball.Position.X PhysicsContract.HalfwayLineX ""
+              Expect.equal s.Ball.Position.Y (PhysicsContract.PitchWidth / 2.0) ""
+              Expect.equal s.Ball.Position.Vx 0.0 ""
+              Expect.equal s.Ball.Position.Vy 0.0 ""
+              Expect.equal s.Ball.LastTouchBy None ""
+              Expect.equal s.Ball.ControlledBy None ""
           }
 
-          test "activeIndices excludes sidelined players" {
-              let p1 = makePlayer 1 ST 10
-              let p2 = makePlayer 2 MC 10
-              let p3 = makePlayer 3 DC 10
-              let players = [| p1; p2; p3 |]
-              let sidelined = Map.ofList [ p2.Id, SidelinedByRedCard ]
-              let active = activeIndices players sidelined
-              Expect.equal active.Length 2 ""
-              Expect.isFalse (active |> Array.exists (fun i -> players[i].Id = p2.Id)) ""
-          }
-          test "activeIndices returns all when none sidelined" {
-              let players = [| makePlayer 1 ST 10; makePlayer 2 MC 10 |]
-              let active = activeIndices players Map.empty
-              Expect.equal active.Length 2 ""
-          }
 
-          // SubTick-based time
-          test "MatchState.elapsedSeconds returns correct real seconds" {
-              let s = { minimalState 0 0 with SubTick = 1200 }
-              Expect.equal (MatchState.elapsedSeconds s) 30.0 ""
+          test "elapsedSeconds returns correct real seconds" {
+              let s = minimalState 0 0
+              s.SubTick <- 1200
+              Expect.equal (PhysicsContract.subTicksToSeconds s.SubTick) 30.0 ""
           }
-          test "MatchState.elapsedSeconds for full match" {
-              let s =
-                  { minimalState 0 0 with
-                      SubTick = PhysicsContract.FullTimeSubTick }
-
-              Expect.equal (MatchState.elapsedSeconds s) (95.0 * 60.0) ""
+          test "elapsedSeconds for full match" {
+              let s = minimalState 0 0
+              s.SubTick <- PhysicsContract.FullTimeSubTick
+              Expect.equal (PhysicsContract.subTicksToSeconds s.SubTick) (95.0 * 60.0) ""
           } ]
-
-// ============================================================================
-// Category 2: Spatial Unit Tests — MatchSpatial
-// ============================================================================
 
 let matchSpatialTests =
     testList
         "MatchSpatial Unit Tests"
         [ test "teamRoster zips Players Positions Conditions correctly" {
               let players = [| makePlayer 1 ST 10; makePlayer 2 MC 10; makePlayer 3 GK 10 |]
-              let positions = [| (10.0, 34.0); (52.5, 34.0); (5.0, 34.0) |]
-              let ts = makeTeamSide players positions
-              let roster = teamRoster ts
+
+              let positions =
+                  players
+                  |> Array.mapi (fun i _ ->
+                      match i with
+                      | 0 -> defaultSpatialAt 10.0 34.0
+                      | 1 -> defaultSpatialAt 52.5 34.0
+                      | _ -> defaultSpatialAt 5.0 34.0)
+
+              let conditions = [| 100; 100; 100 |]
+              let roster = teamRoster players positions conditions
               Expect.equal roster.Length 3 ""
               let p, sp, c = roster[0]
               Expect.equal p.Id 1 ""
@@ -415,9 +399,14 @@ let matchSpatialTests =
 
           test "outfieldRoster excludes GK" {
               let players = [| makePlayer 1 GK 10; makePlayer 2 ST 10; makePlayer 3 DC 10 |]
-              let positions = [| (5.0, 34.0); (80.0, 34.0); (20.0, 34.0) |]
-              let ts = makeTeamSide players positions
-              let roster = outfieldRoster ts
+
+              let positions =
+                  [| defaultSpatialAt 5.0 34.0
+                     defaultSpatialAt 80.0 34.0
+                     defaultSpatialAt 20.0 34.0 |]
+
+              let conditions = [| 100; 100; 100 |]
+              let roster = outfieldRoster players positions conditions
               Expect.equal roster.Length 2 ""
               Expect.isFalse (roster |> Array.exists (fun (p, _, _) -> p.Position = GK)) ""
           }
@@ -427,15 +416,18 @@ let matchSpatialTests =
               let near = makePlayer 2 DC 10
               let far = makePlayer 3 ST 10
               let players = [| gk; near; far |]
-              let positions = [| (5.0, 34.0); (30.0, 34.0); (80.0, 34.0) |]
-              let ts = makeTeamSide players positions
-              let result = nearestOutfield ts 25.0 34.0
+
+              let positions =
+                  [| defaultSpatialAt 5.0 34.0
+                     defaultSpatialAt 30.0 34.0
+                     defaultSpatialAt 80.0 34.0 |]
+
+              let result = nearestOutfield players positions 25.0 34.0
               Expect.isSome result ""
               let p, _ = result.Value
               Expect.equal p.Id near.Id ""
           }
 
-          // isOffside — metric coordinates
           test "isOffside GK always returns false" {
               let gk = makeGkPlayer 1 10 defaultGk
               let def1 = makePlayer 2 DC 10
@@ -443,8 +435,8 @@ let matchSpatialTests =
               let awayPlayers = [| gk; def1; def2 |]
               let awayPositions = [| (5.0, 34.0); (65.0, 30.0); (70.0, 38.0) |]
 
-              let s =
-                  buildMatchState
+              let ctx, state =
+                  buildSimState
                       [| makePlayer 10 GK 10 |]
                       [| (95.0, 34.0) |]
                       awayPlayers
@@ -453,7 +445,7 @@ let matchSpatialTests =
                       34.0
                       HomeClub
 
-              Expect.isFalse (isOffside gk 85.0 s LeftToRight) ""
+              Expect.isFalse (isOffside gk 85.0 ctx state LeftToRight) ""
           }
 
           test "isOffside player in own half returns false" {
@@ -464,10 +456,10 @@ let matchSpatialTests =
 
               let awayPositions = [| (5.0, 34.0); (60.0, 30.0); (65.0, 38.0) |]
 
-              let s =
-                  buildMatchState [| attacker |] [| (30.0, 34.0) |] awayPlayers awayPositions 30.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (30.0, 34.0) |] awayPlayers awayPositions 30.0 34.0 HomeClub
 
-              Expect.isFalse (isOffside attacker 30.0 s LeftToRight) ""
+              Expect.isFalse (isOffside attacker 30.0 ctx state LeftToRight) ""
           }
 
           test "isOffside player ahead of second-last defender is offside" {
@@ -478,10 +470,10 @@ let matchSpatialTests =
 
               let awayPositions = [| (5.0, 34.0); (60.0, 30.0); (65.0, 38.0) |]
 
-              let s =
-                  buildMatchState [| attacker |] [| (80.0, 34.0) |] awayPlayers awayPositions 75.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (80.0, 34.0) |] awayPlayers awayPositions 75.0 34.0 HomeClub
 
-              Expect.isTrue (isOffside attacker 80.0 s LeftToRight) ""
+              Expect.isTrue (isOffside attacker 80.0 ctx state LeftToRight) ""
           }
 
           test "isOffside player behind second-last defender is not offside" {
@@ -492,15 +484,11 @@ let matchSpatialTests =
 
               let awayPositions = [| (5.0, 34.0); (75.0, 30.0); (80.0, 38.0) |]
 
-              let s =
-                  buildMatchState [| attacker |] [| (70.0, 34.0) |] awayPlayers awayPositions 65.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (70.0, 34.0) |] awayPlayers awayPositions 65.0 34.0 HomeClub
 
-              Expect.isFalse (isOffside attacker 70.0 s LeftToRight) ""
+              Expect.isFalse (isOffside attacker 70.0 ctx state LeftToRight) ""
           } ]
-
-// ============================================================================
-// Category 3: Action Resolution Tests
-// ============================================================================
 
 let matchPlayerActionTests =
     testList
@@ -513,18 +501,12 @@ let matchPlayerActionTests =
                       Mental = { defaultMental with Composure = 20 } }
 
               let gk = makeGkPlayer 10 1 weakGk
-              let homePlayers = [| attacker |]
-              let homePositions = [| (95.0, 34.0) |]
-              let awayPlayers = [| gk |]
-              let awayPositions = [| (99.0, 34.0) |]
 
-              let s =
-                  buildMatchState homePlayers homePositions awayPlayers awayPositions 85.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (95.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 85.0 34.0 HomeClub
 
               let scored =
-                  Array.init 50 (fun _ ->
-                      let _, events = resolveAction Shoot s
-                      hasEvent Goal events)
+                  Array.init 50 (fun _ -> resolveAction Shoot (ctx, state) |> hasEvent Goal)
                   |> Array.exists id
 
               Expect.isTrue scored "strong attacker vs weak GK should score"
@@ -534,10 +516,10 @@ let matchPlayerActionTests =
               let attacker = makePlayer 1 ST 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState [| attacker |] [| (90.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 80.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (90.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 80.0 34.0 HomeClub
 
-              let _, events = resolveAction Shoot s
+              let events = resolveAction Shoot (ctx, state)
 
               let hasShotEvent =
                   events
@@ -556,13 +538,11 @@ let matchPlayerActionTests =
               let attacker = makePlayer 1 ST 10
               let gk = makeGkPlayer 10 20 strongGk
 
-              let s =
-                  buildMatchState [| attacker |] [| (90.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 80.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (90.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 80.0 34.0 HomeClub
 
               let goals =
-                  Array.init 30 (fun _ ->
-                      let _, events = resolveAction Shoot s
-                      hasEvent Goal events)
+                  Array.init 30 (fun _ -> resolveAction Shoot (ctx, state) |> hasEvent Goal)
                   |> Array.filter id
                   |> Array.length
 
@@ -574,8 +554,8 @@ let matchPlayerActionTests =
               let teammate = makePlayer 2 ST 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState
+              let ctx, state =
+                  buildSimState
                       [| attacker; teammate |]
                       [| (52.5, 34.0); (70.0, 34.0) |]
                       [| gk |]
@@ -586,14 +566,11 @@ let matchPlayerActionTests =
 
               let successes =
                   Array.init 30 (fun _ ->
-                      let _, events = resolveAction (Pass attacker) s
-
-                      hasEventMatching
-                          (fun e ->
-                              match e.Type with
-                              | PassCompleted _ -> true
-                              | _ -> false)
-                          events)
+                      resolveAction (Pass attacker) (ctx, state)
+                      |> hasEventMatching (fun e ->
+                          match e.Type with
+                          | PassCompleted _ -> true
+                          | _ -> false))
                   |> Array.filter id
                   |> Array.length
 
@@ -609,8 +586,8 @@ let matchPlayerActionTests =
               let teammate = makePlayer 2 ST 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState
+              let ctx, state =
+                  buildSimState
                       [| attacker; teammate |]
                       [| (52.5, 34.0); (70.0, 34.0) |]
                       [| gk |]
@@ -621,8 +598,8 @@ let matchPlayerActionTests =
 
               let flipped =
                   Array.init 30 (fun _ ->
-                      let s', _ = resolveAction (Pass attacker) s
-                      s'.AttackingClub = AwayClub)
+                      resolveAction (Pass attacker) (ctx, state) |> ignore
+                      state.AttackingClub = AwayClub)
                   |> Array.filter id
                   |> Array.length
 
@@ -643,13 +620,11 @@ let matchPlayerActionTests =
                       Technical = { defaultTechnical with Tackling = 1 }
                       Physical = { defaultPhysical with Strength = 1 } }
 
-              let s =
-                  buildMatchState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (75.0, 34.0) |] 70.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (75.0, 34.0) |] 70.0 34.0 HomeClub
 
               let successes =
-                  Array.init 30 (fun _ ->
-                      let _, events = resolveAction Dribble s
-                      hasEvent DribbleSuccess events)
+                  Array.init 30 (fun _ -> resolveAction Dribble (ctx, state) |> hasEvent DribbleSuccess)
                   |> Array.filter id
                   |> Array.length
 
@@ -660,15 +635,11 @@ let matchPlayerActionTests =
               let defender = makeHighAggressionPlayer 10 DC
               let attacker = makePlayer 1 ST 10
 
-              let s =
-                  buildMatchState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (71.0, 34.0) |] 70.0 34.0 HomeClub
-
-              let s' = { s with AttackingClub = AwayClub }
+              let ctx, state =
+                  buildSimState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (71.0, 34.0) |] 70.0 34.0 AwayClub
 
               let fouls =
-                  Array.init 50 (fun _ ->
-                      let _, events = resolve awayClub.Id 1 (Tackle defender) s'
-                      hasEvent FoulCommitted events)
+                  Array.init 50 (fun _ -> resolve awayClub.Id 1 (Tackle defender) ctx state |> hasEvent FoulCommitted)
                   |> Array.filter id
                   |> Array.length
 
@@ -686,10 +657,10 @@ let matchPlayerActionTests =
 
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState [| kicker |] [| (65.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 65.0 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| kicker |] [| (65.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 65.0 34.0 HomeClub
 
-              let _, events = resolveAction PlayerAction.FreeKick s
+              let events = resolveAction PlayerAction.FreeKick (ctx, state)
 
               Expect.exists
                   events
@@ -704,10 +675,10 @@ let matchPlayerActionTests =
               let attacker = makePlayer 1 ST 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState [| attacker |] [| (95.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 104.0 10.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (95.0, 34.0) |] [| gk |] [| (99.0, 34.0) |] 104.0 10.0 HomeClub
 
-              let _, events = resolveAction PlayerAction.Corner s
+              let events = resolveAction PlayerAction.Corner (ctx, state)
               Expect.exists events (fun e -> e.Type = Corner) ""
 
           testCase "ExecuteThrowIn emits PassCompleted event"
@@ -716,8 +687,8 @@ let matchPlayerActionTests =
               let teammate = makePlayer 2 MC 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState
+              let ctx, state =
+                  buildSimState
                       [| thrower; teammate |]
                       [| (5.0, 20.0); (10.0, 34.0) |]
                       [| gk |]
@@ -726,7 +697,7 @@ let matchPlayerActionTests =
                       5.0
                       HomeClub
 
-              let _, events = resolveAction (ThrowIn HomeClub) s
+              let events = resolveAction (ThrowIn HomeClub) (ctx, state)
 
               Expect.exists
                   events
@@ -741,10 +712,10 @@ let matchPlayerActionTests =
               let kicker = makePlayer 1 ST 16
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState [| kicker |] [| (52.5, 34.0) |] [| gk |] [| (99.0, 34.0) |] 52.5 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| kicker |] [| (52.5, 34.0) |] [| gk |] [| (99.0, 34.0) |] 52.5 34.0 HomeClub
 
-              let _, events = resolveAction (Penalty(kicker, HomeClub, 1)) s
+              let events = resolveAction (Penalty(kicker, HomeClub, 1)) (ctx, state)
 
               Expect.exists
                   events
@@ -753,10 +724,6 @@ let matchPlayerActionTests =
                       | PenaltyAwarded _ -> true
                       | _ -> false)
                   "" ]
-
-// ============================================================================
-// Category 4: Structural Invariants — Single Match
-// ============================================================================
 
 let structuralInvariantTests =
     testList
@@ -781,8 +748,6 @@ let structuralInvariantTests =
               Expect.equal hGoals hScore "home goal event count mismatch"
               Expect.equal aGoals aScore "away goal event count mismatch"
           }
-
-          // SubTick-based time range
           test "all event SubTicks in [0, FullTimeSubTick]" {
               let clubs, players, staff = loadClubs ()
               let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
@@ -792,7 +757,6 @@ let structuralInvariantTests =
                    |> List.forall (fun e -> e.SubTick >= 0 && e.SubTick <= PhysicsContract.FullTimeSubTick))
                   "event with SubTick outside valid range"
           }
-
           test "all event ClubIds are either home or away" {
               let clubs, players, staff = loadClubs ()
               let home, away = clubs[0], clubs[1]
@@ -819,7 +783,6 @@ let structuralInvariantTests =
                   (events |> List.pairwise |> List.forall (fun (a, b) -> b.SubTick >= a.SubTick))
                   "events not sorted"
           }
-
           test "SubstitutionIn and SubstitutionOut are balanced" {
               let clubs, players, staff = loadClubs ()
               let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
@@ -844,7 +807,6 @@ let structuralInvariantTests =
 
               Expect.isTrue (homeSubs <= 3 && awaySubs <= 3) $"too many subs: home={homeSubs} away={awaySubs}"
           }
-
           test "no player receives more than 1 red card" {
               let clubs, players, staff = loadClubs ()
               let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
@@ -883,7 +845,6 @@ let structuralInvariantTests =
 
               Expect.isTrue (Set.isSubset twoYellows redPlayers) ""
           }
-
           test "FreeKick events never exceed FoulCommitted events" {
               let clubs, players, staff = loadClubs ()
               let _, _, events, _ = trySimulateMatch clubs[0] clubs[1] players staff |> getOk
@@ -899,7 +860,6 @@ let structuralInvariantTests =
 
               Expect.isTrue (fks <= fouls) $"FreeKick ({fks}) > FoulCommitted ({fouls})"
           }
-
           test "momentum stays in [-10, 10] throughout match" {
               let clubs, players, staff = loadClubs ()
               let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
@@ -916,12 +876,10 @@ let structuralInvariantTests =
               Expect.isTrue
                   (replay.Snapshots
                    |> Array.forall (fun s ->
-                       s.HomeSide.Conditions |> Array.forall (fun c -> c >= 0 && c <= 100)
-                       && s.AwaySide.Conditions |> Array.forall (fun c -> c >= 0 && c <= 100)))
+                       s.HomeConditions |> Array.forall (fun c -> c >= 0 && c <= 100)
+                       && s.AwayConditions |> Array.forall (fun c -> c >= 0 && c <= 100)))
                   ""
           }
-
-          // Metric position bounds: 0..105 x 0..68
           test "all player positions stay in metric bounds [0..105] x [0..68]" {
               let clubs, players, staff = loadClubs ()
               let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
@@ -929,13 +887,13 @@ let structuralInvariantTests =
               Expect.isTrue
                   (replay.Snapshots
                    |> Array.forall (fun s ->
-                       s.HomeSide.Positions
+                       s.HomePositions
                        |> Array.forall (fun sp ->
                            sp.X >= 0.0
                            && sp.X <= PhysicsContract.PitchLength
                            && sp.Y >= 0.0
                            && sp.Y <= PhysicsContract.PitchWidth)
-                       && s.AwaySide.Positions
+                       && s.AwayPositions
                           |> Array.forall (fun sp ->
                               sp.X >= 0.0
                               && sp.X <= PhysicsContract.PitchLength
@@ -944,100 +902,48 @@ let structuralInvariantTests =
                   "player position out of metric bounds"
           } ]
 
-// ============================================================================
-// Category 5: Biomechanics & Physics Fidelity
-// ============================================================================
-
 let biomechanicsTests =
     testList
         "Biomechanics & Physics Fidelity"
-        [ test "Limitador de Velocidad Humana — no player exceeds 10.5 m/s" {
+        [ test "no player exceeds 10.5 m/s" {
               let clubs, players, staff = loadClubs ()
               let replay = trySimulateMatchFull clubs[0] clubs[1] players staff |> getOk
 
               for snap in replay.Snapshots do
-                  for p, pos in Array.zip snap.HomeSide.Players snap.HomeSide.Positions do
+                  for i in 0 .. snap.HomePositions.Length - 1 do
+                      let pos = snap.HomePositions[i]
                       let speed = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy)
 
                       if speed > 10.5 then
-                          Expect.isTrue
-                              false
-                              $"Player {p.Id} (Pace={p.Physical.Pace}) exceeded 10.5 m/s: {speed:F2} m/s"
+                          Expect.isTrue false $"Player at index {i} exceeded 10.5 m/s: {speed:F2}"
 
-                  for p, pos in Array.zip snap.AwaySide.Players snap.AwaySide.Positions do
+                  for i in 0 .. snap.AwayPositions.Length - 1 do
+                      let pos = snap.AwayPositions[i]
                       let speed = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy)
 
                       if speed > 10.5 then
-                          Expect.isTrue
-                              false
-                              $"Player {p.Id} (Pace={p.Physical.Pace}) exceeded 10.5 m/s: {speed:F2} m/s"
+                          Expect.isTrue false $"Player at index {i} exceeded 10.5 m/s: {speed:F2}"
           }
-
-          test "Impacto de Atributos — Pace 20 is >= 30% faster than Pace 1 over 40m" {
-              // PhysicsContract.playerMaxSpeed: Pace=20,Cond=100 → 9.5 m/s; Pace=1,Cond=100 → 1.2 m/s
+          test "Pace 20 is >= 30% faster than Pace 1" {
               let speedMax = PhysicsContract.playerMaxSpeed 20 100
               let speedMin = PhysicsContract.playerMaxSpeed 1 100
               let ratio = speedMax / speedMin
-
-              Expect.isTrue
-                  (ratio >= 1.30)
-                  $"Pace 20 ({speedMax:F2}) vs Pace 1 ({speedMin:F2}) ratio={ratio:F2}, need >= 1.30"
+              Expect.isTrue (ratio >= 1.30) $"ratio={ratio:F2}, need >= 1.30"
           }
-
-          test "Validación Eje Z — ControlledBy is None when ball Z > 0.8m" {
-              // Build a state with the ball at Z=1.5m and verify contact resolution
+          test "ball at Z=1.5m is above contact threshold" {
               let attacker = makePlayer 1 ST 10
               let gk = makeGkPlayer 10 10 defaultGk
 
-              let s =
-                  buildMatchState [| attacker |] [| (52.5, 34.0) |] [| gk |] [| (99.0, 34.0) |] 52.5 34.0 HomeClub
+              let ctx, state =
+                  buildSimState [| attacker |] [| (52.5, 34.0) |] [| gk |] [| (99.0, 34.0) |] 52.5 34.0 HomeClub
 
-              let highBall =
-                  { s.Ball with
-                      Position = { s.Ball.Position with Z = 1.5 } }
+              state.Ball <-
+                  { state.Ball with
+                      Position = { state.Ball.Position with Z = 1.5 } }
 
-              let sHigh = { s with Ball = highBall }
-              // Ball at height should not be controllable even when very close to player
-              // This tests the Z < 0.6m gate in BallAgent.resolveContacts
-              Expect.isTrue (sHigh.Ball.Position.Z > 0.8) "ball should be above 0.8m"
+              Expect.isTrue (state.Ball.Position.Z > 0.8) "ball should be above 0.8m"
           }
-
-          test "Pelota en el suelo — ControlledBy set when ball Z < 0.6m and player nearby" {
-              // BallPhysics.step + resolveContacts should set ControlledBy for ground ball near player
-              let ball =
-                  { Position =
-                      { X = 52.5
-                        Y = 34.0
-                        Z = 0.0
-                        Vx = 0.0
-                        Vy = 0.0
-                        Vz = 0.0 }
-                    Spin = Spin.zero
-                    ControlledBy = None
-                    LastTouchBy = None
-                    IsInPlay = true }
-              // After physics update with a player at same position, ball should be controlled
-              let playerPos =
-                  { X = 52.5
-                    Y = 34.0
-                    Z = 0.0
-                    Vx = 0.0
-                    Vy = 0.0
-                    Vz = 0.0 }
-
-              let stepped = BallPhysics.update ball
-              // Check contact resolution manually
-              let dx = stepped.Position.X - playerPos.X
-              let dy = stepped.Position.Y - playerPos.Y
-              let dz = stepped.Position.Z - playerPos.Z
-              let dist = sqrt (dx * dx + dy * dy + dz * dz)
-
-              Expect.isTrue
-                  (dist < BalanceConfig.BallContactRadius)
-                  $"player at same position should be within contact radius ({dist:F3} < {BalanceConfig.BallContactRadius})"
-          }
-
-          test "Ball speed after physics step stays within realistic bounds" {
+          test "ball speed after physics step stays within realistic bounds" {
               let fastBall =
                   { Position =
                       { X = 52.5
@@ -1066,15 +972,10 @@ let biomechanicsTests =
                       + fastBall.Position.Vy ** 2.0
                       + fastBall.Position.Vz ** 2.0
                   )
-              // Air drag should reduce speed slightly per step
+
               Expect.isTrue (speed <= origSpeed * 1.01) $"ball accelerated from {origSpeed:F1} to {speed:F1}"
-              // Ball shouldn't go negative speed
               Expect.isTrue (speed >= 0.0) $"ball has negative velocity: {speed}"
           } ]
-
-// ============================================================================
-// Category 6: Statistical Contracts — Distributions
-// ============================================================================
 
 let statisticalTests =
     let iterations = 100
@@ -1095,11 +996,6 @@ let statisticalTests =
 
     let scoresOnly = successOutcomes |> Array.map (fun (h, a, _) -> h, a)
 
-    let isPass (e: MatchEvent) =
-        match e.Type with
-        | PassCompleted _ -> true
-        | _ -> false
-
     let isShot (e: MatchEvent) =
         match e.Type with
         | Goal
@@ -1112,6 +1008,11 @@ let statisticalTests =
         match e.Type with
         | DribbleSuccess
         | DribbleFail -> true
+        | _ -> false
+
+    let isPass (e: MatchEvent) =
+        match e.Type with
+        | PassCompleted _ -> true
         | _ -> false
 
     let countType t evs =
@@ -1132,7 +1033,7 @@ let statisticalTests =
           testCase "avg goals per match in [1.5, 4.0]"
           <| fun () ->
               let avg = scoresOnly |> Array.averageBy (fun (h, a) -> float (h + a))
-              Expect.isTrue (avg >= 1.5 && avg <= 4.0) $"avg goals = {avg:F2} (expected [1.5, 4.0])"
+              Expect.isTrue (avg >= 1.5 && avg <= 4.0) $"avg goals = {avg:F2}"
 
           testCase "no match has outlier score (either side > 10)"
           <| fun () ->
@@ -1145,7 +1046,7 @@ let statisticalTests =
                   successOutcomes
                   |> Array.averageBy (fun (_, _, ev) -> float (ev |> List.filter isShot |> List.length))
 
-              Expect.isTrue (avg >= 10.0 && avg <= 40.0) $"avg shots = {avg:F2} (expected [10, 40])"
+              Expect.isTrue (avg >= 10.0 && avg <= 40.0) $"avg shots = {avg:F2}"
 
           testCase "avg dribbles per match in [15, 100]"
           <| fun () ->
@@ -1153,7 +1054,7 @@ let statisticalTests =
                   successOutcomes
                   |> Array.averageBy (fun (_, _, ev) -> float (ev |> List.filter isDribble |> List.length))
 
-              Expect.isTrue (avg >= 15.0 && avg <= 100.0) $"avg dribbles = {avg:F2} (expected [15, 100])"
+              Expect.isTrue (avg >= 15.0 && avg <= 100.0) $"avg dribbles = {avg:F2}"
 
           testCase "avg corners per match in [3, 20]"
           <| fun () ->
@@ -1161,7 +1062,7 @@ let statisticalTests =
                   successOutcomes
                   |> Array.averageBy (fun (_, _, ev) -> float (countType Corner ev))
 
-              Expect.isTrue (avg >= 3.0 && avg <= 20.0) $"avg corners = {avg:F2} (expected [3, 20])"
+              Expect.isTrue (avg >= 3.0 && avg <= 20.0) $"avg corners = {avg:F2}"
 
           testCase "avg fouls per match in [10, 50]"
           <| fun () ->
@@ -1169,7 +1070,7 @@ let statisticalTests =
                   successOutcomes
                   |> Array.averageBy (fun (_, _, ev) -> float (countType FoulCommitted ev))
 
-              Expect.isTrue (avg >= 10.0 && avg <= 50.0) $"avg fouls = {avg:F2} (expected [10, 50])"
+              Expect.isTrue (avg >= 10.0 && avg <= 50.0) $"avg fouls = {avg:F2}"
 
           testCase "avg passes per match in [50, 800]"
           <| fun () ->
@@ -1177,7 +1078,7 @@ let statisticalTests =
                   successOutcomes
                   |> Array.averageBy (fun (_, _, ev) -> float (ev |> List.filter isPass |> List.length))
 
-              Expect.isTrue (avg >= 50.0 && avg <= 800.0) $"avg passes = {avg:F2} (expected [50, 800])"
+              Expect.isTrue (avg >= 50.0 && avg <= 800.0) $"avg passes = {avg:F2}"
 
           testCase "shot conversion rate in [3%, 25%]"
           <| fun () ->
@@ -1240,10 +1141,6 @@ let statisticalTests =
               let msPerGame = sw.Elapsed.TotalMilliseconds / float iterations
               Expect.isTrue (msPerGame < 50.0) $"{msPerGame:F4} ms/match (limit: 50 ms)" ]
 
-// ============================================================================
-// Category 7: Home Advantage — Isolated
-// ============================================================================
-
 let homeAdvantageTests =
     testList
         "Home Advantage"
@@ -1271,13 +1168,13 @@ let homeAdvantageTests =
               let homeWins = results |> Array.filter (fun (h, a) -> h > a) |> Array.length
               let awayWins = results |> Array.filter (fun (h, a) -> a > h) |> Array.length
               let draws = results |> Array.filter (fun (h, a) -> h = a) |> Array.length
-              let avgHome = float homeGoals / float totalMatches
-              let avgAway = float awayGoals / float totalMatches
               printfn "=== HOME ADVANTAGE ==="
               printfn $"Pairs: {pairs.Length} | Matches: {totalMatches}"
               printfn $"HomeWins: {homeWins} | Draws: {draws} | AwayWins: {awayWins}"
-              printfn $"Avg goals — Home: {avgHome:F2} | Away: {avgAway:F2}"
-              printfn $"Total — Home: {homeGoals} | Away: {awayGoals}"
+
+              printfn
+                  $"Avg goals — Home: {float homeGoals / float totalMatches:F2} | Away: {float awayGoals / float totalMatches:F2}"
+
               Expect.isTrue (homeGoals > awayGoals) $"home ({homeGoals}) <= away ({awayGoals})"
 
           testCase "home team commits fewer fouls"

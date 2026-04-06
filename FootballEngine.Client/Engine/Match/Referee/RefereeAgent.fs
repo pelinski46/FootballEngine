@@ -1,12 +1,12 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open MatchStateOps
+open FootballEngine.MatchSpatial
+open SimStateOps
 open SchedulingTypes
 
 module RefereeAgent =
 
-    // Phase 0: Second -> SubTick
     let private event subTick playerId clubId t =
         { SubTick = subTick
           PlayerId = playerId
@@ -15,6 +15,7 @@ module RefereeAgent =
 
     let cardProbability (playerClub: ClubSide) (p: Player) =
         let baseProb = 0.010 + float p.Mental.Aggression * 0.0004
+
         match playerClub with
         | HomeClub -> baseProb * (1.0 - BalanceConfig.HomeCardReduction)
         | AwayClub -> baseProb
@@ -22,171 +23,305 @@ module RefereeAgent =
     let injuryProbability (p: Player) =
         0.0008 + float (100 - p.Physical.Strength) * 0.00002
 
-    // Phase 2: out-of-bounds thresholds in metres (pitch is 105×68)
-    let private ballOutOfBounds (s: MatchState) : ClubSide option =
-        let pos = s.Ball.Position
+    let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : ClubSide option =
+        let pos = state.Ball.Position
         let outX = pos.X < 0.5 || pos.X > PhysicsContract.PitchLength - 0.5
         let outY = pos.Y < 0.5 || pos.Y > PhysicsContract.PitchWidth - 0.5
 
         if outX || outY then
             let lastTouchClub =
-                s.Ball.LastTouchBy
+                state.Ball.LastTouchBy
                 |> Option.bind (fun pid ->
-                    if s.HomeSide.Players |> Array.exists (fun p -> p.Id = pid) then
-                        Some s.Home.Id
-                    elif s.AwaySide.Players |> Array.exists (fun p -> p.Id = pid) then
-                        Some s.Away.Id
+                    if
+                        state.HomeSlots
+                        |> Array.exists (function
+                            | PlayerSlot.Active s -> s.Player.Id = pid
+                            | _ -> false)
+                    then
+                        Some ctx.Home.Id
+                    elif
+                        state.AwaySlots
+                        |> Array.exists (function
+                            | PlayerSlot.Active s -> s.Player.Id = pid
+                            | _ -> false)
+                    then
+                        Some ctx.Away.Id
                     else
                         None)
+
             lastTouchClub
-            |> Option.map (fun clubId -> ClubSide.flip (ClubSide.ofClubId clubId s))
+            |> Option.map (fun clubId -> ClubSide.flip (if clubId = ctx.Home.Id then HomeClub else AwayClub))
         else
             None
 
-    let decide (subTick: int) (att: Player option) (def: Player option) (s: MatchState) : RefereeAction list =
+    let decide
+        (subTick: int)
+        (att: Player option)
+        (def: Player option)
+        (ctx: MatchContext)
+        (state: SimState)
+        : RefereeAction list =
         let goalIntent =
-            GoalDetector.detect s.Ball
+            GoalDetector.detect state.Ball
             |> Option.bind (fun scoringClub ->
                 let offsideActive =
-                    s.PendingOffsideSnapshot
+                    state.PendingOffsideSnapshot
                     |> Option.map MatchSpatial.isOffsideFromSnapshot
                     |> Option.defaultValue false
 
                 if offsideActive then
                     Some AnnulGoal
                 else
-                    let scorerId, isOwnGoal = GoalDetector.scorer scoringClub s.Ball s
+                    let scorerId, isOwnGoal = GoalDetector.scorer scoringClub state.Ball ctx state
                     Some(ConfirmGoal(scoringClub, scorerId, isOwnGoal)))
             |> Option.toList
 
-        let throwInIntent = ballOutOfBounds s |> Option.map AwardThrowIn |> Option.toList
+        let throwInIntent =
+            ballOutOfBounds ctx state |> Option.map AwardThrowIn |> Option.toList
 
         let cardIntent =
             def
             |> Option.filter (fun d ->
-                let defClub = ClubSide.ofClubId (clubIdOf d s) s
+                let defClub =
+                    if
+                        state.HomeSlots
+                        |> Array.exists (function
+                            | PlayerSlot.Active s -> s.Player.Id = d.Id
+                            | _ -> false)
+                    then
+                        HomeClub
+                    else
+                        AwayClub
+
                 Stats.bernoulli (cardProbability defClub d))
-            |> Option.map (fun d -> IssueYellow(d, clubIdOf d s))
+            |> Option.map (fun d ->
+                IssueYellow(
+                    d,
+                    if
+                        state.HomeSlots
+                        |> Array.exists (function
+                            | PlayerSlot.Active s -> s.Player.Id = d.Id
+                            | _ -> false)
+                    then
+                        ctx.Home.Id
+                    else
+                        ctx.Away.Id
+                ))
             |> Option.toList
 
         let injuryIntent =
             att
             |> Option.filter (fun a -> Stats.bernoulli (injuryProbability a))
-            |> Option.map (fun a -> IssueInjury(a, clubIdOf a s))
+            |> Option.map (fun a ->
+                IssueInjury(
+                    a,
+                    if
+                        state.HomeSlots
+                        |> Array.exists (function
+                            | PlayerSlot.Active s -> s.Player.Id = a.Id
+                            | _ -> false)
+                    then
+                        ctx.Home.Id
+                    else
+                        ctx.Away.Id
+                ))
             |> Option.toList
 
         goalIntent @ throwInIntent @ cardIntent @ injuryIntent
 
-    let resolve (subTick: int) (action: RefereeAction) (s: MatchState) : MatchState * MatchEvent list =
+    let resolve (subTick: int) (action: RefereeAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         match action with
-        | RefereeIdle -> s, []
+        | RefereeIdle -> []
 
         | ConfirmGoal(scoringClub, scorerId, isOwnGoal) ->
-            let s', goalEvents = awardGoal scoringClub scorerId subTick s
-            let events =
-                if isOwnGoal then goalEvents |> List.map (fun e -> { e with Type = OwnGoal })
-                else goalEvents
-            s' |> clearOffsideSnapshot, events
+            let goalEvents = awardGoal scoringClub scorerId subTick ctx state
+            clearOffsideSnapshot state
+
+            if isOwnGoal then
+                goalEvents |> List.map (fun e -> { e with Type = OwnGoal })
+            else
+                goalEvents
 
         | AnnulGoal ->
             let resetX =
-                match s.PendingOffsideSnapshot with
+                match state.PendingOffsideSnapshot with
                 | Some snap -> snap.BallXAtPass
                 | None -> PhysicsContract.HalfwayLineX
 
-            { s with
-                Ball =
-                    { s.Ball with
-                        Position = defaultSpatial resetX (PhysicsContract.PitchWidth / 2.0)
-                        Spin = Spin.zero
-                        LastTouchBy = None
-                        IsInPlay = true } }
-            |> clearOffsideSnapshot, []
+            state.Ball <-
+                { state.Ball with
+                    Position = defaultSpatial resetX (PhysicsContract.PitchWidth / 2.0)
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    IsInPlay = true }
+
+            clearOffsideSnapshot state
+            []
 
         | AwardThrowIn team ->
-            // Phase 2: throw-in positions in metres
             let throwX =
                 match team with
                 | HomeClub -> PhysicsContract.PenaltyAreaDepth
                 | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
 
-            { s with
-                AttackingClub = team
-                Ball =
-                    { s.Ball with
-                        Position =
-                            { s.Ball.Position with
-                                X = throwX; Y = PhysicsContract.PitchWidth / 2.0
-                                Z = 0.0; Vx = 0.0; Vy = 0.0; Vz = 0.0 }
-                        Spin = Spin.zero
-                        LastTouchBy = None
-                        IsInPlay = true } }
-            |> clearOffsideSnapshot, []
+            state.AttackingClub <- team
+
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            X = throwX
+                            Y = PhysicsContract.PitchWidth / 2.0
+                            Z = 0.0
+                            Vx = 0.0
+                            Vy = 0.0
+                            Vz = 0.0 }
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    IsInPlay = true }
+
+            clearOffsideSnapshot state
+            []
 
         | AwardCorner team ->
-            // Phase 2: corner positions in metres
             let cornerX =
                 match team with
                 | HomeClub -> PhysicsContract.PitchLength - 0.5
                 | AwayClub -> 0.5
 
-            { s with
-                AttackingClub = team
-                Ball =
-                    { s.Ball with
-                        Position =
-                            { s.Ball.Position with
-                                X = cornerX; Y = PhysicsContract.PitchWidth / 2.0
-                                Z = 0.0; Vx = 0.0; Vy = 0.0; Vz = 0.0 }
-                        Spin = Spin.zero
-                        LastTouchBy = None
-                        IsInPlay = true } }
-            |> clearOffsideSnapshot, []
+            state.AttackingClub <- team
+
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            X = cornerX
+                            Y = PhysicsContract.PitchWidth / 2.0
+                            Z = 0.0
+                            Vx = 0.0
+                            Vy = 0.0
+                            Vz = 0.0 }
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    IsInPlay = true }
+
+            clearOffsideSnapshot state
+            []
 
         | IssueYellow(player, clubId) ->
-            let ts = side clubId s
-            let count = ts.Yellows |> Map.tryFind player.Id |> Option.defaultValue 0
+            let isHome = clubId = ctx.Home.Id
 
-            let ts', events =
-                if count >= 1 then
-                    { ts with
-                        Yellows = Map.add player.Id (count + 1) ts.Yellows
-                        Sidelined = Map.add player.Id SidelinedByRedCard ts.Sidelined },
-                    [ event subTick player.Id clubId YellowCard
-                      event subTick player.Id clubId RedCard ]
+            let count =
+                (if isHome then state.HomeYellows else state.AwayYellows)
+                |> Map.tryFind player.Id
+                |> Option.defaultValue 0
+
+            if count >= 1 then
+                if isHome then
+                    state.HomeYellows <- Map.add player.Id (count + 1) state.HomeYellows
+                    state.HomeSidelined <- Map.add player.Id SidelinedByRedCard state.HomeSidelined
                 else
-                    { ts with Yellows = Map.add player.Id (count + 1) ts.Yellows },
-                    [ event subTick player.Id clubId YellowCard ]
+                    state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
+                    state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
 
-            withSide clubId ts' s, events
+                [ event subTick player.Id clubId YellowCard
+                  event subTick player.Id clubId RedCard ]
+            else
+                if isHome then
+                    state.HomeYellows <- Map.add player.Id (count + 1) state.HomeYellows
+                else
+                    state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
+
+                [ event subTick player.Id clubId YellowCard ]
 
         | IssueRed(player, clubId) ->
-            let ts = side clubId s
-            withSide clubId { ts with Sidelined = Map.add player.Id SidelinedByRedCard ts.Sidelined } s,
+            let isHome = clubId = ctx.Home.Id
+
+            if isHome then
+                state.HomeSidelined <- Map.add player.Id SidelinedByRedCard state.HomeSidelined
+            else
+                state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
+
             [ event subTick player.Id clubId RedCard ]
 
         | IssueInjury(player, clubId) ->
-            let ts = side clubId s
-            withSide clubId { ts with Sidelined = Map.add player.Id SidelinedByInjury ts.Sidelined } s,
+            let isHome = clubId = ctx.Home.Id
+
+            if isHome then
+                state.HomeSidelined <- Map.add player.Id SidelinedByInjury state.HomeSidelined
+            else
+                state.AwaySidelined <- Map.add player.Id SidelinedByInjury state.AwaySidelined
+
             [ event subTick player.Id clubId (MatchEventType.Injury "match") ]
 
-    let agent homeId homeSquad awaySquad tick state : AgentOutput =
+    let agent homeId homeSquad awaySquad tick ctx (state: SimState) : AgentOutput =
         match tick.Kind with
-        | HalfTimeTick | FullTimeTick | MatchEndTick | ExtraTimeTick _ ->
-            { State = state; Events = []; Spawned = []; Transition = None }
+        | HalfTimeTick ->
+            state.HomeAttackDir <- RightToLeft
+
+            state.HomeSlots <-
+                state.HomeSlots
+                |> Array.map (function
+                    | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
+                    | Sidelined(p, r) -> Sidelined(p, r))
+
+            state.AwaySlots <-
+                state.AwaySlots
+                |> Array.map (function
+                    | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
+                    | Sidelined(p, r) -> Sidelined(p, r))
+
+            { Events = []
+              Spawned =
+                [ { SubTick = tick.SubTick + PhysicsContract.secondsToSubTicks 1.0
+                    Priority = TickPriority.SetPiece
+                    SequenceId = 0L
+                    Kind = KickOffTick } ]
+              Transition = Some(SetPiece KickOff) }
+        | FullTimeTick
+        | MatchEndTick
+        | ExtraTimeTick _ ->
+            { Events = []
+              Spawned = []
+              Transition = None }
 
         | InjuryTick(playerId, _severity) ->
             let player =
-                seq { yield! state.HomeSide.Players; yield! state.AwaySide.Players }
+                seq {
+                    for slot in state.HomeSlots do
+                        match slot with
+                        | PlayerSlot.Active s -> yield s.Player
+                        | _ -> ()
+
+                    for slot in state.AwaySlots do
+                        match slot with
+                        | PlayerSlot.Active s -> yield s.Player
+                        | _ -> ()
+                }
                 |> Seq.tryFind (fun p -> p.Id = playerId)
 
-            let newState, events =
+            let events =
                 match player with
-                | Some p -> resolve tick.SubTick (IssueInjury(p, clubIdOf p state)) state
-                | None -> state, []
+                | Some p ->
+                    resolve
+                        tick.SubTick
+                        (IssueInjury(
+                            p,
+                            if
+                                state.HomeSlots
+                                |> Array.exists (function
+                                    | PlayerSlot.Active s -> s.Player.Id = p.Id
+                                    | _ -> false)
+                            then
+                                ctx.Home.Id
+                            else
+                                ctx.Away.Id
+                        ))
+                        ctx
+                        state
+                | None -> []
 
-            { State = newState
-              Events = events
+            { Events = events
               Spawned =
                 [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.injuryDelay
                     Priority = TickPriority.MatchControl
@@ -195,19 +330,25 @@ module RefereeAgent =
               Transition = Some(Stopped Injury) }
 
         | ResumePlayTick ->
-            { State = state; Events = []; Spawned = []; Transition = Some LivePlay }
+            { Events = []
+              Spawned = []
+              Transition = Some LivePlay }
 
         | _ ->
-            { State = state; Events = []; Spawned = []; Transition = None }
+            { Events = []
+              Spawned = []
+              Transition = None }
 
-    let runRefereeStep subTick (att: Player option) (def: Player option) s =
-        let actions = decide subTick att def s
-        let s', evs =
+    let runRefereeStep subTick (att: Player option) (def: Player option) ctx state =
+        let actions = decide subTick att def ctx state
+
+        let evs =
             actions
             |> List.fold
-                (fun (accState, accEvents) action ->
-                    let s', evs = resolve subTick action accState
-                    s', evs @ accEvents)
-                (s, [])
-            |> fun (s, evs) -> s, List.rev evs
-        s', evs, actions
+                (fun accEvents action ->
+                    let evs = resolve subTick action ctx state
+                    evs @ accEvents)
+                []
+            |> List.rev
+
+        evs, actions

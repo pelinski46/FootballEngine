@@ -3,7 +3,7 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
-open MatchStateOps
+open SimStateOps
 
 module PlayerSteering =
 

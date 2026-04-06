@@ -16,7 +16,6 @@
         <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\Competition.fs"/>
-        <Compile Include="Domain\MatchContext.fs"/>
         <Compile Include="Domain\Negotiation.fs"/>
         <Compile Include="Domain\Inbox.fs"/>
         <Compile Include="Domain\GameState.fs"/>
@@ -34,14 +33,13 @@
         <Compile Include="Lineup.fs"/>
 
         <Compile Include="Engine\Match\Core\PhysicsContract.fs"/>
-        <Compile Include="Engine\Match\Core\MatchStateTypes.fs"/>
+        <Compile Include="Engine\Match\Core\SimTypes.fs"/>
         <Compile Include="Engine\Match\Core\BalanceConfig.fs"/>
         <Compile Include="Engine\Stats.fs"/>
         <Compile Include="Engine\Match\Ball\BallPhysics.fs"/>
 
-        <Compile Include="Engine\Match\Core\MatchCalc.fs"/>
+        <Compile Include="Engine\Match\Core\MatchFormulas.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
-        <Compile Include="Engine\Match\Core\MatchState.fs"/>
         <Compile Include="Engine\Match\Core\MatchSpatial.fs"/>
         <Compile Include="Engine\Match\Core\ActionContext.fs"/>
         <Compile Include="Engine\Match\Core\BalanceCalibrator.fs"/>

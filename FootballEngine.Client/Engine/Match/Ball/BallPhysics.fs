@@ -2,67 +2,100 @@ namespace FootballEngine
 
 open System
 
-/// Pure ball physics integrator.
-/// Operates in metres (SI units). dt = PhysicsContract.Dt = 0.025s.
-/// One call = one physics step. No substep loop.
 module BallPhysics =
 
+    let private applyAerodynamics (pos: Spatial) (spin: Spin) : Spatial =
+        let speed = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy + pos.Vz * pos.Vz)
+        let dt = PhysicsContract.Dt
+
+        let magnusX = spin.Side * BalanceConfig.BallMagnusCoeff * pos.Vy
+        let magnusY = spin.Side * BalanceConfig.BallMagnusCoeff * (-pos.Vx)
+        let magnusZ = spin.Top * BalanceConfig.BallMagnusCoeff * speed
+
+        let vx = pos.Vx * BalanceConfig.BallAirDrag + magnusX * dt
+        let vy = pos.Vy * BalanceConfig.BallAirDrag + magnusY * dt
+        let vz = pos.Vz + BalanceConfig.BallGravity * dt + magnusZ * dt
+
+        { pos with
+            X = pos.X + vx * dt
+            Y = pos.Y + vy * dt
+            Z = pos.Z + vz * dt
+            Vx = vx
+            Vy = vy
+            Vz = vz }
+
+    let private applyGroundCollision (pos: Spatial) : Spatial =
+        if pos.Z > 0.0 then
+            pos
+        else
+            { pos with
+                Z = 0.0
+                Vx = pos.Vx * BalanceConfig.BallGroundFriction
+                Vy = pos.Vy * BalanceConfig.BallGroundFriction
+                Vz = abs pos.Vz * BalanceConfig.BallGroundRestitution }
+
+    let private clampToPitch (pos: Spatial) : Spatial =
+        { pos with
+            X = Math.Clamp(pos.X, 0.0, PhysicsContract.PitchLength)
+            Y = Math.Clamp(pos.Y, 0.0, PhysicsContract.PitchWidth) }
+
+    let private applyGoalPostHome (pos: Spatial) : Spatial =
+        let inGoalY =
+            pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+
+        let inGoalZ = pos.Z >= 0.0 && pos.Z <= PhysicsContract.CrossbarHeight
+
+        let nearPost =
+            pos.X >= PhysicsContract.GoalLineHome - 0.2
+            && pos.X <= PhysicsContract.GoalLineHome
+
+        if inGoalY && inGoalZ && nearPost then
+            { pos with
+                X = PhysicsContract.GoalLineHome - 0.2
+                Vx = -pos.Vx * BalanceConfig.BallPostRestitution }
+        else
+            pos
+
+    let private applyGoalPostAway (pos: Spatial) : Spatial =
+        let inGoalY =
+            pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+
+        let inGoalZ = pos.Z >= 0.0 && pos.Z <= PhysicsContract.CrossbarHeight
+
+        let nearPost =
+            pos.X <= PhysicsContract.GoalLineAway + 0.2
+            && pos.X >= PhysicsContract.GoalLineAway
+
+        if inGoalY && inGoalZ && nearPost then
+            { pos with
+                X = PhysicsContract.GoalLineAway + 0.2
+                Vx = -pos.Vx * BalanceConfig.BallPostRestitution }
+        else
+            pos
+
+    let private stopThreshold = 0.06
+
+    let private applyStopThreshold (pos: Spatial) : Spatial =
+        if pos.Z > 0.0 then
+            pos
+        else
+            { pos with
+                Vx = if abs pos.Vx < stopThreshold then 0.0 else pos.Vx
+                Vy = if abs pos.Vy < stopThreshold then 0.0 else pos.Vy }
+
     let update (ball: BallPhysicsState) : BallPhysicsState =
-        let dt  = PhysicsContract.Dt
-        let pos = ball.Position
+        let newPos =
+            applyAerodynamics ball.Position ball.Spin
+            |> applyGroundCollision
+            |> clampToPitch
+            |> applyGoalPostHome
+            |> applyGoalPostAway
+            |> applyStopThreshold
 
-        let speed   = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy + pos.Vz * pos.Vz)
-        let magnusX =  ball.Spin.Side * BalanceConfig.BallMagnusCoeff * pos.Vy
-        let magnusY =  ball.Spin.Side * BalanceConfig.BallMagnusCoeff * (-pos.Vx)
-        let magnusZ =  ball.Spin.Top  * BalanceConfig.BallMagnusCoeff * speed
-
-        let vz' = pos.Vz + BalanceConfig.BallGravity * dt + magnusZ * dt
-        let vx' = pos.Vx * BalanceConfig.BallAirDrag  + magnusX * dt
-        let vy' = pos.Vy * BalanceConfig.BallAirDrag  + magnusY * dt
-
-        let x' = pos.X + vx' * dt
-        let y' = pos.Y + vy' * dt
-        let z' = pos.Z + vz' * dt
-
-        let z'', vx'', vy'', vz'' =
-            if z' <= 0.0 then
-                0.0,
-                vx' * BalanceConfig.BallGroundFriction,
-                vy' * BalanceConfig.BallGroundFriction,
-                abs vz' * BalanceConfig.BallGroundRestitution
-            else
-                z', vx', vy', vz'
-
-        let x'' = Math.Clamp(x', 0.0, PhysicsContract.PitchLength)
-        let y'' = Math.Clamp(y', 0.0, PhysicsContract.PitchWidth)
-
-        let inGoalY = y'' >= PhysicsContract.PostNearY && y'' <= PhysicsContract.PostFarY
-        let inGoalZ = z'' >= 0.0 && z'' <= PhysicsContract.CrossbarHeight
-
-        let x''', vx''' =
-            let frameX = PhysicsContract.GoalLineHome
-            if inGoalY && inGoalZ && x'' >= frameX - 0.2 && x'' <= frameX then
-                frameX - 0.2, -vx'' * BalanceConfig.BallPostRestitution
-            else
-                x'', vx''
-
-        let x'''', vx'''' =
-            let frameX = PhysicsContract.GoalLineAway
-            if inGoalY && inGoalZ && x''' <= frameX + 0.2 && x''' >= frameX then
-                frameX + 0.2, -vx''' * BalanceConfig.BallPostRestitution
-            else
-                x''', vx'''
-
-        let spin' =
-            { Top  = ball.Spin.Top  * BalanceConfig.BallSpinDecay
+        let newSpin =
+            { Top = ball.Spin.Top * BalanceConfig.BallSpinDecay
               Side = ball.Spin.Side * BalanceConfig.BallSpinDecay }
 
         { ball with
-            Position =
-                { X  = x''''
-                  Y  = y''
-                  Z  = z''
-                  Vx = vx''''
-                  Vy = vy''
-                  Vz = vz'' }
-            Spin = spin' }
+            Position = newPos
+            Spin = newSpin }

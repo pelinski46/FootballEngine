@@ -1,7 +1,6 @@
 namespace FootballEngine.Benchmarks
 
 open BenchmarkDotNet.Attributes
-open BenchmarkDotNet.Engines
 open BenchmarkDotNet.Order
 open FootballEngine
 open FootballEngine.Domain
@@ -48,20 +47,19 @@ type BenchBase() =
     member this.BaseSetup() =
         let c, p, st = loadClubs ()
 
-        match setup c.[0] c.[1] p st false with
+        match setup c[0] c[1] p st false with
         | Ok(init, h, a) ->
             this.State <- init
             this.HomeSquad <- h
             this.AwaySquad <- a
-            this.HomeId <- c.[0].Id
-            this.Attacker <- init.HomeSide.Players.[9]
-            this.Target <- init.HomeSide.Players.[10]
+            this.HomeId <- c[0].Id
+            this.Attacker <- init.HomeSide.Players[9]
+            this.Target <- init.HomeSide.Players[10]
         | Error e -> failwithf "Setup failed: %A" e
 
 
 [<MemoryDiagnoser>]
 [<Orderer(SummaryOrderPolicy.FastestToSlowest)>]
-[<SimpleJob(RunStrategy.Monitoring, warmupCount = 2, iterationCount = 10)>]
 type MatchEngineE2EBenchmarks() =
     inherit BenchBase()
 
@@ -70,13 +68,13 @@ type MatchEngineE2EBenchmarks() =
 
     [<Benchmark(Baseline = true, Description = "E2E: Full 90-Min Match")>]
     member this.FullMatchFast() =
-        MatchSimulator.runLoopFastDes this.HomeId this.HomeSquad this.AwaySquad this.State
+        runLoopDes this.HomeId this.HomeSquad this.AwaySquad this.State
 
     [<Benchmark(Description = "E2E: Match State Init Only")>]
     member _.MatchStateInitOnly() =
         let c, p, st = loadClubs ()
 
-        match setup c.[0] c.[1] p st false with
+        match setup c[0] c[1] p st false with
         | Ok(init, _, _) -> init
         | Error e -> failwithf "%A" e
 
@@ -88,7 +86,6 @@ type MovementBenchmarks() =
     inherit BenchBase()
 
     let mutable emptyEvents = ResizeArray<MatchEvent>()
-    // Directives pre-built para aislar el costo de composición vs. creación
     let mutable mockDirectives: Directive[][] = [||]
 
     [<GlobalSetup>]
@@ -136,10 +133,10 @@ type MovementBenchmarks() =
 
         let singleSide =
             { side with
-                Players = side.Players.[0..0]
-                Conditions = side.Conditions.[0..0]
-                Positions = side.Positions.[0..0]
-                BasePositions = side.BasePositions.[0..0] }
+                Players = side.Players[0..0]
+                Conditions = side.Conditions[0..0]
+                Positions = side.Positions[0..0]
+                BasePositions = side.BasePositions[0..0] }
 
         let singleState =
             { this.State with
@@ -149,7 +146,7 @@ type MovementBenchmarks() =
 
     [<Benchmark(Description = "[DIAG] Directive composition (3 directives)")>]
     member this.DirectivesComposeOnly() =
-        let directives = mockDirectives.[0]
+        let directives = mockDirectives[0]
         Directive.composeDirectives 40 directives DirectiveModifiers.neutral
 
 
@@ -325,7 +322,7 @@ type InfrastructureBenchmarks() =
     [<Benchmark(Description = "Record: TeamSide with Array.copy (Positions)")>]
     member this.ArrayUpdate() =
         let newPos = Array.copy this.State.HomeSide.Positions
-        newPos.[0] <- { newPos.[0] with X = 10.0 }
+        newPos[0] <- { newPos[0] with X = 10.0 }
 
         { this.State with
             HomeSide =
@@ -391,7 +388,7 @@ type InfrastructureBenchmarks() =
 
         for i = 0 to cg.PlayerCount - 1 do
             for j = 0 to cg.PlayerCount - 1 do
-                sum <- sum + cg.Familiarity.[i, j]
+                sum <- sum + cg.Familiarity[i, j]
 
         sum // evita dead-code elimination
 

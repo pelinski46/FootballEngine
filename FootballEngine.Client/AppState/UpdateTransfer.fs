@@ -88,7 +88,15 @@ module UpdateTransfer =
 
     let private pushNotification = AppTypes.pushNotification
 
-    let private completeTransferAndSave (p: Player) (buyer: Club) (seller: Club) (fee: decimal) (negId: int) (gs: GameState) (state: State) : State * Cmd<Msg> =
+    let private completeTransferAndSave
+        (p: Player)
+        (buyer: Club)
+        (seller: Club)
+        (fee: decimal)
+        (negId: int)
+        (gs: GameState)
+        (state: State)
+        : State * Cmd<Msg> =
         let t = state.Transfer
 
         let updatedTransfer =
@@ -106,7 +114,7 @@ module UpdateTransfer =
             NotificationIcons.win
             "Transfer Complete"
             $"{p.Name} signed for {buyer.Name} — fee: ${fee:N0}",
-        SimHelpers.saveCmd gs
+        SimHelpers.saveCmd gs state.WorldClock
 
     let handle (msg: TransferMsg) (state: State) : State * Cmd<Msg> =
         let t = state.Transfer
@@ -218,8 +226,7 @@ module UpdateTransfer =
                         | Some seller ->
                             if not (canAfford buyer draft.Fee (suggestedSalary p)) then
                                 { state with
-                                    State.Transfer.PendingOffer =
-                                        Some { draft with Fee = draft.Fee } },
+                                    State.Transfer.PendingOffer = Some { draft with Fee = draft.Fee } },
                                 Cmd.none
                             else
                                 let neg =
@@ -241,34 +248,45 @@ module UpdateTransfer =
                                         { t with
                                             PendingOffer = None
                                             ActiveNegotiationId = Some neg.Id } },
-                                SimHelpers.saveCmd newGs)
+                                SimHelpers.saveCmd newGs state.WorldClock)
 
         | WithdrawOffer negId ->
             withGame (fun gs ->
                 match gs.PendingNegotiations |> Map.tryFind negId with
                 | Some neg ->
-                    let updatedNeg = { neg with Stage = NegotiationStage.Collapsed "withdrawn" }
-                    let newGs = { gs with PendingNegotiations = gs.PendingNegotiations |> Map.add negId updatedNeg }
+                    let updatedNeg =
+                        { neg with
+                            Stage = NegotiationStage.Collapsed "withdrawn" }
+
+                    let newGs =
+                        { gs with
+                            PendingNegotiations = gs.PendingNegotiations |> Map.add negId updatedNeg }
 
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs)
                         Transfer = { t with ActiveNegotiationId = None } },
-                    SimHelpers.saveCmd newGs
+                    SimHelpers.saveCmd newGs state.WorldClock
                 | None -> state, Cmd.none)
 
         | ClearNegotiation ->
             withGame (fun gs ->
-                match t.ActiveNegotiationId |> Option.bind (fun id -> gs.PendingNegotiations |> Map.tryFind id) with
+                match
+                    t.ActiveNegotiationId
+                    |> Option.bind (fun id -> gs.PendingNegotiations |> Map.tryFind id)
+                with
                 | Some neg ->
                     match neg.Stage with
                     | NegotiationStage.RejectedByClub _
                     | NegotiationStage.RejectedByPlayer _
                     | NegotiationStage.Collapsed _ ->
-                        let newGs = { gs with PendingNegotiations = gs.PendingNegotiations |> Map.remove neg.Id }
+                        let newGs =
+                            { gs with
+                                PendingNegotiations = gs.PendingNegotiations |> Map.remove neg.Id }
+
                         { state with
                             Mode = InGame(newGs, managerEmployment newGs)
                             Transfer = { t with ActiveNegotiationId = None } },
-                        SimHelpers.saveCmd newGs
+                        SimHelpers.saveCmd newGs state.WorldClock
                     | _ ->
                         { state with
                             Transfer = { t with ActiveNegotiationId = None } },
@@ -287,24 +305,32 @@ module UpdateTransfer =
                         | NegotiationStage.RejectedByPlayer(_, _, _) ->
                             match newSalary with
                             | Some salary ->
-                                { neg with Stage = NegotiationStage.AwaitingPlayerResponse(newFee, salary) }
+                                { neg with
+                                    Stage = NegotiationStage.AwaitingPlayerResponse(newFee, salary) }
                             | None ->
-                                { neg with Stage = NegotiationStage.OfferMade newFee }
+                                { neg with
+                                    Stage = NegotiationStage.OfferMade newFee }
                         | NegotiationStage.RejectedByClub _
                         | NegotiationStage.CounterReceived _ ->
-                            { neg with Stage = NegotiationStage.OfferMade newFee }
+                            { neg with
+                                Stage = NegotiationStage.OfferMade newFee }
                         | NegotiationStage.AwaitingPlayerResponse(fee, _) ->
                             match newSalary with
                             | Some salary ->
-                                { neg with Stage = NegotiationStage.AwaitingPlayerResponse(fee, salary) }
+                                { neg with
+                                    Stage = NegotiationStage.AwaitingPlayerResponse(fee, salary) }
                             | None ->
-                                { neg with Stage = NegotiationStage.OfferMade newFee }
+                                { neg with
+                                    Stage = NegotiationStage.OfferMade newFee }
                         | _ ->
-                            { neg with Stage = NegotiationStage.OfferMade newFee }
+                            { neg with
+                                Stage = NegotiationStage.OfferMade newFee }
 
-                    let newGs = { gs with PendingNegotiations = gs.PendingNegotiations |> Map.add negId updatedNeg }
+                    let newGs =
+                        { gs with
+                            PendingNegotiations = gs.PendingNegotiations |> Map.add negId updatedNeg }
 
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs) },
-                    SimHelpers.saveCmd newGs
+                    SimHelpers.saveCmd newGs state.WorldClock
                 | None -> state, Cmd.none)

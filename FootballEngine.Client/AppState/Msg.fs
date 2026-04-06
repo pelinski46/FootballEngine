@@ -3,6 +3,7 @@ namespace FootballEngine
 open FootballEngine.Domain
 
 open AppTypes
+open FootballEngine.World
 open FootballEngine.World.WorldRunner
 
 module AppMsgs =
@@ -58,7 +59,7 @@ module AppMsgs =
         | TransferMsg of TransferMsg
         | NotificationMsg of NotificationMsg
         | InboxMsg of InboxMsg
-        | GameLoaded of GameState option
+        | GameLoaded of (GameState * WorldClock) option
         | ChangePage of Page
         | SelectPlayer of PlayerId
         | DropPlayerInSlot of slotIndex: int * playerId: int
@@ -93,8 +94,8 @@ module SimHelpers =
                 | _ -> false)
             |> Option.defaultValue 1)
 
-    let saveCmd (gs: GameState) : Elmish.Cmd<AppMsgs.Msg> =
-        Elmish.Cmd.OfTask.either Db.saveGameAsync gs (fun () -> AppMsgs.NoOp) (fun ex ->
+    let saveCmd (gs: GameState) (clock: WorldClock) : Elmish.Cmd<AppMsgs.Msg> =
+        Elmish.Cmd.OfTask.either (fun () -> Db.saveGameAsync gs clock) () (fun () -> AppMsgs.NoOp) (fun ex ->
             AppMsgs.NotificationMsg(
                 AppMsgs.PushNotification
                     { Id = 0

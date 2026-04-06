@@ -36,17 +36,23 @@ module BallAgent =
 
     let private resolveContacts
         (ball: BallPhysicsState)
-        (homePlayers: Player[])
-        (homePositions: Spatial[])
-        (awayPlayers: Player[])
-        (awayPositions: Spatial[])
+        (homeSlots: PlayerSlot[])
+        (awaySlots: PlayerSlot[])
         : BallPhysicsState * PlayerId option =
 
         let r = BalanceConfig.BallContactRadius
         let rSq = r * r
         let mutable closestDistSq = System.Double.MaxValue
         let mutable closestPlayer: Player option = None
-        let mutable closestPos = { X = 0.0; Y = 0.0; Z = 0.0; Vx = 0.0; Vy = 0.0; Vz = 0.0 }
+
+        let mutable closestPos =
+            { X = 0.0
+              Y = 0.0
+              Z = 0.0
+              Vx = 0.0
+              Vy = 0.0
+              Vz = 0.0 }
+
         let bp = ball.Position
 
         let inline checkContact (player: Player) (pPos: Spatial) =
@@ -54,16 +60,21 @@ module BallAgent =
             let dy = bp.Y - pPos.Y
             let dz = bp.Z - pPos.Z
             let dSq = dx * dx + dy * dy + dz * dz
+
             if dSq < closestDistSq then
                 closestDistSq <- dSq
                 closestPlayer <- Some player
                 closestPos <- pPos
 
-        for i = 0 to homePlayers.Length - 1 do
-            checkContact homePlayers[i] homePositions[i]
+        for i = 0 to homeSlots.Length - 1 do
+            match homeSlots[i] with
+            | PlayerSlot.Active s -> checkContact s.Player s.Pos
+            | _ -> ()
 
-        for i = 0 to awayPlayers.Length - 1 do
-            checkContact awayPlayers[i] awayPositions[i]
+        for i = 0 to awaySlots.Length - 1 do
+            match awaySlots[i] with
+            | PlayerSlot.Active s -> checkContact s.Player s.Pos
+            | _ -> ()
 
         if closestDistSq < rSq then
             match closestPlayer with
@@ -72,27 +83,34 @@ module BallAgent =
                 let canControl = ball.Position.Z < 0.6
                 let controller = if canControl then Some player.Id else None
                 resolved, controller
-            | None ->
-                ball, None
+            | None -> ball, None
         else
             ball, None
 
-    let agent homeId homeSquad awaySquad tick state : AgentOutput =
+    let agent homeId homeSquad awaySquad tick (ctx: MatchContext) (state: SimState) : AgentOutput =
         let stepped = BallPhysics.update state.Ball
-        let resolved, ctrl =
-            resolveContacts stepped
-                state.HomeSide.Players state.HomeSide.Positions
-                state.AwaySide.Players state.AwaySide.Positions
+        let resolved, ctrl = resolveContacts stepped state.HomeSlots state.AwaySlots
 
-        let newBall =
-            { resolved with
-                ControlledBy = ctrl
-                LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
+        state.Ball <-
+            match ctrl with
+            | Some _ ->
+                let dampened =
+                    { resolved.Position with
+                        Vx = resolved.Position.Vx * 0.15
+                        Vy = resolved.Position.Vy * 0.15
+                        Vz = 0.0 }
+                { resolved with
+                    Position = dampened
+                    ControlledBy = ctrl
+                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
+            | None ->
+                { resolved with
+                    ControlledBy = ctrl
+                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
 
         let nextSubTick = tick.SubTick + 1
 
-        { State = { state with Ball = newBall }
-          Events = []
+        { Events = []
           Spawned =
             [ { SubTick = nextSubTick
                 Priority = TickPriority.Physics

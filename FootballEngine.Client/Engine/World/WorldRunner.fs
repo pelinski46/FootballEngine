@@ -117,9 +117,9 @@ module WorldRunner =
                                 match result with
                                 | Ok(h, a, _, finalState) ->
                                     let injured =
-                                        finalState.HomeSide.Sidelined
+                                        finalState.HomeSidelined
                                         |> Map.toSeq
-                                        |> Seq.append (finalState.AwaySide.Sidelined |> Map.toSeq)
+                                        |> Seq.append (finalState.AwaySidelined |> Map.toSeq)
                                         |> Seq.choose (fun (pid, s) ->
                                             if s = SidelinedByInjury then Some pid else None)
                                         |> Set.ofSeq
@@ -197,9 +197,9 @@ module WorldRunner =
                 let a = replay.Final.AwayScore
 
                 let injured =
-                    replay.Final.HomeSide.Sidelined
+                    replay.Final.HomeSidelined
                     |> Map.toSeq
-                    |> Seq.append (replay.Final.AwaySide.Sidelined |> Map.toSeq)
+                    |> Seq.append (replay.Final.AwaySidelined |> Map.toSeq)
                     |> Seq.choose (fun (pid, s) -> if s = SidelinedByInjury then Some pid else None)
                     |> Set.ofSeq
 

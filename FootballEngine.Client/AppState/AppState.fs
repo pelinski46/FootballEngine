@@ -133,7 +133,7 @@ module AppState =
                         Inbox =
                             { state.Inbox with
                                 SelectedMessageId = Some messageId } },
-                    SimHelpers.saveCmd newGs)
+                    SimHelpers.saveCmd newGs state.WorldClock)
 
             | MarkAsRead messageId ->
                 withGame (fun gs ->
@@ -141,7 +141,7 @@ module AppState =
 
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs) },
-                    SimHelpers.saveCmd newGs)
+                    SimHelpers.saveCmd newGs state.WorldClock)
 
             | MarkActionTaken messageId ->
                 withGame (fun gs ->
@@ -149,11 +149,11 @@ module AppState =
 
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs) },
-                    SimHelpers.saveCmd newGs)
+                    SimHelpers.saveCmd newGs state.WorldClock)
 
         | GameLoaded result ->
             match result with
-            | Some gs ->
+            | Some(gs, clock) ->
                 let leagueId = SimHelpers.primaryLeagueId gs
 
                 { state with
@@ -161,7 +161,7 @@ module AppState =
                     CurrentPage = HomePage
                     SelectedLeagueId = leagueId
                     IsProcessing = false
-                    WorldClock = WorldClockOps.init gs.Season },
+                    WorldClock = clock },
                 Cmd.none
             | None ->
                 { state with
@@ -181,9 +181,9 @@ module AppState =
                 match state.Mode with
                 | InGame(gs, _) ->
                     if state.CurrentPage = Tactics && page <> Tactics then
-                        SimHelpers.saveCmd gs
+                        SimHelpers.saveCmd gs state.WorldClock
                     elif state.CurrentPage = Training && page <> Training then
-                        SimHelpers.saveCmd gs
+                        SimHelpers.saveCmd gs state.WorldClock
                     else
                         Cmd.none
                 | _ -> Cmd.none

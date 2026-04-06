@@ -2,7 +2,7 @@ namespace FootballEngine.Movement
 
 open FootballEngine
 open FootballEngine.Domain
-open MatchStateOps
+open SimStateOps
 
 module ShapeEngine =
 
