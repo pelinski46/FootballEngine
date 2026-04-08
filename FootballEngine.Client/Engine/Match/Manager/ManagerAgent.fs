@@ -7,12 +7,6 @@ open SchedulingTypes
 
 module ManagerAgent =
 
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
-
     type Situation =
         | Winning
         | Drawing
@@ -23,25 +17,6 @@ module ManagerAgent =
         | d when d > 0 -> Winning
         | d when d < 0 -> Losing
         | _ -> Drawing
-
-    let urgency (clubId: ClubId) (ctx: MatchContext) (state: SimState) : float =
-        let late = PhysicsContract.subTicksToSeconds state.SubTick > 60.0 * 60.0
-        let isHome = clubId = ctx.Home.Id
-
-        let ts =
-            tacticsConfig
-                (if isHome then state.HomeTactics else state.AwayTactics)
-                (if isHome then
-                     state.HomeInstructions
-                 else
-                     state.AwayInstructions)
-
-        match situation clubId ctx state, late with
-        | Losing, true -> 1.35 * ts.UrgencyMultiplier
-        | Losing, false -> 1.15 * ts.UrgencyMultiplier
-        | Winning, _ -> 0.85 * ts.UrgencyMultiplier
-        | Drawing, true -> 1.10 * ts.UrgencyMultiplier
-        | Drawing, false -> 1.00 * ts.UrgencyMultiplier
 
     let private maxSubs = 3
 
@@ -396,8 +371,8 @@ module ManagerAgent =
                         state.AwaySubsUsed <- state.AwaySubsUsed + 1
                         state.AwaySidelined <- Map.add playerOut.Id SidelinedBySub state.AwaySidelined
 
-                    [ event subTick playerOut.Id clubId SubstitutionOut
-                      event subTick incoming.Id clubId SubstitutionIn ]
+                    [ createEvent subTick playerOut.Id clubId SubstitutionOut
+                      createEvent subTick incoming.Id clubId SubstitutionIn ]
 
         | AdjustTactics(clubId, newTactics) ->
             if clubId = ctx.Home.Id then

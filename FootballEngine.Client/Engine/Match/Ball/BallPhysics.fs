@@ -84,18 +84,34 @@ module BallPhysics =
                 Vy = if abs pos.Vy < stopThreshold then 0.0 else pos.Vy }
 
     let update (ball: BallPhysicsState) : BallPhysicsState =
-        let newPos =
-            applyAerodynamics ball.Position ball.Spin
-            |> applyGroundCollision
-            |> clampToPitch
-            |> applyGoalPostHome
-            |> applyGoalPostAway
-            |> applyStopThreshold
+        let pos = ball.Position
+        let spin = ball.Spin
 
-        let newSpin =
-            { Top = ball.Spin.Top * BalanceConfig.BallSpinDecay
-              Side = ball.Spin.Side * BalanceConfig.BallSpinDecay }
+        // Fast path: grounded ball with no spin — skip aerodynamics, posts, gravity
+        if pos.Z = 0.0 && pos.Vz = 0.0 && spin.Top = 0.0 && spin.Side = 0.0 then
+            let newPos =
+                { pos with
+                    X = pos.X + pos.Vx * PhysicsContract.Dt
+                    Y = pos.Y + pos.Vy * PhysicsContract.Dt
+                    Vx = pos.Vx * BalanceConfig.BallGroundFriction
+                    Vy = pos.Vy * BalanceConfig.BallGroundFriction }
+                |> clampToPitch
+                |> applyStopThreshold
 
-        { ball with
-            Position = newPos
-            Spin = newSpin }
+            { ball with Position = newPos }
+        else
+            let newPos =
+                applyAerodynamics pos spin
+                |> applyGroundCollision
+                |> clampToPitch
+                |> applyGoalPostHome
+                |> applyGoalPostAway
+                |> applyStopThreshold
+
+            let newSpin =
+                { Top = spin.Top * BalanceConfig.BallSpinDecay
+                  Side = spin.Side * BalanceConfig.BallSpinDecay }
+
+            { ball with
+                Position = newPos
+                Spin = newSpin }

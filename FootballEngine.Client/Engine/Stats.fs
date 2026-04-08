@@ -33,7 +33,8 @@ module Stats =
 
     let bernoulli (p: float) : bool =
         let clampedP = if Double.IsNaN p then 0.0 else Math.Clamp(p, 0.0, 1.0)
-        (Discrete.Bernoulli.Init clampedP).Sample() = 1
+        let dist = Discrete.Bernoulli.Init clampedP
+        dist.Sample() = 1
 
     let logistic (x: float) : float = 1.0 / (1.0 + exp (-x))
 
@@ -41,9 +42,11 @@ module Stats =
         bernoulli (logistic (score * steepness))
 
     let betaSample (mean: float) (concentration: float) : float =
-        let alpha = Math.Max(0.01, mean * concentration)
-        let beta' = Math.Max(0.01, (1.0 - mean) * concentration)
-        Continuous.Beta.Sample alpha beta'
+        let clampedMean = Math.Clamp(mean, 0.01, 0.99)
+        let alpha = Math.Max(0.01, clampedMean * concentration)
+        let betaVal = Math.Max(0.01, (1.0 - clampedMean) * concentration)
+        let dist = Continuous.Beta.Init alpha betaVal
+        dist.Sample()
 
     let poissonSample (lambda: float) : int = Discrete.Poisson.Sample lambda
 
@@ -76,9 +79,10 @@ module Stats =
         Random.SetSampleGenerator(Random.RandThreadSafe())
 
     let humanPerformance (stat: int) (condition: int) (morale: int) : float =
-        let base' = float stat * (float condition / 100.0) * (0.8 + float morale / 500.0)
+        let normStat = float stat / 20.0
+        let base' = normStat * (float condition / 100.0) * (0.8 + float morale / 500.0)
         let variability = 1.0 + (1.0 - float condition / 100.0) * 0.4
-        normalSample base' (variability * 0.6)
+        normalSample base' (variability * 0.1) // Reduced sigma to avoid negative spikes
 
     let physicalVariation (condition: int) : float =
         let base' = float condition / 100.0

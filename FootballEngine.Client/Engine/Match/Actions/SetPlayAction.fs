@@ -8,67 +8,23 @@ open MatchSpatial
 
 module SetPlayAction =
 
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
-
-    let private ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (state: SimState) =
-        let bX = state.Ball.Position.X
-        let bY = state.Ball.Position.Y
-        let dx = targetX - bX
-        let dy = targetY - bY
-        let dist = sqrt (dx * dx + dy * dy)
-
-        if dist < 0.01 then
-            withBallVelocity 0.0 0.0 vz state
-        else
-            withBallVelocity (dx / dist * speed) (dy / dist * speed) vz state
-
     let resolveFreeKick (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         let actx = ActionContext.build state
         let clubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let attSlots = getSlots state actx.AttSide
+        let defSlots = getSlots state actx.DefSide
 
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        let mutable kickerIdx = 0
-        let mutable kickerDistSq = System.Double.MaxValue
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s ->
-                let dx = s.Pos.X - bX
-                let dy = s.Pos.Y - bY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < kickerDistSq then
-                    kickerDistSq <- dSq
-                    kickerIdx <- i
-            | _ -> ()
+        let kickerIdx = nearestIdxToBall attSlots bX bY
 
         let kicker, kickerCond =
             match attSlots[kickerIdx] with
             | PlayerSlot.Active s -> s.Player, s.Condition
             | _ -> Unchecked.defaultof<Player>, 0
 
-        let defPlayers =
-            Array.init defSlots.Length (fun i ->
-                match defSlots[i] with
-                | PlayerSlot.Active s -> s.Player
-                | _ -> Unchecked.defaultof<Player>)
+        let defPlayers = playersArray defSlots
 
         let shotPower =
             effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale 2.0
@@ -98,7 +54,7 @@ module SetPlayAction =
         if scored then
             let goalEvents = awardGoal actx.AttSide (Some kicker.Id) subTick ctx state
             state.Ball <- { state.Ball with Spin = spin }
-            (event subTick kicker.Id clubId (FreeKick true)) :: goalEvents
+            (createEvent subTick kicker.Id clubId (FreeKick true)) :: goalEvents
         else
             let targetX =
                 if actx.Dir = LeftToRight then
@@ -106,21 +62,21 @@ module SetPlayAction =
                 else
                     PhysicsContract.PitchLength - BalanceConfig.FreeKickTargetX
 
-            ballTowards targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
+            MatchSpatial.ballTowards targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
             flipPossession state
             state.Ball <- { state.Ball with Spin = spin }
 
             let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
             let events =
-                [ yield event subTick kicker.Id clubId (FreeKick false)
+                [ yield createEvent subTick kicker.Id clubId (FreeKick false)
                   match gk with
-                  | Some g -> yield event subTick g.Id gkClubId Save
+                  | Some g -> yield createEvent subTick g.Id gkClubId Save
                   | None -> () ]
 
             if bernoulli BalanceConfig.PostShotClearProbability then
                 let clearY = PhysicsContract.PitchWidth / 2.0 + normalSample 0.0 10.0
-                ballTowards PhysicsContract.HalfwayLineX clearY 16.0 1.5 state
+                MatchSpatial.ballTowards PhysicsContract.HalfwayLineX clearY 16.0 1.5 state
 
             events
 
@@ -128,42 +84,27 @@ module SetPlayAction =
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let attSlots = getSlots state actx.AttSide
+        let defSlots = getSlots state actx.DefSide
 
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let activeAtts = activePlayers attSlots
 
-        let activeCount =
-            attSlots
-            |> Array.sumBy (function
-                | PlayerSlot.Active _ -> 1
-                | _ -> 0)
-
-        if activeCount = 0 then
-            let firstPlayer =
-                match attSlots[0] with
-                | PlayerSlot.Active s -> s.Player
-                | _ -> Unchecked.defaultof<Player>
-
-            [ event subTick firstPlayer.Id attClubId Corner ]
+        if activeAtts.Length = 0 then
+            []
         else
+            let taker =
+                activeAtts
+                |> Array.tryFind (fun p -> p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR)
+                |> Option.defaultValue activeAtts[0]
+
             let boxThreshold = BalanceConfig.CornerBoxXThreshold
             let defBoxThreshold = BalanceConfig.CornerDefenderBoxThreshold
 
             let attackersInBox =
                 attSlots
-                |> Array.mapi (fun i slot ->
-                    match slot with
+                |> Array.choose (function
                     | PlayerSlot.Active s -> Some(s.Player, s.Pos, s.Condition)
                     | _ -> None)
-                |> Array.choose id
                 |> Array.filter (fun (p, sp, _) ->
                     (p.Position = ST
                      || p.Position = AML
@@ -178,11 +119,9 @@ module SetPlayAction =
 
             let defendersInBox =
                 defSlots
-                |> Array.mapi (fun i slot ->
-                    match slot with
+                |> Array.choose (function
                     | PlayerSlot.Active s when s.Player.Position <> GK -> Some(s.Player, s.Pos)
                     | _ -> None)
-                |> Array.choose id
                 |> Array.filter (fun (_, sp) ->
                     if actx.Dir = LeftToRight then
                         sp.X > defBoxThreshold
@@ -198,11 +137,11 @@ module SetPlayAction =
             if attackersInBox.Length = 0 then
                 let targetX =
                     if actx.Dir = LeftToRight then
-                        PhysicsContract.PenaltyAreaDepth
-                    else
                         PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
+                    else
+                        PhysicsContract.PenaltyAreaDepth
 
-                ballTowards
+                MatchSpatial.ballTowards
                     targetX
                     (PhysicsContract.PitchWidth / 2.0)
                     BalanceConfig.CornerSpeed
@@ -211,14 +150,9 @@ module SetPlayAction =
 
                 flipPossession state
 
-                let firstPlayer =
-                    match attSlots[0] with
-                    | PlayerSlot.Active s -> s.Player
-                    | _ -> Unchecked.defaultof<Player>
-
-                [ event subTick firstPlayer.Id attClubId Corner ]
+                [ createEvent subTick taker.Id attClubId Corner ]
             else
-                let bestAttacker, bestAttackerSp, bestAttackerCond =
+                let bestAttacker, _bestAttackerSp, bestAttackerCond =
                     attackersInBox
                     |> Array.maxBy (fun (p, _, _) -> p.Physical.Strength + p.Technical.Heading)
 
@@ -248,23 +182,16 @@ module SetPlayAction =
                 let densityPenalty = (numDefenders - 3.0) * 0.05
 
                 let crossQuality =
-                    attSlots
-                    |> Array.tryPick (fun slot ->
-                        match slot with
-                        | PlayerSlot.Active s when
-                            s.Player.Position = ML
-                            || s.Player.Position = MR
-                            || s.Player.Position = AML
-                            || s.Player.Position = AMR
-                            || s.Player.Position = MC
-                            ->
+                    activeAtts
+                    |> Array.tryPick (fun p ->
+                        if p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR || p.Position = MC then
                             Some(
-                                PhysicsContract.normaliseAttr s.Player.Technical.Crossing
+                                PhysicsContract.normaliseAttr p.Technical.Crossing
                                 * BalanceConfig.CrossCrossingWeight
-                                + PhysicsContract.normaliseAttr s.Player.Technical.Passing
+                                + PhysicsContract.normaliseAttr p.Technical.Passing
                                   * BalanceConfig.CrossPassingWeight
                             )
-                        | _ -> None)
+                        else None)
                     |> Option.defaultValue BalanceConfig.CrossBaseMean
 
                 let scored =
@@ -272,7 +199,7 @@ module SetPlayAction =
 
                 if scored then
                     let goalEvents = awardGoal actx.AttSide (Some bestAttacker.Id) subTick ctx state
-                    (event subTick bestAttacker.Id attClubId Corner) :: goalEvents
+                    (createEvent subTick taker.Id attClubId Corner) :: goalEvents
                 else
                     let targetX =
                         if actx.Dir = LeftToRight then
@@ -280,7 +207,7 @@ module SetPlayAction =
                         else
                             PhysicsContract.PenaltyAreaDepth + 5.0
 
-                    ballTowards
+                    MatchSpatial.ballTowards
                         targetX
                         (PhysicsContract.PitchWidth / 2.0)
                         BalanceConfig.CornerSpeed
@@ -292,7 +219,9 @@ module SetPlayAction =
                     else
                         flipPossession state
 
-                    [ event subTick bestAttacker.Id attClubId Corner ]
+                    [ createEvent subTick taker.Id attClubId Corner ]
+
+
 
     let resolveThrowIn (subTick: int) (ctx: MatchContext) (state: SimState) (throwClub: ClubSide) : MatchEvent list =
         let actx = ActionContext.build state
@@ -345,7 +274,7 @@ module SetPlayAction =
 
                 adjustMomentum actx.Dir BalanceConfig.ThrowInMomentum state
 
-                [ event subTick thrower.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ]
+                [ createEvent subTick thrower.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ]
             | None -> []
 
     let resolvePenalty
@@ -390,11 +319,11 @@ module SetPlayAction =
 
         if scored then
             let goalEvents = awardGoal kickerClub (Some kicker.Id) penaltySubTick ctx state
-            let penaltyEvent = event penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+            let penaltyEvent = createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
             goalEvents @ [ penaltyEvent ]
         else
             resetBallToCenter state
             flipPossession state
 
-            let penaltyEvent = event penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+            let penaltyEvent = createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
             [ penaltyEvent ]

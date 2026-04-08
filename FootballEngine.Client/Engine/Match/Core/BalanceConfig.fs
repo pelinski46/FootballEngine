@@ -21,8 +21,8 @@ module TickDelay =
           MaxST = PhysicsContract.secondsToSubTicks max }
 
 // Action chain — how quickly actions follow each other within a sequence
-let duelChainDelay = TickDelay.ofSeconds 1.5 0.5 0.8 3.0
-let duelNextDelay = TickDelay.ofSeconds 6.0 2.0 3.0 12.0
+let duelChainDelay = TickDelay.ofSeconds 4.0 1.0 2.0 7.0
+let duelNextDelay = TickDelay.ofSeconds 24.0 5.0 12.0 38.0
 let shotDelay = TickDelay.ofSeconds 2.0 0.5 1.0 4.0
 let foulDelay = TickDelay.ofSeconds 5.0 1.5 3.0 9.0
 let goalDelay = TickDelay.ofSeconds 28.0 4.0 20.0 38.0
@@ -37,7 +37,7 @@ let subsDelay = TickDelay.ofSeconds 22.0 3.0 14.0 30.0
 // Match volume targets — used for balance calibration only, not physics
 // ============================================================================
 
-let AvgChainLength = 6
+let MaxChainLength = 6
 let TargetDuelTicksPerMatch = 228
 let TargetShotsPerMatch = 25.0
 let TargetDribblesPerMatch = 25.0
@@ -49,32 +49,32 @@ let TargetLongBallsPerMatch = 40.0
 // Home advantage
 // ============================================================================
 
-let HomeAdvantageStrength = 2.5
+let HomeAdvantageStrength = 4.0
 
-let HomeDuelAttackBonus = 3.0 * HomeAdvantageStrength
-let HomeDuelDefenseBonus = 1.0 * HomeAdvantageStrength
-let HomeShotComposureBonus = 3.0 * HomeAdvantageStrength
-let HomePassAccuracyBonus = 0.03 * HomeAdvantageStrength
-let HomeDribbleBonus = 1.5 * HomeAdvantageStrength
-let HomeSetPlayAccuracyBonus = 0.02 * HomeAdvantageStrength
-let HomeTackleBonus = 5.0 * HomeAdvantageStrength
-let HomeFreeKickComposure = 3.0 * HomeAdvantageStrength
-let HomePenaltyBonus = 0.02 * HomeAdvantageStrength
-let HomeCardReduction = 0.15 * HomeAdvantageStrength
-let HomeFatigueReduction = 0.05 * HomeAdvantageStrength
+let HomeDuelAttackBonus = 4.0 * HomeAdvantageStrength
+let HomeDuelDefenseBonus = 2.0 * HomeAdvantageStrength
+let HomeShotComposureBonus = 4.0 * HomeAdvantageStrength
+let HomePassAccuracyBonus = 0.05 * HomeAdvantageStrength
+let HomeDribbleBonus = 2.0 * HomeAdvantageStrength
+let HomeSetPlayAccuracyBonus = 0.04 * HomeAdvantageStrength
+let HomeTackleBonus = 6.0 * HomeAdvantageStrength
+let HomeFreeKickComposure = 5.0 * HomeAdvantageStrength
+let HomePenaltyBonus = 0.04 * HomeAdvantageStrength
+let HomeCardReduction = 0.20 * HomeAdvantageStrength
+let HomeFatigueReduction = 0.10 * HomeAdvantageStrength
 
 // ============================================================================
 // Goal / shot difficulty
 // ============================================================================
 
-let GoalDifficulty = 1.9
-let ShotQualityGate = 0.45
+let GoalDifficulty = 1.3
+let ShotQualityGate = 0.18
 let FoulBaseRate = 0.35
 let CornerOnFailedCross = 0.85
 let PostShotClearProbability = 0.40
 
-let GkSaveBonus = (GoalDifficulty - 1.0) * 50.0
-let OnTargetBase = 0.30 + (1.0 - ShotQualityGate) * 0.15
+let GkSaveBonus = (GoalDifficulty - 1.0) * 15.0
+let OnTargetBase = 0.40 + (1.0 - ShotQualityGate) * 0.20
 
 // ============================================================================
 // Shot — velocities reference PhysicsContract
@@ -130,16 +130,27 @@ let DuelFatigueDecay = 0.04
 // Pass
 // ============================================================================
 
-let PassBaseMean = 0.82
-let PassTechnicalWeight = 0.20
+let PassBaseMean = 0.88
+let PassTechnicalWeight = 0.15
 let PassVisionWeight = 0.10
-let PassSuccessShapeAlpha = 8.0
-let PassSuccessConditionMultiplier = 12.0
+let PassSuccessShapeAlpha = 10.0
+let PassSuccessConditionMultiplier = 6.0
 let PassForwardBonus = 0.15
 let PassLaneClearBonus = 0.20
 let PassOffsideMomentum = 0.30
 let PassSuccessMomentum = 0.30
 let PassFailMomentum = 0.50
+
+// Pass outcomes — multi-outcome model
+let PassDeflectBaseRate = 0.10
+let PassMisplacedBaseRate = 0.06
+let PassInterceptBaseRate = 0.05
+let PassInterceptionRadius = 5.0
+let PassPressureDistance = 8.0
+let PassDeflectPressureMultiplier = 0.12
+let PassInterceptPaceWeight = 0.35
+let PassInterceptPositioningWeight = 0.45
+let PassScrambleJitter = 3.0
 
 // Velocities come from PhysicsContract — no local redefinition
 let PassSpeed = PhysicsContract.PassSpeed
@@ -155,9 +166,9 @@ let DribbleBalanceWeight = 0.20
 let DribbleForwardDistance = 5.0 // metres the ball moves on a successful dribble
 let DribbleSuccessMomentum = 0.50
 let DribbleFailMomentum = 0.60
-let DribbleCrossProbability = 0.10
-let DribblePassProbability = 0.60
-let DribbleShotProbability = 0.30
+let DribbleCrossProbability = 0.05
+let DribblePassProbability = 0.75
+let DribbleShotProbability = 0.20
 
 // ============================================================================
 // Cross
@@ -214,8 +225,8 @@ let FreeKickTargetX =
 
 let FreeKickSpeed = 16.0
 let FreeKickVz = 1.50
-let FreeKickSavePowerThreshold = 120.0
-let FreeKickSaveVariance = 25.0
+let FreeKickSavePowerThreshold = 18.0
+let FreeKickSaveVariance = 5.0
 
 // Corner
 let CornerBoxXThreshold =
@@ -287,3 +298,15 @@ let ManagerFatigueReactionThreshold = 60 // condition % that triggers reaction
 let ManagerSustainedMomentumSubTicks = PhysicsContract.secondsToSubTicks 600 // 10 min sustained negative momentum
 let ManagerMomentumThreshold = -2.0
 let ManagerFatigueCheckSubTicks = PhysicsContract.secondsToSubTicks 120 // check every 2 min
+
+// ============================================================================
+// Build-Up Phase
+// ============================================================================
+
+let BuildUpPassSuccessBonus = 0.06
+let BuildUpDribblePenalty = 0.12
+let BuildUpLongBallPenalty = 0.08
+let BuildUpGKDistributionBonus = 0.08
+let BuildUpDCPassingBonus = 0.05
+
+

@@ -2,17 +2,12 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.MatchSpatial
 open FootballEngine.Stats
 open SimStateOps
 open MatchFormulas
 
 module ShotAction =
-
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
 
     let private finishingBonusForPosition =
         function
@@ -42,51 +37,29 @@ module ShotAction =
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
-
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let attSlots = getSlots state actx.AttSide
+        let defSlots = getSlots state actx.DefSide
 
         let bX = state.Ball.Position.X
+        let bY = state.Ball.Position.Y
 
         let inChance = actx.Zone = AttackingZone || actx.Zone = MidfieldZone
+        let shooterIdx = nearestIdxToBall attSlots bX bY
+        let shooter = playersArray attSlots |> Array.item shooterIdx
 
         if not inChance then
-            []
+            [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
         else
-            let mutable shooterIdx = 0
-            let mutable shooterDistSq = System.Double.MaxValue
 
-            for i = 0 to attSlots.Length - 1 do
-                match attSlots[i] with
-                | PlayerSlot.Active s ->
-                    let dx = s.Pos.X - bX
-                    let dy = s.Pos.Y - state.Ball.Position.Y
-                    let dSq = dx * dx + dy * dy
 
-                    if dSq < shooterDistSq then
-                        shooterDistSq <- dSq
-                        shooterIdx <- i
-                | _ -> ()
+            let shooterIdx = nearestIdxToBall attSlots bX bY
 
             let shooter, shooterCond =
                 match attSlots[shooterIdx] with
                 | PlayerSlot.Active s -> s.Player, s.Condition
                 | _ -> Unchecked.defaultof<Player>, 0
 
-            let defPlayers =
-                Array.init defSlots.Length (fun i ->
-                    match defSlots[i] with
-                    | PlayerSlot.Active s -> s.Player
-                    | _ -> Unchecked.defaultof<Player>)
+            let defPlayers = playersArray defSlots
 
             let quality =
                 let distToGoal = AttackDir.distToGoal bX actx.Dir
@@ -106,7 +79,7 @@ module ShotAction =
                 (1.0 - distNorm) * 0.7 + positionBonus * 0.3
 
             if quality < BalanceConfig.ShotQualityGate then
-                []
+                [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
             else
                 let attTactics =
                     if actx.AttSide = HomeClub then
@@ -190,7 +163,7 @@ module ShotAction =
 
                 match gk with
                 | Some g when gkSaves ->
-                    [ event subTick shooter.Id attClubId ShotBlocked
-                      event subTick g.Id gkClubId Save ]
-                | _ when not onTarget -> [ event subTick shooter.Id attClubId ShotOffTarget ]
-                | _ -> []
+                    [ createEvent subTick shooter.Id attClubId ShotBlocked
+                      createEvent subTick g.Id gkClubId Save ]
+                | _ when not onTarget -> [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
+                | _ -> awardGoal actx.AttSide (Some shooter.Id) subTick ctx state

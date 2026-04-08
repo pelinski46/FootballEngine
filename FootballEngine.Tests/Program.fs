@@ -15,10 +15,14 @@ let main argv =
     let allMatchTests =
         testList
             "Match"
-            [ matchStateOpsTests
+            [ simStateOpsTests
               matchSpatialTests
-              matchPlayerActionTests
+              shotActionTests
+              passActionTests
+              duelActionTests
+              setPieceTests
               structuralInvariantTests
+              physicsTests
               statisticalTests
               homeAdvantageTests ]
 

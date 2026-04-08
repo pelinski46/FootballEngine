@@ -21,8 +21,12 @@ type MatchEventType =
     | Corner
     | PassCompleted of fromPlayer: PlayerId * toPlayer: PlayerId
     | PassIncomplete of fromPlayer: PlayerId
+    | PassDeflected of fromPlayer: PlayerId * deflectedById: PlayerId
+    | PassIntercepted of fromPlayer: PlayerId * interceptorId: PlayerId
+    | PassMisplaced of fromPlayer: PlayerId * toPlayer: PlayerId
     | DribbleSuccess
     | DribbleFail
+    | DribbleKeep
     | TackleSuccess
     | TackleFail
     | CrossAttempt of isSuccessful: bool

@@ -38,7 +38,14 @@ module PlayerAgent =
 
     let private hasTerminatingEvent (events: MatchEvent list) =
         events
-        |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.FoulCommitted)
+        |> List.exists (fun e ->
+            match e.Type with
+            | MatchEventType.Goal
+            | MatchEventType.FoulCommitted
+            | MatchEventType.ShotOffTarget
+            | MatchEventType.ShotBlocked
+            | MatchEventType.Save -> true
+            | _ -> false)
 
     let private transitionFromEvents (events: MatchEvent list) =
         let hasGoal =
@@ -54,59 +61,6 @@ module PlayerAgent =
                 | MatchEventType.FoulCommitted -> Some(Stopped Foul)
                 | MatchEventType.Corner -> Some(SetPiece Corner)
                 | _ -> None)
-
-    let private nearestAttackerIdx ballX ballY (state: SimState) (attSide: ClubSide) =
-        let slots =
-            if attSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let mutable bestIdx = 0
-        let mutable bestDistSq = System.Double.MaxValue
-
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s ->
-                let dx = s.Pos.X - ballX
-                let dy = s.Pos.Y - ballY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestIdx <- i
-            | _ -> ()
-
-        bestIdx
-
-    let private nearestDefender ballX ballY (state: SimState) (defSide: ClubSide) : Player option =
-        let slots =
-            if defSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        if slots.Length = 0 then
-            None
-        else
-            let mutable bestIdx = 0
-            let mutable bestDistSq = System.Double.MaxValue
-
-            for i = 0 to slots.Length - 1 do
-                match slots[i] with
-                | PlayerSlot.Active s ->
-                    let dx = s.Pos.X - ballX
-                    let dy = s.Pos.Y - ballY
-                    let dSq = dx * dx + dy * dy
-
-                    if dSq < bestDistSq then
-                        bestDistSq <- dSq
-                        bestIdx <- i
-                | _ -> ()
-
-            match slots[bestIdx] with
-            | PlayerSlot.Active s -> Some s.Player
-            | _ -> None
 
     let private spawnNextDuel subTick interval =
         { SubTick = subTick + interval
@@ -129,13 +83,8 @@ module PlayerAgent =
                   Transition = None }
             else
                 let bx, by = state.Ball.Position.X, state.Ball.Position.Y
-                let attIdx = nearestAttackerIdx bx by state state.AttackingClub
-
-                let attSlots =
-                    if state.AttackingClub = HomeClub then
-                        state.HomeSlots
-                    else
-                        state.AwaySlots
+                let attSlots = SimStateOps.getSlots state state.AttackingClub
+                let attIdx = MatchSpatial.nearestIdxToBall attSlots bx by
 
                 let att =
                     match attSlots[attIdx] with
@@ -149,63 +98,168 @@ module PlayerAgent =
                   Transition = None }
 
         | PlayerActionTick(depth, action, attId) ->
+            let prevAttackingClub = state.AttackingClub
             let playerEvents = resolve homeId tick.SubTick action ctx state
+            let possessionChanged = state.AttackingClub <> prevAttackingClub
 
             let att =
                 attId
                 |> Option.bind (fun pid ->
-                    state.HomeSlots
-                    |> Array.tryPick (function
-                        | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
-                        | _ -> None)
-                    |> Option.orElseWith (fun () ->
-                        state.AwaySlots
+                    SimStateOps.clubSideOf state pid
+                    |> Option.bind (fun side ->
+                        let slots = SimStateOps.getSlots state side
+
+                        slots
                         |> Array.tryPick (function
                             | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
                             | _ -> None)))
 
             let bx, by = state.Ball.Position.X, state.Ball.Position.Y
             let defSide = ClubSide.flip state.AttackingClub
-            let def = nearestDefender bx by state defSide
+            let defSlots = SimStateOps.getSlots state defSide
+
+            let def =
+                if defSlots.Length = 0 then
+                    None
+                else
+                    let idx = MatchSpatial.nearestIdxToBall defSlots bx by
+
+                    match defSlots[idx] with
+                    | PlayerSlot.Active s -> Some s.Player
+                    | _ -> None
 
             let refEvents, _refActions =
                 RefereeAgent.runRefereeStep tick.SubTick att def ctx state
 
             let allEvents = playerEvents @ refEvents
 
-            if hasTerminatingEvent allEvents then
-                let transition = transitionFromEvents allEvents
+            let foulEvents =
+                allEvents |> List.filter (fun e -> e.Type = MatchEventType.FoulCommitted)
+
+            let cardEvents =
+                foulEvents
+                |> List.collect (fun fe ->
+                    let foulerOpt =
+                        state.HomeSlots
+                        |> Array.tryPick (function
+                            | PlayerSlot.Active s when s.Player.Id = fe.PlayerId -> Some s.Player
+                            | _ -> None)
+                        |> Option.orElseWith (fun () ->
+                            state.AwaySlots
+                            |> Array.tryPick (function
+                                | PlayerSlot.Active s when s.Player.Id = fe.PlayerId -> Some s.Player
+                                | _ -> None))
+
+                    match foulerOpt with
+                    | Some fouler ->
+                        let actions = RefereeAgent.decideCard tick.SubTick fouler ctx state
+                        actions |> List.collect (fun a -> RefereeAgent.resolve tick.SubTick a ctx state)
+                    | None -> [])
+
+            let allEventsWithCards = allEvents @ cardEvents
+
+            let cornerSpawned =
+                allEventsWithCards
+                |> List.exists (fun e ->
+                    match e.Type with
+                    | MatchEventType.Corner -> true
+                    | _ -> false)
+
+            let possTick =
+                if possessionChanged then
+                    [ { SubTick = tick.SubTick + 1
+                        Priority = TickPriority.Duel
+                        SequenceId = 0L
+                        Kind = PossessionChangeTick prevAttackingClub } ]
+                else
+                    []
+
+            let cornerTick =
+                if cornerSpawned then
+                    [ { SubTick = tick.SubTick + 1
+                        Priority = TickPriority.SetPiece
+                        SequenceId = 0L
+                        Kind = CornerTick(state.AttackingClub, 0) } ]
+                else
+                    []
+
+            let addPossessionTick baseSpawned = baseSpawned @ possTick @ cornerTick
+
+            let chainBreaks =
+                allEventsWithCards
+                |> List.exists (fun e ->
+                    match e.Type with
+                    | MatchEventType.PassDeflected _
+                    | MatchEventType.PassMisplaced _ -> true
+                    | _ -> false)
+                || state.AttackingClub <> prevAttackingClub
+
+            if hasTerminatingEvent allEventsWithCards || chainBreaks then
+                let transition = transitionFromEvents allEventsWithCards
 
                 let hasGoal =
-                    allEvents
+                    allEventsWithCards
                     |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.OwnGoal)
+
+                let hasFoul =
+                    allEventsWithCards
+                    |> List.exists (fun e -> e.Type = MatchEventType.FoulCommitted)
+
+                let foulTick =
+                    if hasFoul then
+                        let attSlots = SimStateOps.getSlots state state.AttackingClub
+                        let bx, by = state.Ball.Position.X, state.Ball.Position.Y
+
+                        let kickerOpt =
+                            if attSlots.Length = 0 then
+                                None
+                            else
+                                let idx = MatchSpatial.nearestIdxToBall attSlots bx by
+
+                                match attSlots[idx] with
+                                | PlayerSlot.Active s -> Some s.Player.Id
+                                | _ -> None
+
+                        match kickerOpt with
+                        | None -> []
+                        | Some kickerId ->
+                            let foulPos = SimStateOps.defaultSpatial bx by
+
+                            [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.foulDelay
+                                Priority = TickPriority.SetPiece
+                                SequenceId = 0L
+                                Kind = FreeKickTick(kickerId, foulPos, 0) } ]
+                    else
+                        []
 
                 let spawned =
                     if hasGoal then
-                        [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.goalDelay
-                            Priority = TickPriority.MatchControl
-                            SequenceId = 0L
-                            Kind = KickOffTick } ]
-                    else
-                        [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                        let kt =
+                            { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.goalDelay
+                              Priority = TickPriority.MatchControl
+                              SequenceId = 0L
+                              Kind = KickOffTick }
 
-                { Events = allEvents
+                        addPossessionTick [ kt ]
+                    else
+                        let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                        addPossessionTick (foulTick @ [ dt ])
+
+                { Events = allEventsWithCards
                   Spawned = spawned
                   Transition = transition }
-            elif depth < BalanceConfig.AvgChainLength - 1 then
-                let attSlots =
-                    if state.AttackingClub = HomeClub then
-                        state.HomeSlots
-                    else
-                        state.AwaySlots
+            elif depth < BalanceConfig.MaxChainLength - 1 then
+                let attSlots = SimStateOps.getSlots state state.AttackingClub
 
                 if attSlots.Length = 0 then
-                    { Events = allEvents
-                      Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                    let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+
+                    { Events = allEventsWithCards
+                      Spawned = addPossessionTick [ dt ]
                       Transition = None }
                 else
                     let bx', by' = state.Ball.Position.X, state.Ball.Position.Y
-                    let newAttIdx = nearestAttackerIdx bx' by' state state.AttackingClub
+                    let newAttIdx = MatchSpatial.nearestIdxToBall attSlots bx' by'
 
                     let newAtt =
                         match attSlots[newAttIdx] with
@@ -214,12 +268,14 @@ module PlayerAgent =
 
                     let newAction = decide newAtt newAttIdx ctx state
 
-                    { Events = allEvents
-                      Spawned = [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
+                    { Events = allEventsWithCards
+                      Spawned = addPossessionTick [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
                       Transition = None }
             else
-                { Events = allEvents
-                  Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
+                let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+
+                { Events = allEventsWithCards
+                  Spawned = addPossessionTick [ dt ]
                   Transition = None }
 
         | _ ->

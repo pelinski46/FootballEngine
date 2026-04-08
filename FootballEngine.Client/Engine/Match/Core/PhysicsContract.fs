@@ -3,19 +3,14 @@ namespace FootballEngine
 module PhysicsContract =
 
     [<Literal>]
-    let Dt = 0.025
-
-    [<Literal>]
     let SubTicksPerSecond = 40
 
-    [<Literal>]
-    let SecondsPerSubTick = 0.025
-
     let inline secondsToSubTicks (s: float) : int = int (s * float SubTicksPerSecond)
-
-
-    let inline subTicksToSeconds (t: int) : float = float t * SecondsPerSubTick
-
+    let inline subTicksToSeconds (t: int) : float = float t / float SubTicksPerSecond
+    let PhysicsIntervalSubTicks = 10
+    let SteeringIntervalSubTicks = secondsToSubTicks 1.0 // 40
+    let Dt = float PhysicsIntervalSubTicks / float SubTicksPerSecond
+    let DtPlayer = float SteeringIntervalSubTicks / float SubTicksPerSecond
 
     [<Literal>]
     let PitchLength = 105.0
@@ -186,26 +181,16 @@ module PhysicsContract =
     [<Literal>]
     let DuelIntervalMeanSeconds = 24.0
 
-    let DuelIntervalMeanSubTicks = secondsToSubTicks DuelIntervalMeanSeconds // 960
-    let DuelIntervalStdSubTicks = secondsToSubTicks 5.0 // 200
-    let DuelIntervalMinSubTicks = secondsToSubTicks 12.0 // 480
-    let DuelIntervalMaxSubTicks = secondsToSubTicks 38.0 // 1520
 
 
-    let DuelChainDelayMeanSeconds = 3.0
-    let DuelChainDelayMeanSubTicks = secondsToSubTicks DuelChainDelayMeanSeconds // 120
-    let DuelChainDelayStdSubTicks = secondsToSubTicks 1.0 // 40
-    let DuelChainDelayMinSubTicks = secondsToSubTicks 2.0 // 80
-    let DuelChainDelayMaxSubTicks = secondsToSubTicks 5.0 // 200
 
 
-    let SteeringIntervalSubTicks = secondsToSubTicks 0.1 // 8
 
 
-    let MarkingIntervalSubTicks = secondsToSubTicks 3.0 // 120
+    let MarkingIntervalSubTicks = secondsToSubTicks 5.0 // 200
 
 
-    let CognitiveIntervalSubTicks = secondsToSubTicks 2.0 // 80
+    let CognitiveIntervalSubTicks = secondsToSubTicks 5.0 // 200
 
 
     let AdaptiveIntervalSubTicks = secondsToSubTicks 60.0 // 2400

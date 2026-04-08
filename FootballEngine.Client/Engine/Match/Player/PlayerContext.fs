@@ -10,6 +10,7 @@ type AgentContext =
       MyPos: Spatial
       BallState: BallPhysicsState
       Dir: AttackDir
+      Phase: MatchPhase
       Zone: PitchZone
       NearestTeammate: (Player * Spatial) option
       NearestOpponent: (Player * Spatial) option
@@ -44,6 +45,7 @@ module AgentContext =
             | _ -> ()
 
         let zone = PitchZone.ofBallX state.Ball.Position.X dir
+        let phase = phaseFromBallZone dir state.Ball.Position.X
 
         let ballState = state.Ball
 
@@ -97,6 +99,7 @@ module AgentContext =
           MyPos = myPos
           BallState = ballState
           Dir = dir
+          Phase = phase
           Zone = zone
           NearestTeammate = nearestTM
           NearestOpponent = nearestOpp

@@ -4,14 +4,9 @@ open FootballEngine.Domain
 open FootballEngine.MatchSpatial
 open SimStateOps
 open SchedulingTypes
+open Stats
 
 module RefereeAgent =
-
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
 
     let cardProbability (playerClub: ClubSide) (p: Player) =
         let baseProb = 0.010 + float p.Mental.Aggression * 0.0004
@@ -23,36 +18,58 @@ module RefereeAgent =
     let injuryProbability (p: Player) =
         0.0008 + float (100 - p.Physical.Strength) * 0.00002
 
-    let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : ClubSide option =
+    type BallOutResult =
+        | NoOut
+        | ThrowIn of ClubSide
+        | Corner of ClubSide
+
+    let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : BallOutResult =
         let pos = state.Ball.Position
-        let outX = pos.X < 0.5 || pos.X > PhysicsContract.PitchLength - 0.5
         let outY = pos.Y < 0.5 || pos.Y > PhysicsContract.PitchWidth - 0.5
+        let outX = pos.X < 0.5 || pos.X > PhysicsContract.PitchLength - 0.5
 
-        if outX || outY then
-            let lastTouchClub =
-                state.Ball.LastTouchBy
-                |> Option.bind (fun pid ->
-                    if
-                        state.HomeSlots
-                        |> Array.exists (function
-                            | PlayerSlot.Active s -> s.Player.Id = pid
-                            | _ -> false)
-                    then
-                        Some ctx.Home.Id
-                    elif
-                        state.AwaySlots
-                        |> Array.exists (function
-                            | PlayerSlot.Active s -> s.Player.Id = pid
-                            | _ -> false)
-                    then
-                        Some ctx.Away.Id
-                    else
-                        None)
+        let lastTouchClubSide () =
+            state.Ball.LastTouchBy
+            |> Option.bind (fun pid ->
+                if
+                    state.HomeSlots
+                    |> Array.exists (function
+                        | PlayerSlot.Active s -> s.Player.Id = pid
+                        | _ -> false)
+                then
+                    Some HomeClub
+                elif
+                    state.AwaySlots
+                    |> Array.exists (function
+                        | PlayerSlot.Active s -> s.Player.Id = pid
+                        | _ -> false)
+                then
+                    Some AwayClub
+                else
+                    None)
 
-            lastTouchClub
-            |> Option.map (fun clubId -> ClubSide.flip (if clubId = ctx.Home.Id then HomeClub else AwayClub))
+        if outY then
+            match lastTouchClubSide () with
+            | Some side -> ThrowIn (ClubSide.flip side)
+            | None -> NoOut
+        elif outX then
+            let behindHome = pos.X < 0.5
+            let behindAway = pos.X > PhysicsContract.PitchLength - 0.5
+            let inGoalY = pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+
+            if inGoalY then NoOut
+            elif behindHome then
+                match lastTouchClubSide () with
+                | Some AwayClub -> Corner HomeClub
+                | _ -> NoOut
+            elif behindAway then
+                match lastTouchClubSide () with
+                | Some HomeClub -> Corner AwayClub
+                | _ -> NoOut
+            else
+                NoOut
         else
-            None
+            NoOut
 
     let decide
         (subTick: int)
@@ -77,37 +94,10 @@ module RefereeAgent =
             |> Option.toList
 
         let throwInIntent =
-            ballOutOfBounds ctx state |> Option.map AwardThrowIn |> Option.toList
-
-        let cardIntent =
-            def
-            |> Option.filter (fun d ->
-                let defClub =
-                    if
-                        state.HomeSlots
-                        |> Array.exists (function
-                            | PlayerSlot.Active s -> s.Player.Id = d.Id
-                            | _ -> false)
-                    then
-                        HomeClub
-                    else
-                        AwayClub
-
-                Stats.bernoulli (cardProbability defClub d))
-            |> Option.map (fun d ->
-                IssueYellow(
-                    d,
-                    if
-                        state.HomeSlots
-                        |> Array.exists (function
-                            | PlayerSlot.Active s -> s.Player.Id = d.Id
-                            | _ -> false)
-                    then
-                        ctx.Home.Id
-                    else
-                        ctx.Away.Id
-                ))
-            |> Option.toList
+            match ballOutOfBounds ctx state with
+            | ThrowIn team -> [ AwardThrowIn team ]
+            | Corner team -> [ AwardCorner team ]
+            | NoOut -> []
 
         let injuryIntent =
             att
@@ -127,7 +117,35 @@ module RefereeAgent =
                 ))
             |> Option.toList
 
-        goalIntent @ throwInIntent @ cardIntent @ injuryIntent
+        goalIntent @ throwInIntent @ injuryIntent
+
+    let decideCard (subTick: int) (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
+        let aggressionNorm = PhysicsContract.normaliseAttr fouler.Mental.Aggression
+        let isHome =
+            state.HomeSlots
+            |> Array.exists (function
+                | PlayerSlot.Active s -> s.Player.Id = fouler.Id
+                | _ -> false)
+
+        let clubSide = if isHome then HomeClub else AwayClub
+        let clubId = if isHome then ctx.Home.Id else ctx.Away.Id
+        let yellows = if isHome then state.HomeYellows else state.AwayYellows
+        let currentYellows = yellows |> Map.tryFind fouler.Id |> Option.defaultValue 0
+
+        let isSidelined =
+            if isHome then
+                state.HomeSidelined |> Map.containsKey fouler.Id
+            else
+                state.AwaySidelined |> Map.containsKey fouler.Id
+
+        if isSidelined then
+            []
+        elif currentYellows >= 1 then
+            [ IssueRed(fouler, clubId) ]
+        elif Stats.bernoulli (0.25 + aggressionNorm * 0.35) then
+            [ IssueYellow(fouler, clubId) ]
+        else
+            []
 
     let resolve (subTick: int) (action: RefereeAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         match action with
@@ -206,7 +224,10 @@ module RefereeAgent =
                     IsInPlay = true }
 
             clearOffsideSnapshot state
-            []
+            [ { SubTick = subTick
+                PlayerId = 0
+                ClubId = if team = HomeClub then ctx.Home.Id else ctx.Away.Id
+                Type = MatchEventType.Corner } ]
 
         | IssueYellow(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
@@ -224,15 +245,15 @@ module RefereeAgent =
                     state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
                     state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
 
-                [ event subTick player.Id clubId YellowCard
-                  event subTick player.Id clubId RedCard ]
+                [ createEvent subTick player.Id clubId YellowCard
+                  createEvent subTick player.Id clubId RedCard ]
             else
                 if isHome then
                     state.HomeYellows <- Map.add player.Id (count + 1) state.HomeYellows
                 else
                     state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
 
-                [ event subTick player.Id clubId YellowCard ]
+                [ createEvent subTick player.Id clubId YellowCard ]
 
         | IssueRed(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
@@ -242,7 +263,7 @@ module RefereeAgent =
             else
                 state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
 
-            [ event subTick player.Id clubId RedCard ]
+            [ createEvent subTick player.Id clubId RedCard ]
 
         | IssueInjury(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
@@ -252,7 +273,7 @@ module RefereeAgent =
             else
                 state.AwaySidelined <- Map.add player.Id SidelinedByInjury state.AwaySidelined
 
-            [ event subTick player.Id clubId (MatchEventType.Injury "match") ]
+            [ createEvent subTick player.Id clubId (MatchEventType.Injury "match") ]
 
     let agent homeId homeSquad awaySquad tick ctx (state: SimState) : AgentOutput =
         match tick.Kind with

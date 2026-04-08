@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.MatchSpatial
+open SimStateOps
 open SchedulingTypes
 
 module SetPieceAgent =
@@ -43,7 +44,7 @@ module SetPieceAgent =
 
         | PenaltyTick(kicker, isHome) ->
             let kickerPlayer =
-                let slots = if isHome then state.HomeSlots else state.AwaySlots
+                let slots = getSlots state (if isHome then HomeClub else AwayClub)
 
                 slots
                 |> Array.tryPick (function

@@ -25,107 +25,58 @@ module ChemistryGraph =
             (i, pullX, pullY))
         |> Array.toList
 
-type GameRead =
+type TeamGameRead =
+    { SpaceBehindDefense: float
+      DefensiveLineX: float
+      MyCentroidX: float
+      MyCentroidY: float
+      TeamHasPossession: bool }
+
+type PerPlayerGameRead =
     { NearestOpponentDist: float
       NearestTeammateDist: float
-      SpaceBehindDefense: float
       PressureCount: int
       SupportCount: int
       DefensiveLineX: float
-      TeamCentroidX: float
-      TeamCentroidY: float
-      MomentumDirection: float
-      TeamHasPossession: bool
       NearestOpponentIdx: int
       BallDist: float }
 
 module GameRead =
-    let compute
-        meIdx
+    let computeTeam
         (myPositions: Spatial[])
         (oppPositions: Spatial[])
         ballX
         ballY
         (dir: AttackDir)
-        momentum
-        : GameRead =
-        let myPos = myPositions[meIdx]
-        let myX = myPos.X
-        let myY = myPos.Y
-
-        let mutable nearestOppDistSq = System.Double.MaxValue
-        let mutable nearestOppIdx = 0
-        let mutable pressureCount = 0
+        : TeamGameRead =
+        let mutable mySumX = 0.0
+        let mutable mySumY = 0.0
+        let mutable myNearestBallDistSq = System.Double.MaxValue
+        let mutable oppNearestBallDistSq = System.Double.MaxValue
         let mutable defLineX = if dir = LeftToRight then -1.0 else 106.0
-
-        for i = 0 to oppPositions.Length - 1 do
-            let op = oppPositions[i]
-            let dx = op.X - myX
-            let dy = op.Y - myY
-            let dSq = dx * dx + dy * dy
-
-            if dSq < nearestOppDistSq then
-                nearestOppDistSq <- dSq
-                nearestOppIdx <- i
-
-            if dSq < 64.0 then
-                pressureCount <- pressureCount + 1
-
-            if dir = LeftToRight then
-                if op.X > defLineX then
-                    defLineX <- op.X
-            else if op.X < defLineX then
-                defLineX <- op.X
-
-        let mutable nearestTeamDistSq = System.Double.MaxValue
-        let mutable supportCount = 0
-        let mutable sumX = 0.0
-        let mutable sumY = 0.0
         let n = myPositions.Length
 
         for i = 0 to n - 1 do
             let sp = myPositions[i]
-            sumX <- sumX + sp.X
-            sumY <- sumY + sp.Y
-
-            if i <> meIdx then
-                let dx = sp.X - myX
-                let dy = sp.Y - myY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < nearestTeamDistSq then
-                    nearestTeamDistSq <- dSq
-
-                if dSq < 225.0 then
-                    supportCount <- supportCount + 1
-
-        let mutable myTeamNearestBallDistSq = System.Double.MaxValue
-
-        for i = 0 to myPositions.Length - 1 do
-            let sp = myPositions[i]
+            mySumX <- mySumX + sp.X
+            mySumY <- mySumY + sp.Y
             let dx = sp.X - ballX
             let dy = sp.Y - ballY
             let dSq = dx * dx + dy * dy
-
-            if dSq < myTeamNearestBallDistSq then
-                myTeamNearestBallDistSq <- dSq
-
-        let mutable oppNearestBallDistSq = System.Double.MaxValue
+            if dSq < myNearestBallDistSq then
+                myNearestBallDistSq <- dSq
 
         for i = 0 to oppPositions.Length - 1 do
             let op = oppPositions[i]
             let dx = op.X - ballX
             let dy = op.Y - ballY
             let dSq = dx * dx + dy * dy
-
             if dSq < oppNearestBallDistSq then
                 oppNearestBallDistSq <- dSq
-
-        let teamHasPossession = myTeamNearestBallDistSq <= oppNearestBallDistSq
-
-        let ballDx = ballX - myX
-        let ballDy = ballY - myY
-        let ballDist = sqrt (ballDx * ballDx + ballDy * ballDy)
+            if dir = LeftToRight then
+                if op.X > defLineX then defLineX <- op.X
+            else if op.X < defLineX then
+                defLineX <- op.X
 
         let spaceBehindDefense =
             if dir = LeftToRight then
@@ -133,16 +84,64 @@ module GameRead =
             else
                 defLineX
 
+        { SpaceBehindDefense = spaceBehindDefense
+          DefensiveLineX = defLineX
+          MyCentroidX = mySumX / float n
+          MyCentroidY = mySumY / float n
+          TeamHasPossession = myNearestBallDistSq <= oppNearestBallDistSq }
+
+    let computePerPlayer
+        meIdx
+        (myPositions: Spatial[])
+        (oppPositions: Spatial[])
+        ballX
+        ballY
+        (dir: AttackDir)
+        (teamRead: TeamGameRead)
+        : PerPlayerGameRead =
+        let myPos = myPositions[meIdx]
+        let myX = myPos.X
+        let myY = myPos.Y
+
+        let mutable nearestOppDistSq = System.Double.MaxValue
+        let mutable nearestOppIdx = 0
+        let mutable pressureCount = 0
+
+        for i = 0 to oppPositions.Length - 1 do
+            let op = oppPositions[i]
+            let dx = op.X - myX
+            let dy = op.Y - myY
+            let dSq = dx * dx + dy * dy
+            if dSq < nearestOppDistSq then
+                nearestOppDistSq <- dSq
+                nearestOppIdx <- i
+            if dSq < 64.0 then
+                pressureCount <- pressureCount + 1
+
+        let mutable nearestTeamDistSq = System.Double.MaxValue
+        let mutable supportCount = 0
+        let n = myPositions.Length
+
+        for i = 0 to n - 1 do
+            if i <> meIdx then
+                let sp = myPositions[i]
+                let dx = sp.X - myX
+                let dy = sp.Y - myY
+                let dSq = dx * dx + dy * dy
+                if dSq < nearestTeamDistSq then
+                    nearestTeamDistSq <- dSq
+                if dSq < 225.0 then
+                    supportCount <- supportCount + 1
+
+        let ballDx = ballX - myX
+        let ballDy = ballY - myY
+        let ballDist = sqrt (ballDx * ballDx + ballDy * ballDy)
+
         { NearestOpponentDist = sqrt nearestOppDistSq
           NearestTeammateDist = sqrt nearestTeamDistSq
-          SpaceBehindDefense = spaceBehindDefense
           PressureCount = pressureCount
           SupportCount = supportCount
-          DefensiveLineX = defLineX
-          TeamCentroidX = sumX / float n
-          TeamCentroidY = sumY / float n
-          MomentumDirection = momentum
-          TeamHasPossession = teamHasPossession
+          DefensiveLineX = teamRead.DefensiveLineX
           NearestOpponentIdx = nearestOppIdx
           BallDist = ballDist }
 
@@ -212,9 +211,10 @@ module CognitiveLayer =
         (chemistry: ChemistryGraph)
         (existingDirectives: Directive[])
         (basePos: Spatial)
+        (teamRead: TeamGameRead)
         : CognitiveUpdate =
 
-        let gr = GameRead.compute meIdx myPositions oppPositions ballX ballY dir momentum
+        let perPlayer = GameRead.computePerPlayer meIdx myPositions oppPositions ballX ballY dir teamRead
 
         let newDirectives = System.Collections.Generic.List<Directive>()
         let forwardDir = AttackDir.forwardX dir
@@ -267,9 +267,9 @@ module CognitiveLayer =
                 else
                     pitchLen - PhysicsContract.PenaltyAreaDepth
 
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let sweepBase = if dir = LeftToRight then 5.0 else 100.0
-                let advance = (gr.TeamCentroidX - pitchLen / 2.0) * 0.08
+                let advance = (teamRead.MyCentroidX - pitchLen / 2.0) * 0.08
 
                 let sweepX =
                     if dir = LeftToRight then
@@ -281,7 +281,7 @@ module CognitiveLayer =
                 newDirectives.Add(Directive.create Cover sweepX sweepY 0.7 0.5 longExpiry "cognitive")
             else
                 let dangerBase = if dir = LeftToRight then 4.0 else 101.0
-                let pull = (gr.TeamCentroidX - pitchLen / 2.0) * 0.05
+                let pull = (teamRead.MyCentroidX - pitchLen / 2.0) * 0.05
 
                 let dangerX =
                     if dir = LeftToRight then
@@ -297,7 +297,7 @@ module CognitiveLayer =
         | DL
         | WBR
         | WBL ->
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let supportX = System.Math.Clamp(anchorX + 4.0 * forwardDir, 2.0, 103.0)
                 let supportY = anchorY
                 newDirectives.Add(Directive.create Support supportX supportY 0.4 0.4 longExpiry "cognitive")
@@ -313,8 +313,8 @@ module CognitiveLayer =
                     newDirectives.Add(Directive.create Flank overlapX overlapY 0.5 0.5 shortExpiry "cognitive")
                 | _ -> ()
             else
-                let oppPos = oppPositions[gr.NearestOpponentIdx]
-                let threatDist = gr.NearestOpponentDist
+                let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
+                let threatDist = perPlayer.NearestOpponentDist
 
                 if threatDist < 15.0 then
                     newDirectives.Add(Directive.create MarkMan oppPos.X oppPos.Y 0.8 0.8 shortExpiry "cognitive")
@@ -322,26 +322,26 @@ module CognitiveLayer =
                     let blockX = System.Math.Clamp(anchorX - 3.0 * forwardDir, 2.0, 103.0)
                     newDirectives.Add(Directive.create MarkZone blockX anchorY 0.6 0.5 longExpiry "cognitive")
 
-                if gr.PressureCount >= 1 then
+                if perPlayer.PressureCount >= 1 then
                     let pressX = System.Math.Clamp(ballX - 3.0 * forwardDir, 2.0, 103.0)
                     newDirectives.Add(Directive.create Press pressX ballY 0.5 0.6 shortExpiry "cognitive")
 
         | DM ->
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let receiveX = System.Math.Clamp(ballX - 6.0 * forwardDir, 2.0, 103.0)
                 newDirectives.Add(Directive.create Support receiveX ballY 0.6 0.5 shortExpiry "cognitive")
             else
                 let screenX = System.Math.Clamp(anchorX, 2.0, 103.0)
                 newDirectives.Add(Directive.create MarkZone screenX half 0.7 0.6 shortExpiry "cognitive")
 
-                if gr.NearestOpponentDist < 12.0 then
-                    let oppPos = oppPositions[gr.NearestOpponentIdx]
+                if perPlayer.NearestOpponentDist < 12.0 then
+                    let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
                     newDirectives.Add(Directive.create MarkMan oppPos.X oppPos.Y 0.7 0.7 shortExpiry "cognitive")
 
         | MC
         | MR
         | ML ->
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let supportX = System.Math.Clamp(ballX + 5.0 * forwardDir, 2.0, 103.0)
 
                 let supportY =
@@ -352,21 +352,21 @@ module CognitiveLayer =
 
                 newDirectives.Add(Directive.create Support supportX supportY 0.6 0.5 shortExpiry "cognitive")
 
-                if gr.SpaceBehindDefense > 18.0 then
+                if teamRead.SpaceBehindDefense > 18.0 then
                     let runX = System.Math.Clamp(ballX + 14.0 * forwardDir, 2.0, 103.0)
                     newDirectives.Add(Directive.create Run runX supportY 0.5 0.6 shortExpiry "cognitive")
             else
                 let compactX = System.Math.Clamp(anchorX - 4.0 * forwardDir, 2.0, 103.0)
                 newDirectives.Add(Directive.create MarkZone compactX anchorY 0.6 0.5 longExpiry "cognitive")
 
-                if gr.NearestOpponentDist < 10.0 then
-                    let oppPos = oppPositions[gr.NearestOpponentIdx]
+                if perPlayer.NearestOpponentDist < 10.0 then
+                    let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
                     newDirectives.Add(Directive.create Press oppPos.X oppPos.Y 0.6 0.7 shortExpiry "cognitive")
 
         | AMR
         | AML
         | AMC ->
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let advanceX = System.Math.Clamp(ballX + 10.0 * forwardDir, 2.0, 103.0)
 
                 let advanceY =
@@ -382,25 +382,25 @@ module CognitiveLayer =
                 | AML -> newDirectives.Add(Directive.create Flank advanceX advanceY 0.5 0.5 shortExpiry "cognitive")
                 | _ -> ()
 
-                if gr.SpaceBehindDefense > 12.0 then
+                if teamRead.SpaceBehindDefense > 12.0 then
                     let runX = System.Math.Clamp(ballX + 18.0 * forwardDir, 2.0, 103.0)
-                    let runUrgency = if gr.SpaceBehindDefense > 22.0 then 0.8 else 0.6
+                    let runUrgency = if teamRead.SpaceBehindDefense > 22.0 then 0.8 else 0.6
                     newDirectives.Add(Directive.create Run runX advanceY 0.6 runUrgency shortExpiry "cognitive")
             else
                 let dropX = System.Math.Clamp(anchorX - 6.0 * forwardDir, 2.0, 103.0)
                 newDirectives.Add(Directive.create MarkZone dropX anchorY 0.5 0.4 longExpiry "cognitive")
 
-                if gr.BallDist < 20.0 then
+                if perPlayer.BallDist < 20.0 then
                     let pressX = System.Math.Clamp(ballX + 2.0 * forwardDir, 2.0, 103.0)
                     newDirectives.Add(Directive.create Press pressX ballY 0.6 0.7 shortExpiry "cognitive")
 
         | ST ->
-            if gr.TeamHasPossession then
+            if teamRead.TeamHasPossession then
                 let strikeX = System.Math.Clamp(ballX + 15.0 * forwardDir, 2.0, 103.0)
                 newDirectives.Add(Directive.create Support strikeX ballY 0.5 0.5 shortExpiry "cognitive")
 
-                let runUrgency = if gr.SpaceBehindDefense > 15.0 then 0.8 else 0.5
-                let runX = System.Math.Clamp(gr.DefensiveLineX + 3.0 * forwardDir, 2.0, 103.0)
+                let runUrgency = if teamRead.SpaceBehindDefense > 15.0 then 0.8 else 0.5
+                let runX = System.Math.Clamp(teamRead.DefensiveLineX + 3.0 * forwardDir, 2.0, 103.0)
                 newDirectives.Add(Directive.create Run runX ballY 0.7 runUrgency shortExpiry "cognitive")
             else
                 let pressX = System.Math.Clamp(ballX + 3.0 * forwardDir, 2.0, 103.0)
@@ -410,7 +410,7 @@ module CognitiveLayer =
                 newDirectives.Add(Directive.create MarkZone dropX half 0.4 0.4 longExpiry "cognitive")
 
         let updatedMental =
-            if gr.PressureCount > 0 then
+            if perPlayer.PressureCount > 0 then
                 Some
                     { mentalState with
                         FocusLevel = min 1.0 (mentalState.FocusLevel + 0.02) }

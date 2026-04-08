@@ -7,56 +7,16 @@ open MatchSpatial
 
 module CrossAction =
 
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
-
-    let private ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (state: SimState) =
-        let bX = state.Ball.Position.X
-        let bY = state.Ball.Position.Y
-        let dx = targetX - bX
-        let dy = targetY - bY
-        let dist = sqrt (dx * dx + dy * dy)
-
-        if dist < 0.01 then
-            withBallVelocity 0.0 0.0 vz state
-        else
-            withBallVelocity (dx / dist * speed) (dy / dist * speed) vz state
-
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let attSlots = getSlots state actx.AttSide
+        let defSlots = getSlots state actx.DefSide
 
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        let mutable crosserIdx = 0
-        let mutable crosserDistSq = System.Double.MaxValue
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s ->
-                let dx = s.Pos.X - bX
-                let dy = s.Pos.Y - bY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < crosserDistSq then
-                    crosserDistSq <- dSq
-                    crosserIdx <- i
-            | _ -> ()
+        let crosserIdx = nearestIdxToBall attSlots bX bY
 
         let crosser, crosserCond =
             match attSlots[crosserIdx] with
@@ -140,7 +100,7 @@ module CrossAction =
 
             if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
                 let goalEvents = awardGoal actx.AttSide (Some target.Id) subTick ctx state
-                (event subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
+                (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
             else
                 let blockPos =
                     defOutfield
@@ -153,13 +113,12 @@ module CrossAction =
 
                 let bx, by = blockPos
 
-                ballTowards bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
+                MatchSpatial.ballTowards bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
                 flipPossession state
                 adjustMomentum actx.Dir (-BalanceConfig.CrossFailMomentum) state
                 state.Ball <- { state.Ball with Spin = spin }
 
-                [ event subTick crosser.Id attClubId (CrossAttempt true)
-                  event subTick target.Id attClubId ShotBlocked ]
+                [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
         else
             let targetX =
                 if actx.Dir = LeftToRight then
@@ -167,7 +126,7 @@ module CrossAction =
                 else
                     PhysicsContract.PenaltyAreaDepth
 
-            ballTowards targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
+            MatchSpatial.ballTowards targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
             flipPossession state
 
-            [ event subTick crosser.Id attClubId (CrossAttempt false) ]
+            [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]

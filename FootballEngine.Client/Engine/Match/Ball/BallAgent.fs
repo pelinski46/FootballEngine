@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 open SchedulingTypes
 
 module BallAgent =
@@ -99,6 +100,7 @@ module BallAgent =
                         Vx = resolved.Position.Vx * 0.15
                         Vy = resolved.Position.Vy * 0.15
                         Vz = 0.0 }
+
                 { resolved with
                     Position = dampened
                     ControlledBy = ctrl
@@ -108,7 +110,7 @@ module BallAgent =
                     ControlledBy = ctrl
                     LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
 
-        let nextSubTick = tick.SubTick + 1
+        let nextSubTick = tick.SubTick + PhysicsIntervalSubTicks
 
         { Events = []
           Spawned =

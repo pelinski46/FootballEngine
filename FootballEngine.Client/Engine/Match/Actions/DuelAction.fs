@@ -9,12 +9,6 @@ open MatchSpatial
 
 module DuelAction =
 
-    let private event subTick playerId clubId t =
-        { SubTick = subTick
-          PlayerId = playerId
-          ClubId = clubId
-          Type = t }
-
     let private fatigueMultiplier (condition: int) : float =
         let norm = PhysicsContract.normaliseCondition condition
 
@@ -56,47 +50,11 @@ module DuelAction =
 
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let attSlots = getSlots state actx.AttSide
+        let defSlots = getSlots state actx.DefSide
 
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let mutable attIdx = 0
-        let mutable attDistSq = System.Double.MaxValue
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s ->
-                let dx = s.Pos.X - bX
-                let dy = s.Pos.Y - bY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < attDistSq then
-                    attDistSq <- dSq
-                    attIdx <- i
-            | _ -> ()
-
-        let mutable defIdx = 0
-        let mutable defDistSq = System.Double.MaxValue
-
-        for i = 0 to defSlots.Length - 1 do
-            match defSlots[i] with
-            | PlayerSlot.Active s ->
-                let dx = s.Pos.X - bX
-                let dy = s.Pos.Y - bY
-                let dSq = dx * dx + dy * dy
-
-                if dSq < defDistSq then
-                    defDistSq <- dSq
-                    defIdx <- i
-            | _ -> ()
+        let attIdx = nearestIdxToBall attSlots bX bY
+        let defIdx = nearestIdxToBall defSlots bX bY
 
         let att =
             match attSlots[attIdx] with
@@ -108,17 +66,8 @@ module DuelAction =
             | PlayerSlot.Active s -> s.Player
             | _ -> Unchecked.defaultof<Player>
 
-        let attConditions =
-            Array.init attSlots.Length (fun i ->
-                match attSlots[i] with
-                | PlayerSlot.Active s -> s.Condition
-                | _ -> 0)
-
-        let defConditions =
-            Array.init defSlots.Length (fun i ->
-                match defSlots[i] with
-                | PlayerSlot.Active s -> s.Condition
-                | _ -> 0)
+        let attConditions = conditionsArray attSlots
+        let defConditions = conditionsArray defSlots
 
         let attTactics =
             if actx.AttSide = HomeClub then
@@ -175,43 +124,57 @@ module DuelAction =
             | PlayerSlot.Active s -> s.Pos.X, s.Pos.Y
             | _ -> bX, bY
 
-        if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
-            let nx, ny =
-                PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
+        let duelEvents =
+            if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
+                let nx, ny =
+                    PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
 
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { state.Ball.Position with
-                            X = nx
-                            Y = ny } }
+                state.Ball <-
+                    { state.Ball with
+                        Position =
+                            { state.Ball.Position with
+                                X = nx
+                                Y = ny } }
 
-            state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
-        elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
-            let nx, ny =
-                PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
+                state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
+                [ createEvent subTick att.Id attClubId DribbleSuccess ]
+            elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
+                let nx, ny =
+                    PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
 
-            flipPossession state
+                flipPossession state
 
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { state.Ball.Position with
-                            X = nx
-                            Y = ny } }
+                state.Ball <-
+                    { state.Ball with
+                        Position =
+                            { state.Ball.Position with
+                                X = nx
+                                Y = ny } }
 
-            state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
+                state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
+                [ createEvent subTick att.Id attClubId DribbleFail ]
+            else
+                let nx, ny =
+                    PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
+
+                withBallVelocity
+                    ((nx - bX) * BalanceConfig.DuelSpeedKeep)
+                    ((ny - bY) * BalanceConfig.DuelSpeedKeep)
+                    BalanceConfig.DuelSpeedKeepVz
+                    state
+
+                [ createEvent subTick att.Id attClubId DribbleKeep ]
+
+        let aggressionNorm = PhysicsContract.normaliseAttr def.Mental.Aggression
+        let foulChance = 0.06 + aggressionNorm * 0.10
+
+        if bernoulli foulChance then
+            if state.AttackingClub = actx.AttSide then
+                flipPossession state
+            adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
+            duelEvents @ [ createEvent subTick def.Id defClubId FoulCommitted ]
         else
-            let nx, ny =
-                PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
-
-            withBallVelocity
-                ((nx - bX) * BalanceConfig.DuelSpeedKeep)
-                ((ny - bY) * BalanceConfig.DuelSpeedKeep)
-                BalanceConfig.DuelSpeedKeepVz
-                state
-
-        []
+            duelEvents
 
     let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list =
         let actx = ActionContext.build state
@@ -323,11 +286,11 @@ module DuelAction =
                 if bernoulli foulChance then
                     flipPossession state
                     adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
-                    [ event subTick defender.Id clubId FoulCommitted ]
+                    [ createEvent subTick defender.Id clubId FoulCommitted ]
                 else
                     adjustMomentum actx.Dir BalanceConfig.TackleSuccessMomentum state
-                    [ event subTick defender.Id clubId TackleSuccess ]
+                    [ createEvent subTick defender.Id clubId TackleSuccess ]
             else
                 adjustMomentum actx.Dir (-BalanceConfig.TackleFailMomentum) state
                 state.PendingOffsideSnapshot <- None
-                [ event subTick defender.Id clubId TackleFail ]
+                [ createEvent subTick defender.Id clubId TackleFail ]

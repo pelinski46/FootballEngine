@@ -7,88 +7,74 @@ open FootballEngine.PlayerSteering
 
 module MovementEngine =
 
-    let private isHome (clubSide: ClubSide) = clubSide = HomeClub
+    let handlePossessionChange (currentSubTick: int) (ctx: MatchContext) (state: SimState) (loserClub: ClubSide) =
+        let slots = SimStateOps.getSlots state loserClub
+        let bx = state.Ball.Position.X
+        let by = state.Ball.Position.Y
 
-    let private getSlots (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then state.HomeSlots else state.AwaySlots
+        let nearest =
+            slots
+            |> Array.mapi (fun i slot ->
+                match slot with
+                | PlayerSlot.Active s ->
+                    let dx = s.Pos.X - bx
+                    let dy = s.Pos.Y - by
+                    i, dx * dx + dy * dy, s
+                | Sidelined _ -> i, System.Double.MaxValue, Unchecked.defaultof<ActiveSlot>)
+            |> Array.filter (fun (_, d, _) -> d < System.Double.MaxValue)
+            |> Array.sortBy (fun (_, d, _) -> d)
+            |> Array.take (min 3 slots.Length)
 
-    let private getActiveRuns (state: SimState) (clubSide: ClubSide) : RunAssignment list =
-        if isHome clubSide then
-            state.HomeActiveRuns
-        else
-            state.AwayActiveRuns
+        let expiry = currentSubTick + 80
 
-    let private getChemistry (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeChemistry
-        else
-            state.AwayChemistry
+        for (idx, _, s) in nearest do
+            let pressDir = Directive.create Press bx by 1.2 0.9 expiry "possession_loss"
+            let existing = s.Directives
+            let buf = System.Collections.Generic.List<Directive>(existing.Length + 1)
 
-    let private getEmergentState (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeEmergentState
-        else
-            state.AwayEmergentState
+            for d in existing do
+                if not (Directive.expired currentSubTick d) then
+                    buf.Add(d)
 
-    let private getAdaptiveState (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeAdaptiveState
-        else
-            state.AwayAdaptiveState
+            buf.Add(pressDir)
+            slots[idx] <- PlayerSlot.Active { s with Directives = buf.ToArray() }
 
-    let private getLastCognitiveSubTick (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeLastCognitiveSubTick
-        else
-            state.AwayLastCognitiveSubTick
+        let runs = SimStateOps.getActiveRuns state loserClub
 
-    let private getLastShapeSubTick (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeLastShapeSubTick
-        else
-            state.AwayLastShapeSubTick
+        let filtered =
+            runs
+            |> List.filter (fun r ->
+                match r.RunType with
+                | DeepRun
+                | OverlapRun
+                | WingBackSurge
+                | ThirdManRun -> false
+                | _ -> RunAssignment.isActive currentSubTick r)
 
-    let private getLastAdaptiveSubTick (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeLastAdaptiveSubTick
-        else
-            state.AwayLastAdaptiveSubTick
+        SimStateOps.setActiveRuns state loserClub filtered
 
-    let private getLastMarkingSubTick (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeLastMarkingSubTick
-        else
-            state.AwayLastMarkingSubTick
+        // Build-up shape directives for the team that gained possession
+        let winnerClub = ClubSide.flip loserClub
+        let winnerSlots = SimStateOps.getSlots state winnerClub
+        let basePos = SimStateOps.getBasePositions state winnerClub
+        let shapeExpiry = currentSubTick + 160
 
-    let private getTactics (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeTactics
-        else
-            state.AwayTactics
+        for i = 0 to winnerSlots.Length - 1 do
+            match winnerSlots[i] with
+            | PlayerSlot.Active s when i < basePos.Length ->
+                let shapeDir =
+                    Directive.create Shape basePos[i].X basePos[i].Y 1.2 0.7 shapeExpiry "buildup_shape"
 
-    let private getInstructions (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeInstructions
-        else
-            state.AwayInstructions
+                let existing = s.Directives
+                let buf = System.Collections.Generic.List<Directive>(existing.Length + 1)
 
-    let private getBasePositions (state: SimState) (clubSide: ClubSide) =
-        if clubSide = HomeClub then
-            state.HomeBasePositions
-        else
-            state.AwayBasePositions
+                for d in existing do
+                    if not (Directive.expired currentSubTick d) then
+                        buf.Add(d)
 
-    let private getSubsUsed (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeSubsUsed
-        else
-            state.AwaySubsUsed
-
-    let private getSidelined (state: SimState) (clubSide: ClubSide) =
-        if isHome clubSide then
-            state.HomeSidelined
-        else
-            state.AwaySidelined
+                buf.Add(shapeDir)
+                winnerSlots[i] <- PlayerSlot.Active { s with Directives = buf.ToArray() }
+            | _ -> ()
 
     let private computeMarkingTargets
         (myPlayers: Player[])
@@ -185,30 +171,15 @@ module MovementEngine =
             sx <- d.TargetX * w + sx
             sy <- d.TargetY * w + sy
 
-    let private filterActiveRuns currentSubTick (runs: RunAssignment list) =
-        let mutable allActive = true
-        let mutable node = runs
-
-        while allActive && not (List.isEmpty node) do
-            if not (RunAssignment.isActive currentSubTick node.Head) then
-                allActive <- false
-
-            node <- node.Tail
-
-        if allActive then
-            runs
-        else
-            runs |> List.filter (RunAssignment.isActive currentSubTick)
-
     let updateTeamSide (currentSubTick: int) (ctx: MatchContext) (state: SimState) (clubSide: ClubSide) (dt: float) =
-        let slots = getSlots state clubSide
-        let oppSlots = getSlots state (ClubSide.flip clubSide)
+        let slots = SimStateOps.getSlots state clubSide
+        let oppSlots = SimStateOps.getSlots state (ClubSide.flip clubSide)
         let dir = attackDirFor clubSide state
 
-        let lastShapeSubTick = getLastShapeSubTick state clubSide
+        let lastShapeSubTick = SimStateOps.getLastShapeSubTick state clubSide
         let shapeNeedsUpdate = currentSubTick - lastShapeSubTick >= 600
 
-        let lastMarkingSubTick = getLastMarkingSubTick state clubSide
+        let lastMarkingSubTick = SimStateOps.getLastMarkingSubTick state clubSide
 
         let markingNeedsUpdate =
             currentSubTick - lastMarkingSubTick >= PhysicsContract.MarkingIntervalSubTicks
@@ -216,22 +187,25 @@ module MovementEngine =
         if currentSubTick % PhysicsContract.SteeringIntervalSubTicks <> 0 then
             ()
         else
-            let activeRuns = filterActiveRuns currentSubTick (getActiveRuns state clubSide)
+            let activeRuns =
+                SimStateOps.activeRunsFilter currentSubTick (SimStateOps.getActiveRuns state clubSide)
 
             let phase = phaseFromBallZone dir state.Ball.Position.X
 
             let shapeTargets =
                 if shapeNeedsUpdate then
                     ShapeEngine.computeShapeTargets
-                        (getBasePositions state clubSide)
+                        (SimStateOps.getBasePositions state clubSide)
                         dir
                         phase
                         state.Ball.Position.X
-                        (tacticsConfig (getTactics state clubSide) (getInstructions state clubSide))
+                        (tacticsConfig
+                            (SimStateOps.getTactics state clubSide)
+                            (SimStateOps.getInstructions state clubSide))
                 else
                     let n = slots.Length
                     let arr = Array.zeroCreate<float * float> n
-                    let basePos = getBasePositions state clubSide
+                    let basePos = SimStateOps.getBasePositions state clubSide
 
                     for i = 0 to n - 1 do
                         match slots[i] with
@@ -297,7 +271,7 @@ module MovementEngine =
                                 None
                         | Sidelined _ -> None)
 
-            let emergentState = getEmergentState state clubSide
+            let emergentState = SimStateOps.getEmergentState state clubSide
             let emergentModifiers = EmergentLoops.toDirectiveModifiers emergentState
             let ballX = state.Ball.Position.X
             let ballY = state.Ball.Position.Y
@@ -318,11 +292,13 @@ module MovementEngine =
                         closestIdx <- j
                 | Sidelined _ -> ()
 
-            let currentPositions =
-                Array.init slots.Length (fun i ->
+            let currentPositions = Array.zeroCreate<Spatial> slots.Length
+
+            for i = 0 to slots.Length - 1 do
+                currentPositions[i] <-
                     match slots[i] with
                     | PlayerSlot.Active s -> s.Pos
-                    | Sidelined _ -> kickOffSpatial)
+                    | Sidelined _ -> kickOffSpatial
 
             for i = 0 to slots.Length - 1 do
                 match slots[i] with
@@ -413,34 +389,21 @@ module MovementEngine =
 
                     slots[i] <- PlayerSlot.Active { s with Pos = newPos }
 
-            if isHome clubSide then
-                state.HomeActiveRuns <- activeRuns
+            let newShapeTick =
+                if shapeNeedsUpdate then
+                    currentSubTick
+                else
+                    lastShapeSubTick
 
-                state.HomeLastShapeSubTick <-
-                    if shapeNeedsUpdate then
-                        currentSubTick
-                    else
-                        lastShapeSubTick
+            let newMarkingTick =
+                if markingNeedsUpdate then
+                    currentSubTick
+                else
+                    lastMarkingSubTick
 
-                state.HomeLastMarkingSubTick <-
-                    if markingNeedsUpdate then
-                        currentSubTick
-                    else
-                        lastMarkingSubTick
-            else
-                state.AwayActiveRuns <- activeRuns
-
-                state.AwayLastShapeSubTick <-
-                    if shapeNeedsUpdate then
-                        currentSubTick
-                    else
-                        lastShapeSubTick
-
-                state.AwayLastMarkingSubTick <-
-                    if markingNeedsUpdate then
-                        currentSubTick
-                    else
-                        lastMarkingSubTick
+            setActiveRuns state clubSide activeRuns
+            setLastShapeSubTick state clubSide newShapeTick
+            setLastMarkingSubTick state clubSide newMarkingTick
 
     let updateCognitive
         (currentSubTick: int)
@@ -450,15 +413,20 @@ module MovementEngine =
         (events: ResizeArray<MatchEvent>)
         =
 
-        let lastCogSubTick = getLastCognitiveSubTick state clubSide
+        let lastCogSubTick = SimStateOps.getLastCognitiveSubTick state clubSide
 
         if currentSubTick - lastCogSubTick < PhysicsContract.CognitiveIntervalSubTicks then
             ()
         else
-            let slots = getSlots state clubSide
-            let oppSlots = getSlots state (ClubSide.flip clubSide)
+            let slots = SimStateOps.getSlots state clubSide
+            let oppSlots = SimStateOps.getSlots state (ClubSide.flip clubSide)
             let dir = attackDirFor clubSide state
-            let momentum = if isHome clubSide then state.Momentum else -state.Momentum
+
+            let momentum =
+                if clubSide = HomeClub then
+                    state.Momentum
+                else
+                    -state.Momentum
 
             let players =
                 Array.init slots.Length (fun i ->
@@ -502,13 +470,16 @@ module MovementEngine =
                     | PlayerSlot.Active s -> s.Pos
                     | Sidelined _ -> kickOffSpatial)
 
-            let chemistry = getChemistry state clubSide
-            let emergentState = getEmergentState state clubSide
+            let chemistry = SimStateOps.getChemistry state clubSide
+            let emergentState = SimStateOps.getEmergentState state clubSide
 
             let newMentalStates = Array.zeroCreate slots.Length
             let newDirectiveMap = Array.zeroCreate<Directive[]> slots.Length
             let newRuns = System.Collections.Generic.List<RunAssignment>()
-            let basePositions = getBasePositions state clubSide
+            let basePositions = SimStateOps.getBasePositions state clubSide
+
+            let teamRead =
+                GameRead.computeTeam positions oppPositions state.Ball.Position.X state.Ball.Position.Y dir
 
             for i = 0 to slots.Length - 1 do
                 match slots[i] with
@@ -536,6 +507,7 @@ module MovementEngine =
                             chemistry
                             directives[i]
                             basePositions[i]
+                            teamRead
 
                     newMentalStates[i] <-
                         match update.MentalStateDelta with
@@ -565,8 +537,8 @@ module MovementEngine =
             let matchMinute = PhysicsContract.subTicksToSeconds currentSubTick / 60.0
 
             let isPressing =
-                getTactics state clubSide = TeamTactics.Pressing
-                || getInstructions state clubSide
+                SimStateOps.getTactics state clubSide = TeamTactics.Pressing
+                || SimStateOps.getInstructions state clubSide
                    |> Option.exists (fun instr -> instr.PressingIntensity >= 4)
 
             let degradedConditions =
@@ -594,7 +566,7 @@ module MovementEngine =
                 |> EmergentLoops.updateWingPlay
                 <| flankRate
 
-            let existingRuns = getActiveRuns state clubSide
+            let existingRuns = SimStateOps.getActiveRuns state clubSide
 
             let allRuns =
                 if newRuns.Count = 0 then
@@ -618,14 +590,9 @@ module MovementEngine =
                                 Directives = newDirectiveMap[i]
                                 Condition = degradedConditions[i] }
 
-            if isHome clubSide then
-                state.HomeActiveRuns <- allRuns
-                state.HomeEmergentState <- updatedEmergent
-                state.HomeLastCognitiveSubTick <- currentSubTick
-            else
-                state.AwayActiveRuns <- allRuns
-                state.AwayEmergentState <- updatedEmergent
-                state.AwayLastCognitiveSubTick <- currentSubTick
+            setActiveRuns state clubSide allRuns
+            setEmergentState state clubSide updatedEmergent
+            setLastCognitiveSubTick state clubSide currentSubTick
 
     let updateAdaptive
         (currentSubTick: int)
@@ -635,7 +602,7 @@ module MovementEngine =
         (events: ResizeArray<MatchEvent>)
         =
 
-        let lastAdaptiveSubTick = getLastAdaptiveSubTick state clubSide
+        let lastAdaptiveSubTick = SimStateOps.getLastAdaptiveSubTick state clubSide
 
         if currentSubTick - lastAdaptiveSubTick < PhysicsContract.AdaptiveIntervalSubTicks then
             ()
@@ -655,11 +622,7 @@ module MovementEngine =
                                 LostPossession
 
                         AdaptiveTactics.recordAttempt pattern result st)
-                    (getAdaptiveState state clubSide)
+                    (SimStateOps.getAdaptiveState state clubSide)
 
-            if isHome clubSide then
-                state.HomeAdaptiveState <- updatedAdaptive
-                state.HomeLastAdaptiveSubTick <- currentSubTick
-            else
-                state.AwayAdaptiveState <- updatedAdaptive
-                state.AwayLastAdaptiveSubTick <- currentSubTick
+            setAdaptiveState state clubSide updatedAdaptive
+            setLastAdaptiveSubTick state clubSide currentSubTick

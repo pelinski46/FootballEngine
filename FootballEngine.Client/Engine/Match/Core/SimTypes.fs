@@ -358,6 +358,8 @@ type SimState() =
     member val HomeLastShapeSubTick = 0 with get, set
     member val HomeLastMarkingSubTick = 0 with get, set
     member val HomeLastAdaptiveSubTick = 0 with get, set
+    member val HomeMarkingTargets = Array.empty<Option<int * Player>> with get, set
+    member val HomeMarkingValid = false with get, set
     member val AwayActiveRuns = ([]: RunAssignment list) with get, set
     member val AwayChemistry = ChemistryGraph.init 0 with get, set
     member val AwayEmergentState = EmergentState.initial with get, set
@@ -366,6 +368,11 @@ type SimState() =
     member val AwayLastShapeSubTick = 0 with get, set
     member val AwayLastMarkingSubTick = 0 with get, set
     member val AwayLastAdaptiveSubTick = 0 with get, set
+    member val AwayMarkingTargets = Array.empty<Option<int * Player>> with get, set
+    member val AwayMarkingValid = false with get, set
+    member val HomePositionsScratch = Array.empty<Spatial> with get, set
+    member val AwayPositionsScratch = Array.empty<Spatial> with get, set
+    member val CurrentPhase = BuildUp with get, set
 
 type SimSnapshot =
     { SubTick: int
@@ -468,6 +475,84 @@ module SimStateOps =
         else
             state.AwaySlots <- slots
 
+    let getSidelined (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeSidelined else state.AwaySidelined
+
+    let setSidelined (state: SimState) (side: ClubSide) (m: Map<PlayerId, PlayerOut>) =
+        if side = HomeClub then state.HomeSidelined <- m else state.AwaySidelined <- m
+
+    let getYellows (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeYellows else state.AwayYellows
+
+    let setYellows (state: SimState) (side: ClubSide) (m: Map<PlayerId, int>) =
+        if side = HomeClub then state.HomeYellows <- m else state.AwayYellows <- m
+
+    let getSubsUsed (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeSubsUsed else state.AwaySubsUsed
+
+    let setSubsUsed (state: SimState) (side: ClubSide) (n: int) =
+        if side = HomeClub then state.HomeSubsUsed <- n else state.AwaySubsUsed <- n
+
+    let getTactics (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeTactics else state.AwayTactics
+
+    let setTactics (state: SimState) (side: ClubSide) (t: TeamTactics) =
+        if side = HomeClub then state.HomeTactics <- t else state.AwayTactics <- t
+
+    let getInstructions (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeInstructions else state.AwayInstructions
+
+    let setInstructions (state: SimState) (side: ClubSide) (i: TacticalInstructions option) =
+        if side = HomeClub then state.HomeInstructions <- i else state.AwayInstructions <- i
+
+    let getBasePositions (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeBasePositions else state.AwayBasePositions
+
+    let getActiveRuns (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeActiveRuns else state.AwayActiveRuns
+
+    let setActiveRuns (state: SimState) (side: ClubSide) (runs: RunAssignment list) =
+        if side = HomeClub then state.HomeActiveRuns <- runs else state.AwayActiveRuns <- runs
+
+    let getChemistry (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeChemistry else state.AwayChemistry
+
+    let getEmergentState (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeEmergentState else state.AwayEmergentState
+
+    let setEmergentState (state: SimState) (side: ClubSide) (s: EmergentState) =
+        if side = HomeClub then state.HomeEmergentState <- s else state.AwayEmergentState <- s
+
+    let getAdaptiveState (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeAdaptiveState else state.AwayAdaptiveState
+
+    let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) =
+        if side = HomeClub then state.HomeAdaptiveState <- s else state.AwayAdaptiveState <- s
+
+    let getLastCognitiveSubTick (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeLastCognitiveSubTick else state.AwayLastCognitiveSubTick
+
+    let setLastCognitiveSubTick (state: SimState) (side: ClubSide) (t: int) =
+        if side = HomeClub then state.HomeLastCognitiveSubTick <- t else state.AwayLastCognitiveSubTick <- t
+
+    let getLastShapeSubTick (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeLastShapeSubTick else state.AwayLastShapeSubTick
+
+    let setLastShapeSubTick (state: SimState) (side: ClubSide) (t: int) =
+        if side = HomeClub then state.HomeLastShapeSubTick <- t else state.AwayLastShapeSubTick <- t
+
+    let getLastMarkingSubTick (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeLastMarkingSubTick else state.AwayLastMarkingSubTick
+
+    let setLastMarkingSubTick (state: SimState) (side: ClubSide) (t: int) =
+        if side = HomeClub then state.HomeLastMarkingSubTick <- t else state.AwayLastMarkingSubTick <- t
+
+    let getLastAdaptiveSubTick (state: SimState) (side: ClubSide) =
+        if side = HomeClub then state.HomeLastAdaptiveSubTick else state.AwayLastAdaptiveSubTick
+
+    let setLastAdaptiveSubTick (state: SimState) (side: ClubSide) (t: int) =
+        if side = HomeClub then state.HomeLastAdaptiveSubTick <- t else state.AwayLastAdaptiveSubTick <- t
+
     let activePlayers (slots: PlayerSlot[]) =
         slots
         |> Array.choose (function
@@ -507,17 +592,7 @@ module SimStateOps =
 
     let flipPossession (state: SimState) =
         state.AttackingClub <- ClubSide.flip state.AttackingClub
-        let pos = state.Ball.Position
-
-        state.Ball <-
-            { state.Ball with
-                Position =
-                    { pos with
-                        Vx = pos.Vx * 0.2
-                        Vy = pos.Vy * 0.2
-                        Vz = 0.0 }
-                ControlledBy = None }
-
+        state.Ball <- { state.Ball with ControlledBy = None }
         state.PendingOffsideSnapshot <- None
 
     let awardGoal
@@ -602,3 +677,42 @@ module SimStateOps =
             match state.HomeAttackDir with
             | LeftToRight -> RightToLeft
             | RightToLeft -> LeftToRight
+
+    let clubSideOf (state: SimState) (pid: PlayerId) : ClubSide option =
+        let foundHome =
+            state.HomeSlots
+            |> Array.exists (function
+                | PlayerSlot.Active s -> s.Player.Id = pid
+                | _ -> false)
+
+        if foundHome then
+            Some HomeClub
+        else
+            let foundAway =
+                state.AwaySlots
+                |> Array.exists (function
+                    | PlayerSlot.Active s -> s.Player.Id = pid
+                    | _ -> false)
+
+            if foundAway then Some AwayClub else None
+
+    let conditionsArray (slots: PlayerSlot[]) : int[] =
+        Array.init slots.Length (fun i ->
+            match slots[i] with
+            | PlayerSlot.Active s -> s.Condition
+            | _ -> 0)
+
+    let playersArray (slots: PlayerSlot[]) : Player[] =
+        Array.init slots.Length (fun i ->
+            match slots[i] with
+            | PlayerSlot.Active s -> s.Player
+            | _ -> Unchecked.defaultof<Player>)
+
+    let activeRunsFilter currentSubTick (runs: RunAssignment list) =
+        runs |> List.filter (RunAssignment.isActive currentSubTick)
+
+    let createEvent subTick playerId clubId t : MatchEvent =
+        { SubTick = subTick
+          PlayerId = playerId
+          ClubId = clubId
+          Type = t }

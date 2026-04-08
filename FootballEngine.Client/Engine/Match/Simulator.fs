@@ -31,7 +31,7 @@ module MatchSimulator =
                     Kind = SubstitutionTick ctx.Away.Id } ]
 
         [ yield
-              { SubTick = 1
+              { SubTick = PhysicsIntervalSubTicks
                 Priority = TickPriority.Physics
                 SequenceId = 0L
                 Kind = PhysicsTick }
@@ -88,7 +88,8 @@ module MatchSimulator =
             | DuelTick _
             | PlayerActionTick _
             | CognitiveTick
-            | AdaptiveTick -> PlayerAgent.agent
+            | AdaptiveTick
+            | PossessionChangeTick _ -> PlayerAgent.agent
             | FreeKickTick _
             | CornerTick _
             | ThrowInTick _
@@ -139,13 +140,15 @@ module MatchSimulator =
               Kind = DuelTick 0 }
 
         let snapshotInterval = SubTicksPerSecond
-        let dtPlayer = Dt * float SteeringIntervalSubTicks
+
 
         let rec loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt =
             match scheduler.Dequeue() with
             | ValueNone -> ls.State, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
 
             | ValueSome tick ->
+                ls.State.SubTick <- tick.SubTick
+
                 match tick.Kind with
                 | FullTimeTick ->
                     ls.State.SubTick <- tick.SubTick
@@ -172,8 +175,11 @@ module MatchSimulator =
                         match tick.Kind with
                         | PhysicsTick ->
                             if tick.SubTick % SteeringIntervalSubTicks = 0 then
-                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State HomeClub dtPlayer
-                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State AwayClub dtPlayer
+                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State HomeClub DtPlayer
+                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State AwayClub DtPlayer
+
+                            let dir = SimStateOps.attackDirFor ls.State.AttackingClub ls.State
+                            ls.State.CurrentPhase <- SimStateOps.phaseFromBallZone dir ls.State.Ball.Position.X
 
                         | CognitiveTick ->
                             MovementEngine.updateCognitive tick.SubTick ls.Context ls.State HomeClub ls.Events
@@ -182,6 +188,7 @@ module MatchSimulator =
                         | AdaptiveTick ->
                             MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State HomeClub ls.Events
                             MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State AwayClub ls.Events
+
 
                         | _ -> ()
 
@@ -393,6 +400,7 @@ module MatchSimulator =
         state.Momentum <- 0.0
         state.HomeBasePositions <- ctx.HomeBasePositions
         state.AwayBasePositions <- ctx.AwayBasePositions
+        state.HomeAttackDir <- LeftToRight
 
         state.HomeSlots <-
             Array.init hCount (fun i ->

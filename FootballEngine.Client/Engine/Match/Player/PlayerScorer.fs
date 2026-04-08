@@ -32,7 +32,9 @@ module PlayerScorer =
             | MC -> 0.07
             | _ -> 0.02
 
-        (finishing + longShots + composure + distNorm + posBonus)
+        let distPenalty = (ctx.DistToGoal / 25.0) ** 2.0
+
+        (finishing + longShots + composure + distNorm + posBonus - distPenalty)
         * normCond ctx.MyCondition
 
     let private passScore (ctx: AgentContext) =
@@ -40,7 +42,22 @@ module PlayerScorer =
         let passing = normStat me.Technical.Passing * 0.40
         let vision = normStat me.Mental.Vision * 0.30
         let targetBonus = if ctx.BestPassTarget.IsSome then 0.30 else 0.0
-        (passing + vision + targetBonus) * normCond ctx.MyCondition
+
+        let phaseMod =
+            match ctx.Phase with
+            | BuildUp ->
+                let posBonus =
+                    match me.Position with
+                    | GK -> BalanceConfig.BuildUpGKDistributionBonus
+                    | DC
+                    | DM -> BalanceConfig.BuildUpDCPassingBonus
+                    | _ -> 0.0
+
+                BalanceConfig.BuildUpPassSuccessBonus + posBonus
+            | Midfield -> 0.0
+            | Attack -> -0.03
+
+        (passing + vision + targetBonus + phaseMod) * normCond ctx.MyCondition
 
     let private dribbleScore (ctx: AgentContext) =
         let me = ctx.Me
@@ -54,7 +71,14 @@ module PlayerScorer =
             | MidfieldZone -> 0.05
             | DefensiveZone -> 0.0
 
-        (dribbling + agility + balance + zoneBonus) * normCond ctx.MyCondition
+        let phaseMod =
+            match ctx.Phase with
+            | BuildUp -> -BalanceConfig.BuildUpDribblePenalty
+            | Midfield -> 0.0
+            | Attack -> 0.05
+
+        (dribbling + agility + balance + zoneBonus + phaseMod)
+        * normCond ctx.MyCondition
 
     let private crossScore (ctx: AgentContext) =
         let me = ctx.Me
@@ -89,7 +113,13 @@ module PlayerScorer =
                 Math.Clamp(dist / 10.0, 0.3, 1.0)
             | None -> 0.7
 
-        (passing + vision) * pressureMod * normCond ctx.MyCondition
+        let phaseMod =
+            match ctx.Phase with
+            | BuildUp -> -BalanceConfig.BuildUpLongBallPenalty
+            | Midfield -> 0.0
+            | Attack -> 0.05
+
+        (passing + vision) * pressureMod * normCond ctx.MyCondition + phaseMod
 
     let computeAll (ctx: AgentContext) : ActionScores =
         { Shoot = shootScore ctx

@@ -11,7 +11,8 @@ module MatchFormulas =
         let normCond = PhysicsContract.normaliseCondition condition
         let normMorale = PhysicsContract.normaliseCondition morale
         let base' = normStat * normCond * (0.8 + normMorale / 2.5)
-        normalSample base' (sigma * 0.6)
+        let sample = normalSample base' (sigma * 0.1) // Reduced sigma for stability
+        Math.Max(0.05, sample)
 
     let attackEffort (phase: MatchPhase) (att: Player) (cond: int) =
         match phase with

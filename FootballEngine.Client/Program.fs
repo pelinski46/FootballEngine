@@ -24,11 +24,9 @@ open FootballEngine.Pages.Transfers
 open Material.Icons.Avalonia
 
 module Views =
-    let private playbackTimer: Avalonia.Threading.DispatcherTimer option ref =
-        ref None
+    let private playbackTimer: Avalonia.Threading.DispatcherTimer option ref = ref None
 
     let mainView (state: State) dispatch =
-        // Start/stop playback timer based on IsPlaying state
         match playbackTimer.Value, state.IsPlaying with
         | Some timer, true when timer.IsEnabled -> ()
         | Some timer, false ->
@@ -76,7 +74,7 @@ type MainWindow() as this =
 
     do
         base.Title <- "Football Engine 2026"
-        base.WindowState <- WindowState.FullScreen
+        base.WindowState <- WindowState.Maximized
 
         Elmish.Program.mkProgram AppState.init AppState.update Views.mainView
         |> Elmish.Program.withHost this
