@@ -27,12 +27,12 @@ module AgentContext =
         let dir = attackDirFor state.AttackingClub state
 
         let isHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = me.Id
                 | _ -> false)
 
-        let slots = if isHome then state.HomeSlots else state.AwaySlots
+        let slots = if isHome then state.Home.Slots else state.Away.Slots
 
         let mutable myPos = kickOffSpatial
         let mutable myCond = 100
@@ -88,11 +88,8 @@ module AgentContext =
 
         let tacticsCfg =
             tacticsConfig
-                (if isHome then state.HomeTactics else state.AwayTactics)
-                (if isHome then
-                     state.HomeInstructions
-                 else
-                     state.AwayInstructions)
+                (SimStateOps.getTactics state (if isHome then HomeClub else AwayClub))
+                (SimStateOps.getInstructions state (if isHome then HomeClub else AwayClub))
 
         { Me = me
           MyCondition = myCond

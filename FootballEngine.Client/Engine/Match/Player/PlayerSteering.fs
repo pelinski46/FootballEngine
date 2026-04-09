@@ -178,6 +178,7 @@ module PlayerSteering =
             (tacticalTarget: float * float)
             (ballPos: Spatial)
             (hasBall: bool)
+            (chasingBall: bool)
             (dt: float)
             : Spatial =
             let tx, ty = tacticalTarget
@@ -187,8 +188,14 @@ module PlayerSteering =
 
             let arriveForce = Behaviours.arrive current target ms
 
+            let sepDist =
+                if chasingBall then
+                    BalanceConfig.BallContestSeparationRadius
+                else
+                    BalanceConfig.SeparationMinDistance
+
             let sepForce =
-                Behaviours.separation current positions myIdx BalanceConfig.SeparationMinDistance
+                Behaviours.separation current positions myIdx sepDist
 
             let ballForce =
                 if hasBall then

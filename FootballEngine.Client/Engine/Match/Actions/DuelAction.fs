@@ -69,17 +69,8 @@ module DuelAction =
         let attConditions = conditionsArray attSlots
         let defConditions = conditionsArray defSlots
 
-        let attTactics =
-            if actx.AttSide = HomeClub then
-                state.HomeTactics
-            else
-                state.AwayTactics
-
-        let attInstructions =
-            if actx.AttSide = HomeClub then
-                state.HomeInstructions
-            else
-                state.AwayInstructions
+        let attTactics = SimStateOps.getTactics state actx.AttSide
+        let attInstructions = SimStateOps.getInstructions state actx.AttSide
 
         let tacticsCfg = tacticsConfig attTactics attInstructions
 
@@ -134,7 +125,8 @@ module DuelAction =
                         Position =
                             { state.Ball.Position with
                                 X = nx
-                                Y = ny } }
+                                Y = ny }
+                        ControlledBy = Some att.Id }
 
                 state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
                 [ createEvent subTick att.Id attClubId DribbleSuccess ]
@@ -149,7 +141,8 @@ module DuelAction =
                         Position =
                             { state.Ball.Position with
                                 X = nx
-                                Y = ny } }
+                                Y = ny }
+                        ControlledBy = None }
 
                 state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
                 [ createEvent subTick att.Id attClubId DribbleFail ]
@@ -181,7 +174,7 @@ module DuelAction =
 
         let defClubId =
             if
-                state.HomeSlots
+                state.Home.Slots
                 |> Array.exists (function
                     | PlayerSlot.Active s -> s.Player.Id = defender.Id
                     | _ -> false)
@@ -192,17 +185,8 @@ module DuelAction =
 
         let clubId = defClubId
 
-        let defSlots =
-            if actx.DefSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
-
-        let attSlots =
-            if actx.AttSide = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let defSlots = SimStateOps.getSlots state actx.DefSide
+        let attSlots = SimStateOps.getSlots state actx.AttSide
 
         let defConditions =
             Array.init defSlots.Length (fun i ->

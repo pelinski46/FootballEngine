@@ -499,6 +499,7 @@ module MatchDayView =
         | PassCompleted _ -> MatchEvent.pass, Theme.AccentAlt, "PASS"
         | PassIncomplete _ -> MatchEvent.passIncomplete, Theme.TextMuted, "PASS INCOMPLETE"
         | DribbleSuccess -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE"
+        | DribbleKeep -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE KEEP"
         | DribbleFail -> MatchEvent.dribbleFail, Theme.TextMuted, "DRIBBLE FAIL"
         | TackleSuccess -> MatchEvent.tackle, Theme.AccentAlt, "TACKLE"
         | TackleFail -> MatchEvent.tackleFail, Theme.TextMuted, "TACKLE FAIL"
@@ -810,12 +811,12 @@ module MatchDayView =
             let finalSnapshot =
                 { SubTick = replay.Final.SubTick
                   HomePositions =
-                    replay.Final.HomeSlots
+                    replay.Final.Home.Slots
                     |> Array.map (function
                         | PlayerSlot.Active s -> s.Pos
                         | Sidelined _ -> kickOffSpatial)
                   AwayPositions =
-                    replay.Final.AwaySlots
+                    replay.Final.Away.Slots
                     |> Array.map (function
                         | PlayerSlot.Active s -> s.Pos
                         | Sidelined _ -> kickOffSpatial)
@@ -827,17 +828,17 @@ module MatchDayView =
                   HomeScore = replay.Final.HomeScore
                   AwayScore = replay.Final.AwayScore
                   HomeConditions =
-                    replay.Final.HomeSlots
+                    replay.Final.Home.Slots
                     |> Array.map (function
                         | PlayerSlot.Active s -> s.Condition
                         | Sidelined _ -> 0)
                   AwayConditions =
-                    replay.Final.AwaySlots
+                    replay.Final.Away.Slots
                     |> Array.map (function
                         | PlayerSlot.Active s -> s.Condition
                         | Sidelined _ -> 0)
-                  HomeSidelined = replay.Final.HomeSidelined
-                  AwaySidelined = replay.Final.AwaySidelined
+                  HomeSidelined = replay.Final.Home.Sidelined
+                  AwaySidelined = replay.Final.Away.Sidelined
                   AttackingClub = replay.Final.AttackingClub
                   HomeAttackDir = replay.Final.HomeAttackDir
                   Momentum = replay.Final.Momentum }

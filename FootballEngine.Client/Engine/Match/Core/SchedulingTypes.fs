@@ -47,6 +47,7 @@ module SchedulingTypes =
     type TickKind =
         | PhysicsTick
         | DuelTick of chainDepth: int
+        | DecisionTick of depth: int * controllerId: PlayerId option
         | PlayerActionTick of chainDepth: int * action: PlayerAction * attackerId: PlayerId option
         | FreeKickTick of kicker: PlayerId * position: Spatial * chainDepth: int
         | CornerTick of club: ClubSide * chainDepth: int

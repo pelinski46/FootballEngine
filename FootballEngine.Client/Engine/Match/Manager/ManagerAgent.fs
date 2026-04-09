@@ -96,19 +96,16 @@ module ManagerAgent =
         : ManagerAction =
         let subsUsed, sidelined, slots =
             if clubId = ctx.Home.Id then
-                state.HomeSubsUsed, state.HomeSidelined, state.HomeSlots
+                SimStateOps.getSubsUsed state HomeClub, SimStateOps.getSidelined state HomeClub, state.Home.Slots
             else
-                state.AwaySubsUsed, state.AwaySidelined, state.AwaySlots
+                SimStateOps.getSubsUsed state AwayClub, SimStateOps.getSidelined state AwayClub, state.Away.Slots
 
         if subsUsed >= maxSubs then
             AdjustTactics(
                 clubId,
                 reactiveTactics
                     sit
-                    (if clubId = ctx.Home.Id then
-                         state.HomeTactics
-                     else
-                         state.AwayTactics)
+                    (SimStateOps.getTacticsByClubId clubId ctx state)
             )
         else
             let outgoingIdx =
@@ -135,20 +132,14 @@ module ManagerAgent =
                         clubId,
                         reactiveTactics
                             sit
-                            (if clubId = ctx.Home.Id then
-                                 state.HomeTactics
-                             else
-                                 state.AwayTactics)
+                            (SimStateOps.getTacticsByClubId clubId ctx state)
                     )
             | None ->
                 AdjustTactics(
                     clubId,
                     reactiveTactics
                         sit
-                        (if clubId = ctx.Home.Id then
-                             state.HomeTactics
-                         else
-                             state.AwayTactics)
+                        (SimStateOps.getTacticsByClubId clubId ctx state)
                 )
 
     let private handleFatigueAlert
@@ -178,7 +169,7 @@ module ManagerAgent =
     let private handleRedCard (playerId: PlayerId) (ctx: MatchContext) (state: SimState) : ManagerAction list =
         let clubId =
             if
-                state.HomeSlots
+                state.Home.Slots
                 |> Array.exists (function
                     | PlayerSlot.Active s -> s.Player.Id = playerId
                     | _ -> false)
@@ -188,10 +179,7 @@ module ManagerAgent =
                 ctx.Away.Id
 
         let currentTactics =
-            if clubId = ctx.Home.Id then
-                state.HomeTactics
-            else
-                state.AwayTactics
+            SimStateOps.getTacticsByClubId clubId ctx state
 
         let compactTactics =
             match currentTactics with
@@ -211,8 +199,8 @@ module ManagerAgent =
         let homeCoachRating = float ctx.HomeCoach.CurrentSkill / 100.0
         let awayCoachRating = float ctx.AwayCoach.CurrentSkill / 100.0
 
-        [ if state.HomeSubsUsed < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
-              let homeSlots = state.HomeSlots
+        [ if SimStateOps.getSubsUsed state HomeClub < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
+              let homeSlots = state.Home.Slots
 
               let outgoingIdx =
                   homeSlots
@@ -239,15 +227,15 @@ module ManagerAgent =
                           homeSquad
                           ctx.HomeCoach
                           (activePlayers homeSlots)
-                          state.HomeSidelined
+                          (SimStateOps.getSidelined state HomeClub)
                           (preferredPositions (situation ctx.Home.Id ctx state))
                   with
                   | Some incoming -> yield MakeSubstitution(ctx.Home.Id, outIdx, incoming)
                   | None -> yield ManagerIdle
               | None -> yield ManagerIdle
 
-          if state.AwaySubsUsed < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
-              let awaySlots = state.AwaySlots
+          if SimStateOps.getSubsUsed state AwayClub < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
+              let awaySlots = state.Away.Slots
 
               let outgoingIdx =
                   awaySlots
@@ -274,7 +262,7 @@ module ManagerAgent =
                           awaySquad
                           ctx.AwayCoach
                           (activePlayers awaySlots)
-                          state.AwaySidelined
+                          (SimStateOps.getSidelined state AwayClub)
                           (preferredPositions (situation ctx.Away.Id ctx state))
                   with
                   | Some incoming -> yield MakeSubstitution(ctx.Away.Id, outIdx, incoming)
@@ -341,12 +329,13 @@ module ManagerAgent =
 
         | MakeSubstitution(clubId, outIdx, incoming) ->
             let isHome = clubId = ctx.Home.Id
-            let subsUsed = if isHome then state.HomeSubsUsed else state.AwaySubsUsed
+            let side = if isHome then HomeClub else AwayClub
+            let subsUsed = SimStateOps.getSubsUsed state side
 
             if subsUsed >= maxSubs then
                 []
             else
-                let slots = if isHome then state.HomeSlots else state.AwaySlots
+                let slots = SimStateOps.getSlots state side
 
                 match slots[outIdx] with
                 | Sidelined _ -> []
@@ -362,24 +351,15 @@ module ManagerAgent =
                               Mental = MentalState.initial incoming
                               Directives = Array.empty }
 
-                    slots[outIdx] <- newSlot
-
-                    if isHome then
-                        state.HomeSubsUsed <- state.HomeSubsUsed + 1
-                        state.HomeSidelined <- Map.add playerOut.Id SidelinedBySub state.HomeSidelined
-                    else
-                        state.AwaySubsUsed <- state.AwaySubsUsed + 1
-                        state.AwaySidelined <- Map.add playerOut.Id SidelinedBySub state.AwaySidelined
+                    SimStateOps.setSlots state side (slots |> fun arr -> arr[outIdx] <- newSlot; arr)
+                    SimStateOps.setSubsUsed state side (subsUsed + 1)
+                    SimStateOps.setSidelined state side (Map.add playerOut.Id SidelinedBySub (SimStateOps.getSidelined state side))
 
                     [ createEvent subTick playerOut.Id clubId SubstitutionOut
                       createEvent subTick incoming.Id clubId SubstitutionIn ]
 
         | AdjustTactics(clubId, newTactics) ->
-            if clubId = ctx.Home.Id then
-                state.HomeTactics <- newTactics
-            else
-                state.AwayTactics <- newTactics
-
+            SimStateOps.setTacticsByClubId clubId ctx state newTactics
             []
 
     let agent homeId homeSquad awaySquad tick ctx state : AgentOutput =

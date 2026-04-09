@@ -64,18 +64,27 @@ module PassAction =
         if targetIdx < 0 then
             []
         else
-            let mutable passerIdx = 0
+            let mutable passerIdx = -1
             let mutable passerFound = false
 
-            for i = 0 to attSlots.Length - 1 do
-                match attSlots[i] with
-                | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id ->
-                    passerIdx <- i
-                    passerFound <- true
-                | _ -> ()
+            match state.Ball.ControlledBy with
+            | Some ctrlId ->
+                for i = 0 to attSlots.Length - 1 do
+                    match attSlots[i] with
+                    | PlayerSlot.Active s when s.Player.Id = ctrlId ->
+                        passerIdx <- i
+                        passerFound <- true
+                    | _ -> ()
+            | None ->
+                for i = 0 to attSlots.Length - 1 do
+                    match attSlots[i] with
+                    | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id ->
+                        passerIdx <- i
+                        passerFound <- true
+                    | _ -> ()
 
             let passer, passerCond =
-                if passerFound then
+                if passerFound && passerIdx >= 0 then
                     match attSlots[passerIdx] with
                     | PlayerSlot.Active s -> s.Player, s.Condition
                     | _ -> Unchecked.defaultof<Player>, 70
@@ -85,7 +94,7 @@ module PassAction =
                     | _ -> Unchecked.defaultof<Player>, 70
 
             let passerSp =
-                if passerFound then
+                if passerFound && passerIdx >= 0 then
                     match attSlots[passerIdx] with
                     | PlayerSlot.Active s -> s.Pos
                     | _ -> kickOffSpatial
@@ -117,9 +126,11 @@ module PassAction =
                    else
                        0.0)
 
+            let passMeanCapped = Math.Clamp(passMean, 0.01, 0.99)
+
             let successChance =
                 betaSample
-                    passMean
+                    passMeanCapped
                     (BalanceConfig.PassSuccessShapeAlpha
                      + condNorm * BalanceConfig.PassSuccessConditionMultiplier)
 
@@ -158,13 +169,14 @@ module PassAction =
                 else
                     let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                    MatchSpatial.ballTowards targetSp.X targetSp.Y BalanceConfig.PassSpeed BalanceConfig.PassVz state
+                    MatchSpatial.ballTowards passerSp.X passerSp.Y targetSp.X targetSp.Y BalanceConfig.PassSpeed BalanceConfig.PassVz state
                     adjustMomentum actx.Dir BalanceConfig.PassSuccessMomentum state
                     state.PendingOffsideSnapshot <- Some snapshot
 
                     state.Ball <-
                         { state.Ball with
-                            Spin = { Top = 0.0; Side = 0.0 } }
+                            Spin = { Top = 0.0; Side = 0.0 }
+                            ControlledBy = None }
 
                     [ createEvent subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
             elif bernoulli deflectRate then
@@ -185,11 +197,15 @@ module PassAction =
                     |> fun y -> Math.Clamp(y, 0.0, PhysicsContract.PitchWidth)
 
                 MatchSpatial.ballTowards
+                    passerSp.X
+                    passerSp.Y
                     jitterX
                     jitterY
                     (BalanceConfig.PassSpeed * 0.6)
                     (BalanceConfig.PassVz * 0.5)
                     state
+
+                state.Ball <- { state.Ball with ControlledBy = None }
 
                 [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
             elif nearestDef.IsSome then
@@ -218,17 +234,21 @@ module PassAction =
                     match findNearestTeammateToPos passer.Id targetSp.X targetSp.Y state actx.AttSide with
                     | Some(actualTarget, actualSp) ->
                         MatchSpatial.ballTowards
+                            passerSp.X
+                            passerSp.Y
                             actualSp.X
                             actualSp.Y
                             (BalanceConfig.PassSpeed * 0.7)
                             BalanceConfig.PassVz
                             state
 
+                        state.Ball <- { state.Ball with ControlledBy = None }
                         flipPossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                         [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                     | None ->
+                        state.Ball <- { state.Ball with ControlledBy = None }
                         flipPossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                         [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
@@ -236,17 +256,21 @@ module PassAction =
                 match findNearestTeammateToPos passer.Id targetSp.X targetSp.Y state actx.AttSide with
                 | Some(actualTarget, actualSp) ->
                     MatchSpatial.ballTowards
+                        passerSp.X
+                        passerSp.Y
                         actualSp.X
                         actualSp.Y
                         (BalanceConfig.PassSpeed * 0.7)
                         BalanceConfig.PassVz
                         state
 
+                    state.Ball <- { state.Ball with ControlledBy = None }
                     flipPossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                     [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                 | None ->
+                    state.Ball <- { state.Ball with ControlledBy = None }
                     flipPossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                     [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
@@ -274,10 +298,10 @@ module PassAction =
                     passerIdx <- i
             | _ -> ()
 
-        let passer, passerCond =
+        let passer, passerCond, passerSp =
             match attSlots[passerIdx] with
-            | PlayerSlot.Active s -> s.Player, s.Condition
-            | _ -> Unchecked.defaultof<Player>, 0
+            | PlayerSlot.Active s -> s.Player, s.Condition, s.Pos
+            | _ -> Unchecked.defaultof<Player>, 0, kickOffSpatial
 
         let condNorm = PhysicsContract.normaliseCondition passerCond
         let passerVisionNorm = PhysicsContract.normaliseAttr passer.Mental.Vision
@@ -340,12 +364,15 @@ module PassAction =
                 let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
                 MatchSpatial.ballTowards
+                    passerSp.X
+                    passerSp.Y
                     targetSp.X
                     targetSp.Y
                     BalanceConfig.LongBallSpeed
                     BalanceConfig.LongBallVz
                     state
 
+                state.Ball <- { state.Ball with ControlledBy = None }
                 adjustMomentum actx.Dir BalanceConfig.LongBallSuccessMomentum state
                 state.PendingOffsideSnapshot <- Some snapshot
 
@@ -365,11 +392,15 @@ module PassAction =
                 |> fun y -> Math.Clamp(y, 0.0, PhysicsContract.PitchWidth)
 
             MatchSpatial.ballTowards
+                passerSp.X
+                passerSp.Y
                 jitterX
                 jitterY
                 (BalanceConfig.LongBallSpeed * 0.6)
                 (BalanceConfig.LongBallVz * 0.5)
                 state
+
+            state.Ball <- { state.Ball with ControlledBy = None }
 
             [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
         elif bernoulli interceptRate then
@@ -392,10 +423,12 @@ module PassAction =
                 [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id))
                   createEvent subTick def.Id defClubId TackleSuccess ]
             | None ->
+                state.Ball <- { state.Ball with ControlledBy = None }
                 flipPossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
         else
+            state.Ball <- { state.Ball with ControlledBy = None }
             flipPossession state
             adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
             [ createEvent subTick passer.Id attClubId (LongBall false) ]

@@ -276,21 +276,25 @@ module MovementEngine =
             let ballX = state.Ball.Position.X
             let ballY = state.Ball.Position.Y
 
-            let mutable closestIdx = 0
-            let mutable closestDistSq = System.Double.MaxValue
+            let chasingSet =
+                slots
+                |> Array.mapi (fun i slot ->
+                    match slot with
+                    | PlayerSlot.Active s ->
+                        let dx = s.Pos.X - ballX
+                        let dy = s.Pos.Y - ballY
+                        i, dx * dx + dy * dy
+                    | Sidelined _ -> i, System.Double.MaxValue)
+                |> Array.filter (fun (_, d) -> d < System.Double.MaxValue)
+                |> Array.sortBy snd
+                |> Array.take (min 3 slots.Length)
+                |> Array.map fst
 
-            for j = 0 to slots.Length - 1 do
-                match slots[j] with
-                | PlayerSlot.Active s ->
-                    let sp = s.Pos
-                    let dx = sp.X - ballX
-                    let dy = sp.Y - ballY
-                    let dSq = dx * dx + dy * dy
-
-                    if dSq < closestDistSq then
-                        closestDistSq <- dSq
-                        closestIdx <- j
-                | Sidelined _ -> ()
+            let inline isChasing (idx: int) : bool =
+                let mutable found = false
+                for j = 0 to chasingSet.Length - 1 do
+                    if chasingSet[j] = idx then found <- true
+                found
 
             let currentPositions = Array.zeroCreate<Spatial> slots.Length
 
@@ -359,14 +363,30 @@ module MovementEngine =
                     if not (isNull s.Directives) then
                         foldDirectives currentSubTick emergentModifiers &tw &sx &sy s.Directives
 
-                    if i = closestIdx then
+                    let chaseRank =
+                        let mutable r = -1
+                        if isChasing i then
+                            for j = 0 to chasingSet.Length - 1 do
+                                if chasingSet[j] = i then r <- j
+                        r
+
+                    if chaseRank = 0 then
+                        tw <- tw + 10.0
+                        sx <- sx + ballX * 10.0
+                        sy <- sy + ballY * 10.0
+                    elif chaseRank > 0 then
+                        let chaseWeight =
+                            match chaseRank with
+                            | 1 -> 2.5
+                            | _ -> 1.5
+
                         foldSingleDirective
                             currentSubTick
                             emergentModifiers
                             &tw
                             &sx
                             &sy
-                            (Directive.create Run ballX ballY 4.0 1.0 (currentSubTick + 40) "chase")
+                            (Directive.create Run ballX ballY chaseWeight 1.0 (currentSubTick + 40) "chase")
 
                     let finalTargetX, finalTargetY =
                         if tw = 0.0 then (52.5, 34.0) else (sx / tw, sy / tw)
@@ -384,7 +404,8 @@ module MovementEngine =
                             currentPositions
                             (adjustedTargetX, adjustedTargetY)
                             state.Ball.Position
-                            (i = closestIdx)
+                            (chaseRank = 0)
+                            (chaseRank >= 0 && chaseRank < 3)
                             dt
 
                     slots[i] <- PlayerSlot.Active { s with Pos = newPos }
@@ -470,7 +491,7 @@ module MovementEngine =
                     | PlayerSlot.Active s -> s.Pos
                     | Sidelined _ -> kickOffSpatial)
 
-            let chemistry = SimStateOps.getChemistry state clubSide
+            let chemistry = SimStateOps.getChemistry ctx clubSide
             let emergentState = SimStateOps.getEmergentState state clubSide
 
             let newMentalStates = Array.zeroCreate slots.Length

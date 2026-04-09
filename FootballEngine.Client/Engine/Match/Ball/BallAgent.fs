@@ -90,7 +90,8 @@ module BallAgent =
 
     let agent homeId homeSquad awaySquad tick (ctx: MatchContext) (state: SimState) : AgentOutput =
         let stepped = BallPhysics.update state.Ball
-        let resolved, ctrl = resolveContacts stepped state.HomeSlots state.AwaySlots
+        let resolved, ctrl = resolveContacts stepped state.Home.Slots state.Away.Slots
+        let prevControlled = state.Ball.ControlledBy
 
         state.Ball <-
             match ctrl with
@@ -112,10 +113,19 @@ module BallAgent =
 
         let nextSubTick = tick.SubTick + PhysicsIntervalSubTicks
 
+        let decisionSpawn =
+            match prevControlled, ctrl with
+            | None, Some pid ->
+                [ { SubTick = nextSubTick
+                    Priority = TickPriority.Duel
+                    SequenceId = 0L
+                    Kind = DecisionTick(0, Some pid) } ]
+            | _ -> []
+
         { Events = []
           Spawned =
             [ { SubTick = nextSubTick
                 Priority = TickPriority.Physics
                 SequenceId = 0L
-                Kind = PhysicsTick } ]
+                Kind = PhysicsTick } ] @ decisionSpawn
           Transition = None }

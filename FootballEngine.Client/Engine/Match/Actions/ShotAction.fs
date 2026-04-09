@@ -35,6 +35,8 @@ module ShotAction =
         - dist
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        state.Ball <- { state.Ball with ControlledBy = None }
+
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
         let attSlots = getSlots state actx.AttSide
@@ -81,17 +83,8 @@ module ShotAction =
             if quality < BalanceConfig.ShotQualityGate then
                 [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
             else
-                let attTactics =
-                    if actx.AttSide = HomeClub then
-                        state.HomeTactics
-                    else
-                        state.AwayTactics
-
-                let attInstructions =
-                    if actx.AttSide = HomeClub then
-                        state.HomeInstructions
-                    else
-                        state.AwayInstructions
+                let attTactics = SimStateOps.getTactics state actx.AttSide
+                let attInstructions = SimStateOps.getInstructions state actx.AttSide
 
                 let tacticsCfg = tacticsConfig attTactics attInstructions
 

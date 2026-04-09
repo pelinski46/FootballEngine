@@ -86,6 +86,7 @@ module MatchSimulator =
             match tick.Kind with
             | PhysicsTick -> BallAgent.agent
             | DuelTick _
+            | DecisionTick _
             | PlayerActionTick _
             | CognitiveTick
             | AdaptiveTick
@@ -158,6 +159,7 @@ module MatchSimulator =
                     let shouldProcess =
                         match ls.PlayState, tick.Kind with
                         | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
+                        | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
                         | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
                         | _ -> true
 
@@ -198,12 +200,12 @@ module MatchSimulator =
                                 snaps.Add
                                     { SubTick = ls.State.SubTick
                                       HomePositions =
-                                        ls.State.HomeSlots
+                                        ls.State.Home.Slots
                                         |> Array.map (function
                                             | PlayerSlot.Active s -> s.Pos
                                             | Sidelined _ -> kickOffSpatial)
                                       AwayPositions =
-                                        ls.State.AwaySlots
+                                        ls.State.Away.Slots
                                         |> Array.map (function
                                             | PlayerSlot.Active s -> s.Pos
                                             | Sidelined _ -> kickOffSpatial)
@@ -215,17 +217,17 @@ module MatchSimulator =
                                       HomeScore = ls.State.HomeScore
                                       AwayScore = ls.State.AwayScore
                                       HomeConditions =
-                                        ls.State.HomeSlots
+                                        ls.State.Home.Slots
                                         |> Array.map (function
                                             | PlayerSlot.Active s -> s.Condition
                                             | Sidelined _ -> 0)
                                       AwayConditions =
-                                        ls.State.AwaySlots
+                                        ls.State.Away.Slots
                                         |> Array.map (function
                                             | PlayerSlot.Active s -> s.Condition
                                             | Sidelined _ -> 0)
-                                      HomeSidelined = ls.State.HomeSidelined
-                                      AwaySidelined = ls.State.AwaySidelined
+                                      HomeSidelined = ls.State.Home.Sidelined
+                                      AwaySidelined = ls.State.Away.Sidelined
                                       AttackingClub = ls.State.AttackingClub
                                       HomeAttackDir = ls.State.HomeAttackDir
                                       Momentum = ls.State.Momentum }
@@ -389,6 +391,8 @@ module MatchSimulator =
               AwayPlayers = ap
               HomeBasePositions = hPos
               AwayBasePositions = aPos
+              HomeChemistry = ChemistryGraph.init hCount
+              AwayChemistry = ChemistryGraph.init aCount
               IsKnockoutMatch = isKnockout }
 
         let state = SimState()
@@ -402,53 +406,33 @@ module MatchSimulator =
         state.AwayBasePositions <- ctx.AwayBasePositions
         state.HomeAttackDir <- LeftToRight
 
-        state.HomeSlots <-
-            Array.init hCount (fun i ->
-                let p = hp[i]
+        state.Home <-
+            { TeamSimState.empty with
+                Slots =
+                    Array.init hCount (fun i ->
+                        let p = hp[i]
 
-                PlayerSlot.Active
-                    { Player = p
-                      Pos = hPos[i]
-                      Condition = p.Condition
-                      Mental = MentalState.initial p
-                      Directives = Array.empty })
+                        PlayerSlot.Active
+                            { Player = p
+                              Pos = hPos[i]
+                              Condition = p.Condition
+                              Mental = MentalState.initial p
+                              Directives = Array.empty })
+                Instructions = homeInstructions |> Option.orElse (Some defaultInstr) }
 
-        state.HomeSidelined <- Map.empty
-        state.HomeYellows <- Map.empty
-        state.HomeSubsUsed <- 0
-        state.HomeInstructions <- homeInstructions |> Option.orElse (Some defaultInstr)
+        state.Away <-
+            { TeamSimState.empty with
+                Slots =
+                    Array.init aCount (fun i ->
+                        let p = ap[i]
 
-        state.AwaySlots <-
-            Array.init aCount (fun i ->
-                let p = ap[i]
-
-                PlayerSlot.Active
-                    { Player = p
-                      Pos = aPos[i]
-                      Condition = p.Condition
-                      Mental = MentalState.initial p
-                      Directives = Array.empty })
-
-        state.AwaySidelined <- Map.empty
-        state.AwayYellows <- Map.empty
-        state.AwaySubsUsed <- 0
-        state.AwayInstructions <- awayInstructions |> Option.orElse (Some defaultInstr)
-        state.HomeActiveRuns <- []
-        state.HomeChemistry <- ChemistryGraph.init hCount
-        state.HomeEmergentState <- EmergentState.initial
-        state.HomeAdaptiveState <- AdaptiveTactics.initial
-        state.HomeLastCognitiveSubTick <- 0
-        state.HomeLastShapeSubTick <- 0
-        state.HomeLastMarkingSubTick <- 0
-        state.HomeLastAdaptiveSubTick <- 0
-        state.AwayActiveRuns <- []
-        state.AwayChemistry <- ChemistryGraph.init aCount
-        state.AwayEmergentState <- EmergentState.initial
-        state.AwayAdaptiveState <- AdaptiveTactics.initial
-        state.AwayLastCognitiveSubTick <- 0
-        state.AwayLastShapeSubTick <- 0
-        state.AwayLastMarkingSubTick <- 0
-        state.AwayLastAdaptiveSubTick <- 0
+                        PlayerSlot.Active
+                            { Player = p
+                              Pos = aPos[i]
+                              Condition = p.Condition
+                              Mental = MentalState.initial p
+                              Directives = Array.empty })
+                Instructions = awayInstructions |> Option.orElse (Some defaultInstr) }
 
         ctx, state
 

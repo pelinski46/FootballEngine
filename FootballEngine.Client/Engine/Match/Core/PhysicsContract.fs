@@ -103,6 +103,12 @@ module PhysicsContract =
     let BallContactRadius = 0.35
 
     [<Literal>]
+    let ActionContactRadius = 1.5
+
+    [<Literal>]
+    let BallContestSeparationRadius = 0.8
+
+    [<Literal>]
     let SteeringSlowRadius = 2.5
 
     [<Literal>]

@@ -67,11 +67,17 @@ module MatchSpatial =
             { state.Ball with
                 Position = { pos with Vx = vx; Vy = vy; Vz = vz } }
 
-    let ballTowards (targetX: float) (targetY: float) (speed: float) (vz: float) (state: SimState) =
-        let bX = state.Ball.Position.X
-        let bY = state.Ball.Position.Y
-        let dx = targetX - bX
-        let dy = targetY - bY
+    let ballTowards
+        (originX: float)
+        (originY: float)
+        (targetX: float)
+        (targetY: float)
+        (speed: float)
+        (vz: float)
+        (state: SimState)
+        =
+        let dx = targetX - originX
+        let dy = targetY - originY
         let dist = sqrt (dx * dx + dy * dy)
 
         if dist < 0.01 then
@@ -109,8 +115,8 @@ module MatchSpatial =
         let mutable bestSp: Spatial option = None
         let mutable bestDistSq = System.Double.MaxValue
 
-        for i = 0 to state.HomeSlots.Length - 1 do
-            match state.HomeSlots[i] with
+        for i = 0 to state.Home.Slots.Length - 1 do
+            match state.Home.Slots[i] with
             | PlayerSlot.Active s when s.Player.Position <> GK ->
                 let dx = s.Pos.X - x
                 let dy = s.Pos.Y - y
@@ -121,8 +127,8 @@ module MatchSpatial =
                     bestSp <- Some s.Pos
             | _ -> ()
 
-        for i = 0 to state.AwaySlots.Length - 1 do
-            match state.AwaySlots[i] with
+        for i = 0 to state.Away.Slots.Length - 1 do
+            match state.Away.Slots[i] with
             | PlayerSlot.Active s when s.Player.Position <> GK ->
                 let dx = s.Pos.X - x
                 let dy = s.Pos.Y - y
@@ -138,7 +144,7 @@ module MatchSpatial =
         | _ -> None
 
     let findNearestTeammateToPos (excludePlayerId: PlayerId) (targetX: float) (targetY: float) (state: SimState) (attSide: ClubSide) : (Player * Spatial) option =
-        let slots = if attSide = HomeClub then state.HomeSlots else state.AwaySlots
+        let slots = if attSide = HomeClub then state.Home.Slots else state.Away.Slots
         let mutable bestPlayer: Player option = None
         let mutable bestSp: Spatial option = None
         let mutable bestDistSq = System.Double.MaxValue
@@ -176,12 +182,12 @@ module MatchSpatial =
 
     let findNearestTeammate (attacker: Player) (ctx: MatchContext) (state: SimState) (_dir: AttackDir) =
         let isHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = attacker.Id
                 | _ -> false)
 
-        let slots = if isHome then state.HomeSlots else state.AwaySlots
+        let slots = if isHome then state.Home.Slots else state.Away.Slots
 
         let mutable attackerX = 0.0
         let mutable attackerY = 0.0
@@ -222,13 +228,13 @@ module MatchSpatial =
 
     let findNearestOpponent (attacker: Player) (ctx: MatchContext) (state: SimState) (_dir: AttackDir) =
         let isHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = attacker.Id
                 | _ -> false)
 
-        let attSlots = if isHome then state.HomeSlots else state.AwaySlots
-        let defSlots = if isHome then state.AwaySlots else state.HomeSlots
+        let attSlots = if isHome then state.Home.Slots else state.Away.Slots
+        let defSlots = if isHome then state.Away.Slots else state.Home.Slots
 
         let mutable found = false
         let mutable ax = 0.0
@@ -269,13 +275,13 @@ module MatchSpatial =
 
     let findBestPassTarget (attacker: Player) (ctx: MatchContext) (state: SimState) (dir: AttackDir) =
         let isHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = attacker.Id
                 | _ -> false)
 
-        let attSlots = if isHome then state.HomeSlots else state.AwaySlots
-        let defSlots = if isHome then state.AwaySlots else state.HomeSlots
+        let attSlots = if isHome then state.Home.Slots else state.Away.Slots
+        let defSlots = if isHome then state.Away.Slots else state.Home.Slots
 
         let mutable found = false
         let mutable ballX = 0.0
@@ -355,12 +361,12 @@ module MatchSpatial =
             false
         else
             let isAttHome =
-                state.HomeSlots
+                state.Home.Slots
                 |> Array.exists (function
                     | PlayerSlot.Active s -> s.Player.Id = player.Id
                     | _ -> false)
 
-            let defSlots = if isAttHome then state.AwaySlots else state.HomeSlots
+            let defSlots = if isAttHome then state.Away.Slots else state.Home.Slots
 
             let mutable firstX = if dir = LeftToRight then -1.0 else 106.0
             let mutable secondX = if dir = LeftToRight then -1.0 else 106.0
@@ -435,13 +441,13 @@ module MatchSpatial =
         (dir: AttackDir)
         : OffsideSnapshot =
         let isAttHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = passer.Id
                 | _ -> false)
 
-        let defSlots = if isAttHome then state.AwaySlots else state.HomeSlots
-        let attSlots = if isAttHome then state.HomeSlots else state.AwaySlots
+        let defSlots = if isAttHome then state.Away.Slots else state.Home.Slots
+        let attSlots = if isAttHome then state.Home.Slots else state.Away.Slots
 
         let mutable receiverX = 50.0
 

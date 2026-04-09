@@ -51,7 +51,7 @@ module SetPieceAgent =
                     | PlayerSlot.Active s when s.Player.Id = kicker -> Some s.Player
                     | _ -> None)
                 |> Option.defaultWith (fun () ->
-                    state.HomeSlots
+                    state.Home.Slots
                     |> Array.pick (function
                         | PlayerSlot.Active s -> Some s.Player
                         | _ -> None))
@@ -75,7 +75,7 @@ module SetPieceAgent =
             let centerY = PhysicsContract.PitchWidth / 2.0
 
             let isHomeKickOff = state.HomeAttackDir = LeftToRight
-            let kickingSlots = if isHomeKickOff then state.HomeSlots else state.AwaySlots
+            let kickingSlots = if isHomeKickOff then state.Home.Slots else state.Away.Slots
             let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
 
             state.AttackingClub <- if isHomeKickOff then HomeClub else AwayClub

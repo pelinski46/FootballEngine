@@ -32,7 +32,7 @@ module PlayerScorer =
             | MC -> 0.07
             | _ -> 0.02
 
-        let distPenalty = (ctx.DistToGoal / 25.0) ** 2.0
+        let distPenalty = Math.Clamp(ctx.DistToGoal / 40.0, 0.0, 0.5)
 
         (finishing + longShots + composure + distNorm + posBonus - distPenalty)
         * normCond ctx.MyCondition

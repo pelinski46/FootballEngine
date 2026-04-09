@@ -27,7 +27,7 @@ module GoalDetector =
         match lastTouchId with
         | Some pid ->
             let touchIsHome =
-                state.HomeSlots
+                state.Home.Slots
                 |> Array.exists (function
                     | PlayerSlot.Active s -> s.Player.Id = pid
                     | _ -> false)

@@ -383,7 +383,7 @@ type InfrastructureBenchmarks() =
 
     [<Benchmark(Description = "[DIAG] ChemistryGraph: Array2D familiarity access (11×11)")>]
     member this.ChemistryGraphAccess() =
-        let cg = this.State.HomeChemistry
+        let cg = this.Ctx.HomeChemistry
         let mutable sum = 0.0
 
         for i = 0 to cg.PlayerCount - 1 do

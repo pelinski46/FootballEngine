@@ -73,7 +73,7 @@ let FoulBaseRate = 0.35
 let CornerOnFailedCross = 0.85
 let PostShotClearProbability = 0.40
 
-let GkSaveBonus = (GoalDifficulty - 1.0) * 15.0
+let GkSaveBonus = (GoalDifficulty - 1.0) * 4.0
 let OnTargetBase = 0.40 + (1.0 - ShotQualityGate) * 0.20
 
 // ============================================================================
@@ -132,7 +132,7 @@ let DuelFatigueDecay = 0.04
 
 let PassBaseMean = 0.88
 let PassTechnicalWeight = 0.15
-let PassVisionWeight = 0.10
+let PassVisionWeight = 0.15
 let PassSuccessShapeAlpha = 10.0
 let PassSuccessConditionMultiplier = 6.0
 let PassForwardBonus = 0.15
@@ -142,8 +142,8 @@ let PassSuccessMomentum = 0.30
 let PassFailMomentum = 0.50
 
 // Pass outcomes — multi-outcome model
-let PassDeflectBaseRate = 0.10
-let PassMisplacedBaseRate = 0.06
+let PassDeflectBaseRate = 0.06
+let PassMisplacedBaseRate = 0.03
 let PassInterceptBaseRate = 0.05
 let PassInterceptionRadius = 5.0
 let PassPressureDistance = 8.0
@@ -225,8 +225,8 @@ let FreeKickTargetX =
 
 let FreeKickSpeed = 16.0
 let FreeKickVz = 1.50
-let FreeKickSavePowerThreshold = 18.0
-let FreeKickSaveVariance = 5.0
+let FreeKickSavePowerThreshold = 2.0
+let FreeKickSaveVariance = 1.5
 
 // Corner
 let CornerBoxXThreshold =
@@ -284,6 +284,7 @@ let TurnConstraintBaseLimit = PhysicsContract.TurnConstraintBase
 let MoveSpeedMax = PhysicsContract.PlayerSpeedMax
 let MoveSpeedMin = PhysicsContract.PlayerSpeedMin
 let SeparationMinDistance = PhysicsContract.PlayerSeparationRadius
+let BallContestSeparationRadius = PhysicsContract.BallContestSeparationRadius
 
 let SeparationStrength = 0.10
 let SeparationAgilityMultiplier = 0.15
@@ -308,5 +309,3 @@ let BuildUpDribblePenalty = 0.12
 let BuildUpLongBallPenalty = 0.08
 let BuildUpGKDistributionBonus = 0.08
 let BuildUpDCPassingBonus = 0.05
-
-

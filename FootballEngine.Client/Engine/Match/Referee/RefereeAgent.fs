@@ -32,14 +32,14 @@ module RefereeAgent =
             state.Ball.LastTouchBy
             |> Option.bind (fun pid ->
                 if
-                    state.HomeSlots
+                    state.Home.Slots
                     |> Array.exists (function
                         | PlayerSlot.Active s -> s.Player.Id = pid
                         | _ -> false)
                 then
                     Some HomeClub
                 elif
-                    state.AwaySlots
+                    state.Away.Slots
                     |> Array.exists (function
                         | PlayerSlot.Active s -> s.Player.Id = pid
                         | _ -> false)
@@ -106,7 +106,7 @@ module RefereeAgent =
                 IssueInjury(
                     a,
                     if
-                        state.HomeSlots
+                        state.Home.Slots
                         |> Array.exists (function
                             | PlayerSlot.Active s -> s.Player.Id = a.Id
                             | _ -> false)
@@ -122,21 +122,19 @@ module RefereeAgent =
     let decideCard (subTick: int) (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
         let aggressionNorm = PhysicsContract.normaliseAttr fouler.Mental.Aggression
         let isHome =
-            state.HomeSlots
+            state.Home.Slots
             |> Array.exists (function
                 | PlayerSlot.Active s -> s.Player.Id = fouler.Id
                 | _ -> false)
 
         let clubSide = if isHome then HomeClub else AwayClub
         let clubId = if isHome then ctx.Home.Id else ctx.Away.Id
-        let yellows = if isHome then state.HomeYellows else state.AwayYellows
+        let yellows = SimStateOps.getYellows state (if isHome then HomeClub else AwayClub)
         let currentYellows = yellows |> Map.tryFind fouler.Id |> Option.defaultValue 0
 
         let isSidelined =
-            if isHome then
-                state.HomeSidelined |> Map.containsKey fouler.Id
-            else
-                state.AwaySidelined |> Map.containsKey fouler.Id
+            SimStateOps.getSidelined state (if isHome then HomeClub else AwayClub)
+            |> Map.containsKey fouler.Id
 
         if isSidelined then
             []
@@ -231,47 +229,37 @@ module RefereeAgent =
 
         | IssueYellow(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
+            let side = if isHome then HomeClub else AwayClub
 
             let count =
-                (if isHome then state.HomeYellows else state.AwayYellows)
+                SimStateOps.getYellows state side
                 |> Map.tryFind player.Id
                 |> Option.defaultValue 0
 
             if count >= 1 then
-                if isHome then
-                    state.HomeYellows <- Map.add player.Id (count + 1) state.HomeYellows
-                    state.HomeSidelined <- Map.add player.Id SidelinedByRedCard state.HomeSidelined
-                else
-                    state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
-                    state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
+                SimStateOps.setYellows state side (Map.add player.Id (count + 1) (SimStateOps.getYellows state side))
+                SimStateOps.setSidelined state side (Map.add player.Id SidelinedByRedCard (SimStateOps.getSidelined state side))
 
                 [ createEvent subTick player.Id clubId YellowCard
                   createEvent subTick player.Id clubId RedCard ]
             else
-                if isHome then
-                    state.HomeYellows <- Map.add player.Id (count + 1) state.HomeYellows
-                else
-                    state.AwayYellows <- Map.add player.Id (count + 1) state.AwayYellows
+                SimStateOps.setYellows state side (Map.add player.Id (count + 1) (SimStateOps.getYellows state side))
 
                 [ createEvent subTick player.Id clubId YellowCard ]
 
         | IssueRed(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
+            let side = if isHome then HomeClub else AwayClub
 
-            if isHome then
-                state.HomeSidelined <- Map.add player.Id SidelinedByRedCard state.HomeSidelined
-            else
-                state.AwaySidelined <- Map.add player.Id SidelinedByRedCard state.AwaySidelined
+            SimStateOps.setSidelined state side (Map.add player.Id SidelinedByRedCard (SimStateOps.getSidelined state side))
 
             [ createEvent subTick player.Id clubId RedCard ]
 
         | IssueInjury(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
+            let side = if isHome then HomeClub else AwayClub
 
-            if isHome then
-                state.HomeSidelined <- Map.add player.Id SidelinedByInjury state.HomeSidelined
-            else
-                state.AwaySidelined <- Map.add player.Id SidelinedByInjury state.AwaySidelined
+            SimStateOps.setSidelined state side (Map.add player.Id SidelinedByInjury (SimStateOps.getSidelined state side))
 
             [ createEvent subTick player.Id clubId (MatchEventType.Injury "match") ]
 
@@ -280,17 +268,17 @@ module RefereeAgent =
         | HalfTimeTick ->
             state.HomeAttackDir <- RightToLeft
 
-            state.HomeSlots <-
-                state.HomeSlots
+            SimStateOps.setSlots state HomeClub
+                (state.Home.Slots
                 |> Array.map (function
                     | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
-                    | Sidelined(p, r) -> Sidelined(p, r))
+                    | Sidelined(p, r) -> Sidelined(p, r)))
 
-            state.AwaySlots <-
-                state.AwaySlots
+            SimStateOps.setSlots state AwayClub
+                (state.Away.Slots
                 |> Array.map (function
                     | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
-                    | Sidelined(p, r) -> Sidelined(p, r))
+                    | Sidelined(p, r) -> Sidelined(p, r)))
 
             { Events = []
               Spawned =
@@ -309,12 +297,12 @@ module RefereeAgent =
         | InjuryTick(playerId, _severity) ->
             let player =
                 seq {
-                    for slot in state.HomeSlots do
+                    for slot in state.Home.Slots do
                         match slot with
                         | PlayerSlot.Active s -> yield s.Player
                         | _ -> ()
 
-                    for slot in state.AwaySlots do
+                    for slot in state.Away.Slots do
                         match slot with
                         | PlayerSlot.Active s -> yield s.Player
                         | _ -> ()
@@ -324,22 +312,18 @@ module RefereeAgent =
             let events =
                 match player with
                 | Some p ->
-                    resolve
-                        tick.SubTick
-                        (IssueInjury(
-                            p,
-                            if
-                                state.HomeSlots
-                                |> Array.exists (function
-                                    | PlayerSlot.Active s -> s.Player.Id = p.Id
-                                    | _ -> false)
-                            then
-                                ctx.Home.Id
-                            else
-                                ctx.Away.Id
-                        ))
-                        ctx
-                        state
+                    let pSide =
+                        if
+                            state.Home.Slots
+                            |> Array.exists (function
+                                | PlayerSlot.Active s -> s.Player.Id = p.Id
+                                | _ -> false)
+                        then
+                            ctx.Home.Id
+                        else
+                            ctx.Away.Id
+
+                    resolve tick.SubTick (IssueInjury(p, pSide)) ctx state
                 | None -> []
 
             { Events = events

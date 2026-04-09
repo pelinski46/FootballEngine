@@ -190,9 +190,9 @@ module MatchPhase =
                 match result with
                 | Ok(h, a, _, finalState) ->
                     let injured =
-                        finalState.HomeSidelined
+                        finalState.Home.Sidelined
                         |> Map.toSeq
-                        |> Seq.append (finalState.AwaySidelined |> Map.toSeq)
+                        |> Seq.append (finalState.Away.Sidelined |> Map.toSeq)
                         |> Seq.choose (fun (pid, s) -> if s = SidelinedByInjury then Some pid else None)
                         |> Set.ofSeq
 

@@ -62,7 +62,10 @@ module SetPlayAction =
                 else
                     PhysicsContract.PitchLength - BalanceConfig.FreeKickTargetX
 
-            MatchSpatial.ballTowards targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
+            let bX = state.Ball.Position.X
+            let bY = state.Ball.Position.Y
+
+            MatchSpatial.ballTowards bX bY targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
             flipPossession state
             state.Ball <- { state.Ball with Spin = spin }
 
@@ -76,7 +79,7 @@ module SetPlayAction =
 
             if bernoulli BalanceConfig.PostShotClearProbability then
                 let clearY = PhysicsContract.PitchWidth / 2.0 + normalSample 0.0 10.0
-                MatchSpatial.ballTowards PhysicsContract.HalfwayLineX clearY 16.0 1.5 state
+                MatchSpatial.ballTowards state.Ball.Position.X state.Ball.Position.Y PhysicsContract.HalfwayLineX clearY 16.0 1.5 state
 
             events
 
@@ -142,6 +145,8 @@ module SetPlayAction =
                         PhysicsContract.PenaltyAreaDepth
 
                 MatchSpatial.ballTowards
+                    state.Ball.Position.X
+                    state.Ball.Position.Y
                     targetX
                     (PhysicsContract.PitchWidth / 2.0)
                     BalanceConfig.CornerSpeed
@@ -208,6 +213,8 @@ module SetPlayAction =
                             PhysicsContract.PenaltyAreaDepth + 5.0
 
                     MatchSpatial.ballTowards
+                        state.Ball.Position.X
+                        state.Ball.Position.Y
                         targetX
                         (PhysicsContract.PitchWidth / 2.0)
                         BalanceConfig.CornerSpeed
@@ -227,11 +234,7 @@ module SetPlayAction =
         let actx = ActionContext.build state
         let clubId = if throwClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let throwSlots =
-            if throwClub = HomeClub then
-                state.HomeSlots
-            else
-                state.AwaySlots
+        let throwSlots = SimStateOps.getSlots state throwClub
 
         let activeCount =
             throwSlots
@@ -288,10 +291,8 @@ module SetPlayAction =
         let clubId = if kickerClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
         let gkSlots =
-            if kickerClub = HomeClub then
-                state.AwaySlots
-            else
-                state.HomeSlots
+            let defSide = ClubSide.flip kickerClub
+            SimStateOps.getSlots state defSide
 
         let gk =
             gkSlots

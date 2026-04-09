@@ -194,46 +194,39 @@ let private buildState
           AwayPlayers = awayPlayers
           HomeBasePositions = hSp
           AwayBasePositions = aSp
+          HomeChemistry = ChemistryGraph.init homePlayers.Length
+          AwayChemistry = ChemistryGraph.init awayPlayers.Length
           IsKnockoutMatch = false }
 
     let state = SimState()
 
-    state.HomeSlots <-
-        Array.init homePlayers.Length (fun i ->
-            let p = homePlayers[i]
+    state.Home <-
+        { TeamSimState.empty with
+            Slots =
+                Array.init homePlayers.Length (fun i ->
+                    let p = homePlayers[i]
 
-            PlayerSlot.Active
-                { Player = p
-                  Pos = hSp[i]
-                  Condition = p.Condition
-                  Mental = MentalState.initial p
-                  Directives = Array.empty })
+                    PlayerSlot.Active
+                        { Player = p
+                          Pos = hSp[i]
+                          Condition = p.Condition
+                          Mental = MentalState.initial p
+                          Directives = Array.empty })
+            Instructions = Some defaultInstructions }
 
-    state.AwaySlots <-
-        Array.init awayPlayers.Length (fun i ->
-            let p = awayPlayers[i]
+    state.Away <-
+        { TeamSimState.empty with
+            Slots =
+                Array.init awayPlayers.Length (fun i ->
+                    let p = awayPlayers[i]
 
-            PlayerSlot.Active
-                { Player = p
-                  Pos = aSp[i]
-                  Condition = p.Condition
-                  Mental = MentalState.initial p
-                  Directives = Array.empty })
-
-    state.HomeSidelined <- Map.empty
-    state.AwaySidelined <- Map.empty
-    state.HomeYellows <- Map.empty
-    state.AwayYellows <- Map.empty
-    state.HomeInstructions <- Some defaultInstructions
-    state.AwayInstructions <- Some defaultInstructions
-    state.HomeActiveRuns <- []
-    state.AwayActiveRuns <- []
-    state.HomeChemistry <- ChemistryGraph.init homePlayers.Length
-    state.AwayChemistry <- ChemistryGraph.init awayPlayers.Length
-    state.HomeEmergentState <- EmergentState.initial
-    state.AwayEmergentState <- EmergentState.initial
-    state.HomeAdaptiveState <- AdaptiveTactics.initial
-    state.AwayAdaptiveState <- AdaptiveTactics.initial
+                    PlayerSlot.Active
+                        { Player = p
+                          Pos = aSp[i]
+                          Condition = p.Condition
+                          Mental = MentalState.initial p
+                          Directives = Array.empty })
+            Instructions = Some defaultInstructions }
 
     state.Ball <-
         { Position = spatialAt ballX ballY
@@ -281,11 +274,11 @@ let private hasFreeKickEvent events =
         | _ -> false)
 
 /// Run `action` N times, return the list of per-run event lists
-let private trials n action setup = Array.init n (fun _ -> action setup)
+let private trials n action mkSetup = Array.init n (fun _ -> action (mkSetup ()))
 
 /// Probability estimate over N trials
-let private eventRate t n action setup =
-    trials n action setup
+let private eventRate t n action mkSetup =
+    trials n action mkSetup
     |> Array.filter (hasEventType t)
     |> Array.length
     |> fun k -> float k / float n
@@ -327,6 +320,8 @@ let simStateOpsTests =
                     AwayPlayers = [||]
                     HomeBasePositions = [||]
                     AwayBasePositions = [||]
+                    HomeChemistry = ChemistryGraph.init 0
+                    AwayChemistry = ChemistryGraph.init 0
                     IsKnockoutMatch = false }
 
               let s02 =
@@ -366,6 +361,8 @@ let simStateOpsTests =
                     AwayPlayers = [||]
                     HomeBasePositions = [||]
                     AwayBasePositions = [||]
+                    HomeChemistry = ChemistryGraph.init 0
+                    AwayChemistry = ChemistryGraph.init 0
                     IsKnockoutMatch = false }
 
               let at score1 score2 subTick =
@@ -408,6 +405,8 @@ let simStateOpsTests =
                     AwayPlayers = [||]
                     HomeBasePositions = [||]
                     AwayBasePositions = [||]
+                    HomeChemistry = ChemistryGraph.init 0
+                    AwayChemistry = ChemistryGraph.init 0
                     IsKnockoutMatch = false }
 
               let s = SimState()
@@ -430,6 +429,8 @@ let simStateOpsTests =
                     AwayPlayers = [||]
                     HomeBasePositions = [||]
                     AwayBasePositions = [||]
+                    HomeChemistry = ChemistryGraph.init 0
+                    AwayChemistry = ChemistryGraph.init 0
                     IsKnockoutMatch = false }
 
               let s = SimState()
@@ -458,6 +459,8 @@ let simStateOpsTests =
                     AwayPlayers = [||]
                     HomeBasePositions = [||]
                     AwayBasePositions = [||]
+                    HomeChemistry = ChemistryGraph.init 0
+                    AwayChemistry = ChemistryGraph.init 0
                     IsKnockoutMatch = false }
 
               let s = SimState()
@@ -627,63 +630,78 @@ let shotActionTests =
 
           testCase "elite attacker vs weak GK: scores in ≥1 of 50 attempts"
           <| fun () ->
-              let ctx, state =
-                  buildState
-                      [| eliteAttacker 1 ST |]
-                      [| (95.0, 34.0) |]
-                      [| makeGk 10 1 weakGk |]
-                      [| (99.0, 34.0) |]
-                      85.0
-                      34.0
-                      HomeClub
+              let goals =
+                  eventRate
+                      Goal
+                      50
+                      (resolveHome Shoot)
+                      (fun () ->
+                          buildState
+                              [| eliteAttacker 1 ST |]
+                              [| (95.0, 34.0) |]
+                              [| makeGk 10 1 weakGk |]
+                              [| (99.0, 34.0) |]
+                              85.0
+                              34.0
+                              HomeClub)
 
-              let goals = eventRate Goal 50 (resolveHome Shoot) (ctx, state)
               Expect.isGreaterThan goals 0.0 $"elite att vs weak GK should score; rate={goals:P0}"
 
           testCase "elite attacker vs weak GK: goal rate > 30%%"
           <| fun () ->
-              // Weak GK + elite att should score often. If this fails, ShotAction math is broken.
-              let ctx, state =
-                  buildState
-                      [| eliteAttacker 1 ST |]
-                      [| (95.0, 34.0) |]
-                      [| makeGk 10 1 weakGk |]
-                      [| (99.0, 34.0) |]
-                      85.0
-                      34.0
-                      HomeClub
+              let rate =
+                  eventRate
+                      Goal
+                      100
+                      (resolveHome Shoot)
+                      (fun () ->
+                          buildState
+                              [| eliteAttacker 1 ST |]
+                              [| (95.0, 34.0) |]
+                              [| makeGk 10 1 weakGk |]
+                              [| (99.0, 34.0) |]
+                              85.0
+                              34.0
+                              HomeClub)
 
-              let rate = eventRate Goal 100 (resolveHome Shoot) (ctx, state)
               Expect.isGreaterThan rate 0.30 $"expected >30%% goals, got {rate:P0} — check ShotAction/BalanceConfig"
 
           testCase "worst attacker vs elite GK: goal rate < 5%%"
           <| fun () ->
-              let ctx, state =
-                  buildState
-                      [| worstAttacker 1 ST |]
-                      [| (90.0, 34.0) |]
-                      [| makeGk 10 20 strongGk |]
-                      [| (99.0, 34.0) |]
-                      80.0
-                      34.0
-                      HomeClub
+              let rate =
+                  eventRate
+                      Goal
+                      100
+                      (resolveHome Shoot)
+                      (fun () ->
+                          buildState
+                              [| worstAttacker 1 ST |]
+                              [| (90.0, 34.0) |]
+                              [| makeGk 10 20 strongGk |]
+                              [| (99.0, 34.0) |]
+                              80.0
+                              34.0
+                              HomeClub)
 
-              let rate = eventRate Goal 100 (resolveHome Shoot) (ctx, state)
               Expect.isLessThan rate 0.05 $"expected <5%% goals, got {rate:P0} — strong GK should dominate"
 
           testCase "shot from GK zone (x=5) is always off-target (quality gate)"
           <| fun () ->
-              let ctx, state =
-                  buildState
-                      [| makePlayer 1 GK 10 |]
-                      [| (5.0, 34.0) |]
-                      [| makeGk 10 10 defaultGk |]
-                      [| (99.0, 34.0) |]
-                      5.0
-                      34.0
-                      HomeClub
+              let hasGoal =
+                  eventRate
+                      Goal
+                      20
+                      (resolveHome Shoot)
+                      (fun () ->
+                          buildState
+                              [| makePlayer 1 GK 10 |]
+                              [| (5.0, 34.0) |]
+                              [| makeGk 10 10 defaultGk |]
+                              [| (99.0, 34.0) |]
+                              5.0
+                              34.0
+                              HomeClub)
 
-              let hasGoal = eventRate Goal 20 (resolveHome Shoot) (ctx, state)
               Expect.equal hasGoal 0.0 "shot from own GK line should never score (quality gate)"
 
           testCase "save event only appears alongside shot event"
@@ -717,18 +735,20 @@ let passActionTests =
               let passer = elitePasser 1 MC
               let teammate = makePlayer 2 ST 10
 
-              let ctx, state =
-                  buildState
-                      [| passer; teammate |]
-                      [| (52.5, 34.0); (70.0, 34.0) |]
-                      [| makeGk 10 10 defaultGk |]
-                      [| (99.0, 34.0) |]
-                      52.5
-                      34.0
-                      HomeClub
-
               let rate =
-                  eventRate (PassCompleted(passer.Id, teammate.Id)) 30 (resolveHome (Pass teammate)) (ctx, state)
+                  eventRate
+                      (PassCompleted(passer.Id, teammate.Id))
+                      30
+                      (resolveHome (Pass teammate))
+                      (fun () ->
+                          buildState
+                              [| passer; teammate |]
+                              [| (52.5, 34.0); (70.0, 34.0) |]
+                              [| makeGk 10 10 defaultGk |]
+                              [| (99.0, 34.0) |]
+                              52.5
+                              34.0
+                              HomeClub)
 
               Expect.isGreaterThan rate 0.0 "elite passer should complete at least one pass"
 
@@ -737,18 +757,21 @@ let passActionTests =
               let passer = elitePasser 1 MC
               let teammate = makePlayer 2 ST 10
 
-              let ctx, state =
-                  buildState
-                      [| passer; teammate |]
-                      [| (52.5, 34.0); (65.0, 34.0) |]
-                      [| makeGk 10 10 defaultGk |]
-                      [| (99.0, 34.0) |]
-                      52.5
-                      34.0
-                      HomeClub
-
               let completions =
-                  Array.init 50 (fun _ -> resolveHome (Pass teammate) (ctx, state))
+                  Array.init
+                      50
+                      (fun _ ->
+                          let ctx, state =
+                              buildState
+                                  [| passer; teammate |]
+                                  [| (52.5, 34.0); (65.0, 34.0) |]
+                                  [| makeGk 10 10 defaultGk |]
+                                  [| (99.0, 34.0) |]
+                                  52.5
+                                  34.0
+                                  HomeClub
+
+                          resolveHome (Pass teammate) (ctx, state))
                   |> Array.filter hasPassEvent
                   |> Array.length
 
@@ -760,18 +783,18 @@ let passActionTests =
               let passer = worstPasser 1 MC
               let teammate = makePlayer 2 ST 10
 
-              let ctx, state =
-                  buildState
-                      [| passer; teammate |]
-                      [| (52.5, 34.0); (70.0, 34.0) |]
-                      [| makeGk 10 10 defaultGk |]
-                      [| (99.0, 34.0) |]
-                      52.5
-                      34.0
-                      HomeClub
-
               let turnovers =
                   Array.init 30 (fun _ ->
+                      let ctx, state =
+                          buildState
+                              [| passer; teammate |]
+                              [| (52.5, 34.0); (70.0, 34.0) |]
+                              [| makeGk 10 10 defaultGk |]
+                              [| (99.0, 34.0) |]
+                              52.5
+                              34.0
+                              HomeClub
+
                       resolveHome (Pass teammate) (ctx, state) |> ignore
                       state.AttackingClub = AwayClub)
                   |> Array.filter id
@@ -810,10 +833,21 @@ let duelActionTests =
               let attacker = eliteDribbler 1 ST
               let defender = worstTackler 10 DC
 
-              let ctx, state =
-                  buildState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (75.0, 34.0) |] 70.0 34.0 HomeClub
+              let successes =
+                  eventRate
+                      DribbleSuccess
+                      30
+                      (resolveHome Dribble)
+                      (fun () ->
+                          buildState
+                              [| attacker |]
+                              [| (70.0, 34.0) |]
+                              [| defender |]
+                              [| (75.0, 34.0) |]
+                              70.0
+                              34.0
+                              HomeClub)
 
-              let successes = eventRate DribbleSuccess 30 (resolveHome Dribble) (ctx, state)
               Expect.isGreaterThan successes 0.0 "elite dribbler vs worst defender should win some duels"
 
           testCase "elite dribbler win rate > 60%%"
@@ -821,10 +855,20 @@ let duelActionTests =
               let attacker = eliteDribbler 1 ST
               let defender = worstTackler 10 DC
 
-              let ctx, state =
-                  buildState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (75.0, 34.0) |] 70.0 34.0 HomeClub
-
-              let rate = eventRate DribbleSuccess 100 (resolveHome Dribble) (ctx, state)
+              let rate =
+                  eventRate
+                      DribbleSuccess
+                      100
+                      (resolveHome Dribble)
+                      (fun () ->
+                          buildState
+                              [| attacker |]
+                              [| (70.0, 34.0) |]
+                              [| defender |]
+                              [| (75.0, 34.0) |]
+                              70.0
+                              34.0
+                              HomeClub)
 
               Expect.isGreaterThan
                   rate
@@ -836,11 +880,21 @@ let duelActionTests =
               let defender = highAggression 10 DC
               let attacker = makePlayer 1 ST 10
 
-              // Home attacks, Away (defender) tackles
-              let ctx, state =
-                  buildState [| attacker |] [| (70.0, 34.0) |] [| defender |] [| (71.0, 34.0) |] 70.0 34.0 HomeClub
+              let fouls =
+                  eventRate
+                      FoulCommitted
+                      50
+                      (resolveAway (Tackle defender))
+                      (fun () ->
+                          buildState
+                              [| attacker |]
+                              [| (70.0, 34.0) |]
+                              [| defender |]
+                              [| (71.0, 34.0) |]
+                              70.0
+                              34.0
+                              HomeClub)
 
-              let fouls = eventRate FoulCommitted 50 (resolveAway (Tackle defender)) (ctx, state)
               Expect.isGreaterThan fouls 0.0 "high-aggression defender should commit fouls"
 
           testCase "duel always produces a duel-class event"
@@ -973,17 +1027,21 @@ let setPieceTests =
                           FreeKick = 20 }
                   |> withMental { defaultMental with Composure = 20 }
 
-              let ctx, state =
-                  buildState
-                      [| kicker |]
-                      [| (68.0, 34.0) |]
-                      [| makeGk 10 1 weakGk |]
-                      [| (99.0, 34.0) |]
-                      68.0
-                      34.0
-                      HomeClub
+              let scored =
+                  eventRate
+                      Goal
+                      30
+                      (resolveHome PlayerAction.FreeKick)
+                      (fun () ->
+                          buildState
+                              [| kicker |]
+                              [| (68.0, 34.0) |]
+                              [| makeGk 10 1 weakGk |]
+                              [| (99.0, 34.0) |]
+                              68.0
+                              34.0
+                              HomeClub)
 
-              let scored = eventRate Goal 30 (resolveHome PlayerAction.FreeKick) (ctx, state)
               Expect.isGreaterThan scored 0.0 "elite FK taker vs weak GK should score eventually" ]
 
 
@@ -1708,3 +1766,5 @@ let homeAdvantageTests =
               Expect.isTrue
                   (homeFouls <= awayFouls * 110 / 100)
                   $"home fouls ({homeFouls}) > 110%% of away ({awayFouls})" ]
+
+

@@ -8,6 +8,8 @@ open MatchSpatial
 module CrossAction =
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        state.Ball <- { state.Ball with ControlledBy = None }
+
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
@@ -18,10 +20,10 @@ module CrossAction =
 
         let crosserIdx = nearestIdxToBall attSlots bX bY
 
-        let crosser, crosserCond =
+        let crosser, crosserCond, crosserPos =
             match attSlots[crosserIdx] with
-            | PlayerSlot.Active s -> s.Player, s.Condition
-            | _ -> Unchecked.defaultof<Player>, 0
+            | PlayerSlot.Active s -> s.Player, s.Condition, s.Pos
+            | _ -> Unchecked.defaultof<Player>, 0, kickOffSpatial
 
         let condNorm = PhysicsContract.normaliseCondition crosserCond
 
@@ -113,7 +115,7 @@ module CrossAction =
 
                 let bx, by = blockPos
 
-                MatchSpatial.ballTowards bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
+                MatchSpatial.ballTowards crosserPos.X crosserPos.Y bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
                 flipPossession state
                 adjustMomentum actx.Dir (-BalanceConfig.CrossFailMomentum) state
                 state.Ball <- { state.Ball with Spin = spin }
@@ -126,7 +128,7 @@ module CrossAction =
                 else
                     PhysicsContract.PenaltyAreaDepth
 
-            MatchSpatial.ballTowards targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
+            MatchSpatial.ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
             flipPossession state
 
             [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]
