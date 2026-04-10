@@ -222,7 +222,7 @@ module SetPlayAction =
                         state
 
                     if bernoulli BalanceConfig.CornerKeepPossessionProbability then
-                        state.PendingOffsideSnapshot <- None
+                        clearOffsideSnapshot state
                     else
                         flipPossession state
 

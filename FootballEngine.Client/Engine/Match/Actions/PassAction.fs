@@ -169,14 +169,23 @@ module PassAction =
                 else
                     let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                    MatchSpatial.ballTowards passerSp.X passerSp.Y targetSp.X targetSp.Y BalanceConfig.PassSpeed BalanceConfig.PassVz state
+                    MatchSpatial.ballTowards
+                        passerSp.X
+                        passerSp.Y
+                        targetSp.X
+                        targetSp.Y
+                        BalanceConfig.PassSpeed
+                        BalanceConfig.PassVz
+                        state
+
                     adjustMomentum actx.Dir BalanceConfig.PassSuccessMomentum state
-                    state.PendingOffsideSnapshot <- Some snapshot
 
                     state.Ball <-
                         { state.Ball with
                             Spin = { Top = 0.0; Side = 0.0 }
-                            ControlledBy = None }
+                            ControlledBy = None
+                            Phase = PossessionPhase.InFlight actx.AttSide
+                            PendingOffsideSnapshot = Some snapshot }
 
                     [ createEvent subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
             elif bernoulli deflectRate then
@@ -205,7 +214,10 @@ module PassAction =
                     (BalanceConfig.PassVz * 0.5)
                     state
 
-                state.Ball <- { state.Ball with ControlledBy = None }
+                state.Ball <-
+                    { state.Ball with
+                        ControlledBy = None
+                        Phase = PossessionPhase.Contest actx.AttSide }
 
                 [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
             elif nearestDef.IsSome then
@@ -226,7 +238,8 @@ module PassAction =
                                     Vy = 0.0
                                     Vz = 0.0 }
                             ControlledBy = Some def.Id
-                            LastTouchBy = Some def.Id }
+                            LastTouchBy = Some def.Id
+                            Phase = PossessionPhase.Transition actx.DefSide }
 
                     [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id))
                       createEvent subTick def.Id defClubId TackleSuccess ]
@@ -242,13 +255,11 @@ module PassAction =
                             BalanceConfig.PassVz
                             state
 
-                        state.Ball <- { state.Ball with ControlledBy = None }
                         flipPossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                         [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                     | None ->
-                        state.Ball <- { state.Ball with ControlledBy = None }
                         flipPossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                         [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
@@ -264,13 +275,11 @@ module PassAction =
                         BalanceConfig.PassVz
                         state
 
-                    state.Ball <- { state.Ball with ControlledBy = None }
                     flipPossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                     [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                 | None ->
-                    state.Ball <- { state.Ball with ControlledBy = None }
                     flipPossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                     [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
@@ -372,9 +381,13 @@ module PassAction =
                     BalanceConfig.LongBallVz
                     state
 
-                state.Ball <- { state.Ball with ControlledBy = None }
+                state.Ball <-
+                    { state.Ball with
+                        ControlledBy = None
+                        Phase = PossessionPhase.InFlight actx.AttSide
+                        PendingOffsideSnapshot = Some snapshot }
+
                 adjustMomentum actx.Dir BalanceConfig.LongBallSuccessMomentum state
-                state.PendingOffsideSnapshot <- Some snapshot
 
                 [ createEvent subTick passer.Id attClubId (LongBall true) ]
         elif bernoulli deflectRate then
@@ -400,7 +413,10 @@ module PassAction =
                 (BalanceConfig.LongBallVz * 0.5)
                 state
 
-            state.Ball <- { state.Ball with ControlledBy = None }
+            state.Ball <-
+                { state.Ball with
+                    ControlledBy = None
+                    Phase = PossessionPhase.Contest actx.AttSide }
 
             [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
         elif bernoulli interceptRate then
@@ -418,17 +434,16 @@ module PassAction =
                                 Vy = 0.0
                                 Vz = 0.0 }
                         ControlledBy = Some def.Id
-                        LastTouchBy = Some def.Id }
+                        LastTouchBy = Some def.Id
+                        Phase = PossessionPhase.Transition actx.DefSide }
 
                 [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id))
                   createEvent subTick def.Id defClubId TackleSuccess ]
             | None ->
-                state.Ball <- { state.Ball with ControlledBy = None }
                 flipPossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
         else
-            state.Ball <- { state.Ball with ControlledBy = None }
             flipPossession state
             adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
             [ createEvent subTick passer.Id attClubId (LongBall false) ]

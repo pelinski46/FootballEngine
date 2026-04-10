@@ -8,7 +8,7 @@ open MatchSpatial
 module CrossAction =
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        state.Ball <- { state.Ball with ControlledBy = None }
+        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.InFlight state.AttackingClub }
 
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
@@ -116,9 +116,18 @@ module CrossAction =
                 let bx, by = blockPos
 
                 MatchSpatial.ballTowards crosserPos.X crosserPos.Y bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
-                flipPossession state
+
+                let defClub = ClubSide.flip actx.AttSide
+
+                state.Ball <-
+                    { state.Ball with
+                        ControlledBy = None
+                        Spin = spin
+                        Phase = PossessionPhase.Contest defClub }
+
+                clearOffsideSnapshot state
+
                 adjustMomentum actx.Dir (-BalanceConfig.CrossFailMomentum) state
-                state.Ball <- { state.Ball with Spin = spin }
 
                 [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
         else
@@ -128,7 +137,10 @@ module CrossAction =
                 else
                     PhysicsContract.PenaltyAreaDepth
 
+            let defClub = ClubSide.flip actx.AttSide
+
             MatchSpatial.ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
-            flipPossession state
+            state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.Contest defClub }
+            clearOffsideSnapshot state
 
             [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]

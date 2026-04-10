@@ -95,7 +95,12 @@ module BallAgent =
 
         state.Ball <-
             match ctrl with
-            | Some _ ->
+            | Some pid ->
+                let club =
+                    match SimStateOps.clubSideOf state pid with
+                    | Some c -> c
+                    | None -> state.AttackingClub
+
                 let dampened =
                     { resolved.Position with
                         Vx = resolved.Position.Vx * 0.15
@@ -105,7 +110,8 @@ module BallAgent =
                 { resolved with
                     Position = dampened
                     ControlledBy = ctrl
-                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
+                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy
+                    Phase = PossessionPhase.InPossession club }
             | None ->
                 { resolved with
                     ControlledBy = ctrl

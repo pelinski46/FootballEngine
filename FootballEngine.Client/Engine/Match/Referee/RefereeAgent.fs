@@ -169,7 +169,8 @@ module RefereeAgent =
                     Position = defaultSpatial resetX (PhysicsContract.PitchWidth / 2.0)
                     Spin = Spin.zero
                     LastTouchBy = None
-                    IsInPlay = true }
+                    IsInPlay = true
+                    Phase = PossessionPhase.Contest state.AttackingClub }
 
             clearOffsideSnapshot state
             []
@@ -179,8 +180,6 @@ module RefereeAgent =
                 match team with
                 | HomeClub -> PhysicsContract.PenaltyAreaDepth
                 | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
-
-            state.AttackingClub <- team
 
             state.Ball <-
                 { state.Ball with
@@ -194,7 +193,8 @@ module RefereeAgent =
                             Vz = 0.0 }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    IsInPlay = true }
+                    IsInPlay = true
+                    Phase = PossessionPhase.SetPiece team }
 
             clearOffsideSnapshot state
             []
@@ -204,8 +204,6 @@ module RefereeAgent =
                 match team with
                 | HomeClub -> PhysicsContract.PitchLength - 0.5
                 | AwayClub -> 0.5
-
-            state.AttackingClub <- team
 
             state.Ball <-
                 { state.Ball with
@@ -219,7 +217,8 @@ module RefereeAgent =
                             Vz = 0.0 }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    IsInPlay = true }
+                    IsInPlay = true
+                    Phase = PossessionPhase.SetPiece team }
 
             clearOffsideSnapshot state
             [ { SubTick = subTick

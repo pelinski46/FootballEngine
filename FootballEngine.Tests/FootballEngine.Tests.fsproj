@@ -7,7 +7,18 @@
 
     <ItemGroup>
         <Compile Include="Helpers.fs"/>
-        <Compile Include="Matchtests.fs"/>
+        <Compile Include="MatchEngineTests/Helpers.fs"/>
+        <Compile Include="MatchEngineTests/PossessionPhaseTests.fs"/>
+        <Compile Include="MatchEngineTests/BallPhysicsTests.fs"/>
+        <Compile Include="MatchEngineTests/OffsideTests.fs"/>
+        <Compile Include="MatchEngineTests/DuelActionTests.fs"/>
+        <Compile Include="MatchEngineTests/PassActionTests.fs"/>
+        <Compile Include="MatchEngineTests/ShotActionTests.fs"/>
+        <Compile Include="MatchEngineTests/CrossActionTests.fs"/>
+        <Compile Include="MatchEngineTests/SetPieceTests.fs"/>
+        <Compile Include="MatchEngineTests/MatchInvariantsTests.fs"/>
+        <Compile Include="MatchEngineTests/StatisticalContractsTests.fs"/>
+        <Compile Include="MatchEngineTests/PhaseTransitionTests.fs"/>
         <Compile Include="Enginetests.fs"/>
         <Compile Include="Worldtests.fs"/>
         <Compile Include="DeterminismTests.fs"/>

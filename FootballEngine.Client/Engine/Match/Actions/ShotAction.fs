@@ -35,7 +35,7 @@ module ShotAction =
         - dist
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        state.Ball <- { state.Ball with ControlledBy = None }
+        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.InFlight state.AttackingClub }
 
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id

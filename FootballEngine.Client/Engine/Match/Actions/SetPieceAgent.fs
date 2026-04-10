@@ -75,10 +75,9 @@ module SetPieceAgent =
             let centerY = PhysicsContract.PitchWidth / 2.0
 
             let isHomeKickOff = state.HomeAttackDir = LeftToRight
+            let kickingClub = if isHomeKickOff then HomeClub else AwayClub
             let kickingSlots = if isHomeKickOff then state.Home.Slots else state.Away.Slots
             let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
-
-            state.AttackingClub <- if isHomeKickOff then HomeClub else AwayClub
 
             state.Ball <-
                 { state.Ball with
@@ -91,7 +90,8 @@ module SetPieceAgent =
                             Vz = 0.0 }
                     ControlledBy = None
                     LastTouchBy = None
-                    IsInPlay = true }
+                    IsInPlay = true
+                    Phase = PossessionPhase.SetPiece kickingClub }
 
             let kickerOpt =
                 kickingSlots

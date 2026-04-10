@@ -2,29 +2,41 @@
 
 open Expecto
 open Expecto.Logging
-open FootballEngine.Tests.MatchTests
 open FootballEngine.Tests.EngineTests
 open FootballEngine.Tests.WorldTests
 open FootballEngine.Tests.TrainingSystemTests
 open FootballEngine.Tests.DeterminismTests
 open FootballEngine.Tests.TickSchedulerTests
+open FootballEngine.Tests.MatchEngineTests.PossessionPhaseTests
+open FootballEngine.Tests.MatchEngineTests.BallPhysicsTests
+open FootballEngine.Tests.MatchEngineTests.OffsideTests
+open FootballEngine.Tests.MatchEngineTests.DuelActionTests
+open FootballEngine.Tests.MatchEngineTests.PassActionTests
+open FootballEngine.Tests.MatchEngineTests.ShotActionTests
+open FootballEngine.Tests.MatchEngineTests.CrossActionTests
+open FootballEngine.Tests.MatchEngineTests.SetPieceTests
+open FootballEngine.Tests.MatchEngineTests.MatchInvariantsTests
+open FootballEngine.Tests.MatchEngineTests.StatisticalContractsTests
+open FootballEngine.Tests.MatchEngineTests.PhaseTransitionTests
 
 [<EntryPoint>]
 let main argv =
 
-    let allMatchTests =
+
+    let matchEngineTests =
         testList
-            "Match"
-            [ simStateOpsTests
-              matchSpatialTests
-              shotActionTests
-              passActionTests
+            "MatchEngine"
+            [ possessionPhaseTests
+              ballPhysicsTests
+              offsideTests
               duelActionTests
+              passActionTests
+              shotActionTests
+              crossActionTests
               setPieceTests
-              structuralInvariantTests
-              physicsTests
-              statisticalTests
-              homeAdvantageTests ]
+              matchInvariantsTests
+              statisticalContractsTests
+              phaseTransitionTests ]
 
     let engineTests =
         testList "Engine" [ batchTests; doubleSimGuardTests; standingUpdateTests; fixtureIntegrityTests ]
@@ -47,7 +59,7 @@ let main argv =
     let all =
         testList
             "FootballEngine"
-            [ allMatchTests
+            [ matchEngineTests
               engineTests
               worldTests
               trainingTests

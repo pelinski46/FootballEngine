@@ -126,7 +126,8 @@ module DuelAction =
                             { state.Ball.Position with
                                 X = nx
                                 Y = ny }
-                        ControlledBy = Some att.Id }
+                        ControlledBy = Some att.Id
+                        Phase = PossessionPhase.InPossession actx.AttSide }
 
                 state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
                 [ createEvent subTick att.Id attClubId DribbleSuccess ]
@@ -141,8 +142,7 @@ module DuelAction =
                         Position =
                             { state.Ball.Position with
                                 X = nx
-                                Y = ny }
-                        ControlledBy = None }
+                                Y = ny } }
 
                 state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
                 [ createEvent subTick att.Id attClubId DribbleFail ]
@@ -276,5 +276,5 @@ module DuelAction =
                     [ createEvent subTick defender.Id clubId TackleSuccess ]
             else
                 adjustMomentum actx.Dir (-BalanceConfig.TackleFailMomentum) state
-                state.PendingOffsideSnapshot <- None
+                clearOffsideSnapshot state
                 [ createEvent subTick defender.Id clubId TackleFail ]

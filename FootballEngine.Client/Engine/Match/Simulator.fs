@@ -180,9 +180,6 @@ module MatchSimulator =
                                 MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State HomeClub DtPlayer
                                 MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State AwayClub DtPlayer
 
-                            let dir = SimStateOps.attackDirFor ls.State.AttackingClub ls.State
-                            ls.State.CurrentPhase <- SimStateOps.phaseFromBallZone dir ls.State.Ball.Position.X
-
                         | CognitiveTick ->
                             MovementEngine.updateCognitive tick.SubTick ls.Context ls.State HomeClub ls.Events
                             MovementEngine.updateCognitive tick.SubTick ls.Context ls.State AwayClub ls.Events
@@ -230,7 +227,8 @@ module MatchSimulator =
                                       AwaySidelined = ls.State.Away.Sidelined
                                       AttackingClub = ls.State.AttackingClub
                                       HomeAttackDir = ls.State.HomeAttackDir
-                                      Momentum = ls.State.Momentum }
+                                      Momentum = ls.State.Momentum
+                                      Phase = ls.State.Ball.Phase }
 
                                 tick.SubTick + snapshotInterval
                             | _ -> lastSnapshotAt
@@ -399,8 +397,7 @@ module MatchSimulator =
         state.SubTick <- 0
         state.HomeScore <- 0
         state.AwayScore <- 0
-        state.Ball <- defaultBall
-        state.AttackingClub <- HomeClub
+        state.Ball <- { defaultBall with Phase = PossessionPhase.SetPiece HomeClub }
         state.Momentum <- 0.0
         state.HomeBasePositions <- ctx.HomeBasePositions
         state.AwayBasePositions <- ctx.AwayBasePositions

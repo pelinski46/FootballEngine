@@ -282,6 +282,14 @@ type Spin = { Top: float; Side: float }
 module Spin =
     let zero = { Top = 0.0; Side = 0.0 }
 
+[<Struct>]
+type PossessionPhase =
+    | InPossession of ClubSide
+    | Transition of ClubSide
+    | Contest of ClubSide
+    | InFlight of ClubSide
+    | SetPiece of ClubSide
+
 type OffsideSnapshot =
     { PasserId: PlayerId
       ReceiverId: PlayerId
@@ -295,7 +303,9 @@ type BallPhysicsState =
       Spin: Spin
       ControlledBy: PlayerId option
       LastTouchBy: PlayerId option
-      IsInPlay: bool }
+      IsInPlay: bool
+      Phase: PossessionPhase
+      PendingOffsideSnapshot: OffsideSnapshot option }
 
 type PenaltyShootout =
     { HomeKicks: (PlayerId * bool * int) list
@@ -363,17 +373,22 @@ type SimState() =
           Spin = { Top = 0.0; Side = 0.0 }
           ControlledBy = None
           LastTouchBy = None
-          IsInPlay = true } with get, set
+          IsInPlay = true
+          Phase = PossessionPhase.SetPiece HomeClub
+          PendingOffsideSnapshot = None } with get, set
 
-    member val AttackingClub = HomeClub with get, set
+    member this.AttackingClub =
+        match this.Ball.Phase with
+        | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s -> s
     member val HomeAttackDir = LeftToRight with get, set
     member val Momentum = 0.0 with get, set
-    member val PendingOffsideSnapshot = (None: OffsideSnapshot option) with get, set
+
+    member this.PendingOffsideSnapshot = this.Ball.PendingOffsideSnapshot
+
     member val HomeBasePositions = Array.empty<Spatial> with get, set
     member val AwayBasePositions = Array.empty<Spatial> with get, set
     member val Home = TeamSimState.empty with get, set
     member val Away = TeamSimState.empty with get, set
-    member val CurrentPhase = BuildUp with get, set
 
 type SimSnapshot =
     { SubTick: int
@@ -392,7 +407,8 @@ type SimSnapshot =
       AwaySidelined: Map<PlayerId, PlayerOut>
       AttackingClub: ClubSide
       HomeAttackDir: AttackDir
-      Momentum: float }
+      Momentum: float
+      Phase: PossessionPhase }
 
 type MatchReplay =
     { Context: MatchContext
@@ -575,7 +591,9 @@ module SimStateOps =
           Spin = Spin.zero
           ControlledBy = None
           LastTouchBy = None
-          IsInPlay = true }
+          IsInPlay = true
+          Phase = PossessionPhase.Contest HomeClub
+          PendingOffsideSnapshot = None }
 
     let resetBallToCenter (state: SimState) =
         state.Ball <-
@@ -584,9 +602,11 @@ module SimStateOps =
                 Spin = Spin.zero
                 ControlledBy = None
                 LastTouchBy = None
-                IsInPlay = true }
+                IsInPlay = true
+                PendingOffsideSnapshot = None }
 
-    let clearOffsideSnapshot (state: SimState) = state.PendingOffsideSnapshot <- None
+    let clearOffsideSnapshot (state: SimState) =
+        state.Ball <- { state.Ball with PendingOffsideSnapshot = None }
 
     let hasPossession (state: SimState) (pid: PlayerId) : bool =
         match state.Ball.ControlledBy with
@@ -594,12 +614,21 @@ module SimStateOps =
         | None -> false
 
     let losePossession (state: SimState) =
-        state.Ball <- { state.Ball with ControlledBy = None }
+        let club =
+            match state.Ball.Phase with
+            | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s -> s
+        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.Contest club }
 
     let flipPossession (state: SimState) =
-        state.AttackingClub <- ClubSide.flip state.AttackingClub
-        state.Ball <- { state.Ball with ControlledBy = None }
-        state.PendingOffsideSnapshot <- None
+        let club =
+            match state.Ball.Phase with
+            | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s ->
+                ClubSide.flip s
+        state.Ball <-
+            { state.Ball with
+                ControlledBy = None
+                Phase = PossessionPhase.Contest club
+                PendingOffsideSnapshot = None }
 
     let awardGoal
         (scoringClub: ClubSide)
@@ -616,7 +645,7 @@ module SimStateOps =
             state.Momentum <- Math.Clamp(state.Momentum - 3.0, -10.0, 10.0)
 
         resetBallToCenter state
-        state.AttackingClub <- ClubSide.flip scoringClub
+        state.Ball <- { state.Ball with Phase = PossessionPhase.SetPiece(ClubSide.flip scoringClub) }
 
         let clubId = if scoringClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
@@ -679,6 +708,10 @@ module SimStateOps =
             match state.HomeAttackDir with
             | LeftToRight -> RightToLeft
             | RightToLeft -> LeftToRight
+
+    let currentPhase (state: SimState) =
+        let dir = attackDirFor state.AttackingClub state
+        phaseFromBallZone dir state.Ball.Position.X
 
     let clubSideOf (state: SimState) (pid: PlayerId) : ClubSide option =
         let foundHome =

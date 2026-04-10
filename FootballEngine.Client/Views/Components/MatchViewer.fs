@@ -841,7 +841,8 @@ module MatchDayView =
                   AwaySidelined = replay.Final.Away.Sidelined
                   AttackingClub = replay.Final.AttackingClub
                   HomeAttackDir = replay.Final.HomeAttackDir
-                  Momentum = replay.Final.Momentum }
+                  Momentum = replay.Final.Momentum
+                  Phase = replay.Final.Ball.Phase }
 
             let current =
                 replay.Snapshots |> Array.tryItem idx |> Option.defaultValue finalSnapshot
