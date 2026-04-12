@@ -160,3 +160,4 @@ module Lineup =
             |> List.sortBy _.Index
 
         { lineup with Slots = newSlots }
+

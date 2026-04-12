@@ -228,7 +228,8 @@ let buildState
                           Pos = hSp[i]
                           Condition = homePlayers[i].Condition
                           Mental = MentalState.initial homePlayers[i]
-                          Directives = Array.empty }) }
+                          Directives = Array.empty
+                          Profile = Player.profile homePlayers[i] }) }
 
     state.Away <-
         { TeamSimState.empty with
@@ -239,7 +240,8 @@ let buildState
                           Pos = aSp[i]
                           Condition = awayPlayers[i].Condition
                           Mental = MentalState.initial awayPlayers[i]
-                          Directives = Array.empty }) }
+                          Directives = Array.empty
+                          Profile = Player.profile awayPlayers[i] }) }
 
     ctx, state
 

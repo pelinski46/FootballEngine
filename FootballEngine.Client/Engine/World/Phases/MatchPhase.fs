@@ -185,7 +185,7 @@ module MatchPhase =
             |> Array.Parallel.map (fun (id, fixture) ->
                 let home = gsReady.Clubs[fixture.HomeClubId]
                 let away = gsReady.Clubs[fixture.AwayClubId]
-                id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff)
+                id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
             |> Array.choose (fun (id, fixture, result) ->
                 match result with
                 | Ok(h, a, _, finalState) ->

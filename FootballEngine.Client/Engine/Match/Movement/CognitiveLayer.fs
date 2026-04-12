@@ -197,6 +197,7 @@ module CognitiveLayer =
     let evaluate
         (currentSubTick: int)
         (player: Player)
+        (profile: BehavioralProfile)
         (meIdx: int)
         (myPlayers: Player[])
         (myPositions: Spatial[])
@@ -224,22 +225,7 @@ module CognitiveLayer =
         let longExpiry = currentSubTick + 320
 
 
-        let phasePullScale =
-            match player.Position with
-            | GK -> 0.0
-            | DC
-            | DR
-            | DL -> 0.05
-            | WBR
-            | WBL -> 0.08
-            | DM -> 0.10
-            | MC
-            | MR
-            | ML -> 0.15
-            | AMR
-            | AML
-            | AMC -> 0.20
-            | ST -> 0.25
+        let phasePullScale = profile.PositionalFreedom * 0.30
 
         let phasePullX =
             let raw = ballX - pitchLen / 2.0
@@ -258,8 +244,41 @@ module CognitiveLayer =
 
         newDirectives.Add(Directive.create Shape anchorX anchorY shapeWeight 0.6 shortExpiry "cognitive")
 
-        match player.Position with
+        let lateralShift = profile.LateralTendency * 12.0
 
+        let directiveY = System.Math.Clamp(anchorY + lateralShift, 2.0, 66.0)
+
+        if profile.PressingIntensity > 0.6 && not teamRead.TeamHasPossession then
+            let pressX = System.Math.Clamp(ballX - 3.0 * forwardDir, 2.0, 103.0)
+            newDirectives.Add(Directive.create Press pressX ballY (profile.PressingIntensity * 0.8) 0.7 shortExpiry "cognitive")
+
+        if profile.AttackingDepth > 0.6 && teamRead.TeamHasPossession then
+            let runX = System.Math.Clamp(ballX + 14.0 * forwardDir, 2.0, 103.0)
+            newDirectives.Add(Directive.create Run runX directiveY 0.6 0.7 shortExpiry "cognitive")
+
+        if profile.HoldUpPlay > 0.5 && teamRead.TeamHasPossession then
+            let holdX = System.Math.Clamp(ballX + 5.0 * forwardDir, 2.0, 103.0)
+            newDirectives.Add(Directive.create Support holdX directiveY 0.5 0.5 shortExpiry "cognitive")
+
+        if abs profile.LateralTendency > 0.3 then
+            let flankX = System.Math.Clamp(ballX + 8.0 * forwardDir, 2.0, 103.0)
+            let flankY = System.Math.Clamp(half + profile.LateralTendency * 28.0, 2.0, 66.0)
+            newDirectives.Add(Directive.create Flank flankX flankY 0.5 0.5 shortExpiry "cognitive")
+
+        if profile.CreativityWeight > 0.6 && profile.RiskAppetite > 0.5 && teamRead.TeamHasPossession then
+            let thirdX = System.Math.Clamp(ballX + 18.0 * forwardDir, 2.0, 103.0)
+            newDirectives.Add(Directive.create Run thirdX directiveY 0.7 0.6 shortExpiry "cognitive")
+
+        if profile.DefensiveHeight < 0.4 && not teamRead.TeamHasPossession then
+            let dropX = System.Math.Clamp(anchorX - 8.0 * forwardDir, 2.0, 103.0)
+            newDirectives.Add(Directive.create MarkZone dropX anchorY 0.5 0.4 longExpiry "cognitive")
+
+        if profile.DefensiveHeight > 0.5 && not teamRead.TeamHasPossession then
+            let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
+            if perPlayer.NearestOpponentDist < 15.0 then
+                newDirectives.Add(Directive.create MarkMan oppPos.X oppPos.Y 0.7 0.7 shortExpiry "cognitive")
+
+        match player.Position with
         | GK ->
             let penaltyX =
                 if dir = LeftToRight then
@@ -269,7 +288,7 @@ module CognitiveLayer =
 
             if teamRead.TeamHasPossession then
                 let sweepBase = if dir = LeftToRight then 5.0 else 100.0
-                let advance = (teamRead.MyCentroidX - pitchLen / 2.0) * 0.08
+                let advance = (teamRead.MyCentroidX - pitchLen / 2.0) * profile.RiskAppetite * 0.15
 
                 let sweepX =
                     if dir = LeftToRight then
@@ -281,7 +300,7 @@ module CognitiveLayer =
                 newDirectives.Add(Directive.create Cover sweepX sweepY 0.7 0.5 longExpiry "cognitive")
             else
                 let dangerBase = if dir = LeftToRight then 4.0 else 101.0
-                let pull = (teamRead.MyCentroidX - pitchLen / 2.0) * 0.05
+                let pull = (teamRead.MyCentroidX - pitchLen / 2.0) * profile.DefensiveHeight * 0.1
 
                 let dangerX =
                     if dir = LeftToRight then
@@ -291,123 +310,7 @@ module CognitiveLayer =
 
                 let dangerY = System.Math.Clamp(ballY * 0.5 + half * 0.5, half - 12.0, half + 12.0)
                 newDirectives.Add(Directive.create Cover dangerX dangerY 0.9 0.8 shortExpiry "cognitive")
-
-        | DC
-        | DR
-        | DL
-        | WBR
-        | WBL ->
-            if teamRead.TeamHasPossession then
-                let supportX = System.Math.Clamp(anchorX + 4.0 * forwardDir, 2.0, 103.0)
-                let supportY = anchorY
-                newDirectives.Add(Directive.create Support supportX supportY 0.4 0.4 longExpiry "cognitive")
-
-                match player.Position with
-                | WBR ->
-                    let overlapX = System.Math.Clamp(ballX + 5.0 * forwardDir, 2.0, 103.0)
-                    let overlapY = System.Math.Clamp(half - 28.0, 2.0, 66.0)
-                    newDirectives.Add(Directive.create Flank overlapX overlapY 0.5 0.5 shortExpiry "cognitive")
-                | WBL ->
-                    let overlapX = System.Math.Clamp(ballX + 5.0 * forwardDir, 2.0, 103.0)
-                    let overlapY = System.Math.Clamp(half + 28.0, 2.0, 66.0)
-                    newDirectives.Add(Directive.create Flank overlapX overlapY 0.5 0.5 shortExpiry "cognitive")
-                | _ -> ()
-            else
-                let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
-                let threatDist = perPlayer.NearestOpponentDist
-
-                if threatDist < 15.0 then
-                    newDirectives.Add(Directive.create MarkMan oppPos.X oppPos.Y 0.8 0.8 shortExpiry "cognitive")
-                else
-                    let blockX = System.Math.Clamp(anchorX - 3.0 * forwardDir, 2.0, 103.0)
-                    newDirectives.Add(Directive.create MarkZone blockX anchorY 0.6 0.5 longExpiry "cognitive")
-
-                if perPlayer.PressureCount >= 1 then
-                    let pressX = System.Math.Clamp(ballX - 3.0 * forwardDir, 2.0, 103.0)
-                    newDirectives.Add(Directive.create Press pressX ballY 0.5 0.6 shortExpiry "cognitive")
-
-        | DM ->
-            if teamRead.TeamHasPossession then
-                let receiveX = System.Math.Clamp(ballX - 6.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create Support receiveX ballY 0.6 0.5 shortExpiry "cognitive")
-            else
-                let screenX = System.Math.Clamp(anchorX, 2.0, 103.0)
-                newDirectives.Add(Directive.create MarkZone screenX half 0.7 0.6 shortExpiry "cognitive")
-
-                if perPlayer.NearestOpponentDist < 12.0 then
-                    let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
-                    newDirectives.Add(Directive.create MarkMan oppPos.X oppPos.Y 0.7 0.7 shortExpiry "cognitive")
-
-        | MC
-        | MR
-        | ML ->
-            if teamRead.TeamHasPossession then
-                let supportX = System.Math.Clamp(ballX + 5.0 * forwardDir, 2.0, 103.0)
-
-                let supportY =
-                    match player.Position with
-                    | MR -> System.Math.Clamp(ballY - 12.0, 2.0, 66.0)
-                    | ML -> System.Math.Clamp(ballY + 12.0, 2.0, 66.0)
-                    | _ -> ballY
-
-                newDirectives.Add(Directive.create Support supportX supportY 0.6 0.5 shortExpiry "cognitive")
-
-                if teamRead.SpaceBehindDefense > 18.0 then
-                    let runX = System.Math.Clamp(ballX + 14.0 * forwardDir, 2.0, 103.0)
-                    newDirectives.Add(Directive.create Run runX supportY 0.5 0.6 shortExpiry "cognitive")
-            else
-                let compactX = System.Math.Clamp(anchorX - 4.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create MarkZone compactX anchorY 0.6 0.5 longExpiry "cognitive")
-
-                if perPlayer.NearestOpponentDist < 10.0 then
-                    let oppPos = oppPositions[perPlayer.NearestOpponentIdx]
-                    newDirectives.Add(Directive.create Press oppPos.X oppPos.Y 0.6 0.7 shortExpiry "cognitive")
-
-        | AMR
-        | AML
-        | AMC ->
-            if teamRead.TeamHasPossession then
-                let advanceX = System.Math.Clamp(ballX + 10.0 * forwardDir, 2.0, 103.0)
-
-                let advanceY =
-                    match player.Position with
-                    | AMR -> System.Math.Clamp(half - 16.0, 2.0, 66.0)
-                    | AML -> System.Math.Clamp(half + 16.0, 2.0, 66.0)
-                    | _ -> ballY
-
-                newDirectives.Add(Directive.create Support advanceX advanceY 0.6 0.5 shortExpiry "cognitive")
-
-                match player.Position with
-                | AMR
-                | AML -> newDirectives.Add(Directive.create Flank advanceX advanceY 0.5 0.5 shortExpiry "cognitive")
-                | _ -> ()
-
-                if teamRead.SpaceBehindDefense > 12.0 then
-                    let runX = System.Math.Clamp(ballX + 18.0 * forwardDir, 2.0, 103.0)
-                    let runUrgency = if teamRead.SpaceBehindDefense > 22.0 then 0.8 else 0.6
-                    newDirectives.Add(Directive.create Run runX advanceY 0.6 runUrgency shortExpiry "cognitive")
-            else
-                let dropX = System.Math.Clamp(anchorX - 6.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create MarkZone dropX anchorY 0.5 0.4 longExpiry "cognitive")
-
-                if perPlayer.BallDist < 20.0 then
-                    let pressX = System.Math.Clamp(ballX + 2.0 * forwardDir, 2.0, 103.0)
-                    newDirectives.Add(Directive.create Press pressX ballY 0.6 0.7 shortExpiry "cognitive")
-
-        | ST ->
-            if teamRead.TeamHasPossession then
-                let strikeX = System.Math.Clamp(ballX + 15.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create Support strikeX ballY 0.5 0.5 shortExpiry "cognitive")
-
-                let runUrgency = if teamRead.SpaceBehindDefense > 15.0 then 0.8 else 0.5
-                let runX = System.Math.Clamp(teamRead.DefensiveLineX + 3.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create Run runX ballY 0.7 runUrgency shortExpiry "cognitive")
-            else
-                let pressX = System.Math.Clamp(ballX + 3.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create Press pressX ballY 0.6 0.7 shortExpiry "cognitive")
-
-                let dropX = System.Math.Clamp(anchorX - 8.0 * forwardDir, 2.0, 103.0)
-                newDirectives.Add(Directive.create MarkZone dropX half 0.4 0.4 longExpiry "cognitive")
+        | _ -> ()
 
         let updatedMental =
             if perPlayer.PressureCount > 0 then

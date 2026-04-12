@@ -13,7 +13,7 @@ open FootballEngine.Benchmarks.Helpers
 
 [<AbstractClass>]
 type BenchBase() =
-    let mutable state: MatchState = Unchecked.defaultof<_>
+    let mutable state: SimState = Unchecked.defaultof<_>
     let mutable homeSquad: Player list = []
     let mutable awaySquad: Player list = []
     let mutable homeId: ClubId = 0
@@ -45,16 +45,17 @@ type BenchBase() =
         and set v = target <- v
 
     member this.BaseSetup() =
-        let c, p, st = loadClubs ()
+        let gs, c, p, st = loadClubs ()
 
-        match setup c[0] c[1] p st false with
-        | Ok(init, h, a) ->
-            this.State <- init
+        match setup c[0] c[1] p st false gs.ProfileCache with
+        | Ok(ctx, st, h, a) ->
+            this.State <- st
             this.HomeSquad <- h
             this.AwaySquad <- a
             this.HomeId <- c[0].Id
-            this.Attacker <- init.HomeSide.Players[9]
-            this.Target <- init.HomeSide.Players[10]
+            let hp = SimStateOps.activePlayers st.Home.Slots
+            this.Attacker <- hp[9]
+            this.Target <- hp[10]
         | Error e -> failwithf "Setup failed: %A" e
 
 
@@ -72,10 +73,10 @@ type MatchEngineE2EBenchmarks() =
 
     [<Benchmark(Description = "E2E: Match State Init Only")>]
     member _.MatchStateInitOnly() =
-        let c, p, st = loadClubs ()
+        let gs, c, p, st = loadClubs ()
 
-        match setup c[0] c[1] p st false with
-        | Ok(init, _, _) -> init
+        match setup c[0] c[1] p st false gs.ProfileCache with
+        | Ok(ctx, _, _, _) -> ctx
         | Error e -> failwithf "%A" e
 
 

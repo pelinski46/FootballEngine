@@ -349,7 +349,8 @@ module ManagerAgent =
                               Pos = inheritedPos
                               Condition = incoming.Condition
                               Mental = MentalState.initial incoming
-                              Directives = Array.empty }
+                              Directives = Array.empty
+                              Profile = Player.profile incoming }
 
                     SimStateOps.setSlots state side (slots |> fun arr -> arr[outIdx] <- newSlot; arr)
                     SimStateOps.setSubsUsed state side (subsUsed + 1)

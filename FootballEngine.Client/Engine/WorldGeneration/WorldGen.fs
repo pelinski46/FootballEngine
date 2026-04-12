@@ -329,6 +329,9 @@ module WorldGen =
         let userManager =
             createUserManager userStaffId managerName primaryCountry userClubId year
 
+        let profileCache =
+            world.Players |> Map.map (fun _ p -> Player.profile p)
+
         { CurrentDate = DateTime(year, 7, 1)
           Season = year
           TrainingWeeksApplied = 0
@@ -343,4 +346,5 @@ module WorldGen =
           Inbox = []
           NextInboxId = 1
           PendingNegotiations = Map.empty
-          NextNegotiationId = 1 }
+          NextNegotiationId = 1
+          ProfileCache = profileCache }

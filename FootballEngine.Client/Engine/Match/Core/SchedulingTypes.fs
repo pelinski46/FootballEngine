@@ -65,6 +65,7 @@ module SchedulingTypes =
         | ManagerReactionTick of trigger: ReactionTrigger
         | CognitiveTick
         | AdaptiveTick
+        | RefereeTick
         | PossessionChangeTick of ClubSide
 
 

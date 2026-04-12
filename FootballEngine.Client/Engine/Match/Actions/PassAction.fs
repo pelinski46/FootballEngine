@@ -83,15 +83,15 @@ module PassAction =
                         passerFound <- true
                     | _ -> ()
 
-            let passer, passerCond =
+            let passer, passerCond, passerProfile =
                 if passerFound && passerIdx >= 0 then
                     match attSlots[passerIdx] with
-                    | PlayerSlot.Active s -> s.Player, s.Condition
-                    | _ -> Unchecked.defaultof<Player>, 70
+                    | PlayerSlot.Active s -> s.Player, s.Condition, s.Profile
+                    | _ -> Unchecked.defaultof<Player>, 70, BehavioralProfile.neutral
                 else
                     match attSlots[0] with
-                    | PlayerSlot.Active s -> s.Player, s.Condition
-                    | _ -> Unchecked.defaultof<Player>, 70
+                    | PlayerSlot.Active s -> s.Player, s.Condition, s.Profile
+                    | _ -> Unchecked.defaultof<Player>, 70, BehavioralProfile.neutral
 
             let passerSp =
                 if passerFound && passerIdx >= 0 then
@@ -114,15 +114,8 @@ module PassAction =
                   * BalanceConfig.PassVisionWeight
                 + actx.AttBonus.PassAcc
                 + (if actx.Zone = DefensiveZone then
-                       BalanceConfig.BuildUpPassSuccessBonus
-                   else
-                       0.0)
-                + (if passer.Position = GK && actx.Zone = DefensiveZone then
-                       BalanceConfig.BuildUpGKDistributionBonus
-                   else
-                       0.0)
-                + (if passer.Position = DC && actx.Zone = DefensiveZone then
-                       BalanceConfig.BuildUpDCPassingBonus
+                       passerProfile.CreativityWeight * 0.06
+                       + (1.0 - passerProfile.Directness) * 0.04
                    else
                        0.0)
 
@@ -169,14 +162,29 @@ module PassAction =
                 else
                     let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                    MatchSpatial.ballTowards
-                        passerSp.X
-                        passerSp.Y
-                        targetSp.X
-                        targetSp.Y
-                        BalanceConfig.PassSpeed
-                        BalanceConfig.PassVz
-                        state
+                    let heavyTouchChance = (1.0 - float target.Technical.BallControl / 20.0) * 0.25
+
+                    if bernoulli heavyTouchChance then
+                        let jitterX = Math.Clamp(targetSp.X + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchLength)
+                        let jitterY = Math.Clamp(targetSp.Y + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchWidth)
+
+                        MatchSpatial.ballTowards
+                            passerSp.X
+                            passerSp.Y
+                            jitterX
+                            jitterY
+                            BalanceConfig.PassSpeed
+                            BalanceConfig.PassVz
+                            state
+                    else
+                        MatchSpatial.ballTowards
+                            passerSp.X
+                            passerSp.Y
+                            targetSp.X
+                            targetSp.Y
+                            BalanceConfig.PassSpeed
+                            BalanceConfig.PassVz
+                            state
 
                     adjustMomentum actx.Dir BalanceConfig.PassSuccessMomentum state
 
@@ -335,10 +343,12 @@ module PassAction =
             attSlots
             |> Array.mapi (fun i slot ->
                 match slot with
-                | PlayerSlot.Active s -> Some(s.Player, s.Pos)
+                | PlayerSlot.Active s -> Some(s.Player, s.Pos, s.Profile)
                 | _ -> None)
             |> Array.choose id
-            |> Array.filter (fun (p, _) -> p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC)
+            |> Array.filter (fun (p, _, profile) ->
+                profile.AttackingDepth > 0.5 || profile.CreativityWeight > 0.4)
+            |> Array.map (fun (p, pos, _) -> p, pos)
 
         let nearestDefDist =
             match findNearestOpponentToPos bX bY ctx state with
@@ -372,14 +382,29 @@ module PassAction =
             else
                 let snapshot = snapshotAtPass passer target ctx state actx.Dir
 
-                MatchSpatial.ballTowards
-                    passerSp.X
-                    passerSp.Y
-                    targetSp.X
-                    targetSp.Y
-                    BalanceConfig.LongBallSpeed
-                    BalanceConfig.LongBallVz
-                    state
+                let heavyTouchChance = (1.0 - float target.Technical.BallControl / 20.0) * 0.25
+
+                if bernoulli heavyTouchChance then
+                    let jitterX = Math.Clamp(targetSp.X + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchLength)
+                    let jitterY = Math.Clamp(targetSp.Y + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchWidth)
+
+                    MatchSpatial.ballTowards
+                        passerSp.X
+                        passerSp.Y
+                        jitterX
+                        jitterY
+                        BalanceConfig.LongBallSpeed
+                        BalanceConfig.LongBallVz
+                        state
+                else
+                    MatchSpatial.ballTowards
+                        passerSp.X
+                        passerSp.Y
+                        targetSp.X
+                        targetSp.Y
+                        BalanceConfig.LongBallSpeed
+                        BalanceConfig.LongBallVz
+                        state
 
                 state.Ball <-
                     { state.Ball with

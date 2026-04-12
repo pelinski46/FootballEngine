@@ -10,4 +10,5 @@ type RefereeAction =
     | IssueInjury  of player: Player * clubId: ClubId
     | AwardThrowIn of team: ClubSide
     | AwardCorner  of team: ClubSide
+    | AwardGoalKick of team: ClubSide
     | RefereeIdle

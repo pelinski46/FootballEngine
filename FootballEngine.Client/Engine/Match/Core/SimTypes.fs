@@ -268,7 +268,8 @@ type ActiveSlot =
       Pos: Spatial
       Condition: int
       Mental: MentalState
-      Directives: Directive[] }
+      Directives: Directive[]
+      Profile: BehavioralProfile }
 
 type PlayerSlot =
     | Active of ActiveSlot

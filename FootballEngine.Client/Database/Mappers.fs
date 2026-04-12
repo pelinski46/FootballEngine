@@ -124,7 +124,8 @@ module Mappers =
           Salary = salary
           ContractExpiry = contractExpiry
           TrainingFocus = trainingFocusToString player.TrainingSchedule.Focus
-          TrainingIntensity = trainingIntensityToString player.TrainingSchedule.Intensity }
+          TrainingIntensity = trainingIntensityToString player.TrainingSchedule.Intensity
+          BehavioralProfile = Serializers.behavioralProfileToString (Player.profile player) }
 
     let toPlayerDomain (e: PlayerEntity) : Player =
         let status =

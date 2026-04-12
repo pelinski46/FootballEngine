@@ -111,7 +111,7 @@ module WorldRunner =
                         |> Array.Parallel.map (fun (id, fixture) ->
                             let home = gsReady.Clubs[fixture.HomeClubId]
                             let away = gsReady.Clubs[fixture.AwayClubId]
-                            id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff)
+                            id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
                         |> Array.fold
                             (fun (outs, errs) (id, fixture, result) ->
                                 match result with
@@ -190,7 +190,7 @@ module WorldRunner =
             let home = gsReady.Clubs[fixture.HomeClubId]
             let away = gsReady.Clubs[fixture.AwayClubId]
 
-            match trySimulateMatchFull home away gsReady.Players gsReady.Staff with
+            match trySimulateMatchFull home away gsReady.Players gsReady.Staff gsReady.ProfileCache with
             | Error e -> Error $"Match simulation failed: {e}"
             | Ok replay ->
                 let h = replay.Final.HomeScore

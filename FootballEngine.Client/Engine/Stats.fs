@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open System
+open FootballEngine.Domain
 open FSharp.Stats
 open FSharp.Stats.Distributions
 
@@ -95,22 +96,11 @@ module Stats =
         normalSample 0.0 (Math.Max(0.5, noise))
 
 
-    let positionalConsistency (position: FootballEngine.Domain.Position) : float =
-        match position with
-        | FootballEngine.Domain.GK -> betaSample 0.85 12.0
-        | FootballEngine.Domain.DC
-        | FootballEngine.Domain.DM -> betaSample 0.80 10.0
-        | FootballEngine.Domain.DL
-        | FootballEngine.Domain.DR
-        | FootballEngine.Domain.WBL
-        | FootballEngine.Domain.WBR -> betaSample 0.75 8.0
-        | FootballEngine.Domain.MC -> betaSample 0.72 8.0
-        | FootballEngine.Domain.ML
-        | FootballEngine.Domain.MR -> betaSample 0.68 7.0
-        | FootballEngine.Domain.AML
-        | FootballEngine.Domain.AMR
-        | FootballEngine.Domain.AMC -> betaSample 0.65 6.0
-        | FootballEngine.Domain.ST -> betaSample 0.60 5.0
+    let positionalConsistency (profile: BehavioralProfile) : float =
+        let freedomFactor = profile.PositionalFreedom
+        let baseVal = 0.85 - freedomFactor * 0.25
+        let concentration = 5.0 + freedomFactor * 8.0
+        betaSample baseVal concentration
 
 
     let fatigueVariation (stamina: int) (isPressing: bool) : float =

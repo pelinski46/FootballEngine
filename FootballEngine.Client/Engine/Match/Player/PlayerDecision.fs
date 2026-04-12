@@ -4,26 +4,24 @@ open FootballEngine.Domain
 
 module PlayerDecision =
 
-    let private isFlankPosition =
-        function
-        | DR | DL | WBR | WBL | MR | ML | AMR | AML -> true
-        | _ -> false
+    let private canCross (profile: BehavioralProfile) =
+        abs (profile.LateralTendency - 0.5) > 0.3
 
     let decide (ctx: AgentContext) (scores: ActionScores) : PlayerAction =
         let shootBlocked =
             scores.Shoot < 0.15 || ctx.Zone = DefensiveZone
 
         let crossBlocked =
-            not (isFlankPosition ctx.Me.Position)
+            not (canCross ctx.Profile)
 
         let passBlocked =
             ctx.BestPassTarget.IsNone
 
         let dribbleBlocked =
-            ctx.Zone = DefensiveZone && (ctx.Me.Position = DC || ctx.Me.Position = GK)
-            || (ctx.Phase = BuildUp && (ctx.Me.Position = DC || ctx.Me.Position = GK))
+            ctx.Zone = DefensiveZone && ctx.Profile.Directness < 0.2
+            || (ctx.Phase = BuildUp && ctx.Profile.CreativityWeight < 0.2)
 
-        let passMod = if ctx.Phase = BuildUp then 1.12 else 1.0
+        let passMod = if ctx.Phase = BuildUp then 1.0 + ctx.Profile.CreativityWeight * 0.15 else 1.0
 
         let candidates =
             [ if not shootBlocked then scores.Shoot * (1.0 + ctx.Urgency * 0.2), PlayerAction.Shoot

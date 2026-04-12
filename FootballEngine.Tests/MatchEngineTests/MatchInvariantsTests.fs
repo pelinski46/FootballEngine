@@ -16,7 +16,7 @@ let matchInvariantsTests =
               let game = Helpers.loadGame ()
               let clubs = game.Clubs |> Map.toArray |> Array.map snd |> Array.take 2
               let home, away = clubs[0], clubs[1]
-              let result = MatchSimulator.trySimulateMatch home away game.Players game.Staff
+              let result = MatchSimulator.trySimulateMatch home away game.Players game.Staff game.ProfileCache
               seed, result
 
           let matches = [ 1..20 ] |> List.map runMatch

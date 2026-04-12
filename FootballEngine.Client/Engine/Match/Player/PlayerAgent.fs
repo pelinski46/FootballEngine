@@ -5,8 +5,8 @@ open SchedulingTypes
 
 module PlayerAgent =
 
-    let decide (me: Player) (meIdx: int) (ctx: MatchContext) (state: SimState) : PlayerAction =
-        let actx = AgentContext.build me meIdx ctx state
+    let decide (me: Player) (profile: BehavioralProfile) (meIdx: int) (ctx: MatchContext) (state: SimState) : PlayerAction =
+        let actx = AgentContext.build me profile meIdx ctx state
         let scores = PlayerScorer.computeAll actx
         PlayerDecision.decide actx scores
 
@@ -113,12 +113,12 @@ module PlayerAgent =
 
                     if found then
                         match attSlots[idx] with
-                        | PlayerSlot.Active s -> s.Player, idx, decide s.Player idx ctx state
+                        | PlayerSlot.Active s -> s.Player, idx, decide s.Player s.Profile idx ctx state
                         | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
                     else
                         let newIdx = MatchSpatial.nearestIdxToBall attSlots bx by
                         match attSlots[newIdx] with
-                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player newIdx ctx state
+                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state
                         | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
                 | None ->
                     if attSlots.Length = 0 then
@@ -126,7 +126,7 @@ module PlayerAgent =
                     else
                         let newIdx = MatchSpatial.nearestIdxToBall attSlots bx by
                         match attSlots[newIdx] with
-                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player newIdx ctx state
+                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state
                         | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
 
             let prevAttackingClub = state.AttackingClub
@@ -188,13 +188,6 @@ module PlayerAgent =
 
             let allEventsWithCards = allEvents @ cardEvents
 
-            let cornerSpawned =
-                allEventsWithCards
-                |> List.exists (fun e ->
-                    match e.Type with
-                    | MatchEventType.Corner -> true
-                    | _ -> false)
-
             let possTick =
                 if possessionChanged then
                     [ { SubTick = tick.SubTick + 1
@@ -204,16 +197,7 @@ module PlayerAgent =
                 else
                     []
 
-            let corner_tick =
-                if cornerSpawned then
-                    [ { SubTick = tick.SubTick + 1
-                        Priority = TickPriority.SetPiece
-                        SequenceId = 0L
-                        Kind = CornerTick(state.AttackingClub, 0) } ]
-                else
-                    []
-
-            let addPossessionTick baseSpawned = baseSpawned @ possTick @ corner_tick
+            let addPossessionTick baseSpawned = baseSpawned @ possTick
 
             let chainBreaks =
                 allEventsWithCards
@@ -291,12 +275,12 @@ module PlayerAgent =
                     let bx', by' = state.Ball.Position.X, state.Ball.Position.Y
                     let newAttIdx = MatchSpatial.nearestIdxToBall attSlots2 bx' by'
 
-                    let newAtt =
+                    let newAtt, newAttProfile =
                         match attSlots2[newAttIdx] with
-                        | PlayerSlot.Active s -> s.Player
-                        | _ -> Unchecked.defaultof<Player>
+                        | PlayerSlot.Active s -> s.Player, s.Profile
+                        | _ -> Unchecked.defaultof<Player>, BehavioralProfile.neutral
 
-                    let newAction = decide newAtt newAttIdx ctx state
+                    let newAction = decide newAtt newAttProfile newAttIdx ctx state
 
                     { Events = allEventsWithCards
                       Spawned = addPossessionTick [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
@@ -369,13 +353,6 @@ module PlayerAgent =
 
             let allEventsWithCards = allEvents @ cardEvents
 
-            let cornerSpawned =
-                allEventsWithCards
-                |> List.exists (fun e ->
-                    match e.Type with
-                    | MatchEventType.Corner -> true
-                    | _ -> false)
-
             let possTick =
                 if possessionChanged then
                     [ { SubTick = tick.SubTick + 1
@@ -385,16 +362,7 @@ module PlayerAgent =
                 else
                     []
 
-            let corner_tick =
-                if cornerSpawned then
-                    [ { SubTick = tick.SubTick + 1
-                        Priority = TickPriority.SetPiece
-                        SequenceId = 0L
-                        Kind = CornerTick(state.AttackingClub, 0) } ]
-                else
-                    []
-
-            let addPossessionTick baseSpawned = baseSpawned @ possTick @ corner_tick
+            let addPossessionTick baseSpawned = baseSpawned @ possTick
 
             let chainBreaks =
                 allEventsWithCards
@@ -472,12 +440,12 @@ module PlayerAgent =
                     let bx', by' = state.Ball.Position.X, state.Ball.Position.Y
                     let newAttIdx = MatchSpatial.nearestIdxToBall attSlots2 bx' by'
 
-                    let newAtt =
+                    let newAtt, newAttProfile =
                         match attSlots2[newAttIdx] with
-                        | PlayerSlot.Active s -> s.Player
-                        | _ -> Unchecked.defaultof<Player>
+                        | PlayerSlot.Active s -> s.Player, s.Profile
+                        | _ -> Unchecked.defaultof<Player>, BehavioralProfile.neutral
 
-                    let newAction = decide newAtt newAttIdx ctx state
+                    let newAction = decide newAtt newAttProfile newAttIdx ctx state
 
                     { Events = allEventsWithCards
                       Spawned = addPossessionTick [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]

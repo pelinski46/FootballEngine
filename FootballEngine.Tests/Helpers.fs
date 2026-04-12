@@ -51,7 +51,7 @@ let loadClubs () =
     if clubs.Length < 2 then
         failtest "Need at least 2 clubs."
 
-    clubs, game.Players, finalStaff
+    game, clubs, game.Players, finalStaff
 
 let inBounds (x: float, y: float) =
     x >= 0.0

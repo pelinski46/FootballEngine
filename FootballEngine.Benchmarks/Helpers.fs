@@ -15,11 +15,11 @@ let loadClubs () =
     let readyGame =
         game.Clubs
         |> Map.toList
-        |> List.fold (fun gs (clubId, _) -> ensureForClub clubId gs) game
+        |> List.fold (fun gs (clubId, _) -> Lineup.ensureForClub clubId gs) game
 
     let clubs = readyGame.Clubs |> Map.toArray |> Array.map snd
 
     if clubs.Length < 2 then
         failwith "Need at least 2 clubs."
 
-    clubs, readyGame.Players, readyGame.Staff
+    readyGame, clubs, readyGame.Players, readyGame.Staff

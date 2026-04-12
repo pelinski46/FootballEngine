@@ -6,6 +6,7 @@ open MatchSpatial
 
 type AgentContext =
     { Me: Player
+      Profile: BehavioralProfile
       MyCondition: int
       MyPos: Spatial
       BallState: BallPhysicsState
@@ -23,7 +24,7 @@ type AgentContext =
 
 module AgentContext =
 
-    let build (me: Player) (meIdx: int) (ctx: MatchContext) (state: SimState) : AgentContext =
+    let build (me: Player) (profile: BehavioralProfile) (meIdx: int) (ctx: MatchContext) (state: SimState) : AgentContext =
         let dir = attackDirFor state.AttackingClub state
 
         let isHome =
@@ -92,6 +93,7 @@ module AgentContext =
                 (SimStateOps.getInstructions state (if isHome then HomeClub else AwayClub))
 
         { Me = me
+          Profile = profile
           MyCondition = myCond
           MyPos = myPos
           BallState = ballState

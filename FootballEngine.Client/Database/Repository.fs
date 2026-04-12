@@ -242,7 +242,10 @@ module Db =
                               Inbox = inbox
                               NextInboxId = meta.NextInboxId
                               PendingNegotiations = Map.empty
-                              NextNegotiationId = 1 },
+                              NextNegotiationId = 1
+                              ProfileCache =
+                                  players
+                                  |> Map.map (fun _ p -> Player.profile p) },
                             restoredClock
                         )
         }

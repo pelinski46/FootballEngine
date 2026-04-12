@@ -430,3 +430,19 @@ module Serializers =
         | "Injury" -> InboxMessageCategory.InjuryMessage
         | "Contract" -> InboxMessageCategory.Contract
         | _ -> InboxMessageCategory.Development
+
+    let behavioralProfileToString (p: BehavioralProfile) =
+        $"{p.PositionalFreedom:F3}|{p.AttackingDepth:F3}|{p.LateralTendency:F3}|{p.DefensiveHeight:F3}|{p.PressingIntensity:F3}|{p.RiskAppetite:F3}|{p.Directness:F3}|{p.CreativityWeight:F3}|{p.AerialThreat:F3}|{p.HoldUpPlay:F3}"
+
+    let parseBehavioralProfile (s: string) : BehavioralProfile =
+        let parts = s.Split('|')
+        { PositionalFreedom = float parts[0]
+          AttackingDepth = float parts[1]
+          LateralTendency = float parts[2]
+          DefensiveHeight = float parts[3]
+          PressingIntensity = float parts[4]
+          RiskAppetite = float parts[5]
+          Directness = float parts[6]
+          CreativityWeight = float parts[7]
+          AerialThreat = float parts[8]
+          HoldUpPlay = float parts[9] }

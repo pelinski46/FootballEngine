@@ -54,10 +54,8 @@ module CrossAction =
             |> Array.mapi (fun i slot ->
                 match slot with
                 | PlayerSlot.Active s when
-                    s.Player.Position = ST
-                    || s.Player.Position = AML
-                    || s.Player.Position = AMR
-                    || s.Player.Position = AMC
+                    s.Profile.AerialThreat > 0.4
+                    || s.Profile.AttackingDepth > 0.5
                     ->
                     Some(s.Player, s.Pos)
                 | _ -> None)

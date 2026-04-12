@@ -112,3 +112,126 @@ module Player =
         match p.Affiliation with
         | Contracted(_, contract) -> Some contract
         | _ -> None
+
+    let profile (p: Player) : BehavioralProfile =
+        let norm x = float x / 20.0
+        let clamp01 v = System.Math.Clamp(v, 0.0, 1.0)
+
+        let tech = p.Technical
+        let mental = p.Mental
+        let phys = p.Physical
+
+        let positionalFreedom =
+            clamp01 (
+                norm mental.Positioning * 0.15
+                + norm mental.Vision * 0.15
+                + norm phys.Stamina * 0.20
+                + norm mental.Concentration * 0.10
+                + norm phys.Balance * 0.15
+                + norm phys.Agility * 0.25
+            )
+
+        let attackingDepth =
+            clamp01 (
+                norm phys.Pace * 0.30
+                + norm phys.Acceleration * 0.25
+                + norm tech.Finishing * 0.15
+                + norm mental.Composure * 0.10
+                + norm phys.Stamina * 0.20
+            )
+
+        let lateralTendency =
+            let baseFromPosition =
+                match p.Position with
+                | GK | DC | DM | MC | AMC | ST -> 0.0
+                | DL | ML | AML -> -0.7
+                | DR | MR | AMR -> 0.7
+                | WBL -> -0.85
+                | WBR -> 0.85
+
+            System.Math.Clamp(
+                baseFromPosition
+                + norm tech.Crossing * 0.15
+                + norm phys.Pace * 0.10,
+                -1.0,
+                1.0
+            )
+
+        let defensiveHeight =
+            clamp01 (
+                norm phys.Pace * 0.20
+                + norm phys.Stamina * 0.15
+                + norm mental.Aggression * 0.15
+                + norm mental.WorkRate * 0.20
+                + norm tech.Tackling * 0.10
+                + norm mental.Positioning * 0.20
+            )
+
+        let pressingIntensity =
+            clamp01 (
+                norm phys.Stamina * 0.30
+                + norm mental.WorkRate * 0.25
+                + norm mental.Aggression * 0.20
+                + norm phys.Pace * 0.15
+                + norm mental.Concentration * 0.10
+            )
+
+        let riskAppetite =
+            clamp01 (
+                norm tech.Passing * 0.15
+                + norm tech.LongShots * 0.15
+                + norm mental.Vision * 0.20
+                + norm mental.Composure * 0.20
+                + norm tech.Dribbling * 0.15
+                + norm mental.Bravery * 0.15
+            )
+
+        let directness =
+            clamp01 (
+                norm tech.Finishing * 0.20
+                + norm phys.Pace * 0.20
+                + norm phys.Acceleration * 0.15
+                + norm mental.Aggression * 0.15
+                + norm tech.Dribbling * 0.10
+                + norm phys.Strength * 0.10
+                + (1.0 - norm tech.Passing) * 0.10
+            )
+
+        let creativityWeight =
+            clamp01 (
+                norm tech.Passing * 0.25
+                + norm mental.Vision * 0.30
+                + norm tech.BallControl * 0.15
+                + norm tech.Dribbling * 0.10
+                + norm mental.Composure * 0.10
+                + norm tech.Crossing * 0.10
+            )
+
+        let aerialThreat =
+            clamp01 (
+                clamp01 (float phys.JumpingReach / 20.0) * 0.35
+                + norm tech.Heading * 0.30
+                + norm phys.Strength * 0.20
+                + norm mental.Bravery * 0.15
+            )
+
+        let holdUpPlay =
+            clamp01 (
+                norm phys.Strength * 0.25
+                + norm tech.BallControl * 0.20
+                + norm mental.Composure * 0.15
+                + norm tech.Passing * 0.15
+                + norm tech.Heading * 0.10
+                + norm phys.Balance * 0.15
+            )
+
+        { PositionalFreedom = positionalFreedom
+          AttackingDepth = attackingDepth
+          LateralTendency = lateralTendency
+          DefensiveHeight = defensiveHeight
+          PressingIntensity = pressingIntensity
+          RiskAppetite = riskAppetite
+          Directness = directness
+          CreativityWeight = creativityWeight
+          AerialThreat = aerialThreat
+          HoldUpPlay = holdUpPlay }

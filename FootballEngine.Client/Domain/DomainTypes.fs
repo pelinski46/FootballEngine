@@ -13,6 +13,7 @@ type Round =
     | ThirdPlace
     | Final
 
+
 type Position =
     | GK
     | DR
@@ -47,3 +48,28 @@ type Formation =
     | F532
     | F541
     | F523
+
+type BehavioralProfile =
+    { PositionalFreedom: float
+      AttackingDepth: float
+      LateralTendency: float
+      DefensiveHeight: float
+      PressingIntensity: float
+      RiskAppetite: float
+      Directness: float
+      CreativityWeight: float
+      AerialThreat: float
+      HoldUpPlay: float }
+
+module BehavioralProfile =
+    let neutral =
+        { PositionalFreedom = 0.5
+          AttackingDepth = 0.5
+          LateralTendency = 0.0
+          DefensiveHeight = 0.5
+          PressingIntensity = 0.5
+          RiskAppetite = 0.5
+          Directness = 0.5
+          CreativityWeight = 0.5
+          AerialThreat = 0.5
+          HoldUpPlay = 0.5 }

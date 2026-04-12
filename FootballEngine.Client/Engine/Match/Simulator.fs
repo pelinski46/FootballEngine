@@ -36,6 +36,11 @@ module MatchSimulator =
                 SequenceId = 0L
                 Kind = PhysicsTick }
           yield
+              { SubTick = PhysicsIntervalSubTicks
+                Priority = TickPriority.MatchControl
+                SequenceId = 1L
+                Kind = RefereeTick }
+          yield
               { SubTick = secondsToSubTicks 12.0
                 Priority = TickPriority.Manager
                 SequenceId = 1L
@@ -90,6 +95,7 @@ module MatchSimulator =
             | PlayerActionTick _
             | CognitiveTick
             | AdaptiveTick
+            | RefereeTick
             | PossessionChangeTick _ -> PlayerAgent.agent
             | FreeKickTick _
             | CornerTick _
@@ -172,6 +178,7 @@ module MatchSimulator =
                             match tick.Kind with
                             | CognitiveTick -> [ spawnCognitiveTick tick ]
                             | AdaptiveTick -> [ spawnAdaptiveTick tick ]
+                            | RefereeTick -> [ { tick with Kind = RefereeTick; SubTick = tick.SubTick + PhysicsIntervalSubTicks } ]
                             | _ -> []
 
                         match tick.Kind with
@@ -188,6 +195,7 @@ module MatchSimulator =
                             MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State HomeClub ls.Events
                             MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State AwayClub ls.Events
 
+                        | RefereeTick -> ()
 
                         | _ -> ()
 
@@ -347,20 +355,30 @@ module MatchSimulator =
         awayTactics
         awayInstructions
         isKnockout
+        profileMap
         =
 
         let hPos =
             hp
-            |> Array.map (fun (p: Player) ->
+            |> Array.mapi (fun i (p: Player) ->
                 let tx, ty =
                     hPosMap
                     |> Map.tryFind p.Id
                     |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
 
+                let prof =
+                    profileMap
+                    |> Map.tryFind p.Id
+                    |> Option.defaultValue (Player.profile p)
+
                 let kx =
                     match p.Position with
                     | ST
-                    | AMC when tx > HalfwayLineX - 5.0 -> HalfwayLineX - 1.0
+                    | AMC ->
+                        let allowedDepth = prof.AttackingDepth * 5.0
+                        let threshold = HalfwayLineX - 5.0 + allowedDepth
+                        if tx > threshold then HalfwayLineX - 1.0 + allowedDepth * 0.5
+                        else System.Math.Clamp(tx, 2.0, HalfwayLineX - 2.0)
                     | _ -> System.Math.Clamp(tx, 2.0, HalfwayLineX - 2.0)
 
                 defaultSpatial kx ty)
@@ -408,13 +426,18 @@ module MatchSimulator =
                 Slots =
                     Array.init hCount (fun i ->
                         let p = hp[i]
+                        let prof =
+                            profileMap
+                            |> Map.tryFind p.Id
+                            |> Option.defaultValue (Player.profile p)
 
                         PlayerSlot.Active
                             { Player = p
                               Pos = hPos[i]
                               Condition = p.Condition
                               Mental = MentalState.initial p
-                              Directives = Array.empty })
+                              Directives = Array.empty
+                              Profile = prof })
                 Instructions = homeInstructions |> Option.orElse (Some defaultInstr) }
 
         state.Away <-
@@ -422,13 +445,18 @@ module MatchSimulator =
                 Slots =
                     Array.init aCount (fun i ->
                         let p = ap[i]
+                        let prof =
+                            profileMap
+                            |> Map.tryFind p.Id
+                            |> Option.defaultValue (Player.profile p)
 
                         PlayerSlot.Active
                             { Player = p
                               Pos = aPos[i]
                               Condition = p.Condition
                               Mental = MentalState.initial p
-                              Directives = Array.empty })
+                              Directives = Array.empty
+                              Profile = prof })
                 Instructions = awayInstructions |> Option.orElse (Some defaultInstr) }
 
         ctx, state
@@ -523,6 +551,7 @@ module MatchSimulator =
         players
         staff
         isKnockout
+        profileMap
         : Result<MatchContext * SimState * Player list * Player list, SimulationError> =
         result {
             let! homeCoach = resolveCoach home staff
@@ -552,6 +581,7 @@ module MatchSimulator =
                     awayTactics
                     awayInstructions
                     isKnockout
+                    profileMap
 
             let homeSquad = home.PlayerIds |> List.choose players.TryFind
             let awaySquad = away.PlayerIds |> List.choose players.TryFind
@@ -559,16 +589,16 @@ module MatchSimulator =
             return ctx, state, homeSquad, awaySquad
         }
 
-    let trySimulateMatch home away players staff : Result<int * int * MatchEvent list * SimState, SimulationError> =
+    let trySimulateMatch home away players staff profileMap : Result<int * int * MatchEvent list * SimState, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff false
+            let! ctx, state, homeSquad, awaySquad = setup home away players staff false profileMap
             let final, events = runLoopFastDes home.Id homeSquad awaySquad ctx state
             return final.HomeScore, final.AwayScore, events, final
         }
 
-    let trySimulateMatchFull home away players staff : Result<MatchReplay, SimulationError> =
+    let trySimulateMatchFull home away players staff profileMap : Result<MatchReplay, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff false
+            let! ctx, state, homeSquad, awaySquad = setup home away players staff false profileMap
             let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad ctx state
 
             return
@@ -578,9 +608,9 @@ module MatchSimulator =
                   Snapshots = snapshots }
         }
 
-    let trySimulateMatchKnockout home away players staff : Result<MatchReplay * bool, SimulationError> =
+    let trySimulateMatchKnockout home away players staff profileMap : Result<MatchReplay * bool, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff true
+            let! ctx, state, homeSquad, awaySquad = setup home away players staff true profileMap
             let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad ctx state
 
             let replay =
@@ -596,7 +626,7 @@ module MatchSimulator =
                 return replay, false
         }
 
-    let buildInitState home away players staff =
-        match setup home away players staff false with
+    let buildInitState home away players staff profileMap =
+        match setup home away players staff false profileMap with
         | Ok(ctx, state, homeSquad, awaySquad) -> Some(ctx, state, homeSquad, awaySquad)
         | Error _ -> None

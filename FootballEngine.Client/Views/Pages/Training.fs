@@ -8,9 +8,9 @@ open Avalonia.FuncUI.Types
 open Avalonia.Layout
 open Avalonia.Media
 open FootballEngine
+open FootballEngine.Domain
 open FootballEngine.AppMsgs
 open FootballEngine.AppTypes
-open FootballEngine.Domain
 open FootballEngine.Icons
 open FootballEngine.Components
 open FootballEngine.World.Phases
@@ -95,10 +95,54 @@ module TrainingPresenter =
 
     let formatMult (mult: float) : string = TrainingIntensityData.formatMult mult
 
+    let private defaultProfileFor (pos: Position) : BehavioralProfile =
+        let baseLT =
+            match pos with
+            | DL | ML | AML -> -0.5
+            | DR | MR | AMR -> 0.5
+            | WBL -> -0.6
+            | WBR -> 0.6
+            | _ -> 0.0
+
+        let baseAD =
+            match pos with
+            | ST | AMR | AML | AMC -> 0.7
+            | MR | ML -> 0.5
+            | MC -> 0.4
+            | DM | DC | DR | DL -> 0.3
+            | WBR | WBL -> 0.5
+            | GK -> 0.1
+
+        let baseDH =
+            match pos with
+            | DC | DM -> 0.7
+            | DL | DR | WBL | WBR -> 0.5
+            | MC -> 0.4
+            | _ -> 0.2
+
+        let baseCW =
+            match pos with
+            | MC | AMC -> 0.7
+            | AMR | AML -> 0.6
+            | DM -> 0.4
+            | _ -> 0.2
+
+        { PositionalFreedom = 0.5
+          AttackingDepth = baseAD
+          LateralTendency = baseLT
+          DefensiveHeight = baseDH
+          PressingIntensity = 0.5
+          RiskAppetite = 0.4
+          Directness = 0.5
+          CreativityWeight = baseCW
+          AerialThreat = 0.4
+          HoldUpPlay = 0.4 }
+
     let getPositionImpact (focus: TrainingFocus) (intensity: TrainingIntensity) (pos: Position) : float =
         let intensityMult = (TrainingIntensityData.get intensity).DeltaMultiplier
+        let profile = defaultProfileFor pos
 
-        TrainingEngine.focusMultiplier focus pos * intensityMult
+        TrainingEngine.focusMultiplier focus profile * intensityMult
 
 
 module Training =

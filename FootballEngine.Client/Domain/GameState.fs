@@ -18,7 +18,8 @@ type GameState =
       Inbox: InboxMessage list
       NextInboxId: int
       PendingNegotiations: Map<int, Negotiation>
-      NextNegotiationId: int }
+      NextNegotiationId: int
+      ProfileCache: Map<PlayerId, BehavioralProfile> }
 
 module GameState =
 
@@ -47,7 +48,13 @@ module GameState =
 
     let updatePlayer (p: Player) (gs: GameState) : GameState =
         { gs with
-            Players = gs.Players |> Map.add p.Id p }
+            Players = gs.Players |> Map.add p.Id p
+            ProfileCache = gs.ProfileCache |> Map.add p.Id (Player.profile p) }
+
+    let getProfile (pid: PlayerId) (gs: GameState) : BehavioralProfile =
+        gs.ProfileCache
+        |> Map.tryFind pid
+        |> Option.defaultWith (fun () -> Player.profile gs.Players[pid])
 
     let updateStaff (s: Staff) (gs: GameState) : GameState =
         { gs with

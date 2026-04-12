@@ -7,27 +7,30 @@ open FootballEngine.World
 
 module TrainingEngine =
 
-    let focusMultiplier (focus: TrainingFocus) (position: Position) : float =
-        match focus, position with
-        | TrainingFocus.TrainingAllRound, _ -> 1.0
-        | TrainingFocus.TrainingGoalkeeping, GK -> 2.0
-        | TrainingFocus.TrainingGoalkeeping, _ -> 0.5
-        | TrainingFocus.TrainingPhysical, (DC | DM | DR | DL | WBR | WBL) -> 2.0
-        | TrainingFocus.TrainingPhysical, (MC | MR | ML) -> 1.5
-        | TrainingFocus.TrainingPhysical, (GK | ST | AML | AMR | AMC) -> 0.7
-        | TrainingFocus.TrainingTechnical, (ST | AML | AMR | AMC) -> 2.0
-        | TrainingFocus.TrainingTechnical, (MC | MR | ML) -> 1.5
-        | TrainingFocus.TrainingTechnical, (GK | DC | DM | DR | DL | WBR | WBL) -> 0.5
-        | TrainingFocus.TrainingMental, _ -> 1.2
+    let focusMultiplier (focus: TrainingFocus) (profile: BehavioralProfile) : float =
+        match focus with
+        | TrainingFocus.TrainingAllRound -> 1.0
+        | TrainingFocus.TrainingGoalkeeping -> 1.5
+        | TrainingFocus.TrainingPhysical ->
+            profile.PressingIntensity * 1.0 + profile.PositionalFreedom * 0.5 + 0.5
+        | TrainingFocus.TrainingTechnical ->
+            profile.CreativityWeight * 1.0 + profile.Directness * 0.5 + 0.5
+        | TrainingFocus.TrainingMental -> 1.2
 
     let intensityEffect (intensity: TrainingIntensity) : TrainingIntensityData = TrainingIntensityData.get intensity
+
+    let private statFocusForTech (profile: BehavioralProfile) =
+        if profile.Directness > 0.5 && profile.AttackingDepth > 0.5 then "attack"
+        elif profile.DefensiveHeight > 0.5 then "defense"
+        elif profile.CreativityWeight > 0.5 then "playmaking"
+        else "general"
 
     let private applyWeeklySkillDevelopment
         (schedule: TrainingSchedule)
         (age: int)
         (currentSkill: int)
         (potential: int)
-        (position: Position)
+        (profile: BehavioralProfile)
         (p: Player)
         : Player =
         let gap = potential - currentSkill
@@ -43,7 +46,7 @@ module TrainingEngine =
         if baseDelta <= 0 then
             p
         else
-            let focusMult = focusMultiplier schedule.Focus position
+            let focusMult = focusMultiplier schedule.Focus profile
             let intensityMult = intensityEffect schedule.Intensity |> fun e -> e.DeltaMultiplier
             let weeklyDelta = float baseDelta * focusMult * intensityMult / 120.0
 
@@ -57,26 +60,19 @@ module TrainingEngine =
                         { p.Physical with
                             Stamina = min 20 (p.Physical.Stamina + 1) }
                     Technical =
-                        match position with
-                        | ST
-                        | AML
-                        | AMR
-                        | AMC ->
+                        match statFocusForTech profile with
+                        | "attack" ->
                             { p.Technical with
                                 Finishing = min 20 (p.Technical.Finishing + 1)
                                 Dribbling = min 20 (p.Technical.Dribbling + 1) }
-                        | DC
-                        | DM ->
+                        | "defense" ->
                             { p.Technical with
                                 Tackling = min 20 (p.Technical.Tackling + 1)
                                 Marking = min 20 (p.Technical.Marking + 1) }
-                        | MC
-                        | MR
-                        | ML ->
+                        | "playmaking" ->
                             { p.Technical with
                                 Passing = min 20 (p.Technical.Passing + 1)
                                 BallControl = min 20 (p.Technical.BallControl + 1) }
-                        | GK -> p.Technical
                         | _ ->
                             { p.Technical with
                                 Passing = min 20 (p.Technical.Passing + 1) }
@@ -85,7 +81,7 @@ module TrainingEngine =
                             Vision = min 20 (p.Mental.Vision + 1)
                             Positioning = min 20 (p.Mental.Positioning + 1) }
                     Goalkeeping =
-                        if position = GK then
+                        if p.Position = GK then
                             { p.Goalkeeping with
                                 Reflexes = min 20 (p.Goalkeeping.Reflexes + 1)
                                 OneOnOne = min 20 (p.Goalkeeping.OneOnOne + 1)
@@ -122,7 +118,7 @@ module TrainingEngine =
             age
             playerWithCondition.CurrentSkill
             playerWithCondition.PotentialSkill
-            playerWithCondition.Position
+            (Player.profile playerWithCondition)
             playerWithCondition
 
     let applyRemainingSeasonTraining
@@ -165,7 +161,7 @@ module PlayerDevelopment =
         (skill: int)
         (potential: int)
         (schedule: TrainingSchedule option)
-        (position: Position)
+        (profile: BehavioralProfile)
         : int =
         let gap = potential - skill
 
@@ -179,7 +175,7 @@ module PlayerDevelopment =
             | a when a <= 33 -> normalInt -1.5 1.0 -3 0
             | _ -> normalInt -2.5 1.0 -4 -1
         | Some sched ->
-            let focusMult = TrainingEngine.focusMultiplier sched.Focus position
+            let focusMult = TrainingEngine.focusMultiplier sched.Focus profile
 
             let intensityMult =
                 TrainingEngine.intensityEffect sched.Intensity |> fun e -> e.DeltaMultiplier
@@ -218,7 +214,18 @@ module PlayerDevelopment =
         else
             stat
 
-    let private developStats (delta: int) (pos: Position) (currentDate: DateTime) (p: Player) =
+    let private physFocus (profile: BehavioralProfile) =
+        if profile.DefensiveHeight > 0.5 then "defensive"
+        elif profile.AttackingDepth > 0.6 && profile.Directness > 0.5 then "attacking"
+        else "general"
+
+    let private techFocus (profile: BehavioralProfile) =
+        if profile.Directness > 0.5 && profile.AttackingDepth > 0.5 then "attack"
+        elif profile.DefensiveHeight > 0.5 then "defense"
+        elif profile.CreativityWeight > 0.5 then "playmaking"
+        else "general"
+
+    let private developStats (delta: int) (profile: BehavioralProfile) (currentDate: DateTime) (p: Player) =
         let phys =
             if Player.age currentDate p > 28 then
                 maybeStat (min delta 0)
@@ -227,19 +234,15 @@ module PlayerDevelopment =
 
         let tech = maybeStat delta
         let mental = maybeStat delta
-        let gkOnly = if pos = GK then maybeStat delta else id
+        let gkOnly = if p.Position = GK then maybeStat delta else id
 
         let physical =
-            match pos with
-            | GK
-            | DC
-            | DM ->
+            match physFocus profile with
+            | "defensive" ->
                 { p.Physical with
                     Strength = phys p.Physical.Strength
                     Stamina = phys p.Physical.Stamina }
-            | ST
-            | AML
-            | AMR ->
+            | "attacking" ->
                 { p.Physical with
                     Pace = phys p.Physical.Pace
                     Agility = phys p.Physical.Agility }
@@ -248,21 +251,16 @@ module PlayerDevelopment =
                     Stamina = phys p.Physical.Stamina }
 
         let technical =
-            match pos with
-            | GK -> p.Technical
-            | ST
-            | AML
-            | AMR ->
+            match techFocus profile with
+            | "attack" ->
                 { p.Technical with
                     Finishing = tech p.Technical.Finishing
                     Dribbling = tech p.Technical.Dribbling }
-            | DC
-            | DM ->
+            | "defense" ->
                 { p.Technical with
                     Tackling = tech p.Technical.Tackling
                     Marking = tech p.Technical.Marking }
-            | MC
-            | AMC ->
+            | "playmaking" ->
                 { p.Technical with
                     Passing = tech p.Technical.Passing
                     BallControl = tech p.Technical.BallControl }
@@ -285,7 +283,8 @@ module PlayerDevelopment =
 
     let developPlayer (currentDate: DateTime) (schedule: TrainingSchedule option) (p: Player) : Player =
         let a = Player.age currentDate p
-        let delta = skillDelta a p.CurrentSkill p.PotentialSkill schedule p.Position
+        let prof = Player.profile p
+        let delta = skillDelta a p.CurrentSkill p.PotentialSkill schedule prof
         let newCA = clamp 1 p.PotentialSkill (p.CurrentSkill + delta)
 
         let updatedAffiliation =
@@ -301,7 +300,7 @@ module PlayerDevelopment =
         { p with
             CurrentSkill = newCA
             Affiliation = updatedAffiliation }
-        |> developStats delta p.Position currentDate
+        |> developStats delta prof currentDate
 
     let developAll (gs: GameState) : GameState =
         { gs with

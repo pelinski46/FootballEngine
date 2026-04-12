@@ -59,7 +59,8 @@ type PlayerEntity =
       Salary: decimal
       ContractExpiry: int
       TrainingFocus: string
-      TrainingIntensity: string }
+      TrainingIntensity: string
+      BehavioralProfile: string }
 
 [<CLIMutable>]
 type ClubEntity =

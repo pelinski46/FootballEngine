@@ -248,15 +248,12 @@ module SetPlayAction =
             let thrower =
                 throwSlots
                 |> Array.choose (function
-                    | PlayerSlot.Active s -> Some s.Player
+                    | PlayerSlot.Active s -> Some(s.Player, s.Profile)
                     | _ -> None)
-                |> Array.sortBy (fun p ->
-                    match p.Position with
-                    | DL
-                    | DR
-                    | WBL
-                    | WBR -> 0
-                    | _ -> 1)
+                |> Array.sortBy (fun (p, profile) ->
+                    if profile.LateralTendency > 0.3 || profile.LateralTendency < -0.3 then 0
+                    else 1)
+                |> Array.map fst
                 |> Array.head
 
             let nearestTeammate = findNearestTeammate thrower ctx state actx.Dir

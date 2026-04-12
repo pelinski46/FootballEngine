@@ -22,16 +22,7 @@ module PlayerScorer =
         let longShots = normStat me.Technical.LongShots * 0.15
         let composure = normStat me.Mental.Composure * 0.20
         let distNorm = (1.0 - Math.Clamp(ctx.DistToGoal / 30.0, 0.0, 1.0)) * 0.20
-
-        let posBonus =
-            match me.Position with
-            | ST
-            | AMC -> 0.10
-            | AML
-            | AMR
-            | MC -> 0.07
-            | _ -> 0.02
-
+        let posBonus = ctx.Profile.Directness * 0.10 + ctx.Profile.AttackingDepth * 0.08
         let distPenalty = Math.Clamp(ctx.DistToGoal / 40.0, 0.0, 0.5)
 
         (finishing + longShots + composure + distNorm + posBonus - distPenalty)
@@ -57,7 +48,9 @@ module PlayerScorer =
             | Midfield -> 0.0
             | Attack -> -0.03
 
-        (passing + vision + targetBonus + phaseMod) * normCond ctx.MyCondition
+        let creativityMod = ctx.Profile.CreativityWeight * 0.10 + (1.0 - ctx.Profile.Directness) * 0.06
+
+        (passing + vision + targetBonus + phaseMod + creativityMod) * normCond ctx.MyCondition
 
     let private dribbleScore (ctx: AgentContext) =
         let me = ctx.Me
@@ -83,19 +76,7 @@ module PlayerScorer =
     let private crossScore (ctx: AgentContext) =
         let me = ctx.Me
         let crossing = normStat me.Technical.Crossing * 0.60
-
-        let posBonus =
-            match me.Position with
-            | DR
-            | DL
-            | WBR
-            | WBL
-            | MR
-            | ML
-            | AMR
-            | AML -> 0.40
-            | _ -> 0.10
-
+        let posBonus = abs (ctx.Profile.LateralTendency - 0.5) * 0.60 + 0.10
         let zoneBonus = if ctx.Zone = AttackingZone then 0.15 else 0.0
         (crossing + posBonus + zoneBonus) * normCond ctx.MyCondition
 

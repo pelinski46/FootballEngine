@@ -22,6 +22,7 @@ module RefereeAgent =
         | NoOut
         | ThrowIn of ClubSide
         | Corner of ClubSide
+        | GoalKick of ClubSide
 
     let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : BallOutResult =
         let pos = state.Ball.Position
@@ -61,11 +62,11 @@ module RefereeAgent =
             elif behindHome then
                 match lastTouchClubSide () with
                 | Some AwayClub -> Corner HomeClub
-                | _ -> NoOut
+                | _ -> GoalKick HomeClub
             elif behindAway then
                 match lastTouchClubSide () with
                 | Some HomeClub -> Corner AwayClub
-                | _ -> NoOut
+                | _ -> GoalKick AwayClub
             else
                 NoOut
         else
@@ -97,6 +98,7 @@ module RefereeAgent =
             match ballOutOfBounds ctx state with
             | ThrowIn team -> [ AwardThrowIn team ]
             | Corner team -> [ AwardCorner team ]
+            | GoalKick team -> [ AwardGoalKick team ]
             | NoOut -> []
 
         let injuryIntent =
@@ -226,6 +228,23 @@ module RefereeAgent =
                 ClubId = if team = HomeClub then ctx.Home.Id else ctx.Away.Id
                 Type = MatchEventType.Corner } ]
 
+        | AwardGoalKick team ->
+            let gkX =
+                match team with
+                | HomeClub -> PhysicsContract.GoalAreaDepth
+                | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
+
+            state.Ball <-
+                { state.Ball with
+                    Position = defaultSpatial gkX (PhysicsContract.PitchWidth / 2.0)
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    IsInPlay = true
+                    Phase = PossessionPhase.SetPiece team }
+
+            clearOffsideSnapshot state
+            []
+
         | IssueYellow(player, clubId) ->
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub
@@ -337,6 +356,58 @@ module RefereeAgent =
             { Events = []
               Spawned = []
               Transition = Some LivePlay }
+
+        | RefereeTick ->
+            let refActions = decide tick.SubTick None None ctx state
+
+            let evs =
+                refActions
+                |> List.fold
+                    (fun accEvents action ->
+                        let evs = resolve tick.SubTick action ctx state
+                        evs @ accEvents)
+                    []
+                |> List.rev
+
+            let setpieceTick, setpieceKind =
+                match refActions |> List.tryPick (function
+                    | AwardThrowIn _
+                    | AwardCorner _
+                    | AwardGoalKick _ -> Some true
+                    | _ -> None) with
+                | Some _ ->
+                    let tick, kind =
+                        refActions |> List.pick (function
+                            | AwardThrowIn team ->
+                                { SubTick = tick.SubTick + 1
+                                  Priority = TickPriority.SetPiece
+                                  SequenceId = 0L
+                                  Kind = ThrowInTick(team, 0) },
+                                SetPieceKind.ThrowIn
+                            | AwardCorner team ->
+                                { SubTick = tick.SubTick + 1
+                                  Priority = TickPriority.SetPiece
+                                  SequenceId = 0L
+                                  Kind = CornerTick(team, 0) },
+                                SetPieceKind.Corner
+                            | AwardGoalKick _ ->
+                                { SubTick = tick.SubTick + 1
+                                  Priority = TickPriority.SetPiece
+                                  SequenceId = 0L
+                                  Kind = GoalKickTick },
+                                SetPieceKind.GoalKick
+                            | _ -> failwith "unreachable")
+                    Some tick, Some kind
+                | None -> None, None
+
+            let transition =
+                match setpieceKind with
+                | Some k -> Some(PlayState.SetPiece k)
+                | None -> None
+
+            { Events = evs
+              Spawned = Option.toList setpieceTick
+              Transition = transition }
 
         | _ ->
             { Events = []

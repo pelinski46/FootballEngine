@@ -508,12 +508,13 @@ module MovementEngine =
                 | PlayerSlot.Active s ->
                     let p = s.Player
                     let mental = mentalStates[i]
-                    let dq = FatiguePipeline.decisionQuality p conditions[i]
+                    let dq = FatiguePipeline.decisionQuality p s.Profile conditions[i]
 
                     let update =
                         CognitiveLayer.evaluate
                             currentSubTick
                             p
+                            s.Profile
                             i
                             players
                             positions

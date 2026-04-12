@@ -56,10 +56,10 @@ module ShotAction =
 
             let shooterIdx = nearestIdxToBall attSlots bX bY
 
-            let shooter, shooterCond =
+            let shooter, shooterCond, shooterProfile =
                 match attSlots[shooterIdx] with
-                | PlayerSlot.Active s -> s.Player, s.Condition
-                | _ -> Unchecked.defaultof<Player>, 0
+                | PlayerSlot.Active s -> s.Player, s.Condition, s.Profile
+                | _ -> Unchecked.defaultof<Player>, 0, BehavioralProfile.neutral
 
             let defPlayers = playersArray defSlots
 
@@ -70,13 +70,9 @@ module ShotAction =
                     Math.Clamp(distToGoal / BalanceConfig.ShotNormalisationDistance, 0.0, 1.0)
 
                 let positionBonus =
-                    match shooter.Position with
-                    | ST
-                    | AMC -> 0.3
-                    | AML
-                    | AMR
-                    | MC -> 0.2
-                    | _ -> 0.0
+                    shooterProfile.Directness * 0.3
+                    + shooterProfile.AttackingDepth * 0.2
+                    + shooterProfile.CreativityWeight * 0.1
 
                 (1.0 - distNorm) * 0.7 + positionBonus * 0.3
 

@@ -19,7 +19,7 @@ let statisticalContractsTests =
               Array.Parallel.init 100 (fun i ->
                   let hi = i % clubs.Length
                   let ai = (hi + 1) % clubs.Length
-                  MatchSimulator.trySimulateMatch clubs[hi] clubs[ai] game.Players game.Staff)
+                  MatchSimulator.trySimulateMatch clubs[hi] clubs[ai] game.Players game.Staff game.ProfileCache)
 
           sw.Stop()
           let msPerGame = sw.Elapsed.TotalMilliseconds / 100.0

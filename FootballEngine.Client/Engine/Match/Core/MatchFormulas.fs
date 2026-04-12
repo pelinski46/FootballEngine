@@ -59,45 +59,16 @@ module PitchMath =
         | Attacker
         | Goalkeeper
 
-    let playerRole (p: Player) =
-        match p.Position with
-        | GK -> Goalkeeper
-        | DC
-        | DL
-        | DR
-        | DM
-        | WBL
-        | WBR -> Defender
-        | MC
-        | ML
-        | MR
-        | AML
-        | AMR
-        | AMC -> Midfielder
-        | ST -> Attacker
+    let playerRole (profile: BehavioralProfile) (position: Position) =
+        if profile.DefensiveHeight > 0.6 && profile.Directness < 0.3 then Defender
+        elif profile.AttackingDepth > 0.7 && profile.CreativityWeight < 0.3 then Attacker
+        elif position = Domain.GK then Goalkeeper
+        else Midfielder
 
 module MovementConstants =
 
-    let positionCoefficients =
-        function
-        | GK -> 0.04, 0.02, 0.03
-        | DC -> 0.10, 0.06, 0.15
-        | DL | DR -> 0.18, 0.08, 0.30
-        | WBL | WBR -> 0.25, 0.10, 0.38
-        | DM -> 0.20, 0.12, 0.25
-        | MC -> 0.28, 0.18, 0.28
-        | ML | MR -> 0.28, 0.15, 0.38
-        | AML | AMR | AMC -> 0.38, 0.22, 0.32
-        | ST -> 0.42, 0.28, 0.18
-
-    let positionModifiers =
-        function
-        | GK -> (fun (off, def, lat) (pos, wr, vis) -> off, def, lat)
-        | DC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.08, def + wr * 0.05, lat + vis * 0.08)
-        | DL | DR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.06, lat + vis * 0.12)
-        | WBL | WBR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.08, lat + vis * 0.10)
-        | DM -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.08, lat + vis * 0.10)
-        | MC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.10, lat + vis * 0.12)
-        | ML | MR -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.08, lat + vis * 0.12)
-        | AML | AMR | AMC -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.12, def + wr * 0.08, lat + vis * 0.10)
-        | ST -> (fun (off, def, lat) (pos, wr, vis) -> off + pos * 0.10, def + wr * 0.06, lat + vis * 0.08)
+    let movementCoefficients (profile: BehavioralProfile) =
+        let offensive = profile.AttackingDepth * 0.30 + profile.Directness * 0.25 + profile.PositionalFreedom * 0.20
+        let defensive = profile.DefensiveHeight * 0.35 + profile.PressingIntensity * 0.25 + (1.0 - profile.PositionalFreedom) * 0.25
+        let lateral = abs (profile.LateralTendency - 0.5) * 0.50 + profile.PositionalFreedom * 0.25
+        (offensive, defensive, lateral)
