@@ -5,6 +5,8 @@ open FootballEngine.Stats
 open SimStateOps
 open MatchFormulas
 open MatchSpatial
+open SimulationClock
+open FootballEngine.PhysicsContract
 
 module SetPlayAction =
 
@@ -43,8 +45,10 @@ module SetPlayAction =
             | None -> normalSample 50.0 10.0
 
         let spin =
-            { Top = -(PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * 0.5
-              Side = (PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * 0.9 }
+            { Top =
+                -(PhysicsContract.normaliseAttr kicker.Technical.FreeKick)
+                * 0.5<radianPerSecond>
+              Side = (PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * 0.9<radianPerSecond> }
 
         let scored =
             shotPower > savePower
@@ -65,8 +69,8 @@ module SetPlayAction =
             let bX = state.Ball.Position.X
             let bY = state.Ball.Position.Y
 
-            MatchSpatial.ballTowards bX bY targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
-            flipPossession state
+            ballTowards bX bY targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
+            loosePossession state
             state.Ball <- { state.Ball with Spin = spin }
 
             let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
@@ -78,8 +82,16 @@ module SetPlayAction =
                   | None -> () ]
 
             if bernoulli BalanceConfig.PostShotClearProbability then
-                let clearY = PhysicsContract.PitchWidth / 2.0 + normalSample 0.0 10.0
-                MatchSpatial.ballTowards state.Ball.Position.X state.Ball.Position.Y PhysicsContract.HalfwayLineX clearY 16.0 1.5 state
+                let clearY = PhysicsContract.PitchWidth / 2.0 + (normalSample 0.0 10.0) * 1.0<meter>
+
+                ballTowards
+                    state.Ball.Position.X
+                    state.Ball.Position.Y
+                    PhysicsContract.HalfwayLineX
+                    clearY
+                    16.0<meter / second>
+                    1.5<meter / second>
+                    state
 
             events
 
@@ -144,7 +156,7 @@ module SetPlayAction =
                     else
                         PhysicsContract.PenaltyAreaDepth
 
-                MatchSpatial.ballTowards
+                ballTowards
                     state.Ball.Position.X
                     state.Ball.Position.Y
                     targetX
@@ -153,7 +165,7 @@ module SetPlayAction =
                     BalanceConfig.CornerVz
                     state
 
-                flipPossession state
+                loosePossession state
 
                 [ createEvent subTick taker.Id attClubId Corner ]
             else
@@ -189,14 +201,21 @@ module SetPlayAction =
                 let crossQuality =
                     activeAtts
                     |> Array.tryPick (fun p ->
-                        if p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR || p.Position = MC then
+                        if
+                            p.Position = ML
+                            || p.Position = MR
+                            || p.Position = AML
+                            || p.Position = AMR
+                            || p.Position = MC
+                        then
                             Some(
                                 PhysicsContract.normaliseAttr p.Technical.Crossing
                                 * BalanceConfig.CrossCrossingWeight
                                 + PhysicsContract.normaliseAttr p.Technical.Passing
                                   * BalanceConfig.CrossPassingWeight
                             )
-                        else None)
+                        else
+                            None)
                     |> Option.defaultValue BalanceConfig.CrossBaseMean
 
                 let scored =
@@ -208,11 +227,11 @@ module SetPlayAction =
                 else
                     let targetX =
                         if actx.Dir = LeftToRight then
-                            PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth - 5.0
+                            PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth - 5.0<meter>
                         else
-                            PhysicsContract.PenaltyAreaDepth + 5.0
+                            PhysicsContract.PenaltyAreaDepth + 5.0<meter>
 
-                    MatchSpatial.ballTowards
+                    ballTowards
                         state.Ball.Position.X
                         state.Ball.Position.Y
                         targetX
@@ -224,7 +243,7 @@ module SetPlayAction =
                     if bernoulli BalanceConfig.CornerKeepPossessionProbability then
                         clearOffsideSnapshot state
                     else
-                        flipPossession state
+                        loosePossession state
 
                     [ createEvent subTick taker.Id attClubId Corner ]
 
@@ -234,7 +253,7 @@ module SetPlayAction =
         let actx = ActionContext.build state
         let clubId = if throwClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-        let throwSlots = SimStateOps.getSlots state throwClub
+        let throwSlots = getSlots state throwClub
 
         let activeCount =
             throwSlots
@@ -250,46 +269,45 @@ module SetPlayAction =
                 |> Array.choose (function
                     | PlayerSlot.Active s -> Some(s.Player, s.Profile)
                     | _ -> None)
-                |> Array.sortBy (fun (p, profile) ->
-                    if profile.LateralTendency > 0.3 || profile.LateralTendency < -0.3 then 0
-                    else 1)
+                |> Array.sortBy (fun (_, profile) ->
+                    if profile.LateralTendency > 0.3 || profile.LateralTendency < -0.3 then
+                        0
+                    else
+                        1)
                 |> Array.map fst
                 |> Array.head
 
-            let nearestTeammate = findNearestTeammate thrower ctx state actx.Dir
+            let nearestTeammate = findNearestTeammate thrower state
 
             match nearestTeammate with
-            | Some(teammate, teammateId, _) ->
-                let targetX =
-                    if actx.Dir = LeftToRight then
-                        PhysicsContract.PenaltyAreaDepth / 2.0
-                    else
-                        PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth / 2.0
-
-                withBallVelocity
-                    ((targetX - state.Ball.Position.X) * BalanceConfig.ThrowInSpeed)
-                    0.0
+            | Some(teammate, _teammateId, (tX, tY)) ->
+                ballTowards
+                    state.Ball.Position.X
+                    state.Ball.Position.Y
+                    tX
+                    tY
+                    BalanceConfig.ThrowInSpeed
                     BalanceConfig.ThrowInVz
                     state
 
                 adjustMomentum actx.Dir BalanceConfig.ThrowInMomentum state
 
-                [ createEvent subTick thrower.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ]
+                [ createEvent subTick teammate.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ]
             | None -> []
 
     let resolvePenalty
-        (subTick: int)
         (ctx: MatchContext)
         (state: SimState)
         (kicker: Player)
         (kickerClub: ClubSide)
         (kickNum: int)
+        (clock: SimulationClock)
         : MatchEvent list =
         let clubId = if kickerClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
         let gkSlots =
             let defSide = ClubSide.flip kickerClub
-            SimStateOps.getSlots state defSide
+            getSlots state defSide
 
         let gk =
             gkSlots
@@ -300,12 +318,28 @@ module SetPlayAction =
         let gkSkill =
             gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
 
+        let gkCondition = gk |> Option.map (fun g -> g.Condition) |> Option.defaultValue 80
+
+        let kickerSkill = float kicker.CurrentSkill
+        let kickerCond = float kicker.Condition
+        let kickerMorale = float kicker.Morale
+
         let pressNoise =
-            pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise
+            match state.AttackingClub with
+            | c when c = kickerClub -> 0.0
+            | _ -> pressureNoise kicker.Mental.Composure 1.5
+
+        let gkBonus =
+            match gk with
+            | Some g ->
+                effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale 2.5
+                + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale 2.0
+            | None -> 0.0
 
         let score =
-            (float kicker.CurrentSkill - gkSkill) * BalanceConfig.PenaltySkillMultiplier
-            + float kicker.Morale * BalanceConfig.PenaltyMoraleMultiplier
+            kickerSkill / 20.0 * (0.5 + kickerCond / 200.0) * (0.7 + kickerMorale / 166.6)
+            - gkSkill / 40.0
+            + gkBonus
             + pressNoise * BalanceConfig.PenaltyPressureMultiplier
             + (if kickerClub = HomeClub then
                    BalanceConfig.HomePenaltyBonus
@@ -313,15 +347,20 @@ module SetPlayAction =
                    0.0)
 
         let scored = logisticBernoulli score BalanceConfig.PenaltyLogisticBase
-        let penaltySubTick = PhysicsContract.FullTimeSubTick + kickNum
+        let penaltySubTick = (fullTime clock) + kickNum
 
         if scored then
             let goalEvents = awardGoal kickerClub (Some kicker.Id) penaltySubTick ctx state
-            let penaltyEvent = createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+
+            let penaltyEvent =
+                createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+
             goalEvents @ [ penaltyEvent ]
         else
-            resetBallToCenter state
-            flipPossession state
+            resetBallForKickOff HomeClub state
+            loosePossession state
 
-            let penaltyEvent = createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+            let penaltyEvent =
+                createEvent penaltySubTick kicker.Id clubId (PenaltyAwarded scored)
+
             [ penaltyEvent ]

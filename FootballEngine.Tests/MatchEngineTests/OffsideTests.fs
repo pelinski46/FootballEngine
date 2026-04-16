@@ -19,7 +19,7 @@ let offsideTests =
               let apos = [| 85.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
               let gkSp = spatialAt 80.0 34.0
               let actx = ActionContext.build s
@@ -36,7 +36,7 @@ let offsideTests =
               let apos = [| 45.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
               let receiverSp = spatialAt 40.0 34.0
               let actx = ActionContext.build s
@@ -53,7 +53,7 @@ let offsideTests =
               let apos = [| 75.0, 30.0; 70.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
               let receiverSp = spatialAt 75.0 34.0
               let actx = ActionContext.build s
@@ -70,7 +70,7 @@ let offsideTests =
               let apos = [| 75.0, 30.0; 70.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
               let receiverSp = spatialAt 80.0 34.0
               let actx = ActionContext.build s
@@ -87,7 +87,7 @@ let offsideTests =
               let apos = [| 30.0, 30.0; 35.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession AwayClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned AwayClub)
 
               s.HomeAttackDir <- RightToLeft
               let receiverSp = spatialAt 25.0 34.0
@@ -105,7 +105,7 @@ let offsideTests =
               let apos = [| 85.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 70.0 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 70.0 34.0 (Owned HomeClub)
 
               let receiverSp = spatialAt 90.0 34.0
               let actx = ActionContext.build s
@@ -122,7 +122,7 @@ let offsideTests =
               let apos = [| 50.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
               let receiverSp = spatialAt 52.5 34.0
               let actx = ActionContext.build s

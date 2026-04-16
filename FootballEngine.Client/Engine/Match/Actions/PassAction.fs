@@ -5,39 +5,62 @@ open FootballEngine.Domain
 open FootballEngine.Stats
 open SimStateOps
 open MatchSpatial
+open FootballEngine.PhysicsContract
 
 module PassAction =
 
     let private interceptChance
         (defender: Player)
         (defPos: Spatial)
-        (passerX: float)
-        (passerY: float)
-        (targetX: float)
-        (targetY: float)
+        (passerX: float<meter>)
+        (passerY: float<meter>)
+        (targetX: float<meter>)
+        (targetY: float<meter>)
         (passerVisionNorm: float)
         =
-        let dx = targetX - passerX
-        let dy = targetY - passerY
-        let lenSq = dx * dx + dy * dy
+        let passerPos =
+            { X = passerX
+              Y = passerY
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
 
-        if lenSq < 1.0 then
+        let targetPos =
+            { X = targetX
+              Y = targetY
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
+
+        let lenSq = passerPos.DistSqTo2D targetPos
+
+        if lenSq < 1.0<meterSquared> then
             0.0
         else
+            let dx = targetX - passerX
+            let dy = targetY - passerY
             let tdx = defPos.X - passerX
             let tdy = defPos.Y - passerY
-            let t = System.Math.Clamp((tdx * dx + tdy * dy) / lenSq, 0.0, 1.0)
+            let dot = tdx * dx + tdy * dy
+            let tNorm = dot / lenSq
+            let t = PhysicsContract.clampFloat tNorm 0.0 1.0
 
-            let interceptX = passerX + t * dx
-            let interceptY = passerY + t * dy
+            let intercept =
+                { X = passerX + t * dx
+                  Y = passerY + t * dy
+                  Z = 0.0<meter>
+                  Vx = 0.0<meter / second>
+                  Vy = 0.0<meter / second>
+                  Vz = 0.0<meter / second> }
 
-            let perpDist =
-                sqrt ((defPos.X - interceptX) ** 2.0 + (defPos.Y - interceptY) ** 2.0)
+            let perpDist = defPos.DistTo2D intercept
 
             if perpDist > BalanceConfig.PassInterceptionRadius then
                 0.0
             else
-                let distFactor = 1.0 - perpDist / BalanceConfig.PassInterceptionRadius
+                let distFactor = 1.0 - (perpDist / BalanceConfig.PassInterceptionRadius)
                 let positioningNorm = PhysicsContract.normaliseAttr defender.Mental.Positioning
 
                 BalanceConfig.PassInterceptBaseRate + distFactor * 0.3 + positioningNorm * 0.15
@@ -67,15 +90,17 @@ module PassAction =
             let mutable passerIdx = -1
             let mutable passerFound = false
 
-            match state.Ball.ControlledBy with
-            | Some ctrlId ->
+            match state.Ball.Possession with
+            | Owned(_, ctrlId) ->
                 for i = 0 to attSlots.Length - 1 do
                     match attSlots[i] with
                     | PlayerSlot.Active s when s.Player.Id = ctrlId ->
                         passerIdx <- i
                         passerFound <- true
                     | _ -> ()
-            | None ->
+            | Loose
+            | InFlight _
+            | SetPiece _ ->
                 for i = 0 to attSlots.Length - 1 do
                     match attSlots[i] with
                     | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id ->
@@ -114,8 +139,7 @@ module PassAction =
                   * BalanceConfig.PassVisionWeight
                 + actx.AttBonus.PassAcc
                 + (if actx.Zone = DefensiveZone then
-                       passerProfile.CreativityWeight * 0.06
-                       + (1.0 - passerProfile.Directness) * 0.04
+                       passerProfile.CreativityWeight * 0.06 + (1.0 - passerProfile.Directness) * 0.04
                    else
                        0.0)
 
@@ -128,15 +152,12 @@ module PassAction =
                      + condNorm * BalanceConfig.PassSuccessConditionMultiplier)
 
             let nearestDefDist, nearestDef =
-                match findNearestOpponentToPos passerSp.X passerSp.Y ctx state with
-                | Some(d, dSp) ->
-                    let dx = dSp.X - passerSp.X
-                    let dy = dSp.Y - passerSp.Y
-                    sqrt (dx * dx + dy * dy), Some(d, dSp)
-                | None -> 10.0, None
+                match findNearestOpponentToPos passerSp.X passerSp.Y state with
+                | Some(d, dSp) -> passerSp.DistTo2D dSp, Some(d, dSp)
+                | None -> 10.0<meter>, None
 
             let pressureFactor =
-                System.Math.Clamp(1.0 - nearestDefDist / BalanceConfig.PassPressureDistance, 0.0, 1.0)
+                Math.Clamp(1.0 - float (nearestDefDist / BalanceConfig.PassPressureDistance), 0.0, 1.0)
 
             let adjustedSuccess =
                 successChance
@@ -153,22 +174,31 @@ module PassAction =
             let misplacedRate = BalanceConfig.PassMisplacedBaseRate
 
             if bernoulli adjustedSuccess then
-                let offside = isOffside target targetSp.X ctx state actx.Dir
+                let offside = isOffside target targetSp.X state actx.Dir
 
                 if offside then
-                    flipPossession state
+                    loosePossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassOffsideMomentum) state
                     [ createEvent subTick target.Id attClubId (PassIncomplete target.Id) ]
                 else
-                    let snapshot = snapshotAtPass passer target ctx state actx.Dir
+                    let snapshot = snapshotAtPass passer target state actx.Dir
 
                     let heavyTouchChance = (1.0 - float target.Technical.BallControl / 20.0) * 0.25
 
                     if bernoulli heavyTouchChance then
-                        let jitterX = Math.Clamp(targetSp.X + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchLength)
-                        let jitterY = Math.Clamp(targetSp.Y + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchWidth)
+                        let jitterX =
+                            PhysicsContract.clamp
+                                (targetSp.X + normalSample 0.0 2.0 * 1.0<meter>)
+                                0.0<meter>
+                                PhysicsContract.PitchLength
 
-                        MatchSpatial.ballTowards
+                        let jitterY =
+                            PhysicsContract.clamp
+                                (targetSp.Y + normalSample 0.0 2.0 * 1.0<meter>)
+                                0.0<meter>
+                                PhysicsContract.PitchWidth
+
+                        ballTowards
                             passerSp.X
                             passerSp.Y
                             jitterX
@@ -177,7 +207,7 @@ module PassAction =
                             BalanceConfig.PassVz
                             state
                     else
-                        MatchSpatial.ballTowards
+                        ballTowards
                             passerSp.X
                             passerSp.Y
                             targetSp.X
@@ -190,9 +220,10 @@ module PassAction =
 
                     state.Ball <-
                         { state.Ball with
-                            Spin = { Top = 0.0; Side = 0.0 }
-                            ControlledBy = None
-                            Phase = PossessionPhase.InFlight actx.AttSide
+                            Spin =
+                                { Top = 0.0<radianPerSecond>
+                                  Side = 0.0<radianPerSecond> }
+                            Possession = InFlight(actx.AttSide, target.Id)
                             PendingOffsideSnapshot = Some snapshot }
 
                     [ createEvent subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
@@ -201,19 +232,21 @@ module PassAction =
                     match nearestDef with
                     | Some(d, _) -> d.Id
                     | None ->
-                        match findNearestOpponentToPos targetSp.X targetSp.Y ctx state with
+                        match findNearestOpponentToPos targetSp.X targetSp.Y state with
                         | Some(d, _) -> d.Id
                         | None -> passer.Id
 
                 let jitterX =
-                    targetSp.X + normalSample 0.0 BalanceConfig.PassScrambleJitter
-                    |> fun x -> Math.Clamp(x, 0.0, PhysicsContract.PitchLength)
+                    targetSp.X
+                    + normalSample 0.0 (float BalanceConfig.PassScrambleJitter) * 1.0<meter>
+                    |> fun x -> PhysicsContract.clamp x 0.0<meter> PhysicsContract.PitchLength
 
                 let jitterY =
-                    targetSp.Y + normalSample 0.0 BalanceConfig.PassScrambleJitter
-                    |> fun y -> Math.Clamp(y, 0.0, PhysicsContract.PitchWidth)
+                    targetSp.Y
+                    + normalSample 0.0 (float BalanceConfig.PassScrambleJitter) * 1.0<meter>
+                    |> fun y -> PhysicsContract.clamp y 0.0<meter> PhysicsContract.PitchWidth
 
-                MatchSpatial.ballTowards
+                ballTowards
                     passerSp.X
                     passerSp.Y
                     jitterX
@@ -222,10 +255,18 @@ module PassAction =
                     (BalanceConfig.PassVz * 0.5)
                     state
 
-                state.Ball <-
-                    { state.Ball with
-                        ControlledBy = None
-                        Phase = PossessionPhase.Contest actx.AttSide }
+                state.Ball <- { state.Ball with Possession = Loose }
+
+                ballTowards
+                    passerSp.X
+                    passerSp.Y
+                    jitterX
+                    jitterY
+                    (BalanceConfig.PassSpeed * 0.6)
+                    (BalanceConfig.PassVz * 0.5)
+                    state
+
+                state.Ball <- { state.Ball with Possession = Loose }
 
                 [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
             elif nearestDef.IsSome then
@@ -234,27 +275,26 @@ module PassAction =
                 let interceptProb =
                     interceptChance def defPos passerSp.X passerSp.Y targetSp.X targetSp.Y passerVisionNorm
 
-                if bernoulli (System.Math.Clamp(interceptProb, 0.0, 0.8)) then
-                    flipPossession state
+                if bernoulli (Math.Clamp(interceptProb, 0.0, 0.8)) then
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                     state.Ball <-
                         { state.Ball with
                             Position =
                                 { state.Ball.Position with
-                                    Vx = 0.0
-                                    Vy = 0.0
-                                    Vz = 0.0 }
-                            ControlledBy = Some def.Id
-                            LastTouchBy = Some def.Id
-                            Phase = PossessionPhase.Transition actx.DefSide }
+                                    Vx = 0.0<meter / second>
+                                    Vy = 0.0<meter / second>
+                                    Vz = 0.0<meter / second> }
+                            LastTouchBy = Some def.Id }
+
+                    givePossessionTo actx.DefSide def.Id state
 
                     [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id))
                       createEvent subTick def.Id defClubId TackleSuccess ]
                 else
                     match findNearestTeammateToPos passer.Id targetSp.X targetSp.Y state actx.AttSide with
                     | Some(actualTarget, actualSp) ->
-                        MatchSpatial.ballTowards
+                        ballTowards
                             passerSp.X
                             passerSp.Y
                             actualSp.X
@@ -263,18 +303,18 @@ module PassAction =
                             BalanceConfig.PassVz
                             state
 
-                        flipPossession state
+                        loosePossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                         [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                     | None ->
-                        flipPossession state
+                        loosePossession state
                         adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                         [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
             else
                 match findNearestTeammateToPos passer.Id targetSp.X targetSp.Y state actx.AttSide with
                 | Some(actualTarget, actualSp) ->
-                    MatchSpatial.ballTowards
+                    ballTowards
                         passerSp.X
                         passerSp.Y
                         actualSp.X
@@ -283,12 +323,12 @@ module PassAction =
                         BalanceConfig.PassVz
                         state
 
-                    flipPossession state
+                    loosePossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
 
                     [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                 | None ->
-                    flipPossession state
+                    loosePossession state
                     adjustMomentum actx.Dir (-BalanceConfig.PassFailMomentum) state
                     [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
 
@@ -298,17 +338,16 @@ module PassAction =
 
         let attSlots = getSlots state actx.AttSide
 
-        let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
+        let bPos = state.Ball.Position
+        let bX, bY = bPos.X, bPos.Y
 
         let mutable passerIdx = 0
-        let mutable passerDistSq = System.Double.MaxValue
+        let mutable passerDistSq = PhysicsContract.MaxDistanceSq
 
         for i = 0 to attSlots.Length - 1 do
             match attSlots[i] with
             | PlayerSlot.Active s ->
-                let dx = s.Pos.X - bX
-                let dy = s.Pos.Y - bY
-                let dSq = dx * dx + dy * dy
+                let dSq = s.Pos.DistSqTo2D bPos
 
                 if dSq < passerDistSq then
                     passerDistSq <- dSq
@@ -341,25 +380,20 @@ module PassAction =
 
         let forwards =
             attSlots
-            |> Array.mapi (fun i slot ->
-                match slot with
+            |> Array.map (function
                 | PlayerSlot.Active s -> Some(s.Player, s.Pos, s.Profile)
                 | _ -> None)
             |> Array.choose id
-            |> Array.filter (fun (p, _, profile) ->
-                profile.AttackingDepth > 0.5 || profile.CreativityWeight > 0.4)
+            |> Array.filter (fun (_, _, profile) -> profile.AttackingDepth > 0.5 || profile.CreativityWeight > 0.4)
             |> Array.map (fun (p, pos, _) -> p, pos)
 
         let nearestDefDist =
-            match findNearestOpponentToPos bX bY ctx state with
-            | Some(_, dSp) ->
-                let dx = dSp.X - bX
-                let dy = dSp.Y - bY
-                sqrt (dx * dx + dy * dy)
-            | None -> 10.0
+            match findNearestOpponentToPos bX bY state with
+            | Some(_, dSp) -> bPos.DistTo2D dSp
+            | None -> 10.0<meter>
 
         let pressureFactor =
-            System.Math.Clamp(1.0 - nearestDefDist / BalanceConfig.PassPressureDistance, 0.0, 1.0)
+            Math.Clamp(1.0 - nearestDefDist / BalanceConfig.PassPressureDistance, 0.0, 1.0)
 
         let adjustedSuccess =
             successChance
@@ -373,22 +407,31 @@ module PassAction =
 
         if bernoulli adjustedSuccess && forwards.Length > 0 then
             let target, targetSp = forwards[0]
-            let offside = isOffside target targetSp.X ctx state actx.Dir
+            let offside = isOffside target targetSp.X state actx.Dir
 
             if offside then
-                flipPossession state
+                loosePossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallOffsideMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
             else
-                let snapshot = snapshotAtPass passer target ctx state actx.Dir
+                let snapshot = snapshotAtPass passer target state actx.Dir
 
                 let heavyTouchChance = (1.0 - float target.Technical.BallControl / 20.0) * 0.25
 
                 if bernoulli heavyTouchChance then
-                    let jitterX = Math.Clamp(targetSp.X + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchLength)
-                    let jitterY = Math.Clamp(targetSp.Y + normalSample 0.0 2.0, 0.0, PhysicsContract.PitchWidth)
+                    let jitterX =
+                        PhysicsContract.clamp
+                            (targetSp.X + normalSample 0.0 2.0 * 1.0<meter>)
+                            0.0<meter>
+                            PhysicsContract.PitchLength
 
-                    MatchSpatial.ballTowards
+                    let jitterY =
+                        PhysicsContract.clamp
+                            (targetSp.Y + normalSample 0.0 2.0 * 1.0<meter>)
+                            0.0<meter>
+                            PhysicsContract.PitchWidth
+
+                    ballTowards
                         passerSp.X
                         passerSp.Y
                         jitterX
@@ -397,7 +440,7 @@ module PassAction =
                         BalanceConfig.LongBallVz
                         state
                 else
-                    MatchSpatial.ballTowards
+                    ballTowards
                         passerSp.X
                         passerSp.Y
                         targetSp.X
@@ -408,8 +451,7 @@ module PassAction =
 
                 state.Ball <-
                     { state.Ball with
-                        ControlledBy = None
-                        Phase = PossessionPhase.InFlight actx.AttSide
+                        Possession = InFlight(actx.AttSide, passer.Id)
                         PendingOffsideSnapshot = Some snapshot }
 
                 adjustMomentum actx.Dir BalanceConfig.LongBallSuccessMomentum state
@@ -417,19 +459,21 @@ module PassAction =
                 [ createEvent subTick passer.Id attClubId (LongBall true) ]
         elif bernoulli deflectRate then
             let deflectedById =
-                match findNearestOpponentToPos bX bY ctx state with
+                match findNearestOpponentToPos bX bY state with
                 | Some(d, _) -> d.Id
                 | None -> passer.Id
 
             let jitterX =
-                bX + normalSample 0.0 (BalanceConfig.PassScrambleJitter * 2.0)
-                |> fun x -> Math.Clamp(x, 0.0, PhysicsContract.PitchLength)
+                bX
+                + normalSample 0.0 (float BalanceConfig.PassScrambleJitter * 2.0) * 1.0<meter>
+                |> fun x -> PhysicsContract.clamp x 0.0<meter> PhysicsContract.PitchLength
 
             let jitterY =
-                bY + normalSample 0.0 (BalanceConfig.PassScrambleJitter * 2.0)
-                |> fun y -> Math.Clamp(y, 0.0, PhysicsContract.PitchWidth)
+                bY
+                + normalSample 0.0 (float BalanceConfig.PassScrambleJitter * 2.0) * 1.0<meter>
+                |> fun y -> PhysicsContract.clamp y 0.0<meter> PhysicsContract.PitchWidth
 
-            MatchSpatial.ballTowards
+            ballTowards
                 passerSp.X
                 passerSp.Y
                 jitterX
@@ -440,35 +484,33 @@ module PassAction =
 
             state.Ball <-
                 { state.Ball with
-                    ControlledBy = None
-                    Phase = PossessionPhase.Contest actx.AttSide }
+                    Possession = InFlight(actx.AttSide, passer.Id) }
 
             [ createEvent subTick passer.Id attClubId (PassDeflected(passer.Id, deflectedById)) ]
         elif bernoulli interceptRate then
-            match findNearestOpponentToPos bX bY ctx state with
+            match findNearestOpponentToPos bX bY state with
             | Some(def, defSp) ->
                 let defClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
-                flipPossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
 
                 state.Ball <-
                     { state.Ball with
                         Position =
                             { defSp with
-                                Vx = 0.0
-                                Vy = 0.0
-                                Vz = 0.0 }
-                        ControlledBy = Some def.Id
-                        LastTouchBy = Some def.Id
-                        Phase = PossessionPhase.Transition actx.DefSide }
+                                Vx = 0.0<meter / second>
+                                Vy = 0.0<meter / second>
+                                Vz = 0.0<meter / second> }
+                        LastTouchBy = Some def.Id }
+
+                givePossessionTo actx.DefSide def.Id state
 
                 [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id))
                   createEvent subTick def.Id defClubId TackleSuccess ]
             | None ->
-                flipPossession state
+                loosePossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
         else
-            flipPossession state
+            loosePossession state
             adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
             [ createEvent subTick passer.Id attClubId (LongBall false) ]

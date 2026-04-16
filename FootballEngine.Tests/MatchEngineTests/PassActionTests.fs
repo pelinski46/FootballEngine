@@ -16,16 +16,16 @@ let passActionTests =
               let hpos = [| 52.5, 34.0; 60.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos [||] [||] 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos [||] [||] 52.5 34.0 (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let target = makePlayer 3 ST 10
               let events = PassAction.resolve 1 ctx s target
 
               if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
                   Expect.equal
                       s.Ball.Phase
-                      (PossessionPhase.InFlight HomeClub)
+                      (InFlight HomeClub)
                       $"pass complete: Phase = %A{s.Ball.Phase}, expected InFlight HomeClub."
 
           testCase "pass complete → PendingOffsideSnapshot = Some"
@@ -36,9 +36,9 @@ let passActionTests =
               let apos = [| 55.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let target = makePlayer 3 ST 10
               let events = PassAction.resolve 1 ctx s target
 
@@ -53,9 +53,9 @@ let passActionTests =
               let hpos = [| 52.5, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos [||] [||] 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos [||] [||] 52.5 34.0 (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let events = PassAction.resolve 1 ctx s (makePlayer 99 ST 10)
               Expect.isEmpty events $"pass to player 99 (not in state): {events.Length} events. Expected 0."
 
@@ -67,9 +67,9 @@ let passActionTests =
               let apos = [| 55.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let target = makePlayer 3 ST 1
               let events = PassAction.resolve 1 ctx s target
 
@@ -83,7 +83,7 @@ let passActionTests =
               if isMisplaced then
                   Expect.equal
                       s.Ball.Phase
-                      (PossessionPhase.Contest AwayClub)
+                      (Contest AwayClub)
                       $"pass misplaced: Phase = %A{s.Ball.Phase}, expected Contest AwayClub."
 
           testCase "elite passer completion rate > 70% over 100 trials"
@@ -97,9 +97,9 @@ let passActionTests =
                       let apos = [| 70.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                          buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = Some 1 }
+                      s.Ball <- { s.Ball with Possessor = Some 1 }
                       let events = PassAction.resolve (1000 + i) ctx s (makePlayer 3 ST 10)
 
                       if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
@@ -123,9 +123,9 @@ let passActionTests =
                       let apos = [| 55.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 52.5 34.0 (PossessionPhase.InPossession HomeClub)
+                          buildState home hpos away apos 52.5 34.0 (Owned HomeClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = Some 1 }
+                      s.Ball <- { s.Ball with Possessor = Some 1 }
                       let events = PassAction.resolve (1000 + i) ctx s (makePlayer 3 ST 10)
 
                       if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then

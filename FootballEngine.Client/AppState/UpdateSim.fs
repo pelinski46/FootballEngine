@@ -7,6 +7,7 @@ open FootballEngine.Icons
 open AppTypes
 open AppMsgs
 open FootballEngine.World.WorldRunner
+open SimulationClock
 
 module UpdateSim =
 
@@ -36,7 +37,7 @@ module UpdateSim =
                 fixture.Events
                 |> List.choose (fun ev ->
                     if ev.Type = Goal || ev.Type = OwnGoal then
-                        let minutes = int (PhysicsContract.subTicksToSeconds ev.SubTick / 60.0)
+                        let minutes = int (subTicksToSeconds defaultClock ev.SubTick / 60.0)
 
                         gs.Players
                         |> Map.tryFind ev.PlayerId

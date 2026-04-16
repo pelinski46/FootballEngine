@@ -31,6 +31,7 @@ module AppState =
           Inbox = initInboxState
           PrevUserClubSkills = None
           PrevUserClubStatus = None
+          RenderAccumulator = 0.0
           WorldClock = WorldClockOps.init 1 }
 
     let private addLog msg (state: State) =
@@ -131,8 +132,7 @@ module AppState =
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs)
                         Inbox =
-                            { state.Inbox with
-                                SelectedMessageId = Some messageId } },
+                            { SelectedMessageId = Some messageId } },
                     SimHelpers.saveCmd newGs state.WorldClock)
 
             | MarkAsRead messageId ->
@@ -375,7 +375,9 @@ module AppState =
                 |> Option.defaultValue 0
 
             { state with
-                ActiveMatchSnapshot = max 0 (min total (state.ActiveMatchSnapshot + delta)) },
+                ActiveMatchSnapshot = max 0 (min total (state.ActiveMatchSnapshot + delta))
+                RenderAccumulator = 0.0
+                InterpolationT = 0.0 },
             Cmd.none
 
         | CloseActiveMatch ->
@@ -383,7 +385,9 @@ module AppState =
                 ActiveMatchReplay = None
                 ActiveMatchSnapshot = 0
                 CurrentPage = HomePage
-                IsPlaying = false },
+                IsPlaying = false
+                RenderAccumulator = 0.0
+                InterpolationT = 0.0 },
             Cmd.none
 
         | TogglePlayback ->
@@ -397,21 +401,26 @@ module AppState =
             if not state.IsPlaying then
                 state, Cmd.none
             else
-                let total =
-                    state.ActiveMatchReplay
-                    |> Option.map (fun r -> r.Snapshots.Length - 1)
-                    |> Option.defaultValue 0
+                let dt = 16.67 // 60 FPS
+                let newAccumulator = state.RenderAccumulator + dt
+                let snapInterval = 1000.0 / float state.PlaybackSpeed // ms between snapshots
 
-                let newT = state.InterpolationT + (16.0 / float state.PlaybackSpeed)
+                if newAccumulator >= snapInterval then
+                    let total =
+                        state.ActiveMatchReplay
+                        |> Option.map (fun r -> r.Snapshots.Length - 1)
+                        |> Option.defaultValue 0
 
-                if newT >= 1.0 then
                     let newSnap = min total (state.ActiveMatchSnapshot + 1)
                     let shouldStop = newSnap >= total
 
                     { state with
+                        RenderAccumulator = newAccumulator - snapInterval
                         InterpolationT = 0.0
                         ActiveMatchSnapshot = newSnap
                         IsPlaying = not shouldStop },
                     Cmd.none
                 else
-                    { state with InterpolationT = newT }, Cmd.none
+                    { state with
+                        RenderAccumulator = newAccumulator
+                        InterpolationT = newAccumulator / snapInterval }, Cmd.none

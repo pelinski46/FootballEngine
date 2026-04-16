@@ -8,7 +8,7 @@
     <ItemGroup>
         <Compile Include="Helpers.fs"/>
         <Compile Include="MatchEngineTests/Helpers.fs"/>
-        <Compile Include="MatchEngineTests/PossessionPhaseTests.fs"/>
+        <Compile Include="MatchEngineTests/PossessionTests.fs"/>
         <Compile Include="MatchEngineTests/BallPhysicsTests.fs"/>
         <Compile Include="MatchEngineTests/OffsideTests.fs"/>
         <Compile Include="MatchEngineTests/DuelActionTests.fs"/>

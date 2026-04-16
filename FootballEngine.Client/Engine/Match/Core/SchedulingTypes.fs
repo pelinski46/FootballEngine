@@ -32,13 +32,7 @@ module SchedulingTypes =
         | BallOut
         | Injury
 
-    and SetPieceKind =
-        | FreeKick
-        | Corner
-        | ThrowIn
-        | GoalKick
-        | KickOff
-        | Penalty
+
 
     // -------------------------------------------------------------------------
     // Tick kinds
@@ -124,7 +118,15 @@ module SchedulingTypes =
 
     type TickResult = AgentOutput
 
-    type Agent = ClubId -> Player list -> Player list -> ScheduledTick -> MatchContext -> SimState -> AgentOutput
+    type Agent =
+        ClubId
+            -> Player list
+            -> Player list
+            -> ScheduledTick
+            -> MatchContext
+            -> SimState
+            -> SimulationClock
+            -> AgentOutput
 
     type LoopState =
         { Context: MatchContext

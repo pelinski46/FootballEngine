@@ -23,15 +23,15 @@ let duelActionTests =
                       [| 53.0, 34.0 |]
                       52.5
                       34.0
-                      (PossessionPhase.InPossession HomeClub)
+                      (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let events = DuelAction.resolve 1 ctx s
               let hasFoul = hasEventType MatchEventType.FoulCommitted events
 
               if hasFoul then
                   match s.Ball.Phase with
-                  | PossessionPhase.Contest AwayClub -> ()
+                  | Contest AwayClub -> ()
                   | other ->
                       failtestf
                           $"Phase after foul = %A{other}, expected Contest AwayClub. AttackingClub before foul was HomeClub."
@@ -49,7 +49,7 @@ let duelActionTests =
                       [| 53.0, 34.0 |]
                       52.5
                       34.0
-                      (PossessionPhase.InPossession HomeClub)
+                      (Owned HomeClub)
 
               let snap =
                   { PasserId = 1
@@ -61,7 +61,7 @@ let duelActionTests =
 
               s.Ball <-
                   { s.Ball with
-                      ControlledBy = Some 1
+                      Possessor = Some 1
                       PendingOffsideSnapshot = Some snap }
 
               let events = DuelAction.resolve 1 ctx s
@@ -85,9 +85,9 @@ let duelActionTests =
                       [| 53.0, 34.0 |]
                       52.5
                       34.0
-                      (PossessionPhase.InPossession HomeClub)
+                      (Owned HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = Some 1 }
+              s.Ball <- { s.Ball with Possessor = Some 1 }
               let events = DuelAction.resolve 1 ctx s
 
               let isDuelClass =
@@ -116,9 +116,9 @@ let duelActionTests =
                               [| 53.0, 34.0 |]
                               52.5
                               34.0
-                              (PossessionPhase.InPossession HomeClub)
+                              (Owned HomeClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = Some 1 }
+                      s.Ball <- { s.Ball with Possessor = Some 1 }
                       let events = DuelAction.resolve (1000 + i) ctx s
 
                       if hasEventType MatchEventType.DribbleSuccess events then
@@ -141,9 +141,9 @@ let duelActionTests =
                               [| 52.5, 34.0 |]
                               52.5
                               34.0
-                              (PossessionPhase.InPossession AwayClub)
+                              (Owned AwayClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = Some 2 }
+                      s.Ball <- { s.Ball with Possessor = Some 2 }
                       let events = DuelAction.resolve (1000 + i) ctx s
 
                       if hasEventType MatchEventType.DribbleFail events then
@@ -169,9 +169,9 @@ let duelActionTests =
                               [| 53.0, 34.0 |]
                               52.5
                               34.0
-                              (PossessionPhase.InPossession HomeClub)
+                              (Owned HomeClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = Some 1 }
+                      s.Ball <- { s.Ball with Possessor = Some 1 }
                       let events = DuelAction.resolve (1000 + i) ctx s
                       if hasFoul events then 1 else 0)
 

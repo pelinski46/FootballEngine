@@ -105,8 +105,10 @@ module Player =
 
     let clubOf (p: Player) : ClubId option =
         match p.Affiliation with
-        | Contracted(clubId, _) | YouthProspect clubId -> Some clubId
-        | FreeAgent | Retired -> None
+        | Contracted(clubId, _)
+        | YouthProspect clubId -> Some clubId
+        | FreeAgent
+        | Retired -> None
 
     let contractOf (p: Player) : ContractInfo option =
         match p.Affiliation with
@@ -115,7 +117,7 @@ module Player =
 
     let profile (p: Player) : BehavioralProfile =
         let norm x = float x / 20.0
-        let clamp01 v = System.Math.Clamp(v, 0.0, 1.0)
+        let clamp01 v = Math.Clamp(v, 0.0, 1.0)
 
         let tech = p.Technical
         let mental = p.Mental
@@ -143,19 +145,22 @@ module Player =
         let lateralTendency =
             let baseFromPosition =
                 match p.Position with
-                | GK | DC | DM | MC | AMC | ST -> 0.0
-                | DL | ML | AML -> -0.7
-                | DR | MR | AMR -> 0.7
+                | GK
+                | DC
+                | DM
+                | MC
+                | AMC
+                | ST -> 0.0
+                | DL
+                | ML
+                | AML -> -0.7
+                | DR
+                | MR
+                | AMR -> 0.7
                 | WBL -> -0.85
                 | WBR -> 0.85
 
-            System.Math.Clamp(
-                baseFromPosition
-                + norm tech.Crossing * 0.15
-                + norm phys.Pace * 0.10,
-                -1.0,
-                1.0
-            )
+            Math.Clamp(baseFromPosition + norm tech.Crossing * 0.15 + norm phys.Pace * 0.10, -1.0, 1.0)
 
         let defensiveHeight =
             clamp01 (

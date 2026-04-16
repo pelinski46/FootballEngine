@@ -4,13 +4,24 @@ open FootballEngine.Domain
 open FootballEngine.Stats
 open SimStateOps
 open MatchSpatial
+open FootballEngine.PhysicsContract
 
 module CrossAction =
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.InFlight state.AttackingClub }
-
         let actx = ActionContext.build state
+        let attSlots = getSlots state actx.AttSide
+        let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
+        let crosserIdx = nearestIdxToBall attSlots bX bY
+        let crosser =
+            match attSlots[crosserIdx] with
+            | PlayerSlot.Active s -> s.Player
+            | _ -> Unchecked.defaultof<Player>
+
+        state.Ball <-
+            { state.Ball with
+                Possession = InFlight (state.AttackingClub, crosser.Id) }
+
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
         let attSlots = getSlots state actx.AttSide
@@ -43,20 +54,15 @@ module CrossAction =
 
         let defOutfield =
             defSlots
-            |> Array.mapi (fun i slot ->
-                match slot with
+            |> Array.map (function
                 | PlayerSlot.Active s when s.Player.Position <> GK -> Some(s.Player, s.Pos)
                 | _ -> None)
             |> Array.choose id
 
         let targets =
             attSlots
-            |> Array.mapi (fun i slot ->
-                match slot with
-                | PlayerSlot.Active s when
-                    s.Profile.AerialThreat > 0.4
-                    || s.Profile.AttackingDepth > 0.5
-                    ->
+            |> Array.map (function
+                | PlayerSlot.Active s when s.Profile.AerialThreat > 0.4 || s.Profile.AttackingDepth > 0.5 ->
                     Some(s.Player, s.Pos)
                 | _ -> None)
             |> Array.choose id
@@ -95,8 +101,8 @@ module CrossAction =
                 |> fun v -> v / float (max 1 defOutfield.Length)
 
             let spin =
-                { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.2
-                  Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.8 }
+                { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.2<radianPerSecond>
+                  Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.8<radianPerSecond> }
 
             if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
                 let goalEvents = awardGoal actx.AttSide (Some target.Id) subTick ctx state
@@ -113,15 +119,14 @@ module CrossAction =
 
                 let bx, by = blockPos
 
-                MatchSpatial.ballTowards crosserPos.X crosserPos.Y bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
+                ballTowards crosserPos.X crosserPos.Y bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
 
                 let defClub = ClubSide.flip actx.AttSide
 
                 state.Ball <-
                     { state.Ball with
-                        ControlledBy = None
-                        Spin = spin
-                        Phase = PossessionPhase.Contest defClub }
+                        Possession = Loose
+                        Spin = spin }
 
                 clearOffsideSnapshot state
 
@@ -137,8 +142,11 @@ module CrossAction =
 
             let defClub = ClubSide.flip actx.AttSide
 
-            MatchSpatial.ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) 15.0 2.0 state
-            state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.Contest defClub }
+            ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) 15.0<meter/second> 2.0<meter/second> state
+
+            state.Ball <-
+                { state.Ball with
+                    Possession = Loose }
             clearOffsideSnapshot state
 
             [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]

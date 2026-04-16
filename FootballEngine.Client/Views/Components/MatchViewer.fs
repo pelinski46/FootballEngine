@@ -1,919 +1,908 @@
 namespace FootballEngine.Components
 
+open System
 open Avalonia
-open Avalonia.Controls.Primitives
-open Avalonia.Controls.Shapes
-open Avalonia.FuncUI
-open Avalonia.FuncUI.DSL
 open Avalonia.Controls
-open Avalonia.FuncUI.Types
 open Avalonia.Layout
-open Avalonia.Media
+open Avalonia.FuncUI.Builder
+open Avalonia.FuncUI.DSL
+open Avalonia.FuncUI.Types
+open Avalonia.Platform
+open Avalonia.Rendering.SceneGraph
+open Avalonia.Skia
+open SkiaSharp
 open FootballEngine
-open FootballEngine.AppMsgs
-open FootballEngine.AppTypes
 open FootballEngine.Domain
-open FootballEngine.Icons
-open FootballEngine.SimStateOps
+open FootballEngine.SimulationClock
+open FootballEngine.AppTypes
+open FootballEngine.AppMsgs
+
+
+// ---------------------------------------------------------------------------
+// Coordinate mapping
+// ---------------------------------------------------------------------------
+
+module PitchCoords =
+
+    [<Literal>]
+    let PitchW = 1050.0f
+
+    [<Literal>]
+    let PitchH = 680.0f
+
+    let inline toCanvas (x: float) (y: float) : float32 * float32 =
+        float32 x * PitchW / float32 PhysicsContract.PitchLength,
+        float32 y * PitchH / float32 PhysicsContract.PitchWidth
+
+    let inline toCanvasF (x: float32) (y: float32) : float32 * float32 =
+        x * PitchW / float32 PhysicsContract.PitchLength, y * PitchH / float32 PhysicsContract.PitchWidth
+
+    let inline lerp (t: float32) (a: float32) (b: float32) : float32 =
+        let t' = t * t * (3.0f - 2.0f * t)
+        a + (b - a) * t'
+
+    let lerpPos (t: float32) (ax: float32, ay: float32) (bx: float32, by: float32) = lerp t ax bx, lerp t ay by
+
+
+// ---------------------------------------------------------------------------
+// SKPaint cache — allocate once, reuse across frames
+// ---------------------------------------------------------------------------
+
+module Paints =
+
+    let private mkFill (r: byte) (g: byte) (b: byte) (a: byte) =
+        new SKPaint(Color = SKColor(r, g, b, a), IsAntialias = true, Style = SKPaintStyle.Fill)
+
+    let private mkStroke (r: byte) (g: byte) (b: byte) (a: byte) (width: float32) =
+        new SKPaint(Color = SKColor(r, g, b, a), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = width)
+
+    let private mkText (r: byte) (g: byte) (b: byte) (size: float32) (bold: bool) =
+        let tf =
+            if bold then
+                SKTypeface.FromFamilyName(
+                    "Inter",
+                    SKFontStyleWeight.Bold,
+                    SKFontStyleWidth.Normal,
+                    SKFontStyleSlant.Upright
+                )
+            else
+                SKTypeface.FromFamilyName(
+                    "Inter",
+                    SKFontStyleWeight.SemiBold,
+                    SKFontStyleWidth.Normal,
+                    SKFontStyleSlant.Upright
+                )
+
+        let tf = match tf with | null -> SKTypeface.Default | t -> t
+
+        new SKPaint(
+            Color = SKColor(r, g, b, 255uy),
+            IsAntialias = true,
+            TextSize = size,
+            Typeface = tf,
+            TextAlign = SKTextAlign.Center
+        )
+
+    // ── Pitch surface ──────────────────────────────────────────────────────
+
+    let pitchDark = mkFill 28uy 74uy 23uy 255uy
+    let pitchLight = mkFill 33uy 85uy 27uy 255uy
+    let pitchVignette = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill)
+
+    let lineWhite = mkStroke 255uy 255uy 255uy 180uy 2.2f
+    let lineFaint = mkStroke 255uy 255uy 255uy 60uy 1.2f
+    let arcFaint = mkStroke 255uy 255uy 255uy 50uy 1.2f
+
+    let dotWhite = mkFill 255uy 255uy 255uy 140uy
+
+    // ── Players ────────────────────────────────────────────────────────────
+
+    let playerShadow =
+        new SKPaint(
+            Color = SKColor(0uy, 0uy, 0uy, 55uy),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 4.0f)
+        )
+
+    let playerRingHome = mkStroke 30uy 130uy 255uy 220uy 2.5f
+    let playerRingAway = mkStroke 239uy 68uy 68uy 220uy 2.5f
+
+    let playerFillHome = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill)
+    let playerFillAway = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill)
+
+    let playerNumber = mkText 255uy 255uy 255uy 11.0f true
+    let playerName = mkText 240uy 240uy 240uy 8.5f false
+
+    let playerNameBg = mkFill 15uy 23uy 42uy 185uy
+
+    let condGood = mkStroke 16uy 185uy 129uy 230uy 2.0f
+    let condMid = mkStroke 245uy 158uy 11uy 230uy 2.0f
+    let condLow = mkStroke 239uy 68uy 68uy 230uy 2.0f
+
+    let velocityArrow = mkStroke 255uy 255uy 255uy 45uy 1.5f
+
+    // ── Ball ───────────────────────────────────────────────────────────────
+
+    let ballShadow =
+        new SKPaint(
+            Color = SKColor(0uy, 0uy, 0uy, 80uy),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 6.0f)
+        )
+
+    let ballBase = mkFill 245uy 245uy 245uy 255uy
+
+    let ballPanel =
+        new SKPaint(Color = SKColor(30uy, 30uy, 30uy, 160uy), IsAntialias = true, Style = SKPaintStyle.Fill)
+
+    let ballHighlight =
+        new SKPaint(Color = SKColor(255uy, 255uy, 255uy, 190uy), IsAntialias = true, Style = SKPaintStyle.Fill)
+
+    let ballOutline = mkStroke 180uy 180uy 180uy 120uy 0.8f
+
+    // ── HUD ────────────────────────────────────────────────────────────────
+
+    let hudBg = mkFill 15uy 23uy 42uy 215uy
+    let hudBorder = mkStroke 51uy 65uy 85uy 180uy 1.0f
+    let hudText = mkText 241uy 245uy 249uy 13.0f true
+    let hudTextSub = mkText 148uy 163uy 184uy 9.5f false
+    let hudAccentHome = mkFill 59uy 130uy 246uy 255uy
+    let hudAccentAway = mkFill 239uy 68uy 68uy 255uy
+    let momentumHome = mkFill 59uy 130uy 246uy 255uy
+    let momentumAway = mkFill 239uy 68uy 68uy 255uy
+    let momentumTrack = mkFill 30uy 41uy 59uy 255uy
+
+    let vignetteShader =
+        SKShader.CreateRadialGradient(
+            SKPoint(PitchCoords.PitchW / 2.0f, PitchCoords.PitchH / 2.0f),
+            MathF.Max(PitchCoords.PitchW, PitchCoords.PitchH) * 0.72f,
+            [| SKColor(0uy, 0uy, 0uy, 0uy); SKColor(0uy, 0uy, 0uy, 80uy) |],
+            [| 0.55f; 1.0f |],
+            SKShaderTileMode.Clamp
+        )
+
+    let glowHome =
+        new SKPaint(
+            Color = SKColor(59uy, 130uy, 246uy, 80uy),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 8.0f)
+        )
+
+    let glowAway =
+        new SKPaint(
+            Color = SKColor(239uy, 68uy, 68uy, 80uy),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 8.0f)
+        )
+
+
+// ---------------------------------------------------------------------------
+// Pitch renderer
+// ---------------------------------------------------------------------------
+
+module PitchRenderer =
+
+    open PitchCoords
+
+    let private stripeCount = 10
+
+    let drawStripes (canvas: SKCanvas) =
+        // Horizontal stripes running across the pitch width (as seen in real broadcast views)
+        let stripeH = PitchH / float32 stripeCount
+
+        for i in 0 .. stripeCount - 1 do
+            let paint = if i % 2 = 0 then Paints.pitchDark else Paints.pitchLight
+            let r = SKRect(0.0f, float32 i * stripeH, PitchW, float32 (i + 1) * stripeH)
+            canvas.DrawRect(r, paint)
+
+    let private lineW = PitchW
+    let private lineH = PitchH
+
+    // Penalty area dimensions (in canvas units)
+    let private paDepthX =
+        float32 PhysicsContract.PenaltyAreaDepth * PitchW
+        / float32 PhysicsContract.PitchLength
+
+    let private paHalfW =
+        float32 PhysicsContract.PenaltyAreaHalfWidth * PitchH
+        / float32 PhysicsContract.PitchWidth
+
+    let private gaDepthX =
+        float32 PhysicsContract.GoalAreaDepth * PitchW
+        / float32 PhysicsContract.PitchLength
+
+    let private gaHalfW = 26.5f * PitchH / float32 PhysicsContract.PitchWidth
+
+    let private goalHalfW =
+        float32 (PhysicsContract.PostFarY - PhysicsContract.PostNearY) / 2.0f * PitchH
+        / float32 PhysicsContract.PitchWidth
+
+    let private goalDepth = 16.0f
+
+    let drawMarkings (canvas: SKCanvas) =
+        let p = Paints.lineWhite
+        let pf = Paints.lineFaint
+        let cx = PitchW / 2.0f
+        let cy = PitchH / 2.0f
+        let mid = PitchH / 2.0f
+
+        // Outer boundary
+        canvas.DrawRect(SKRect(0.0f, 0.0f, PitchW, PitchH), p)
+
+        // Halfway line
+        canvas.DrawLine(cx, 0.0f, cx, PitchH, p)
+
+        // Centre circle
+        let circleR = 65.0f * PitchW / 1050.0f
+        canvas.DrawCircle(cx, cy, circleR, pf)
+        canvas.DrawCircle(cx, cy, 3.5f, Paints.dotWhite)
+
+        // Left penalty area
+        let lpaRect = SKRect(0.0f, mid - paHalfW, paDepthX, mid + paHalfW)
+        canvas.DrawRect(lpaRect, p)
+
+        // Left goal area
+        canvas.DrawRect(SKRect(0.0f, mid - gaHalfW, gaDepthX, mid + gaHalfW), p)
+
+        // Left penalty spot
+        let lSpotX =
+            float32 PhysicsContract.PenaltySpotDistance * PitchW
+            / float32 PhysicsContract.PitchLength
+
+        canvas.DrawCircle(lSpotX, mid, 3.0f, Paints.dotWhite)
+
+        // Left penalty arc
+        use arcPath = new SKPath()
+        arcPath.AddArc(SKRect(lSpotX - circleR, mid - circleR, lSpotX + circleR, mid + circleR), -53.0f, 106.0f)
+        canvas.DrawPath(arcPath, pf)
+
+        // Right penalty area
+        canvas.DrawRect(SKRect(PitchW - paDepthX, mid - paHalfW, PitchW, mid + paHalfW), p)
+
+        // Right goal area
+        canvas.DrawRect(SKRect(PitchW - gaDepthX, mid - gaHalfW, PitchW, mid + gaHalfW), p)
+
+        // Right penalty spot
+        let rSpotX = PitchW - lSpotX
+        canvas.DrawCircle(rSpotX, mid, 3.0f, Paints.dotWhite)
+
+        // Right penalty arc
+        use arcPathR = new SKPath()
+        arcPathR.AddArc(SKRect(rSpotX - circleR, mid - circleR, rSpotX + circleR, mid + circleR), 127.0f, 106.0f)
+        canvas.DrawPath(arcPathR, pf)
+
+        // Corner arcs
+        let ca = 18.0f
+
+        for cx', cy', startA in
+            [ 0.0f, 0.0f, 0.0f
+              PitchW, 0.0f, 90.0f
+              0.0f, PitchH, 270.0f
+              PitchW, PitchH, 180.0f ] do
+            use cornerArc = new SKPath()
+            cornerArc.AddArc(SKRect(cx' - ca, cy' - ca, cx' + ca, cy' + ca), startA, 90.0f)
+            canvas.DrawPath(cornerArc, pf)
+
+        let mkGoalPaint () =
+            new SKPaint(Color = SKColor(255uy, 255uy, 255uy, 30uy), Style = SKPaintStyle.Fill, IsAntialias = true)
+
+        let goalPaint = mkGoalPaint ()
+        // Left goal
+        canvas.DrawRect(SKRect(-goalDepth, mid - goalHalfW, 0.0f, mid + goalHalfW), goalPaint)
+        // Right goal
+        canvas.DrawRect(SKRect(PitchW, mid - goalHalfW, PitchW + goalDepth, mid + goalHalfW), goalPaint)
+
+    let drawVignette (canvas: SKCanvas) =
+        Paints.pitchVignette.Shader <- Paints.vignetteShader
+        canvas.DrawRect(SKRect(0.0f, 0.0f, PitchW, PitchH), Paints.pitchVignette)
+
+
+// ---------------------------------------------------------------------------
+// Player renderer
+// ---------------------------------------------------------------------------
+
+module PlayerRenderer =
+
+    open PitchCoords
+
+    let private playerR = 14.0f
+    let private outerR = 17.5f
+
+    let private condPaint (cond: int) =
+        if cond >= 70 then Paints.condGood
+        elif cond >= 45 then Paints.condMid
+        else Paints.condLow
+
+    let private jerseyGradient (cx: float32) (cy: float32) (isHome: bool) =
+        let r, g, b = if isHome then 30uy, 100uy, 230uy else 200uy, 40uy, 40uy
+        let darkR, darkG, darkB = if isHome then 10uy, 50uy, 170uy else 140uy, 15uy, 15uy
+
+        SKShader.CreateRadialGradient(
+            SKPoint(cx - 3.0f, cy - 5.0f),
+            playerR * 2.0f,
+            [| SKColor(r, g, b, 255uy); SKColor(darkR, darkG, darkB, 255uy) |],
+            [| 0.0f; 1.0f |],
+            SKShaderTileMode.Clamp
+        )
+
+    let private drawVelocityIndicator (canvas: SKCanvas) (cx: float32) (cy: float32) (vx: float) (vy: float) =
+        let speed = sqrt (vx * vx + vy * vy)
+
+        if speed > 1.5 then
+            let nx = float32 vx / float32 speed
+            let ny = float32 vy / float32 speed
+            let scale = min (float32 speed * 4.0f) 20.0f
+            canvas.DrawLine(cx, cy, cx + nx * scale, cy + ny * scale, Paints.velocityArrow)
+
+    let drawPlayer
+        (canvas: SKCanvas)
+        (x: float)
+        (y: float)
+        (vx: float)
+        (vy: float)
+        (jerseyNum: int)
+        (shortName: string)
+        (condition: int)
+        (isHome: bool)
+        (hasBall: bool)
+        =
+        let cx, cy = toCanvas x y
+
+        // Velocity indicator (behind player)
+        drawVelocityIndicator canvas cx cy vx vy
+
+        // Drop shadow
+        canvas.DrawOval(
+            SKRect(cx - outerR, cy - 2.0f + outerR * 0.4f, cx + outerR, cy + outerR * 0.85f),
+            Paints.playerShadow
+        )
+
+        // Ball possession glow ring
+        if hasBall then
+            let glowPaint = if isHome then Paints.glowHome else Paints.glowAway
+            canvas.DrawCircle(cx, cy, outerR + 6.0f, glowPaint)
+
+        // Jersey body
+        let fillPaint =
+            if isHome then
+                Paints.playerFillHome
+            else
+                Paints.playerFillAway
+
+        fillPaint.Shader <- jerseyGradient cx cy isHome
+        canvas.DrawCircle(cx, cy, playerR, fillPaint)
+
+        // Condition ring
+        canvas.DrawCircle(cx, cy, outerR, condPaint condition)
+
+        // Jersey number
+        canvas.DrawText(string jerseyNum, cx, cy + 4.0f, Paints.playerNumber)
+
+        // Name label
+        let nameW = Paints.playerName.MeasureText(shortName)
+        let nameX = cx - nameW / 2.0f - 4.0f
+        let nameY = cy + outerR + 4.0f
+        let bgRect = SKRect(nameX - 2.0f, nameY, nameX + nameW + 8.0f, nameY + 11.0f)
+        canvas.DrawRoundRect(bgRect, 3.0f, 3.0f, Paints.playerNameBg)
+        canvas.DrawText(shortName, cx, nameY + 9.0f, Paints.playerName)
+
+
+// ---------------------------------------------------------------------------
+// Ball renderer
+// ---------------------------------------------------------------------------
+
+module BallRenderer =
+
+    open PitchCoords
+
+    let private ballR = 10.0f
+
+    let computeRotation (vx: float) (vy: float) (timeSeconds: float) =
+        let speed = float32 (sqrt (vx * vx + vy * vy))
+        let totalRotation = float32 timeSeconds * speed * 3.5f
+        totalRotation % (MathF.PI * 2.0f)
+
+    let draw (canvas: SKCanvas) (bx: float) (by: float) (vx: float) (vy: float) (rotation: float32) =
+        let cx, cy = toCanvas bx by
+        let speed = float32 (sqrt (vx * vx + vy * vy))
+
+        // Motion blur elongation on fast shots
+        let scaleX = 1.0f + min (speed * 0.008f) 0.35f
+
+        canvas.Save() |> ignore
+        canvas.Translate(cx, cy)
+
+        if speed > 8.0f then
+            let angle = float32 (Math.Atan2(vy, vx)) * 180.0f / MathF.PI
+            canvas.RotateDegrees(angle)
+
+        canvas.Scale(scaleX, 1.0f)
+
+        // Ground shadow (elliptical)
+        canvas.DrawOval(SKRect(-ballR * 1.3f, ballR * 0.5f, ballR * 1.3f, ballR * 1.1f), Paints.ballShadow)
+
+        // Ball base
+        canvas.DrawCircle(0.0f, 0.0f, ballR, Paints.ballBase)
+
+        // Rotating pentagon panels (simplified — 3 dark patches)
+        canvas.Save() |> ignore
+        canvas.RotateRadians(rotation)
+
+        for i in 0..2 do
+            let a = rotation + float32 i * MathF.PI * 2.0f / 3.0f
+            let px = MathF.Cos(a) * ballR * 0.45f
+            let py = MathF.Sin(a) * ballR * 0.45f
+            canvas.DrawCircle(px, py, ballR * 0.28f, Paints.ballPanel)
+
+        canvas.Restore()
+
+        // Specular highlight
+        canvas.DrawOval(SKRect(-ballR * 0.45f, -ballR * 0.65f, ballR * 0.05f, -ballR * 0.1f), Paints.ballHighlight)
+
+        // Outline
+        canvas.DrawCircle(0.0f, 0.0f, ballR, Paints.ballOutline)
+
+        canvas.Restore()
+
+
+// ---------------------------------------------------------------------------
+// HUD elements (drawn in Skia, overlaid on top)
+// ---------------------------------------------------------------------------
+
+module HudRenderer =
+
+    open PitchCoords
+
+    let private roundedRect (canvas: SKCanvas) (x: float32) (y: float32) (w: float32) (h: float32) =
+        canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 8.0f, 8.0f, Paints.hudBg)
+        canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 8.0f, 8.0f, Paints.hudBorder)
+
+    let drawScore
+        (canvas: SKCanvas)
+        (homeName: string)
+        (awayName: string)
+        (homeScore: int)
+        (awayScore: int)
+        (minute: int)
+        =
+        let w = 280.0f
+        let h = 42.0f
+        let x = PitchW / 2.0f - w / 2.0f
+        let y = 12.0f
+
+        roundedRect canvas x y w h
+
+        // Home name
+        let homeNamePaint = Paints.hudTextSub
+        homeNamePaint.Color <- SKColor(59uy, 130uy, 246uy, 230uy)
+        homeNamePaint.TextAlign <- SKTextAlign.Right
+        canvas.DrawText(homeName.ToUpper(), x + w / 2.0f - 28.0f, y + 16.0f, homeNamePaint)
+
+        // Score
+        let scoreTxt = $"{homeScore}  –  {awayScore}"
+        canvas.DrawText(scoreTxt, x + w / 2.0f, y + 27.0f, Paints.hudText)
+
+        // Away name
+        let awayNamePaint = Paints.hudTextSub
+        awayNamePaint.Color <- SKColor(239uy, 68uy, 68uy, 230uy)
+        awayNamePaint.TextAlign <- SKTextAlign.Left
+        canvas.DrawText(awayName.ToUpper(), x + w / 2.0f + 28.0f, y + 16.0f, awayNamePaint)
+
+        // Minute pill (top right corner)
+        let minW = 58.0f
+        let minX = PitchW - minW - 12.0f
+        roundedRect canvas minX y minW h
+
+        let minutePaint = Paints.hudText
+        minutePaint.Color <- SKColor(245uy, 158uy, 11uy, 255uy)
+        minutePaint.TextAlign <- SKTextAlign.Center
+        canvas.DrawText($"{minute}'", minX + minW / 2.0f, y + 27.0f, minutePaint)
+
+    let drawPossession (canvas: SKCanvas) (teamName: string) (isHome: bool) =
+        let w = 170.0f
+        let h = 32.0f
+        let x = 12.0f
+        let y = 12.0f
+
+        roundedRect canvas x y w h
+
+        let dotColor =
+            if isHome then
+                SKColor(59uy, 130uy, 246uy, 255uy)
+            else
+                SKColor(239uy, 68uy, 68uy, 255uy)
+
+        use dotPaint =
+            new SKPaint(Color = dotColor, IsAntialias = true, Style = SKPaintStyle.Fill)
+
+        canvas.DrawCircle(x + 14.0f, y + h / 2.0f, 5.0f, dotPaint)
+
+        let namePaint = Paints.hudTextSub
+        namePaint.Color <- dotColor
+        namePaint.TextAlign <- SKTextAlign.Left
+        canvas.DrawText(teamName.ToUpper(), x + 26.0f, y + h / 2.0f + 4.0f, namePaint)
+
+    let drawMomentum (canvas: SKCanvas) (momentum: float) (homeName: string) (awayName: string) =
+        let barW = 260.0f
+        let barH = 6.0f
+        let pillH = 34.0f
+        let x = PitchW / 2.0f - barW / 2.0f - 14.0f
+        let y = PitchH - pillH - 12.0f
+
+        roundedRect canvas x y (barW + 28.0f) pillH
+
+        let innerX = x + 14.0f
+        let barY = y + pillH / 2.0f - barH / 2.0f + 7.0f
+
+        canvas.DrawRoundRect(SKRect(innerX, barY, innerX + barW, barY + barH), 3.0f, 3.0f, Paints.momentumTrack)
+
+        let norm = float32 ((momentum + 10.0) / 20.0) |> max 0.04f |> min 0.96f
+        let homeW = norm * barW
+        let awayW = barW - homeW
+
+        canvas.DrawRoundRect(SKRect(innerX, barY, innerX + homeW, barY + barH), 3.0f, 3.0f, Paints.momentumHome)
+
+        canvas.DrawRoundRect(
+            SKRect(innerX + homeW, barY, innerX + homeW + awayW, barY + barH),
+            3.0f,
+            3.0f,
+            Paints.momentumAway
+        )
+
+        let labelPaint = Paints.hudTextSub
+        labelPaint.TextAlign <- SKTextAlign.Left
+        labelPaint.Color <- SKColor(59uy, 130uy, 246uy, 190uy)
+        canvas.DrawText(homeName.ToUpper(), innerX, y + 13.0f, labelPaint)
+
+        labelPaint.TextAlign <- SKTextAlign.Right
+        labelPaint.Color <- SKColor(239uy, 68uy, 68uy, 190uy)
+        canvas.DrawText(awayName.ToUpper(), innerX + barW, y + 13.0f, labelPaint)
+
+
+// ---------------------------------------------------------------------------
+// ICustomDrawOperation — bridges Avalonia to Skia
+// ---------------------------------------------------------------------------
+
+open FootballEngine.Client.Views.Components // For RenderFrame, RenderPlayer, RenderBall, MatchInterp
+
+type MatchDrawOp
+    (
+        ctx: MatchContext,
+        renderFrame: RenderFrame,
+        userClubId: ClubId option,
+        bounds: Rect
+    ) =
+    let isUserAway = userClubId |> Option.exists (fun id -> id = ctx.Away.Id)
+
+    interface ICustomDrawOperation with
+        member _.Bounds = bounds
+        member _.HitTest _ = false
+        member _.Equals _ = false
+
+        member _.Render(renderCtx) =
+            let skia = renderCtx.TryGetFeature<ISkiaSharpApiLeaseFeature>()
+
+            if isNull skia then
+                ()
+            else
+
+                use lease = skia.Lease()
+                let canvas = lease.SkCanvas
+                canvas.Save() |> ignore
+
+                // Scale canvas to fit bounds while preserving aspect ratio
+                let scaleX = float32 bounds.Width / PitchCoords.PitchW
+                let scaleY = float32 bounds.Height / PitchCoords.PitchH
+                let scale = min scaleX scaleY
+
+                let offX =
+                    (float32 bounds.Width - PitchCoords.PitchW * scale) / 2.0f + float32 bounds.X
+
+                let offY =
+                    (float32 bounds.Height - PitchCoords.PitchH * scale) / 2.0f + float32 bounds.Y
+
+                canvas.Translate(offX, offY)
+                canvas.Scale(scale)
+
+                // ── Pitch ──────────────────────────────────────────────────────
+
+                PitchRenderer.drawStripes canvas
+                PitchRenderer.drawMarkings canvas
+                PitchRenderer.drawVignette canvas
+
+                // ── Players ────────────────────────────────────────────────────
+
+                renderFrame.Players
+                |> Array.iter (fun rp ->
+                    if not rp.IsSidelined then
+                        PlayerRenderer.drawPlayer
+                            canvas
+                            rp.Position.X
+                            rp.Position.Y
+                            rp.Velocity.X
+                            rp.Velocity.Y
+                            rp.JerseyNumber
+                            rp.ShortName
+                            rp.Condition
+                            rp.IsHome
+                            rp.HasBall
+                )
+
+                // ── Ball ───────────────────────────────────────────────────────
+
+                let rotation =
+                    BallRenderer.computeRotation
+                        renderFrame.Ball.Velocity.X
+                        renderFrame.Ball.Velocity.Y
+                        renderFrame.TimeSeconds
+
+                BallRenderer.draw
+                    canvas
+                    renderFrame.Ball.Position.X
+                    renderFrame.Ball.Position.Y
+                    renderFrame.Ball.Velocity.X
+                    renderFrame.Ball.Velocity.Y
+                    rotation
+
+                // ── HUD ────────────────────────────────────────────────────────
+
+                let minute = int (renderFrame.TimeSeconds / 60.0)
+
+                HudRenderer.drawScore
+                    canvas
+                    renderFrame.HomeName
+                    renderFrame.AwayName
+                    renderFrame.HomeScore
+                    renderFrame.AwayScore
+                    minute
+
+                let possessingName, possessingIsHome =
+                    match renderFrame.AttackingClubId with
+                    | Some clubId when clubId = ctx.Home.Id -> renderFrame.HomeName, true
+                    | Some clubId when clubId = ctx.Away.Id -> renderFrame.AwayName, false
+                    | _ -> "", false // Default if no club is attacking or ID not matched
+
+                if possessingName <> "" then
+                    HudRenderer.drawPossession canvas possessingName possessingIsHome
+
+                HudRenderer.drawMomentum
+                    canvas
+                    renderFrame.Momentum
+                    renderFrame.HomeName
+                    renderFrame.AwayName
+
+                canvas.Restore()
+
+        member _.Dispose() = ()
+
+// ---------------------------------------------------------------------------
+// Avalonia FuncUI custom control wrapper
+// ---------------------------------------------------------------------------
+
+type MatchPitchControl() =
+    inherit Avalonia.Controls.Control()
+
+    static let ctxProp =
+        AvaloniaProperty.Register<MatchPitchControl, MatchContext option>("MatchCtx", None)
+
+    static let renderFrameProp =
+        AvaloniaProperty.Register<MatchPitchControl, RenderFrame option>("RenderFrame", None)
+
+    static let userProp =
+        AvaloniaProperty.Register<MatchPitchControl, ClubId option>("UserClubId", None)
+
+    static member MatchCtxProperty = ctxProp
+    static member RenderFrameProperty = renderFrameProp
+    static member UserClubIdProperty = userProp
+
+    override this.OnPropertyChanged(change: AvaloniaPropertyChangedEventArgs) =
+        base.OnPropertyChanged(change)
+
+        if
+            change.Property = ctxProp
+            || change.Property = renderFrameProp
+            || change.Property = userProp
+        then
+            this.InvalidateVisual()
+
+    member this.MatchCtx
+        with get () = this.GetValue(ctxProp)
+        and set v = this.SetValue(ctxProp, v) |> ignore
+
+    member this.RenderFrame
+        with get () = this.GetValue(renderFrameProp)
+        and set v = this.SetValue(renderFrameProp, v) |> ignore
+
+    member this.UserClubId
+        with get () = this.GetValue(userProp)
+        and set v = this.SetValue(userProp, v) |> ignore
+
+    override this.Render(drawingContext) =
+        match this.MatchCtx, this.RenderFrame with
+        | Some ctx, Some renderFrame ->
+            let op =
+                new MatchDrawOp(ctx, renderFrame, this.UserClubId, this.Bounds)
+
+            drawingContext.Custom(op)
+        | _ -> ()
+
+
+// ---------------------------------------------------------------------------
+// FuncUI DSL extension for MatchPitchControl
+// ---------------------------------------------------------------------------
+
+module MatchPitchView =
+
+    let create (attrs: IAttr<MatchPitchControl> list) : IView<MatchPitchControl> =
+        ViewBuilder.Create<MatchPitchControl>(attrs)
+
+    type MatchPitchControl with
+
+        static member matchCtx<'t when 't :> MatchPitchControl>(v: MatchContext option) : IAttr<'t> =
+            AttrBuilder<'t>.CreateProperty<MatchContext option>(MatchPitchControl.MatchCtxProperty, v, ValueNone)
+
+        static member renderFrame<'t when 't :> MatchPitchControl>(v: RenderFrame option) : IAttr<'t> =
+            AttrBuilder<'t>.CreateProperty<RenderFrame option>(MatchPitchControl.RenderFrameProperty, v, ValueNone)
+
+        static member userClubId<'t when 't :> MatchPitchControl>(v: ClubId option) : IAttr<'t> =
+            AttrBuilder<'t>.CreateProperty<ClubId option>(MatchPitchControl.UserClubIdProperty, v, ValueNone)
+
+
+// ---------------------------------------------------------------------------
+// Interpolation helpers
+// ---------------------------------------------------------------------------
 
 module MatchViewer =
 
-    [<Literal>]
-    let PitchW = 820.0
-
-    [<Literal>]
-    let PitchH = 540.0
-
-    let positionLabel (p: Position) = $"%A{p}"
-
-    let toCanvas (x: float, y: float) =
-        x * PitchW / PhysicsContract.PitchLength, y * PitchH / PhysicsContract.PitchWidth
-
-    let lerpFloat (t: float) (a: float) (b: float) =
-        let t' = t * t * (3.0 - 2.0 * t)
-        a + (b - a) * t'
-
-    let lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
-
-    let interpolateState (t: float) (curr: SimSnapshot) (next: SimSnapshot) =
-        let lerpFloat (t: float) (a: float) (b: float) =
-            let t' = t * t * (3.0 - 2.0 * t)
-            a + (b - a) * t'
-
-        let lerpPos (t: float) (ax, ay) (bx, by) = lerpFloat t ax bx, lerpFloat t ay by
-
-        let lerpSpatial (a: Spatial) (b: Spatial) = lerpPos t (a.X, a.Y) (b.X, b.Y)
-
-        let lerpArr (a: Spatial[]) (b: Spatial[]) =
-            let len = min a.Length b.Length
-            Array.init len (fun i -> lerpSpatial a[i] b[i])
-
-        {| HomePosLerped = lerpArr curr.HomePositions next.HomePositions
-           AwayPosLerped = lerpArr curr.AwayPositions next.AwayPositions
-           BallLerped = lerpPos t (curr.BallX, curr.BallY) (next.BallX, next.BallY) |}
-
-    let private conditionColor c =
-        if c >= 75 then Theme.Success
-        elif c >= 50 then Theme.Warning
-        else Theme.Danger
-
-    let private shortName (p: Player) =
-        let parts = p.Name.Split(' ')
-
-        if parts.Length >= 2 then
-            $"{parts[0][0]}. {parts[parts.Length - 1]}"
-        else
-            p.Name
-
-    let private skillColor skill =
-        if skill >= 75 then Theme.Accent
-        elif skill >= 55 then Theme.Warning
-        else Theme.Danger
-
-    let private drawPlayer (x: float) (y: float) (p: Player) (teamColor: string) (condition: int) : IView =
-        let r = 18.0
-        let d = r * 2.0
-        let condColor = conditionColor condition
-        let skColor = skillColor p.CurrentSkill
-        let abbrev = positionLabel p.Position
-        let name = shortName p
-        let skill = string p.CurrentSkill
-
-        Canvas.create
-            [ Canvas.left (x - r - 4.0)
-              Canvas.top (y - r - 14.0)
-              Canvas.children
-                  [ Ellipse.create
-                        [ Canvas.left 2.0
-                          Canvas.top 2.0
-                          Ellipse.width (d + 6.0)
-                          Ellipse.height (d + 6.0)
-                          Ellipse.fill (teamColor + "DD") ]
-                    Ellipse.create
-                        [ Canvas.left 2.0
-                          Canvas.top 2.0
-                          Ellipse.width (d + 6.0)
-                          Ellipse.height (d + 6.0)
-                          Ellipse.fill "transparent"
-                          Ellipse.stroke condColor
-                          Ellipse.strokeThickness 2.0 ]
-                    TextBlock.create
-                        [ Canvas.left 5.0
-                          Canvas.top 5.0
-                          TextBlock.text abbrev
-                          TextBlock.foreground "#FFFFFF"
-                          TextBlock.fontSize 6.5
-                          TextBlock.width d
-                          TextBlock.height (d * 0.5)
-                          TextBlock.textAlignment TextAlignment.Center
-                          TextBlock.verticalAlignment VerticalAlignment.Bottom
-                          TextBlock.fontWeight FontWeight.Black ]
-                    TextBlock.create
-                        [ Canvas.left 5.0
-                          Canvas.top (5.0 + d * 0.5)
-                          TextBlock.text skill
-                          TextBlock.foreground skColor
-                          TextBlock.fontSize 8.0
-                          TextBlock.width d
-                          TextBlock.height (d * 0.5)
-                          TextBlock.textAlignment TextAlignment.Center
-                          TextBlock.verticalAlignment VerticalAlignment.Top
-                          TextBlock.fontWeight FontWeight.Black ]
-                    Border.create
-                        [ Canvas.left -4.0
-                          Canvas.top (d + 10.0)
-                          Border.background (Theme.BgMain + "CC")
-                          Border.cornerRadius 3.0
-                          Border.padding (Thickness(3.0, 1.0))
-                          Border.child (
-                              TextBlock.create
-                                  [ TextBlock.text name
-                                    TextBlock.foreground "#FFFFFFCC"
-                                    TextBlock.fontSize 6.0
-                                    TextBlock.fontWeight FontWeight.SemiBold
-                                    TextBlock.textAlignment TextAlignment.Center
-                                    TextBlock.width (d + 8.0) ]
-                          ) ] ] ]
-
-    let private drawTeam
-        (players: Player[])
-        (conditions: int[])
-        (positions: (float * float)[])
-        (sidelined: Map<PlayerId, PlayerOut>)
-        (color: string)
-        : IView list =
-        players
-        |> Array.mapi (fun i p ->
-            if Map.containsKey p.Id sidelined then
-                None
-            else
-                let cx, cy = toCanvas positions[i]
-                let cond = conditions |> Array.tryItem i |> Option.defaultValue 100
-                Some(drawPlayer cx cy p color cond))
-        |> Array.choose id
-        |> Array.toList
-
-    let private drawBall (bx: float) (by: float) : IView list =
-        [ Ellipse.create
-              [ Canvas.left (bx - 10.0)
-                Canvas.top (by + 5.0)
-                Ellipse.width 20.0
-                Ellipse.height 7.0
-                Ellipse.fill "#00000055" ]
-          Ellipse.create
-              [ Canvas.left (bx - 8.0)
-                Canvas.top (by - 8.0)
-                Ellipse.width 16.0
-                Ellipse.height 16.0
-                Ellipse.fill "#F8F8F8"
-                Ellipse.stroke "#CCCCCC"
-                Ellipse.strokeThickness 1.0 ]
-          Ellipse.create
-              [ Canvas.left (bx - 4.0)
-                Canvas.top (by - 6.0)
-                Ellipse.width 5.0
-                Ellipse.height 4.0
-                Ellipse.fill "#FFFFFFBB" ] ]
-
-    let private pitchMarkings () : IView list =
-        let w, h = PitchW, PitchH
-        let lc = "#FFFFFF55"
-        let lw = 1.5
-        let paW, paH = w / 5.0, 220.0
-        let gkW, gkH = w / 12.0, 110.0
-
-        let rect left top width height =
-            Rectangle.create
-                [ Canvas.left left
-                  Canvas.top top
-                  Rectangle.width width
-                  Rectangle.height height
-                  Rectangle.stroke lc
-                  Rectangle.strokeThickness lw
-                  Rectangle.fill "transparent" ]
-
-        let dot cx cy =
-            Ellipse.create
-                [ Canvas.left (cx - 3.5)
-                  Canvas.top (cy - 3.5)
-                  Ellipse.width 7.0
-                  Ellipse.height 7.0
-                  Ellipse.fill lc ]
-
-        [ Rectangle.create
-              [ Rectangle.width w
-                Rectangle.height h
-                Rectangle.stroke "#FFFFFF88"
-                Rectangle.strokeThickness 2.0
-                Rectangle.fill "transparent" ]
-          Line.create
-              [ Line.startPoint (w / 2.0, 0.0)
-                Line.endPoint (w / 2.0, h)
-                Line.stroke lc
-                Line.strokeThickness lw ]
-          Ellipse.create
-              [ Canvas.left (w / 2.0 - 65.0)
-                Canvas.top (h / 2.0 - 65.0)
-                Ellipse.width 130.0
-                Ellipse.height 130.0
-                Ellipse.stroke lc
-                Ellipse.strokeThickness lw
-                Ellipse.fill "transparent" ]
-          dot (w / 2.0) (h / 2.0)
-          rect 0.0 (h / 2.0 - paH / 2.0) paW paH
-          rect (w - paW) (h / 2.0 - paH / 2.0) paW paH
-          rect 0.0 (h / 2.0 - gkH / 2.0) gkW gkH
-          rect (w - gkW) (h / 2.0 - gkH / 2.0) gkW gkH
-          dot (paW * 0.75) (h / 2.0)
-          dot (w - paW * 0.75) (h / 2.0) ]
-
-    let private hudPill (left: float) (top: float) (child: IView) : IView =
-        Border.create
-            [ Canvas.left left
-              Canvas.top top
-              Border.background (Theme.BgMain + "E0")
-              Border.borderBrush (Theme.Border + "88")
-              Border.borderThickness (Thickness 1.0)
-              Border.cornerRadius 8.0
-              Border.padding (Thickness(10.0, 5.0))
-              Border.child child ]
-
-    let private possessionOverlay (ctx: MatchContext) (snap: SimSnapshot) : IView =
-        let name, color =
-            match snap.AttackingClub with
-            | HomeClub -> ctx.Home.Name, Theme.AccentAlt
-            | AwayClub -> ctx.Away.Name, Theme.Danger
-
-        hudPill 10.0 10.0
-        <| StackPanel.create
-            [ StackPanel.orientation Orientation.Horizontal
-              StackPanel.spacing 6.0
-              StackPanel.children
-                  [ Ellipse.create
-                        [ Ellipse.width 8.0
-                          Ellipse.height 8.0
-                          Ellipse.fill color
-                          Ellipse.verticalAlignment VerticalAlignment.Center ]
-                    TextBlock.create
-                        [ TextBlock.text (name.ToUpper())
-                          TextBlock.foreground color
-                          TextBlock.fontSize 10.0
-                          TextBlock.fontWeight FontWeight.Black
-                          TextBlock.verticalAlignment VerticalAlignment.Center ]
-                    TextBlock.create
-                        [ TextBlock.text "IN POSSESSION"
-                          TextBlock.foreground Theme.TextMuted
-                          TextBlock.fontSize 9.0
-                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-
-    let private scoreOverlay (ctx: MatchContext) (snap: SimSnapshot) : IView =
-        hudPill (PitchW / 2.0 - 75.0) 10.0
-        <| StackPanel.create
-            [ StackPanel.orientation Orientation.Horizontal
-              StackPanel.spacing 8.0
-              StackPanel.children
-                  [ TextBlock.create
-                        [ TextBlock.text ctx.Home.Name
-                          TextBlock.foreground Theme.AccentAlt
-                          TextBlock.fontSize 11.0
-                          TextBlock.fontWeight FontWeight.SemiBold
-                          TextBlock.verticalAlignment VerticalAlignment.Center ]
-                    TextBlock.create
-                        [ TextBlock.text $"{snap.HomeScore} – {snap.AwayScore}"
-                          TextBlock.foreground Theme.TextMain
-                          TextBlock.fontSize 15.0
-                          TextBlock.fontWeight FontWeight.Black
-                          TextBlock.verticalAlignment VerticalAlignment.Center ]
-                    TextBlock.create
-                        [ TextBlock.text ctx.Away.Name
-                          TextBlock.foreground Theme.Danger
-                          TextBlock.fontSize 11.0
-                          TextBlock.fontWeight FontWeight.SemiBold
-                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-
-    let private minuteOverlay (snap: SimSnapshot) : IView =
-        hudPill (PitchW - 72.0) 10.0
-        <| StackPanel.create
-            [ StackPanel.orientation Orientation.Horizontal
-              StackPanel.spacing 4.0
-              StackPanel.children
-                  [ Icons.iconSm IconName.calendar Theme.Warning
-                    TextBlock.create
-                        [ TextBlock.text $"{snap.SubTick / PhysicsContract.SubTicksPerSecond / 60}'"
-                          TextBlock.foreground Theme.Warning
-                          TextBlock.fontSize 11.0
-                          TextBlock.fontWeight FontWeight.Black
-                          TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-
-    let private momentumBar (ctx: MatchContext) (snap: SimSnapshot) : IView =
-        let barW = 240.0
-        let homeW = ((snap.Momentum + 10.0) / 20.0) * barW |> max 4.0 |> min (barW - 4.0)
-        let awayW = barW - homeW
-
-        hudPill (PitchW / 2.0 - 135.0) (PitchH - 42.0)
-        <| StackPanel.create
-            [ StackPanel.orientation Orientation.Vertical
-              StackPanel.spacing 3.0
-              StackPanel.children
-                  [ StackPanel.create
-                        [ StackPanel.orientation Orientation.Horizontal
-                          StackPanel.children
-                              [ TextBlock.create
-                                    [ TextBlock.text (ctx.Home.Name.ToUpper())
-                                      TextBlock.foreground Theme.AccentAlt
-                                      TextBlock.fontSize 8.0
-                                      TextBlock.fontWeight FontWeight.Black
-                                      TextBlock.width (barW / 2.0)
-                                      TextBlock.textAlignment TextAlignment.Left ]
-                                TextBlock.create
-                                    [ TextBlock.text "MOMENTUM"
-                                      TextBlock.foreground Theme.TextMuted
-                                      TextBlock.fontSize 8.0
-                                      TextBlock.fontWeight FontWeight.Bold
-                                      TextBlock.width (barW / 2.0)
-                                      TextBlock.textAlignment TextAlignment.Center ]
-                                TextBlock.create
-                                    [ TextBlock.text (ctx.Away.Name.ToUpper())
-                                      TextBlock.foreground Theme.Danger
-                                      TextBlock.fontSize 8.0
-                                      TextBlock.fontWeight FontWeight.Black
-                                      TextBlock.width (barW / 2.0)
-                                      TextBlock.textAlignment TextAlignment.Right ] ] ]
-                    Border.create
-                        [ Border.width barW
-                          Border.height 5.0
-                          Border.cornerRadius 3.0
-                          Border.background Theme.BgHover
-                          Border.child (
-                              Canvas.create
-                                  [ Canvas.width barW
-                                    Canvas.height 5.0
-                                    Canvas.children
-                                        [ Rectangle.create
-                                              [ Canvas.left 0.0
-                                                Canvas.top 0.0
-                                                Rectangle.width homeW
-                                                Rectangle.height 5.0
-                                                Rectangle.fill Theme.AccentAlt
-                                                Rectangle.radiusX 3.0
-                                                Rectangle.radiusY 3.0 ]
-                                          Rectangle.create
-                                              [ Canvas.left (barW - awayW)
-                                                Canvas.top 0.0
-                                                Rectangle.width awayW
-                                                Rectangle.height 5.0
-                                                Rectangle.fill Theme.Danger
-                                                Rectangle.radiusX 3.0
-                                                Rectangle.radiusY 3.0 ] ] ]
-                          ) ] ] ]
+    open MatchPitchView
 
     let view
         (ctx: MatchContext)
-        (snap: SimSnapshot)
-        (homePositions: (float * float)[])
-        (awayPositions: (float * float)[])
-        (ballPos: float * float)
+        (renderFrame: RenderFrame)
         (userClubId: ClubId option)
         : IView =
-        let bcx, bcy = toCanvas ballPos
+        let pitch =
+            MatchPitchView.create
+                [ MatchPitchControl.matchCtx (Some ctx)
+                  MatchPitchControl.renderFrame (Some renderFrame)
+                  MatchPitchControl.userClubId userClubId ]
 
-        let isUserAway = userClubId |> Option.exists (fun id -> id = ctx.Away.Id)
+        Border.create [ Border.child pitch; Border.margin (Thickness(8.0, 12.0, 8.0, 12.0)) ]
 
-        let homeColor, awayColor =
-            if isUserAway then
-                Theme.Accent, Theme.Danger
-            else
-                Theme.Danger, Theme.Accent
 
-        Viewbox.create
-            [ Viewbox.stretch Stretch.Uniform
-              Viewbox.horizontalAlignment HorizontalAlignment.Stretch
-              Viewbox.verticalAlignment VerticalAlignment.Stretch
-              Viewbox.margin (8.0, 12.0, 8.0, 12.0)
-              Viewbox.child (
-                  Canvas.create
-                      [ Canvas.width PitchW
-                        Canvas.height PitchH
-                        Canvas.background "#2d5a1b"
-                        Canvas.children
-                            [ yield! pitchMarkings ()
-                              yield!
-                                  drawTeam
-                                      ctx.HomePlayers
-                                      snap.HomeConditions
-                                      homePositions
-                                      snap.HomeSidelined
-                                      homeColor
-                              yield!
-                                  drawTeam
-                                      ctx.AwayPlayers
-                                      snap.AwayConditions
-                                      awayPositions
-                                      snap.AwaySidelined
-                                      awayColor
-
-                              possessionOverlay ctx snap
-                              scoreOverlay ctx snap
-                              minuteOverlay snap
-                              momentumBar ctx snap
-                              yield! drawBall bcx bcy ] ]
-              ) ]
-
-open MatchViewer
+// ---------------------------------------------------------------------------
+// MatchDayView — top-level page view wired to app State + Dispatch
+// Resolves the `MatchDayView.view state dispatch` call in Program.fs
+// ---------------------------------------------------------------------------
 
 module MatchDayView =
 
-    let private vSep () : IView =
-        Border.create
-            [ Border.width 1.0
-              Border.height 22.0
-              Border.background Theme.Border
-              Border.verticalAlignment VerticalAlignment.Center ]
+    open FootballEngine.Client.Views.Components.MatchProjection
 
-    let private navBtn (iconKind: Material.Icons.MaterialIconKind) (enabled: bool) (onClick: unit -> unit) : IView =
-        Button.create
-            [ Button.width 28.0
-              Button.height 28.0
-              Button.padding (Thickness 0.0)
-              Button.background (if enabled then Theme.BgHover else "transparent")
-              Button.cornerRadius 5.0
-              Button.isEnabled enabled
-              Button.horizontalContentAlignment HorizontalAlignment.Center
-              Button.content (Icons.iconMd iconKind (if enabled then Theme.TextMain else Theme.TextMuted))
-              Button.onClick (fun _ -> onClick ()) ]
+    let private noMatchView () : IView =
+        TextBlock.create
+            [ TextBlock.text "No active match."
+              TextBlock.horizontalAlignment HorizontalAlignment.Center
+              TextBlock.verticalAlignment VerticalAlignment.Center ]
+        :> IView
 
-    let private finalScorePill (replay: MatchReplay) : IView =
-        Border.create
-            [ Border.background Theme.BgCard
-              Border.cornerRadius 8.0
-              Border.borderBrush Theme.Border
-              Border.borderThickness (Thickness 1.0)
-              Border.padding (Thickness(14.0, 6.0))
-              Border.verticalAlignment VerticalAlignment.Center
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.orientation Orientation.Horizontal
-                        StackPanel.spacing 8.0
-                        StackPanel.children
-                            [ TextBlock.create
-                                  [ TextBlock.text "FT"
-                                    TextBlock.foreground Theme.TextMuted
-                                    TextBlock.fontSize 9.0
-                                    TextBlock.fontWeight FontWeight.Black
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text replay.Context.Home.Name
-                                    TextBlock.foreground Theme.AccentAlt
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.fontWeight FontWeight.SemiBold
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text $"{replay.Final.HomeScore} –{replay.Final.AwayScore}"
-                                    TextBlock.foreground Theme.TextMain
-                                    TextBlock.fontSize 16.0
-                                    TextBlock.fontWeight FontWeight.Black
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                              TextBlock.create
-                                  [ TextBlock.text replay.Context.Away.Name
-                                    TextBlock.foreground Theme.Danger
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.fontWeight FontWeight.SemiBold
-                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-              ) ]
+    let view (state: State) (dispatch: AppMsgs.Msg -> unit) : IView =
+        match state.ActiveMatchReplay with
+        | None -> noMatchView ()
+        | Some replay ->
+            let snapCount = replay.Snapshots.Length
 
-    let private eventTypeMeta =
-        function
-        | Goal -> MatchEvent.goal, Theme.Success, "GOAL"
-        | OwnGoal -> MatchEvent.ownGoal, Theme.Danger, "OWN GOAL"
-        | Assist -> MatchEvent.assist, Theme.AccentAlt, "ASSIST"
-        | YellowCard -> MatchEvent.yellowCard, Theme.Warning, "YELLOW"
-        | RedCard -> MatchEvent.redCard, Theme.Danger, "RED CARD"
-        | Injury _ -> MatchEvent.injury, Theme.Danger, "INJURY"
-        | SubstitutionIn -> MatchEvent.subOn, Theme.Success, "SUB ON"
-        | SubstitutionOut -> MatchEvent.subOff, Theme.Danger, "SUB OFF"
-        | PenaltyAwarded true -> MatchEvent.goal, Theme.Success, "PENALTY GOAL"
-        | PenaltyAwarded false -> MatchEvent.penaltyMiss, Theme.Danger, "PENALTY MISS"
-        | FreeKick true -> MatchEvent.goal, Theme.Success, "FREE KICK GOAL"
-        | FreeKick false -> MatchEvent.freeKickMiss, Theme.Danger, "FREE KICK MISS"
-        | Corner -> MatchEvent.corner, Theme.TextMuted, "CORNER"
-        | PassCompleted _ -> MatchEvent.pass, Theme.AccentAlt, "PASS"
-        | PassIncomplete _ -> MatchEvent.passIncomplete, Theme.TextMuted, "PASS INCOMPLETE"
-        | PassDeflected _ -> MatchEvent.pass, Theme.Warning, "PASS DEFLECTED"
-        | PassIntercepted _ -> MatchEvent.tackle, Theme.AccentAlt, "PASS INTERCEPTED"
-        | PassMisplaced _ -> MatchEvent.passIncomplete, Theme.TextMuted, "PASS MISPLACED"
-        | DribbleSuccess -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE"
-        | DribbleKeep -> MatchEvent.dribble, Theme.AccentAlt, "DRIBBLE KEEP"
-        | DribbleFail -> MatchEvent.dribbleFail, Theme.TextMuted, "DRIBBLE FAIL"
-        | TackleSuccess -> MatchEvent.tackle, Theme.AccentAlt, "TACKLE"
-        | TackleFail -> MatchEvent.tackleFail, Theme.TextMuted, "TACKLE FAIL"
-        | CrossAttempt true -> MatchEvent.cross, Theme.AccentAlt, "CROSS"
-        | CrossAttempt false -> MatchEvent.cross, Theme.TextMuted, "CROSS INCOMPLETE"
-        | LongBall true -> MatchEvent.longBall, Theme.AccentAlt, "LONG BALL"
-        | LongBall false -> MatchEvent.longBall, Theme.TextMuted, "LONG BALL INCOMPLETE"
-        | ShotBlocked -> MatchEvent.shotBlocked, Theme.TextMuted, "SHOT BLOCKED"
-        | ShotOffTarget -> MatchEvent.shotOffTarget, Theme.TextMuted, "SHOT OFF TARGET"
-        | Save -> MatchEvent.save, Theme.AccentAlt, "SAVE"
-        | FoulCommitted -> MatchEvent.foul, Theme.Warning, "FOUL"
+            if snapCount = 0 then
+                noMatchView ()
+            else
 
-    let private eventRow (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) (ev: MatchEvent) : IView =
-        let iconKind, color, label = eventTypeMeta ev.Type
+                let snapIdx = min state.ActiveMatchSnapshot (snapCount - 1)
+                let currSnap = replay.Snapshots[snapIdx]
 
-        let clubName =
-            clubs |> Map.tryFind ev.ClubId |> Option.map _.Name |> Option.defaultValue "?"
+                let ctx = replay.Context
+                let clock = defaultClock
+                let snapDt = float clock.SubTicksPerSecond / float clock.SubTicksPerSecond
 
-        let playerName =
-            players
-            |> Map.tryFind ev.PlayerId
-            |> Option.map _.Name
-            |> Option.defaultValue ""
+                let currFrame = MatchProjection.project ctx currSnap (SimulationClock.subTicksToSeconds clock currSnap.SubTick)
 
-        let minute = ev.SubTick / PhysicsContract.SubTicksPerSecond / 60
+                let renderFrame =
+                    let t = float32 state.InterpolationT
+                    if snapIdx + 1 < snapCount && t > 0.0f then
+                        let nextSnap = replay.Snapshots[snapIdx + 1]
+                        let nextFrame = MatchProjection.project ctx nextSnap (SimulationClock.subTicksToSeconds clock nextSnap.SubTick)
+                        MatchInterp.hermite currFrame nextFrame (float t) 0.0333 // Use standard frame dt for interp
+                    else
+                        currFrame
 
-        Border.create
-            [ Border.padding (Thickness(10.0, 7.0))
-              Border.cornerRadius 6.0
-              Border.margin (Thickness(0.0, 1.0))
-              Border.background Theme.BgCard
-              Border.borderBrush (color + "33")
-              Border.borderThickness (Thickness(2.0, 0.0, 0.0, 0.0))
-              Border.child (
-                  Grid.create
-                      [ Grid.columnDefinitions "38, *, Auto"
-                        Grid.children
-                            [ Border.create
-                                  [ Grid.column 0
-                                    Border.background (color + "20")
-                                    Border.cornerRadius 4.0
-                                    Border.width 32.0
-                                    Border.margin (Thickness(0.0, 0.0, 8.0, 0.0))
-                                    Border.verticalAlignment VerticalAlignment.Center
-                                    Border.child (
-                                        TextBlock.create
-                                            [ TextBlock.text $"{minute}'"
-                                              TextBlock.foreground color
-                                              TextBlock.fontSize 10.0
-                                              TextBlock.fontWeight FontWeight.Black
-                                              TextBlock.textAlignment TextAlignment.Center
-                                              TextBlock.padding (Thickness(0.0, 3.0)) ]
-                                    ) ]
-                              StackPanel.create
-                                  [ Grid.column 1
-                                    StackPanel.orientation Orientation.Vertical
-                                    StackPanel.spacing 1.0
-                                    StackPanel.children
-                                        [ StackPanel.create
-                                              [ StackPanel.orientation Orientation.Horizontal
-                                                StackPanel.spacing 5.0
-                                                StackPanel.children
-                                                    [ Icons.iconSm iconKind color
-                                                      TextBlock.create
-                                                          [ TextBlock.text label
-                                                            TextBlock.foreground color
-                                                            TextBlock.fontSize 10.0
-                                                            TextBlock.fontWeight FontWeight.Black ] ] ]
-                                          TextBlock.create
-                                              [ TextBlock.text playerName
-                                                TextBlock.foreground Theme.TextMain
-                                                TextBlock.fontSize 11.0
-                                                TextBlock.fontWeight FontWeight.SemiBold ] ] ]
-                              Border.create
-                                  [ Grid.column 2
-                                    Border.background Theme.BgHover
-                                    Border.cornerRadius 4.0
-                                    Border.padding (Thickness(5.0, 2.0))
-                                    Border.verticalAlignment VerticalAlignment.Center
-                                    Border.child (
-                                        TextBlock.create
-                                            [ TextBlock.text clubName
-                                              TextBlock.foreground Theme.TextMuted
-                                              TextBlock.fontSize 9.0 ]
-                                    ) ] ] ]
-              ) ]
+                let userClubId =
+                    match state.Mode with
+                    | AppMode.InGame(gs, _) -> Some gs.UserClubId
+                    | _ -> None
 
-    let private relevantEventTypes (ev: MatchEvent) =
-        match ev.Type with
-        | Goal
-        | OwnGoal
-        | Assist
-        | YellowCard
-        | RedCard
-        | Injury _
-        | SubstitutionIn
-        | SubstitutionOut
-        | PenaltyAwarded _
-        | FreeKick _ -> true
-        | _ -> false
+                let totalSnaps = snapCount - 1
 
-    let private eventLog (replay: MatchReplay) (clubs: Map<ClubId, Club>) (players: Map<PlayerId, Player>) : IView =
-        let relevant = replay.Events |> List.filter relevantEventTypes
+                let progressPct =
+                    if totalSnaps > 0 then
+                        float snapIdx / float totalSnaps
+                    else
+                        0.0
 
-        let key =
-            $"eventlog-{replay.Final.HomeScore}-{replay.Final.AwayScore}-{relevant.Length}"
-
-        Component.create (
-            key,
-            fun _ ->
                 DockPanel.create
-                    [ DockPanel.width 270.0
-                      DockPanel.lastChildFill true
-                      DockPanel.background Theme.BgSidebar
+                    [ DockPanel.lastChildFill true
                       DockPanel.children
-                          [ Border.create
-                                [ DockPanel.dock Dock.Top
-                                  Border.padding (Thickness(12.0, 10.0))
-                                  Border.borderBrush Theme.Border
-                                  Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
+                          [
+                            // ── Playback controls bar ──────────────────────────
+                            Border.create
+                                [ Border.dock Dock.Bottom
+                                  Border.padding (Thickness(12.0, 8.0))
+                                  Border.background "#0f172a"
                                   Border.child (
                                       StackPanel.create
-                                          [ StackPanel.orientation Orientation.Horizontal
+                                          [ StackPanel.orientation Avalonia.Layout.Orientation.Horizontal
                                             StackPanel.spacing 8.0
-                                            StackPanel.verticalAlignment VerticalAlignment.Center
+                                            StackPanel.horizontalAlignment HorizontalAlignment.Center
                                             StackPanel.children
-                                                [ TextBlock.create
-                                                      [ TextBlock.text "MATCH EVENTS"
-                                                        TextBlock.foreground Theme.TextMuted
-                                                        TextBlock.fontSize 9.0
-                                                        TextBlock.fontWeight FontWeight.Black
-                                                        TextBlock.verticalAlignment VerticalAlignment.Center ]
-                                                  Border.create
-                                                      [ Border.background Theme.AccentLight
-                                                        Border.cornerRadius 10.0
-                                                        Border.padding (Thickness(7.0, 2.0))
-                                                        Border.child (
-                                                            TextBlock.create
-                                                                [ TextBlock.text $"{relevant.Length}"
-                                                                  TextBlock.foreground Theme.Accent
-                                                                  TextBlock.fontSize 10.0
-                                                                  TextBlock.fontWeight FontWeight.Black ]
-                                                        ) ] ] ]
-                                  ) ]
-                            ScrollViewer.create
-                                [ ScrollViewer.padding (Thickness(10.0, 8.0))
-                                  ScrollViewer.verticalScrollBarVisibility ScrollBarVisibility.Auto
-                                  ScrollViewer.content (
-                                      StackPanel.create
-                                          [ StackPanel.orientation Orientation.Vertical
-                                            StackPanel.children (
-                                                if relevant.IsEmpty then
-                                                    [ TextBlock.create
-                                                          [ TextBlock.text "No events recorded"
-                                                            TextBlock.foreground Theme.TextMuted
-                                                            TextBlock.fontSize 11.0
-                                                            TextBlock.margin (Thickness(0.0, 12.0)) ]
-                                                      :> IView ]
-                                                else
-                                                    [ yield! relevant |> List.map (eventRow clubs players)
-                                                      Border.create [ Border.height 24.0 ] ]
-                                            ) ]
-                                  ) ] ] ]
-        )
+                                                [
+                                                  // Step back
+                                                  Button.create
+                                                      [ Button.content "⏮"
+                                                        Button.onClick (fun _ -> dispatch (StepActiveMatch -1)) ]
 
-    let private toolbar
-        (idx: int)
-        (total: int)
-        (replayKey: string)
-        (replay: MatchReplay)
-        (step: int -> unit)
-        (onClose: unit -> unit)
-        (isPlaying: bool)
-        (playbackSpeed: int)
-        (onTogglePlayback: unit -> unit)
-        (onSetSpeed: int -> unit)
-        =
-        let navButtons =
-            [ Nav.skipFirst, -total, idx > 0
-              Nav.rewind, -10, idx > 0
-              Nav.prev, -1, idx > 0
-              Nav.next, +1, idx < total
-              Nav.fastForward, +10, idx < total
-              Nav.skipLast, +total, idx < total ]
+                                                  // Play / pause
+                                                  Button.create
+                                                      [ Button.content (if state.IsPlaying then "⏸" else "▶")
+                                                        Button.onClick (fun _ -> dispatch TogglePlayback) ]
 
-        let speedButtons = [ 400, "1×"; 200, "2×"; 100, "4×" ]
+                                                  // Step forward
+                                                  Button.create
+                                                      [ Button.content "⏭"
+                                                        Button.onClick (fun _ -> dispatch (StepActiveMatch 1)) ]
 
-        Component.create (
-            $"matchday-toolbar-{replayKey}",
-            fun _ ->
-                StackPanel.create
-                    [ StackPanel.orientation Orientation.Horizontal
-                      StackPanel.spacing 4.0
-                      StackPanel.verticalAlignment VerticalAlignment.Center
-                      StackPanel.children
-                          [ vSep ()
-                            finalScorePill replay
-                            vSep ()
-                            yield!
-                                navButtons
-                                |> List.mapi (fun i (iconKind, delta, enabled) ->
-                                    let btn = navBtn iconKind enabled (fun () -> step delta)
-
-                                    if i = 2 then
-                                        [ btn
-                                          Border.create
-                                              [ Border.background Theme.BgCard
-                                                Border.cornerRadius 4.0
-                                                Border.padding (Thickness(8.0, 3.0))
-                                                Border.verticalAlignment VerticalAlignment.Center
-                                                Border.child (
-                                                    TextBlock.create
-                                                        [ TextBlock.text $"{idx} / {total}"
-                                                          TextBlock.foreground Theme.TextSub
-                                                          TextBlock.fontSize 10.0
-                                                          TextBlock.fontWeight FontWeight.SemiBold ]
-                                                ) ]
-                                          :> IView ]
-                                    else
-                                        [ btn ])
-                                |> List.concat
-                            vSep ()
-                            Button.create
-                                [ Button.background (if isPlaying then Theme.Accent else Theme.BgCard)
-                                  Button.foreground (if isPlaying then Theme.BgMain else Theme.TextSub)
-                                  Button.padding (Thickness(10.0, 6.0))
-                                  Button.cornerRadius 7.0
-                                  Button.fontWeight FontWeight.Bold
-                                  Button.onClick (fun _ -> onTogglePlayback ())
-                                  Button.content (
-                                      StackPanel.create
-                                          [ StackPanel.orientation Orientation.Horizontal
-                                            StackPanel.spacing 4.0
-                                            StackPanel.children
-                                                [ Icons.iconSm
-                                                      (if isPlaying then Nav.pause else Nav.play)
-                                                      (if isPlaying then Theme.BgMain else Theme.TextSub)
-                                                  TextBlock.create
-                                                      [ TextBlock.text (if isPlaying then "PAUSE" else "PLAY")
-                                                        TextBlock.foreground (
-                                                            if isPlaying then Theme.BgMain else Theme.TextSub
+                                                  // Speed selector
+                                                  ComboBox.create
+                                                      [ ComboBox.width 80.0
+                                                        ComboBox.selectedIndex (
+                                                            match state.PlaybackSpeed with
+                                                            | 1 -> 0
+                                                            | 2 -> 1
+                                                            | 4 -> 2
+                                                            | _ -> 1
                                                         )
-                                                        TextBlock.fontSize 11.0
-                                                        TextBlock.fontWeight FontWeight.Bold
-                                                        TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                  ) ]
-                            vSep ()
-                            yield!
-                                speedButtons
-                                |> List.map (fun (speed, label) ->
-                                    let isActive = playbackSpeed = speed
+                                                        ComboBox.onSelectedIndexChanged (fun i ->
+                                                            let speed =
+                                                                match i with
+                                                                | 0 -> 1
+                                                                | 1 -> 2
+                                                                | 2 -> 4
+                                                                | _ -> 2
 
-                                    Button.create
-                                        [ Button.background (if isActive then Theme.Accent else Theme.BgCard)
-                                          Button.foreground (if isActive then Theme.BgMain else Theme.TextSub)
-                                          Button.padding (Thickness(8.0, 4.0))
-                                          Button.cornerRadius 5.0
-                                          Button.fontWeight (if isActive then FontWeight.Bold else FontWeight.Normal)
-                                          Button.onClick (fun _ -> onSetSpeed speed)
-                                          Button.content (
-                                              TextBlock.create
-                                                  [ TextBlock.text label
-                                                    TextBlock.foreground (
-                                                        if isActive then Theme.BgMain else Theme.TextSub
-                                                    )
-                                                    TextBlock.fontSize 10.0
-                                                    TextBlock.fontWeight FontWeight.SemiBold ]
-                                          ) ]
-                                    :> IView)
-                            vSep ()
-                            Button.create
-                                [ Button.background Theme.Accent
-                                  Button.foreground Theme.BgMain
-                                  Button.padding (Thickness(16.0, 6.0))
-                                  Button.cornerRadius 7.0
-                                  Button.fontWeight FontWeight.Bold
-                                  Button.onClick (fun _ -> onClose ())
-                                  Button.content (
-                                      StackPanel.create
-                                          [ StackPanel.orientation Orientation.Horizontal
-                                            StackPanel.spacing 6.0
-                                            StackPanel.children
-                                                [ Icons.iconSm Nav.next Theme.BgMain
+                                                            dispatch (SetPlaybackSpeed speed))
+                                                        ComboBox.dataItems [ "1×"; "2×"; "4×" ] ]
+
+                                                  // Snapshot counter
                                                   TextBlock.create
-                                                      [ TextBlock.text "BACK TO GAME"
-                                                        TextBlock.foreground Theme.BgMain
-                                                        TextBlock.fontSize 11.0
-                                                        TextBlock.fontWeight FontWeight.Bold
-                                                        TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
-                                  ) ] ] ]
-        )
+                                                      [ TextBlock.text $"{snapIdx} / {totalSnaps}"
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center
+                                                        TextBlock.foreground "#94a3b8"
+                                                        TextBlock.width 80.0 ]
 
-    let view (state: State) (dispatch: Msg -> unit) : IView =
-        match state.ActiveMatchReplay with
-        | None ->
-            StackPanel.create
-                [ StackPanel.horizontalAlignment HorizontalAlignment.Center
-                  StackPanel.verticalAlignment VerticalAlignment.Center
-                  StackPanel.children
-                      [ TextBlock.create
-                            [ TextBlock.text "No match to display"
-                              TextBlock.foreground Theme.TextMuted
-                              TextBlock.fontSize 15.0 ] ] ]
-            :> IView
-        | Some replay ->
-            let idx = state.ActiveMatchSnapshot
-            let total = max 1 (replay.Snapshots.Length - 1)
+                                                  // Progress percentage
+                                                  TextBlock.create
+                                                      [ TextBlock.text $"{progressPct * 100.0 |> int}%%"
+                                                        TextBlock.verticalAlignment VerticalAlignment.Center
+                                                        TextBlock.foreground "#64748b"
+                                                        TextBlock.width 40.0 ]
 
-            let finalSnapshot =
-                { SubTick = replay.Final.SubTick
-                  HomePositions =
-                    replay.Final.Home.Slots
-                    |> Array.map (function
-                        | PlayerSlot.Active s -> s.Pos
-                        | Sidelined _ -> kickOffSpatial)
-                  AwayPositions =
-                    replay.Final.Away.Slots
-                    |> Array.map (function
-                        | PlayerSlot.Active s -> s.Pos
-                        | Sidelined _ -> kickOffSpatial)
-                  BallX = replay.Final.Ball.Position.X
-                  BallY = replay.Final.Ball.Position.Y
-                  BallVx = replay.Final.Ball.Position.Vx
-                  BallVy = replay.Final.Ball.Position.Vy
-                  BallControlledBy = replay.Final.Ball.ControlledBy
-                  HomeScore = replay.Final.HomeScore
-                  AwayScore = replay.Final.AwayScore
-                  HomeConditions =
-                    replay.Final.Home.Slots
-                    |> Array.map (function
-                        | PlayerSlot.Active s -> s.Condition
-                        | Sidelined _ -> 0)
-                  AwayConditions =
-                    replay.Final.Away.Slots
-                    |> Array.map (function
-                        | PlayerSlot.Active s -> s.Condition
-                        | Sidelined _ -> 0)
-                  HomeSidelined = replay.Final.Home.Sidelined
-                  AwaySidelined = replay.Final.Away.Sidelined
-                  AttackingClub = replay.Final.AttackingClub
-                  HomeAttackDir = replay.Final.HomeAttackDir
-                  Momentum = replay.Final.Momentum
-                  Phase = replay.Final.Ball.Phase }
+                                                  // Close
+                                                  Button.create
+                                                      [ Button.content "✕"
+                                                        Button.onClick (fun _ -> dispatch CloseActiveMatch) ] ] ]
+                                  ) ]
 
-            let current =
-                replay.Snapshots |> Array.tryItem idx |> Option.defaultValue finalSnapshot
-
-            let nextSnap =
-                replay.Snapshots |> Array.tryItem (idx + 1) |> Option.defaultValue finalSnapshot
-
-            let interp = interpolateState state.InterpolationT current nextSnap
-
-            let replayKey =
-                $"{replay.Snapshots.Length}-${replay.Final.HomeScore}-${replay.Final.AwayScore}"
-
-            DockPanel.create
-                [ DockPanel.background Theme.BgMain
-                  DockPanel.children
-                      [ Border.create
-                            [ DockPanel.dock Dock.Top
-                              Border.background Theme.BgSidebar
-                              Border.borderBrush Theme.Border
-                              Border.borderThickness (Thickness(0.0, 0.0, 0.0, 1.0))
-                              Border.padding (Thickness(16.0, 10.0))
-                              Border.child (
-                                  StackPanel.create
-                                      [ StackPanel.orientation Orientation.Horizontal
-                                        StackPanel.spacing 12.0
-                                        StackPanel.verticalAlignment VerticalAlignment.Center
-                                        StackPanel.children
-                                            [ Icons.iconSm IconName.simulate Theme.TextMuted
-                                              TextBlock.create
-                                                  [ TextBlock.text "MATCH DAY"
-                                                    TextBlock.foreground Theme.TextMuted
-                                                    TextBlock.fontSize 9.0
-                                                    TextBlock.fontWeight FontWeight.Black
-                                                    TextBlock.verticalAlignment VerticalAlignment.Center ]
-                                              toolbar
-                                                  idx
-                                                  total
-                                                  replayKey
-                                                  replay
-                                                  (fun delta -> dispatch (StepActiveMatch delta))
-                                                  (fun () -> dispatch CloseActiveMatch)
-                                                  state.IsPlaying
-                                                  state.PlaybackSpeed
-                                                  (fun () -> dispatch TogglePlayback)
-                                                  (fun speed -> dispatch (SetPlaybackSpeed speed)) ] ]
-                              ) ]
-                        DockPanel.create
-                            [ DockPanel.lastChildFill true
-                              DockPanel.children
-                                  [ Border.create
-                                        [ DockPanel.dock Dock.Right
-                                          Border.borderBrush Theme.Border
-                                          Border.borderThickness (Thickness(1.0, 0.0, 0.0, 0.0))
-                                          Border.child (
-                                              match state.Mode with
-                                              | InGame(gs, _) -> eventLog replay gs.Clubs gs.Players
-                                              | _ -> eventLog replay Map.empty Map.empty
-                                          ) ]
-                                    let userClubId =
-                                        match state.Mode with
-                                        | InGame(gs, _) -> Some gs.UserClubId
-                                        | _ -> None
-
-                                    MatchViewer.view
-                                        replay.Context
-                                        current
-                                        interp.HomePosLerped
-                                        interp.AwayPosLerped
-                                        interp.BallLerped
-                                        userClubId ] ] ] ]
-            :> IView
+                            // ── Pitch ─────────────────────────────────────────
+                            MatchViewer.view ctx renderFrame userClubId ] ]
+                :> IView

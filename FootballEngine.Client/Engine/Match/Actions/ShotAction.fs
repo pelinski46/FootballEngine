@@ -6,6 +6,7 @@ open FootballEngine.MatchSpatial
 open FootballEngine.Stats
 open SimStateOps
 open MatchFormulas
+open FootballEngine.PhysicsContract
 
 module ShotAction =
 
@@ -23,19 +24,23 @@ module ShotAction =
         (condition: int)
         (composure: float)
         (urgency: float)
-        (dist: float)
+        (dist: float<meter>)
         (homeComposure: float)
         =
         let bonus = finishingBonusForPosition player.Position
+        let condFactor = sqrt (float condition / 100.0)
+        let basePower = float player.Technical.Finishing / 20.0
 
-        effectiveStat player.Technical.Finishing condition player.Morale (bonus * 0.8)
-        + effectiveStat player.Mental.Composure condition player.Morale (1.5 * composure * urgency + homeComposure)
-        + effectiveStat player.Technical.LongShots condition player.Morale 1.0
-        + effectiveStat player.Physical.Pace condition player.Morale 0.5
-        - dist
+        basePower
+        * condFactor
+        * (1.0 + composure * 0.1)
+        * (1.0 + urgency * 0.05)
+        * bonus
 
-    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.InFlight state.AttackingClub }
+    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchEvent list =
+        state.Ball <-
+            { state.Ball with
+                Possession = Loose }
 
         let actx = ActionContext.build state
         let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
@@ -64,10 +69,10 @@ module ShotAction =
             let defPlayers = playersArray defSlots
 
             let quality =
-                let distToGoal = AttackDir.distToGoal bX actx.Dir
+                let distToGoal = PhysicsContract.distToGoal bX actx.Dir
 
                 let distNorm =
-                    Math.Clamp(distToGoal / BalanceConfig.ShotNormalisationDistance, 0.0, 1.0)
+                    PhysicsContract.clamp (distToGoal / BalanceConfig.ShotNormalisationDistance) 0.0 1.0
 
                 let positionBonus =
                     shooterProfile.Directness * 0.3
@@ -79,22 +84,22 @@ module ShotAction =
             if quality < BalanceConfig.ShotQualityGate then
                 [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
             else
-                let attTactics = SimStateOps.getTactics state actx.AttSide
-                let attInstructions = SimStateOps.getInstructions state actx.AttSide
+                let attTactics = getTactics state actx.AttSide
+                let attInstructions = getInstructions state actx.AttSide
 
                 let tacticsCfg = tacticsConfig attTactics attInstructions
 
                 let composure =
                     pressureMultiplier attClubId ctx state * tacticsCfg.UrgencyMultiplier
 
-                let u = matchUrgency attClubId ctx state * tacticsCfg.UrgencyMultiplier
+                let u = matchUrgency attClubId ctx state clock * tacticsCfg.UrgencyMultiplier
 
                 let dist =
-                    AttackDir.distToGoal bX actx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
+                    PhysicsContract.distToGoal bX actx.Dir * BalanceConfig.ShotDistanceToGoalMultiplier
 
                 let homeComposure = actx.AttBonus.ShotCompos
                 let finishing = calcShotPower shooter shooterCond composure u dist homeComposure
-                let dirSign = AttackDir.forwardX actx.Dir
+                let dirSign = PhysicsContract.forwardX actx.Dir
 
                 let finishingNorm =
                     Math.Clamp(
@@ -107,13 +112,14 @@ module ShotAction =
 
                 let angleSpread = BalanceConfig.ShotAngleSpreadBase * (1.0 - finishingNorm)
                 let angle = normalSample 0.0 angleSpread
-                let vx = dirSign * speed * Math.Cos(angle)
-                let vy = speed * Math.Sin(angle)
-                let vz = abs (normalSample BalanceConfig.ShotVzBase BalanceConfig.ShotVzVariance)
+                let speedMag = float speed
+                let vx = dirSign * speedMag * Math.Cos(angle)
+                let vy = speedMag * Math.Sin(angle)
+                let vz = abs (normalSample (float BalanceConfig.ShotVzBase) BalanceConfig.ShotVzVariance) * 1.0<meter/second>
 
                 let spin =
-                    { Top = -(PhysicsContract.normaliseAttr shooter.Technical.Finishing) * 0.4
-                      Side = 0.0 }
+                    { Top = -(PhysicsContract.normaliseAttr shooter.Technical.Finishing) * 0.4 * 1.0<radianPerSecond>
+                      Side = 0.0<radianPerSecond> }
 
                 let gk = defPlayers |> Array.tryFind (fun p -> p.Position = GK)
 
@@ -138,14 +144,14 @@ module ShotAction =
                     { state.Ball with
                         Position =
                             { state.Ball.Position with
-                                Vx = vx
-                                Vy = vy
+                                Vx = vx * 1.0<meter/second>
+                                Vy = vy * 1.0<meter/second>
                                 Vz = vz
                                 X = bX }
                         Spin = spin
                         LastTouchBy = Some shooter.Id }
 
-                adjustMomentum actx.Dir BalanceConfig.DuelMomentumBonus state
+                SimStateOps.adjustMomentum actx.Dir BalanceConfig.DuelMomentumBonus state
                 clearOffsideSnapshot state
 
                 let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id

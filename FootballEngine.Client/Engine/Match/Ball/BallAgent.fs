@@ -10,19 +10,23 @@ module BallAgent =
 
         let r = BalanceConfig.BallContactRadius
         let bp = ball.Position
-        let dx = bp.X - playerPos.X
-        let dy = bp.Y - playerPos.Y
-        let dz = bp.Z - playerPos.Z
-        let dist = sqrt (dx * dx + dy * dy + dz * dz)
+        let dist = bp.DistTo playerPos
 
-        if dist < r && dist > 0.001 then
-            let nx = dx / dist
-            let ny = dy / dist
-            let nz = dz / dist
+        if dist < r && dist > 0.001<meter> then
+            let nx = (bp.X - playerPos.X) / dist
+            let ny = (bp.Y - playerPos.Y) / dist
+            let nz = (bp.Z - playerPos.Z) / dist
             let dot = bp.Vx * nx + bp.Vy * ny + bp.Vz * nz
 
-            if dot > 0.0 then
-                let restitution = 0.5
+            if dot > 0.0<meter / second> then
+                let impactSpeed = bp.VelMag
+                let isAirborne = bp.Z > 0.3<meter>
+
+                let restitution =
+                    if isAirborne then
+                        0.35 + min 0.25 (float impactSpeed * 0.008)
+                    else
+                        0.50 + min 0.20 (float impactSpeed * 0.005)
 
                 { ball with
                     Position =
@@ -42,25 +46,25 @@ module BallAgent =
         (currentController: PlayerId option)
         : BallPhysicsState * PlayerId option =
 
-        let mutable bestDistSq = System.Double.MaxValue
+        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
         let mutable bestPlayer: Player option = None
 
         let mutable bestPos =
-            { X = 0.0
-              Y = 0.0
-              Z = 0.0
-              Vx = 0.0
-              Vy = 0.0
-              Vz = 0.0 }
+            { X = 0.0<meter>
+              Y = 0.0<meter>
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
 
         let bp = ball.Position
 
         let inline checkContact (player: Player) (pPos: Spatial) =
-            let playerRadius = BalanceConfig.BallContactRadius + (float player.Technical.BallControl / 20.0) * 0.20
-            let dx = bp.X - pPos.X
-            let dy = bp.Y - pPos.Y
-            let dz = bp.Z - pPos.Z
-            let dSq = dx * dx + dy * dy + dz * dz
+            let playerRadius =
+                BalanceConfig.BallContactRadius
+                + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+
+            let dSq = bp.DistSqTo pPos
             let rSq = playerRadius * playerRadius
 
             if dSq < rSq && dSq < bestDistSq then
@@ -79,17 +83,13 @@ module BallAgent =
             | _ -> ()
 
         let findPlayerById pid =
-            let mutable found: Player * Spatial * float = Unchecked.defaultof<_>
+            let mutable found: Player * Spatial * float<meter^2> = Unchecked.defaultof<_>
             let mutable foundIt = false
 
             for i = 0 to homeSlots.Length - 1 do
                 match homeSlots[i] with
                 | PlayerSlot.Active s when s.Player.Id = pid ->
-                    let dx = bp.X - s.Pos.X
-                    let dy = bp.Y - s.Pos.Y
-                    let dz = bp.Z - s.Pos.Z
-                    let dSq = dx * dx + dy * dy + dz * dz
-                    found <- (s.Player, s.Pos, dSq)
+                    found <- (s.Player, s.Pos, bp.DistSqTo s.Pos)
                     foundIt <- true
                 | _ -> ()
 
@@ -97,49 +97,54 @@ module BallAgent =
                 for i = 0 to awaySlots.Length - 1 do
                     match awaySlots[i] with
                     | PlayerSlot.Active s when s.Player.Id = pid ->
-                        let dx = bp.X - s.Pos.X
-                        let dy = bp.Y - s.Pos.Y
-                        let dz = bp.Z - s.Pos.Z
-                        let dSq = dx * dx + dy * dy + dz * dz
-                        found <- (s.Player, s.Pos, dSq)
+                        found <- (s.Player, s.Pos, bp.DistSqTo s.Pos)
                         foundIt <- true
                     | _ -> ()
 
             if foundIt then Some found else None
 
-        let hysteresis = 0.30
+        let hysteresis = 0.30<meter>
 
-        match currentController, bestPlayer with
-        | Some currentPid, Some best ->
-            match findPlayerById currentPid with
-            | Some (currentPlayer, currentPos, currentDistSq) ->
-                let currentRadius = BalanceConfig.BallContactRadius + (float currentPlayer.Technical.BallControl / 20.0) * 0.20
-                let currentDist = sqrt currentDistSq
-                let bestDist = sqrt bestDistSq
+        let currentPossession =
+            match ball.Possession with
+            | Owned(_, pid) -> Some pid
+            | _ -> None
 
-                if currentDist < currentRadius && best.Id <> currentPid && bestDist >= (currentDist - hysteresis) then
-                    let resolved = resolveContact ball currentPos
-                    let canControl = ball.Position.Z < 0.6
-                    resolved, (if canControl then Some currentPid else None)
-                else
-                    let resolved = resolveContact ball bestPos
-                    let canControl = ball.Position.Z < 0.6
-                    resolved, (if canControl then Some best.Id else None)
-            | None ->
-                let resolved = resolveContact ball bestPos
-                let canControl = ball.Position.Z < 0.6
-                resolved, (if canControl then Some best.Id else None)
-        | _, Some player ->
+        match currentPossession, bestPlayer with
+        | _, Some best ->
             let resolved = resolveContact ball bestPos
-            let canControl = ball.Position.Z < 0.6
-            resolved, (if canControl then Some player.Id else None)
-        | _ ->
-            ball, None
+            let impactSpeed = resolved.Position.VelMag
 
-    let agent homeId homeSquad awaySquad tick (ctx: MatchContext) (state: SimState) : AgentOutput =
-        let prevControlled = state.Ball.ControlledBy
-        let stepped = BallPhysics.update state.Ball
-        let resolved, ctrl = resolveContacts stepped state.Home.Slots state.Away.Slots prevControlled
+            let canControl =
+                resolved.Position.Z < 0.6<meter> || impactSpeed < 3.0<meter / second>
+
+            if canControl then
+                let club =
+                    if Array.contains best (SimStateOps.activePlayers homeSlots) then
+                        HomeClub
+                    else
+                        AwayClub
+
+                { resolved with
+                    Possession = Owned(club, best.Id) },
+                Some best.Id
+            else
+                resolved, None
+        | _, _ -> ball, None
+
+    let agent tick (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
+        let prevPossession = state.Ball.Possession
+        let dt = SimulationClock.dt clock
+        let stepped = BallPhysics.update dt state.Ball
+
+        let resolved, ctrl =
+            resolveContacts
+                stepped
+                state.Home.Slots
+                state.Away.Slots
+                (match prevPossession with
+                 | Owned(_, pid) -> Some pid
+                 | _ -> None)
 
         state.Ball <-
             match ctrl with
@@ -150,12 +155,16 @@ module BallAgent =
                     | None -> state.AttackingClub
 
                 let playerOpt =
-                    match state.Home.Slots |> Array.tryPick (function
-                        | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
-                        | _ -> None) with
+                    match
+                        state.Home.Slots
+                        |> Array.tryPick (function
+                            | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
+                            | _ -> None)
+                    with
                     | Some p -> Some p
                     | None ->
-                        state.Away.Slots |> Array.tryPick (function
+                        state.Away.Slots
+                        |> Array.tryPick (function
                             | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
                             | _ -> None)
 
@@ -170,77 +179,40 @@ module BallAgent =
                     { resolved.Position with
                         Vx = resolved.Position.Vx * damp
                         Vy = resolved.Position.Vy * damp
-                        Vz = 0.0 }
+                        Vz = 0.0<meter / second> }
 
                 { resolved with
                     Position = dampened
-                    ControlledBy = ctrl
-                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy
-                    Phase = PossessionPhase.InPossession club }
-            | None ->
-                { resolved with
-                    ControlledBy = ctrl
-                    LastTouchBy = ctrl |> Option.orElse state.Ball.LastTouchBy }
+                    Possession = Owned(club, pid)
+                    LastTouchBy = Some pid }
+            | None -> { resolved with Possession = Loose }
 
-        match state.Ball.ControlledBy with
-        | Some _ -> ()
+        match ctrl with
+        | Some _ ->
+            state.Ball <-
+                { state.Ball with
+                    StationarySinceSubTick = None }
         | None ->
             let vel =
-                sqrt (state.Ball.Position.Vx * state.Ball.Position.Vx + state.Ball.Position.Vy * state.Ball.Position.Vy)
+                sqrt (
+                    state.Ball.Position.Vx * state.Ball.Position.Vx
+                    + state.Ball.Position.Vy * state.Ball.Position.Vy
+                )
 
-            if vel < 1.0 then
-                let bpX = state.Ball.Position.X
-                let bpY = state.Ball.Position.Y
-                let mutable nearestDistSq = System.Double.MaxValue
-                let mutable nearestPlayer: Player option = None
+            state.Ball <-
+                { state.Ball with
+                    StationarySinceSubTick =
+                        if vel < 1.0<meter / second> then
+                            state.Ball.StationarySinceSubTick |> Option.orElse (Some state.SubTick)
+                        else
+                            None }
 
-                for i = 0 to state.Home.Slots.Length - 1 do
-                    match state.Home.Slots[i] with
-                    | PlayerSlot.Active s ->
-                        let dx = s.Pos.X - bpX
-                        let dy = s.Pos.Y - bpY
-                        let dSq = dx * dx + dy * dy
-                        if dSq < nearestDistSq then
-                            nearestDistSq <- dSq
-                            nearestPlayer <- Some s.Player
-                    | _ -> ()
-
-                for i = 0 to state.Away.Slots.Length - 1 do
-                    match state.Away.Slots[i] with
-                    | PlayerSlot.Active s ->
-                        let dx = s.Pos.X - bpX
-                        let dy = s.Pos.Y - bpY
-                        let dSq = dx * dx + dy * dy
-                        if dSq < nearestDistSq then
-                            nearestDistSq <- dSq
-                            nearestPlayer <- Some s.Player
-                    | _ -> ()
-
-                if nearestDistSq < 25.0 then
-                    match nearestPlayer with
-                    | Some p ->
-                        let club =
-                            match SimStateOps.clubSideOf state p.Id with
-                            | Some c -> c
-                            | None -> state.AttackingClub
-
-                        state.Ball <-
-                            { state.Ball with
-                                Position =
-                                    { state.Ball.Position with
-                                        Vx = state.Ball.Position.Vx * 0.20
-                                        Vy = state.Ball.Position.Vy * 0.20
-                                        Vz = 0.0 }
-                                ControlledBy = Some p.Id
-                                LastTouchBy = Some p.Id
-                                Phase = PossessionPhase.InPossession club }
-                    | None -> ()
-
-        let nextSubTick = tick.SubTick + PhysicsIntervalSubTicks
+        let physicsRate = int (round ((float dt * 40.0)))
+        let nextSubTick = tick.SubTick + physicsRate
 
         let decisionSpawn =
-            match prevControlled, ctrl with
-            | None, Some pid ->
+            match prevPossession, ctrl with
+            | Loose, Some pid ->
                 [ { SubTick = nextSubTick
                     Priority = TickPriority.Duel
                     SequenceId = 0L
@@ -252,5 +224,6 @@ module BallAgent =
             [ { SubTick = nextSubTick
                 Priority = TickPriority.Physics
                 SequenceId = 0L
-                Kind = PhysicsTick } ] @ decisionSpawn
+                Kind = PhysicsTick } ]
+            @ decisionSpawn
           Transition = None }

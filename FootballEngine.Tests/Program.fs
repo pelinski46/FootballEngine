@@ -7,7 +7,7 @@ open FootballEngine.Tests.WorldTests
 open FootballEngine.Tests.TrainingSystemTests
 open FootballEngine.Tests.DeterminismTests
 open FootballEngine.Tests.TickSchedulerTests
-open FootballEngine.Tests.MatchEngineTests.PossessionPhaseTests
+open FootballEngine.Tests.MatchEngineTests.PossessionTests
 open FootballEngine.Tests.MatchEngineTests.BallPhysicsTests
 open FootballEngine.Tests.MatchEngineTests.OffsideTests
 open FootballEngine.Tests.MatchEngineTests.DuelActionTests
@@ -26,7 +26,7 @@ let main argv =
     let matchEngineTests =
         testList
             "MatchEngine"
-            [ possessionPhaseTests
+            [ possessionTests
               ballPhysicsTests
               offsideTests
               duelActionTests

@@ -7,6 +7,7 @@ open FootballEngine.Movement
 open FootballEngine.PhysicsContract
 open FootballEngine.Stats
 open SchedulingTypes
+open SimulationClock
 
 module MatchSimulator =
 
@@ -15,49 +16,49 @@ module MatchSimulator =
         | IncompleteLineup of clubName: string * playerCount: int
         | SameClub of clubName: string
 
-    let private generateInitialTicks (ctx: MatchContext) : ScheduledTick list =
-        let sub min = secondsToSubTicks (float min * 60.0)
+    let private generateInitialTicks (ctx: MatchContext) (clock: SimulationClock) : ScheduledTick list =
+        let sub s = secondsToSubTicks clock s
 
         let subs =
             [ for idx, min in List.indexed [ 60; 75; 85 ] ->
-                  { SubTick = sub min
+                  { SubTick = sub (float min * 60.0)
                     Priority = TickPriority.Manager
                     SequenceId = int64 idx
                     Kind = SubstitutionTick ctx.Home.Id }
               for idx, min in List.indexed [ 60; 75; 85 ] ->
-                  { SubTick = sub min
+                  { SubTick = sub (float min * 60.0)
                     Priority = TickPriority.Manager
                     SequenceId = int64 (idx + 3)
                     Kind = SubstitutionTick ctx.Away.Id } ]
 
         [ yield
-              { SubTick = PhysicsIntervalSubTicks
+              { SubTick = clock.PhysicsRate
                 Priority = TickPriority.Physics
                 SequenceId = 0L
                 Kind = PhysicsTick }
           yield
-              { SubTick = PhysicsIntervalSubTicks
+              { SubTick = clock.PhysicsRate
                 Priority = TickPriority.MatchControl
                 SequenceId = 1L
                 Kind = RefereeTick }
           yield
-              { SubTick = secondsToSubTicks 12.0
+              { SubTick = sub 12.0
                 Priority = TickPriority.Manager
                 SequenceId = 1L
                 Kind = CognitiveTick }
           yield
-              { SubTick = secondsToSubTicks 60.0
+              { SubTick = sub 60.0
                 Priority = TickPriority.Manager
                 SequenceId = 2L
                 Kind = AdaptiveTick }
           yield! subs
           yield
-              { SubTick = HalfTimeSubTick
+              { SubTick = halfTime clock
                 Priority = TickPriority.MatchControl
                 SequenceId = 10L
                 Kind = HalfTimeTick }
           yield
-              { SubTick = FullTimeSubTick
+              { SubTick = fullTime clock
                 Priority = TickPriority.MatchControl
                 SequenceId = 11L
                 Kind = FullTimeTick }
@@ -67,56 +68,54 @@ module MatchSimulator =
                 SequenceId = -1L
                 Kind = KickOffTick } ]
 
-    let private spawnCognitiveTick (tick: ScheduledTick) =
-        { SubTick = tick.SubTick + CognitiveIntervalSubTicks
+    let private spawnCognitiveTick (tick: ScheduledTick) (clock: SimulationClock) =
+        { SubTick = tick.SubTick + clock.CognitiveRate
           Priority = TickPriority.Manager
           SequenceId = 0L
           Kind = CognitiveTick }
 
-    let private spawnAdaptiveTick (tick: ScheduledTick) =
-        { SubTick = tick.SubTick + AdaptiveIntervalSubTicks
+    let private spawnAdaptiveTick (tick: ScheduledTick) (clock: SimulationClock) =
+        { SubTick = tick.SubTick + clock.AdaptiveRate
           Priority = TickPriority.Manager
           SequenceId = 0L
           Kind = AdaptiveTick }
 
     let private runTick
-        homeId
-        homeSquad
-        awaySquad
         (tick: ScheduledTick)
         (ctx: MatchContext)
         (state: SimState)
+        (clock: SimulationClock)
         : AgentOutput =
-        let dispatchAgent (tick: ScheduledTick) : Agent =
+        let dispatchAgent (tick: ScheduledTick) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) =
             match tick.Kind with
-            | PhysicsTick -> BallAgent.agent
+            | PhysicsTick -> BallAgent.agent tick ctx state clock
             | DuelTick _
             | DecisionTick _
             | PlayerActionTick _
             | CognitiveTick
             | AdaptiveTick
-            | RefereeTick
-            | PossessionChangeTick _ -> PlayerAgent.agent
+            | PossessionChangeTick _ -> PlayerAgent.agent tick ctx state clock
+            | RefereeTick -> RefereeAgent.agent tick ctx state clock
             | FreeKickTick _
             | CornerTick _
             | ThrowInTick _
             | PenaltyTick _
             | GoalKickTick
-            | KickOffTick -> SetPieceAgent.agent
+            | KickOffTick -> SetPieceAgent.agent tick ctx state clock
             | InjuryTick _
             | ResumePlayTick
             | HalfTimeTick
             | FullTimeTick
             | MatchEndTick
-            | ExtraTimeTick _ -> RefereeAgent.agent
+            | ExtraTimeTick _ -> RefereeAgent.agent tick ctx state clock
             | SubstitutionTick _
-            | ManagerReactionTick _ -> ManagerAgent.agent
+            | ManagerReactionTick _ -> ManagerAgent.agent tick ctx state clock
 
-        (dispatchAgent tick) homeId homeSquad awaySquad tick ctx state
+        dispatchAgent tick ctx state clock
 
-    let runLoopDes homeId homeSquad awaySquad (ctx: MatchContext) (state: SimState) (saveSnapshots: bool) =
-        let scheduler = TickScheduler(MaxMatchSubTicks)
-        generateInitialTicks ctx |> List.iter scheduler.Insert
+    let runLoopDes (ctx: MatchContext) (state: SimState) (saveSnapshots: bool) (clock: SimulationClock) =
+        let scheduler = TickScheduler(fullTime clock)
+        generateInitialTicks ctx clock |> List.iter scheduler.Insert
 
         let snapshots =
             if saveSnapshots then
@@ -146,10 +145,10 @@ module MatchSimulator =
               SequenceId = -1L
               Kind = DuelTick 0 }
 
-        let snapshotInterval = SubTicksPerSecond
+        let snapshotInterval = clock.SubTicksPerSecond
 
 
-        let rec loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt =
+        let rec loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt clock =
             match scheduler.Dequeue() with
             | ValueNone -> ls.State, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
 
@@ -170,30 +169,80 @@ module MatchSimulator =
                         | _ -> true
 
                     if not shouldProcess then
-                        loop ls scheduler lastSnapshotAt
+                        loop ls scheduler lastSnapshotAt clock
                     else
-                        let result = runTick homeId homeSquad awaySquad tick ls.Context ls.State
+                        let result = runTick tick ls.Context ls.State clock
 
                         let autoSpawned =
                             match tick.Kind with
-                            | CognitiveTick -> [ spawnCognitiveTick tick ]
-                            | AdaptiveTick -> [ spawnAdaptiveTick tick ]
-                            | RefereeTick -> [ { tick with Kind = RefereeTick; SubTick = tick.SubTick + PhysicsIntervalSubTicks } ]
+                            | CognitiveTick -> [ spawnCognitiveTick tick clock ]
+                            | AdaptiveTick -> [ spawnAdaptiveTick tick clock ]
+                            | RefereeTick ->
+                                [ { tick with
+                                      Kind = RefereeTick
+                                      SubTick = tick.SubTick + clock.PhysicsRate } ]
                             | _ -> []
 
                         match tick.Kind with
                         | PhysicsTick ->
-                            if tick.SubTick % SteeringIntervalSubTicks = 0 then
-                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State HomeClub DtPlayer
-                                MovementEngine.updateTeamSide tick.SubTick ls.Context ls.State AwayClub DtPlayer
+                            if tick.SubTick % clock.SteeringRate = 0 then
+                                let dtPlayer = SimulationClock.dtPlayer clock
+
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    ls.Context
+                                    ls.State
+                                    HomeClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
+
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    ls.Context
+                                    ls.State
+                                    AwayClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
 
                         | CognitiveTick ->
-                            MovementEngine.updateCognitive tick.SubTick ls.Context ls.State HomeClub ls.Events
-                            MovementEngine.updateCognitive tick.SubTick ls.Context ls.State AwayClub ls.Events
+                            MovementEngine.updateCognitive
+                                tick.SubTick
+                                ls.Context
+                                ls.State
+                                HomeClub
+                                ls.Events
+                                clock.CognitiveRate
+                                clock
+
+                            MovementEngine.updateCognitive
+                                tick.SubTick
+                                ls.Context
+                                ls.State
+                                AwayClub
+                                ls.Events
+                                clock.CognitiveRate
+                                clock
 
                         | AdaptiveTick ->
-                            MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State HomeClub ls.Events
-                            MovementEngine.updateAdaptive tick.SubTick ls.Context ls.State AwayClub ls.Events
+                            MovementEngine.updateAdaptive
+                                tick.SubTick
+                                ls.Context
+                                ls.State
+                                HomeClub
+                                ls.Events
+                                clock.AdaptiveRate
+                                clock
+
+                            MovementEngine.updateAdaptive
+                                tick.SubTick
+                                ls.Context
+                                ls.State
+                                AwayClub
+                                ls.Events
+                                clock.AdaptiveRate
+                                clock
 
                         | RefereeTick -> ()
 
@@ -218,7 +267,11 @@ module MatchSimulator =
                                       BallY = ls.State.Ball.Position.Y
                                       BallVx = ls.State.Ball.Position.Vx
                                       BallVy = ls.State.Ball.Position.Vy
-                                      BallControlledBy = ls.State.Ball.ControlledBy
+                                      BallZ = ls.State.Ball.Position.Z
+                                      BallVz = ls.State.Ball.Position.Vz
+                                      BallSpinTop = ls.State.Ball.Spin.Top
+                                      BallSpinSide = ls.State.Ball.Spin.Side
+                                      Possession = ls.State.Ball.Possession
                                       HomeScore = ls.State.HomeScore
                                       AwayScore = ls.State.AwayScore
                                       HomeConditions =
@@ -233,10 +286,7 @@ module MatchSimulator =
                                             | Sidelined _ -> 0)
                                       HomeSidelined = ls.State.Home.Sidelined
                                       AwaySidelined = ls.State.Away.Sidelined
-                                      AttackingClub = ls.State.AttackingClub
-                                      HomeAttackDir = ls.State.HomeAttackDir
-                                      Momentum = ls.State.Momentum
-                                      Phase = ls.State.Ball.Phase }
+                                      Momentum = ls.State.Momentum }
 
                                 tick.SubTick + snapshotInterval
                             | _ -> lastSnapshotAt
@@ -262,15 +312,16 @@ module MatchSimulator =
                                 SequenceCounter = newCounter }
                             scheduler
                             newLastSnapshotAt
+                            clock
 
-        loop initialState scheduler 0
+        loop initialState scheduler 0 clock
 
-    let runLoopFastDes homeId homeSquad awaySquad ctx state =
-        let s, evs, _ = runLoopDes homeId homeSquad awaySquad ctx state false
+    let runLoopFastDes ctx state =
+        let s, evs, _ = runLoopDes ctx state false defaultClock
         s, evs
 
-    let private runLoopFullDes homeId homeSquad awaySquad ctx state =
-        match runLoopDes homeId homeSquad awaySquad ctx state true with
+    let private runLoopFullDes ctx state =
+        match runLoopDes ctx state true defaultClock with
         | s, evs, Some snaps -> s, evs, snaps
         | s, evs, None -> s, evs, [||]
 
@@ -283,18 +334,18 @@ module MatchSimulator =
         |> Option.map Ok
         |> Option.defaultValue (Error(MissingLineup club.Name))
 
-    let private toCoords slotX slotY (clubSide: ClubSide) =
+    let private toCoords slotX slotY (clubSide: ClubSide) : float<meter> * float<meter> =
         match clubSide with
         | HomeClub -> (1.0 - slotY) * PitchLength, slotX * PitchWidth
         | AwayClub -> slotY * PitchLength, slotX * PitchWidth
 
-    let private kickOffPosition (x: float) (y: float) (clubSide: ClubSide) =
+    let private kickOffPosition (x: float) (y: float) (clubSide: ClubSide) : float<meter> * float<meter> =
         let tacticalX, tacticalY = toCoords x y clubSide
 
         let clampedX =
             match clubSide with
-            | HomeClub -> System.Math.Clamp(tacticalX, 2.0, HalfwayLineX - 1.0)
-            | AwayClub -> System.Math.Clamp(tacticalX, HalfwayLineX + 1.0, PitchLength - 2.0)
+            | HomeClub -> PhysicsContract.clamp tacticalX 2.0<meter> (HalfwayLineX - 1.0<meter>)
+            | AwayClub -> PhysicsContract.clamp tacticalX (HalfwayLineX + 1.0<meter>) (PitchLength - 2.0<meter>)
 
         clampedX, tacticalY
 
@@ -303,7 +354,7 @@ module MatchSimulator =
         (headCoach: Staff)
         (players: Map<PlayerId, Player>)
         (clubSide: ClubSide)
-        : Result<(Player * float * float)[] * TeamTactics * TacticalInstructions option, SimulationError> =
+        : Result<(Player * float<meter> * float<meter>)[] * TeamTactics * TacticalInstructions option, SimulationError> =
         match headCoach.Attributes.Coaching.Lineup with
         | None -> Error(MissingLineup club.Name)
         | Some lu ->
@@ -331,7 +382,7 @@ module MatchSimulator =
         else
             Ok()
 
-    let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float * float>) : Spatial[] =
+    let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float<meter> * float<meter>>) : Spatial[] =
         players
         |> Array.map (fun p ->
             let x, y =
@@ -345,13 +396,13 @@ module MatchSimulator =
         home
         homeCoach
         hp
-        hPosMap
+        (hPosMap: Map<PlayerId, float<meter> * float<meter>>)
         homeTactics
         homeInstructions
         away
         awayCoach
         ap
-        aPosMap
+        (aPosMap: Map<PlayerId, float<meter> * float<meter>>)
         awayTactics
         awayInstructions
         isKnockout
@@ -366,20 +417,20 @@ module MatchSimulator =
                     |> Map.tryFind p.Id
                     |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
 
-                let prof =
-                    profileMap
-                    |> Map.tryFind p.Id
-                    |> Option.defaultValue (Player.profile p)
+                let prof = profileMap |> Map.tryFind p.Id |> Option.defaultValue (Player.profile p)
 
                 let kx =
                     match p.Position with
                     | ST
                     | AMC ->
-                        let allowedDepth = prof.AttackingDepth * 5.0
-                        let threshold = HalfwayLineX - 5.0 + allowedDepth
-                        if tx > threshold then HalfwayLineX - 1.0 + allowedDepth * 0.5
-                        else System.Math.Clamp(tx, 2.0, HalfwayLineX - 2.0)
-                    | _ -> System.Math.Clamp(tx, 2.0, HalfwayLineX - 2.0)
+                        let allowedDepth = (float prof.AttackingDepth) * 5.0<meter>
+                        let threshold = HalfwayLineX - 5.0<meter> + allowedDepth
+
+                        if tx > threshold then
+                            HalfwayLineX - 1.0<meter> + allowedDepth * 0.5
+                        else
+                            PhysicsContract.clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
+                    | _ -> PhysicsContract.clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
 
                 defaultSpatial kx ty)
 
@@ -391,7 +442,9 @@ module MatchSimulator =
                     |> Map.tryFind p.Id
                     |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
 
-                let kx = System.Math.Clamp(tx, HalfwayLineX + 4.0, PitchLength - 2.0)
+                let kx =
+                    PhysicsContract.clamp tx (HalfwayLineX + 4.0<meter>) (PitchLength - 2.0<meter>)
+
                 defaultSpatial kx ty)
 
         let defaultInstr = TacticalInstructions.defaultInstructions
@@ -415,7 +468,11 @@ module MatchSimulator =
         state.SubTick <- 0
         state.HomeScore <- 0
         state.AwayScore <- 0
-        state.Ball <- { defaultBall with Phase = PossessionPhase.SetPiece HomeClub }
+
+        state.Ball <-
+            { defaultBall with
+                Possession = Possession.SetPiece(HomeClub, SetPieceKind.KickOff) }
+
         state.Momentum <- 0.0
         state.HomeBasePositions <- ctx.HomeBasePositions
         state.AwayBasePositions <- ctx.AwayBasePositions
@@ -426,10 +483,7 @@ module MatchSimulator =
                 Slots =
                     Array.init hCount (fun i ->
                         let p = hp[i]
-                        let prof =
-                            profileMap
-                            |> Map.tryFind p.Id
-                            |> Option.defaultValue (Player.profile p)
+                        let prof = profileMap |> Map.tryFind p.Id |> Option.defaultValue (Player.profile p)
 
                         PlayerSlot.Active
                             { Player = p
@@ -438,6 +492,7 @@ module MatchSimulator =
                               Mental = MentalState.initial p
                               Directives = Array.empty
                               Profile = prof })
+                Tactics = homeTactics
                 Instructions = homeInstructions |> Option.orElse (Some defaultInstr) }
 
         state.Away <-
@@ -445,10 +500,7 @@ module MatchSimulator =
                 Slots =
                     Array.init aCount (fun i ->
                         let p = ap[i]
-                        let prof =
-                            profileMap
-                            |> Map.tryFind p.Id
-                            |> Option.defaultValue (Player.profile p)
+                        let prof = profileMap |> Map.tryFind p.Id |> Option.defaultValue (Player.profile p)
 
                         PlayerSlot.Active
                             { Player = p
@@ -457,11 +509,17 @@ module MatchSimulator =
                               Mental = MentalState.initial p
                               Directives = Array.empty
                               Profile = prof })
+                Tactics = awayTactics
                 Instructions = awayInstructions |> Option.orElse (Some defaultInstr) }
 
         ctx, state
 
-    let private simulatePenaltyShootout (ctx: MatchContext) (state: SimState) (players: Map<PlayerId, Player>) =
+    let private simulatePenaltyShootout
+        (ctx: MatchContext)
+        (state: SimState)
+        (players: Map<PlayerId, Player>)
+        (clock: SimulationClock)
+        =
         result {
             let homePlayers =
                 ctx.Home.PlayerIds
@@ -477,19 +535,12 @@ module MatchSimulator =
                 let homeKicker = homePlayers |> List.item ((kickNum - 1) % homePlayers.Length)
                 let awayKicker = awayPlayers |> List.item ((kickNum - 1) % awayPlayers.Length)
 
-
-
-                resolvePenalty (FullTimeSubTick + kickNum) ctx state homeKicker HomeClub kickNum
-                |> ignore
-
-                let homeScored = state.HomeScore > state.HomeScore
-
+                let prevHomeScore = state.HomeScore
+                resolvePenalty ctx state homeKicker HomeClub kickNum clock |> ignore
+                let homeScored = state.HomeScore > prevHomeScore
 
                 let prevAwayScore = state.AwayScore
-
-                resolvePenalty (FullTimeSubTick + kickNum) ctx state awayKicker AwayClub kickNum
-                |> ignore
-
+                resolvePenalty ctx state awayKicker AwayClub kickNum clock |> ignore
                 let awayScored = state.AwayScore > prevAwayScore
 
                 let newHomeKicks = (homeKicker.Id, homeScored, kickNum) :: homeKicks
@@ -524,7 +575,7 @@ module MatchSimulator =
 
             let shootout = simulateKicks [] [] 1
 
-            let baseSubTick = secondsToSubTicks (95.0 * 60.0)
+            let baseSubTick = fullTime clock
 
             let events =
                 [ for pid, scored, k in shootout.HomeKicks ->
@@ -589,17 +640,23 @@ module MatchSimulator =
             return ctx, state, homeSquad, awaySquad
         }
 
-    let trySimulateMatch home away players staff profileMap : Result<int * int * MatchEvent list * SimState, SimulationError> =
+    let trySimulateMatch
+        home
+        away
+        players
+        staff
+        profileMap
+        : Result<int * int * MatchEvent list * SimState, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff false profileMap
-            let final, events = runLoopFastDes home.Id homeSquad awaySquad ctx state
+            let! ctx, state, _, _ = setup home away players staff false profileMap
+            let final, events = runLoopFastDes ctx state
             return final.HomeScore, final.AwayScore, events, final
         }
 
     let trySimulateMatchFull home away players staff profileMap : Result<MatchReplay, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff false profileMap
-            let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad ctx state
+            let! ctx, state, _, _ = setup home away players staff false profileMap
+            let final, events, snapshots = runLoopFullDes ctx state
 
             return
                 { Context = ctx
@@ -610,8 +667,8 @@ module MatchSimulator =
 
     let trySimulateMatchKnockout home away players staff profileMap : Result<MatchReplay * bool, SimulationError> =
         result {
-            let! ctx, state, homeSquad, awaySquad = setup home away players staff true profileMap
-            let final, events, snapshots = runLoopFullDes home.Id homeSquad awaySquad ctx state
+            let! ctx, state, _, _ = setup home away players staff true profileMap
+            let final, events, snapshots = runLoopFullDes ctx state
 
             let replay =
                 { Context = ctx
@@ -620,7 +677,7 @@ module MatchSimulator =
                   Snapshots = snapshots }
 
             if replay.Final.HomeScore = replay.Final.AwayScore then
-                let! shootout = simulatePenaltyShootout ctx replay.Final players
+                let! shootout = simulatePenaltyShootout ctx replay.Final players defaultClock
                 return shootout, true
             else
                 return replay, false

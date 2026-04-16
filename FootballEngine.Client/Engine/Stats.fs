@@ -70,8 +70,7 @@ module Stats =
         |> snd
         |> Option.defaultWith (fun () -> weights |> List.last |> snd)
 
-    let delayFrom (d: BalanceConfig.TickDelay) : int =
-        normalInt d.MeanST d.StdST d.MinST d.MaxST
+ 
 
     let setSeed (seed: int) =
         Random.SetSampleGenerator(Random.RandThreadSafe(seed))

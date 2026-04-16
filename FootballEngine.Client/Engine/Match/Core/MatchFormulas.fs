@@ -3,8 +3,11 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.Stats
+open FootballEngine.PhysicsContract
 
 module MatchFormulas =
+
+
 
     let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
         let normStat = PhysicsContract.normaliseAttr stat
@@ -40,8 +43,7 @@ module PitchMath =
     let inline distance (x1, y1) (x2, y2) =
         sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
 
-    let inline distanceSq (x1, y1) (x2, y2) =
-        (x1 - x2) ** 2.0 + (y1 - y2) ** 2.0
+    let inline distanceSq (x1, y1) (x2, y2) = (x1 - x2) ** 2.0 + (y1 - y2) ** 2.0
 
     let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
         positions
@@ -49,9 +51,9 @@ module PitchMath =
         |> Array.minBy snd
         |> fst
 
-    let jitter oX oY tX tY scale nx ny =
-        Math.Clamp(oX + (tX - oX) * scale + normalSample 0.0 nx, 0.0, PhysicsContract.PitchLength),
-        Math.Clamp(oY + (tY - oY) * scale + normalSample 0.0 ny, 0.0, PhysicsContract.PitchWidth)
+    let jitter (oX: float<meter>) (oY: float<meter>) (tX: float<meter>) (tY: float<meter>) scale nx ny =
+        PhysicsContract.clamp (oX + (tX - oX) * scale + (normalSample 0.0 nx) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchLength,
+        PhysicsContract.clamp (oY + (tY - oY) * scale + (normalSample 0.0 ny) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchWidth
 
     type PlayerRole =
         | Defender
@@ -60,15 +62,29 @@ module PitchMath =
         | Goalkeeper
 
     let playerRole (profile: BehavioralProfile) (position: Position) =
-        if profile.DefensiveHeight > 0.6 && profile.Directness < 0.3 then Defender
-        elif profile.AttackingDepth > 0.7 && profile.CreativityWeight < 0.3 then Attacker
-        elif position = Domain.GK then Goalkeeper
-        else Midfielder
+        if profile.DefensiveHeight > 0.6 && profile.Directness < 0.3 then
+            Defender
+        elif profile.AttackingDepth > 0.7 && profile.CreativityWeight < 0.3 then
+            Attacker
+        elif position = GK then
+            Goalkeeper
+        else
+            Midfielder
 
 module MovementConstants =
 
     let movementCoefficients (profile: BehavioralProfile) =
-        let offensive = profile.AttackingDepth * 0.30 + profile.Directness * 0.25 + profile.PositionalFreedom * 0.20
-        let defensive = profile.DefensiveHeight * 0.35 + profile.PressingIntensity * 0.25 + (1.0 - profile.PositionalFreedom) * 0.25
-        let lateral = abs (profile.LateralTendency - 0.5) * 0.50 + profile.PositionalFreedom * 0.25
+        let offensive =
+            profile.AttackingDepth * 0.30
+            + profile.Directness * 0.25
+            + profile.PositionalFreedom * 0.20
+
+        let defensive =
+            profile.DefensiveHeight * 0.35
+            + profile.PressingIntensity * 0.25
+            + (1.0 - profile.PositionalFreedom) * 0.25
+
+        let lateral =
+            abs (profile.LateralTendency - 0.5) * 0.50 + profile.PositionalFreedom * 0.25
+
         (offensive, defensive, lateral)

@@ -106,7 +106,7 @@ module EventWindow =
 
         if total = 0 then 0.5 else float success / float total
 
-    let flankSuccessRate (dir: AttackDir) (events: MatchEvent list) =
+    let flankSuccessRate (events: MatchEvent list) =
         let mutable total, success = 0, 0
 
         for e in events do

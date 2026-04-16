@@ -75,43 +75,8 @@ module ClubSide =
         | HomeClub -> AwayClub
         | AwayClub -> HomeClub
 
-module AttackDir =
 
 
-    let distToGoal (x: float) (dir: AttackDir) : float =
-        match dir with
-        | LeftToRight -> 105.0 - x
-        | RightToLeft -> x
-
-    let isInAttackingThird (x: float) (dir: AttackDir) : bool =
-        match dir with
-        | LeftToRight -> x >= 70.0
-        | RightToLeft -> x <= 30.0
-
-    let isInDefensiveThird (x: float) (dir: AttackDir) : bool =
-        match dir with
-        | LeftToRight -> x <= 30.0
-        | RightToLeft -> x >= 70.0
-
-    let forwardX (dir: AttackDir) : float =
-        match dir with
-        | LeftToRight -> 1.0
-        | RightToLeft -> -1.0
-
-    let momentumSign (dir: AttackDir) : float = forwardX dir
-
-    let momentumDelta (dir: AttackDir) (delta: float) : float = momentumSign dir * delta
-
-module PitchZone =
-    let ofBallX (x: float) (dir: AttackDir) : PitchZone =
-        let effectiveX =
-            match dir with
-            | LeftToRight -> x
-            | RightToLeft -> 105.0 - x
-
-        if effectiveX < 30.0 then DefensiveZone
-        elif effectiveX <= 70.0 then MidfieldZone
-        else AttackingZone
 
 module MatchFixture =
 

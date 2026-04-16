@@ -318,7 +318,7 @@ type InfrastructureBenchmarks() =
             Momentum = 5.0
             Ball =
                 { this.State.Ball with
-                    IsInPlay = false } }
+                     } }
 
     [<Benchmark(Description = "Record: TeamSide with Array.copy (Positions)")>]
     member this.ArrayUpdate() =

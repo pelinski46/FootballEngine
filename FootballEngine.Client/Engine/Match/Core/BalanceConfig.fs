@@ -1,12 +1,15 @@
 module BalanceConfig
 
 open FootballEngine
+open FootballEngine.PhysicsContract
+open FootballEngine.Stats
+open SimulationClock
 
 // ============================================================================
-// Timing — all delays expressed in SubTicks via PhysicsContract
+// Timing — all delays expressed in SubTicks via SimulationClock
 // ============================================================================
 
-/// Delays are in SubTicks. Use PhysicsContract.secondsToSubTicks to convert.
+/// Delays are in SubTicks. Use SimulationClock.secondsToSubTicks to convert.
 type TickDelay =
     { MeanST: int // mean in SubTicks
       StdST: int // standard deviation in SubTicks
@@ -15,11 +18,13 @@ type TickDelay =
 
 module TickDelay =
     let ofSeconds mean std min max =
-        { MeanST = PhysicsContract.secondsToSubTicks mean
-          StdST = PhysicsContract.secondsToSubTicks std
-          MinST = PhysicsContract.secondsToSubTicks min
-          MaxST = PhysicsContract.secondsToSubTicks max }
+        { MeanST = secondsToSubTicks defaultClock mean
+          StdST = secondsToSubTicks defaultClock std
+          MinST = secondsToSubTicks defaultClock min
+          MaxST = secondsToSubTicks defaultClock max }
 
+    let delayFrom (d: TickDelay) : int =
+        normalInt d.MeanST d.StdST d.MinST d.MaxST
 // Action chain — how quickly actions follow each other within a sequence
 let duelChainDelay = TickDelay.ofSeconds 4.0 1.0 2.0 7.0
 let duelNextDelay = TickDelay.ofSeconds 24.0 5.0 12.0 38.0
@@ -88,7 +93,7 @@ let ShotOnTargetBase = 0.50
 let ShotOnTargetMultiplier = 0.30
 
 /// Distance at which shot quality normalises to 0. In metres (pitch is 105m long).
-let ShotNormalisationDistance = 30.0
+let ShotNormalisationDistance = 30.0<meter>
 let ShotDistanceToGoalMultiplier = 0.15
 let ShotFinishingMin = 0.20
 let ShotFinishingMax = 1.00
@@ -111,8 +116,8 @@ let DuelJitterRecover = 2.0 // metres — defender pokes it away
 let DuelJitterKeep = 2.5 // metres — loose ball, no clear winner
 
 // Ball speed after a loose-ball duel outcome (m/s)
-let DuelSpeedKeep = 3.0
-let DuelSpeedKeepVz = 0.20
+let DuelSpeedKeep = 3.0<meter / second>
+let DuelSpeedKeepVz = 0.20<meter / second>
 
 // Attribute weights — all normalised against AttrMax (20) at call sites
 let DuelAttackerDribblingWeight = 0.50
@@ -145,12 +150,12 @@ let PassFailMomentum = 0.50
 let PassDeflectBaseRate = 0.06
 let PassMisplacedBaseRate = 0.03
 let PassInterceptBaseRate = 0.05
-let PassInterceptionRadius = 5.0
-let PassPressureDistance = 8.0
+let PassInterceptionRadius = 5.0<meter>
+let PassPressureDistance = 8.0<meter>
 let PassDeflectPressureMultiplier = 0.12
 let PassInterceptPaceWeight = 0.35
 let PassInterceptPositioningWeight = 0.45
-let PassScrambleJitter = 3.0
+let PassScrambleJitter = 3.0<meter>
 
 // Velocities come from PhysicsContract — no local redefinition
 let PassSpeed = PhysicsContract.PassSpeed
@@ -223,8 +228,8 @@ let TackleFailMomentum = 0.50
 let FreeKickTargetX =
     PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
 
-let FreeKickSpeed = 16.0
-let FreeKickVz = 1.50
+let FreeKickSpeed = 16.0<meter / second>
+let FreeKickVz = 1.50<meter / second>
 let FreeKickSavePowerThreshold = 2.0
 let FreeKickSaveVariance = 1.5
 
@@ -233,16 +238,16 @@ let CornerBoxXThreshold =
     PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
 
 let CornerDefenderBoxThreshold =
-    PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth - 5.0
+    PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth - 5.0<meter>
 
 let CornerSecondPhaseProbability = 0.35
 let CornerKeepPossessionProbability = 0.55
-let CornerSpeed = 14.0
-let CornerVz = 1.0
+let CornerSpeed = 14.0<meter / second>
+let CornerVz = 1.0<meter / second>
 
 // Throw-in
-let ThrowInSpeed = 12.0
-let ThrowInVz = 0.50
+let ThrowInSpeed = 12.0<meter / second>
+let ThrowInVz = 0.50<meter / second>
 let ThrowInMomentum = 0.10
 
 // Penalty
@@ -269,14 +274,15 @@ let BallMagnusCoeff = PhysicsContract.BallMagnusCoeff
 // ============================================================================
 
 let BallContactRadius = PhysicsContract.BallContactRadius
-let PlayerMaxForce = 25.0 // N/kg — caps total steering force
+let PlayerMaxForce = 25.0<meter / second^2> // N/kg — caps total steering force
 let PlayerMassBase = 70.0 // kg baseline
 let PlayerMassWeightCoeff = 0.30 // kg per kg of player weight (proportion)
 let PlayerMassStrengthCoeff = 0.50 // kg per strength point (1–20)
 
 let SteeringSlowRadius = PhysicsContract.SteeringSlowRadius
-let SteeringFleeRadius = 8.0 // metres — beyond this, flee behaviour turns off
+let SteeringFleeRadius = 8.0<meter> // metres — beyond this, flee behaviour turns off
 let SteeringAlignmentWeight = 0.30
+let CohesionWeight = 0.08
 
 let TurnConstraintAgilityCoeff = PhysicsContract.TurnConstraintAgilityCoeff
 let TurnConstraintBaseLimit = PhysicsContract.TurnConstraintBase
@@ -292,13 +298,14 @@ let JitterBase = 0.30 // metres of random noise on player movement
 let JitterAgilityMultiplier = 0.50
 
 // ============================================================================
-// Manager / cognitive timing — in SubTicks via PhysicsContract
+// Manager / cognitive timing — in SubTicks via SimulationClock
 // ============================================================================
 
 let ManagerFatigueReactionThreshold = 60 // condition % that triggers reaction
-let ManagerSustainedMomentumSubTicks = PhysicsContract.secondsToSubTicks 600 // 10 min sustained negative momentum
+let ManagerSustainedMomentumSubTicks = secondsToSubTicks defaultClock 600 // 10 min sustained negative momentum
 let ManagerMomentumThreshold = -2.0
-let ManagerFatigueCheckSubTicks = PhysicsContract.secondsToSubTicks 120 // check every 2 min
+let ManagerFatigueCheckSubTicks = secondsToSubTicks defaultClock 120 // check every 2 min
+let stuckBallDelay = secondsToSubTicks defaultClock 5.0
 
 // ============================================================================
 // Build-Up Phase

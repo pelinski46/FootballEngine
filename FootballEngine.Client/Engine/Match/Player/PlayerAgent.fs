@@ -1,20 +1,28 @@
 namespace FootballEngine
 
+open BalanceConfig.TickDelay
 open FootballEngine.Domain
 open SchedulingTypes
 
 module PlayerAgent =
 
-    let decide (me: Player) (profile: BehavioralProfile) (meIdx: int) (ctx: MatchContext) (state: SimState) : PlayerAction =
-        let actx = AgentContext.build me profile meIdx ctx state
+    let decide
+        (me: Player)
+        (profile: BehavioralProfile)
+        (meIdx: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        (clock: SimulationClock)
+        : DecisionOutcome =
+        let actx = AgentContext.build me profile meIdx state clock
         let scores = PlayerScorer.computeAll actx
         PlayerDecision.decide actx scores
 
-    let resolve (homeId: ClubId) (second: int) (action: PlayerAction) (ctx: MatchContext) (state: SimState) =
+    let resolve (second: int) (action: PlayerAction) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) =
         match action with
-        | PlayerAction.Shoot -> ShotAction.resolve second ctx state
+        | PlayerAction.Shoot -> ShotAction.resolve second ctx state clock
         | PlayerAction.Pass target -> PassAction.resolve second ctx state target
-        | PlayerAction.Dribble -> DuelAction.resolve second ctx state
+        | PlayerAction.Dribble -> DuelAction.resolve second ctx state clock
         | PlayerAction.Cross -> CrossAction.resolve second ctx state
         | PlayerAction.LongBall -> PassAction.resolveLong second ctx state
         | PlayerAction.Tackle opponent -> DuelAction.resolveTackle second ctx state opponent
@@ -22,8 +30,7 @@ module PlayerAgent =
         | PlayerAction.Corner -> SetPlayAction.resolveCorner second ctx state
         | PlayerAction.ThrowIn side -> SetPlayAction.resolveThrowIn second ctx state side
         | PlayerAction.Penalty(kicker, side, kickNum) ->
-            SetPlayAction.resolvePenalty second ctx state kicker side kickNum
-        | PlayerAction.Idle -> []
+            SetPlayAction.resolvePenalty ctx state kicker side kickNum clock
 
     let private fatigue p pressing tactics instructions =
         let config = SimStateOps.tacticsConfig tactics instructions
@@ -59,7 +66,7 @@ module PlayerAgent =
             |> List.tryPick (fun e ->
                 match e.Type with
                 | MatchEventType.FoulCommitted -> Some(Stopped Foul)
-                | MatchEventType.Corner -> Some(SetPiece Corner)
+                | MatchEventType.Corner -> Some(SetPiece(SetPieceKind.Corner))
                 | _ -> None)
 
     let private spawnNextDuel subTick interval =
@@ -69,23 +76,29 @@ module PlayerAgent =
           Kind = DuelTick 0 }
 
     let private spawnDecisionTick subTick depth controllerId =
-        { SubTick = subTick + Stats.delayFrom BalanceConfig.duelChainDelay
+        { SubTick = subTick + delayFrom BalanceConfig.duelChainDelay
           Priority = TickPriority.Duel
           SequenceId = 0L
           Kind = DecisionTick(depth, controllerId) }
 
     let private spawnPlayerActionTick subTick depth action attackerId =
-        { SubTick = subTick + Stats.delayFrom BalanceConfig.duelChainDelay
+        { SubTick = subTick + delayFrom BalanceConfig.duelChainDelay
           Priority = TickPriority.Duel
           SequenceId = 0L
           Kind = PlayerActionTick(depth, action, Some attackerId) }
 
-    let agent homeId homeSquad awaySquad tick (ctx: MatchContext) (state: SimState) : AgentOutput =
+    let agent tick (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
         match tick.Kind with
         | DuelTick _ ->
-            { Events = []
-              Spawned = [ spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay) ]
-              Transition = None }
+            match state.Ball.Possession with
+            | Owned(_, pid) ->
+                { Events = []
+                  Spawned = [ spawnDecisionTick tick.SubTick 0 (Some pid) ]
+                  Transition = None }
+            | _ ->
+                { Events = []
+                  Spawned = [ spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay) ]
+                  Transition = None }
 
         | DecisionTick(depth, controllerId) ->
             let attSlots =
@@ -113,24 +126,31 @@ module PlayerAgent =
 
                     if found then
                         match attSlots[idx] with
-                        | PlayerSlot.Active s -> s.Player, idx, decide s.Player s.Profile idx ctx state
-                        | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
+                        | PlayerSlot.Active s -> s.Player, idx, decide s.Player s.Profile idx ctx state clock
+                        | _ -> Unchecked.defaultof<Player>, 0, BallContested
                     else
                         let newIdx = MatchSpatial.nearestIdxToBall attSlots bx by
+
                         match attSlots[newIdx] with
-                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state
-                        | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
+                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state clock
+                        | _ -> Unchecked.defaultof<Player>, 0, BallContested
                 | None ->
                     if attSlots.Length = 0 then
-                        Unchecked.defaultof<Player>, 0, PlayerAction.Idle
+                        Unchecked.defaultof<Player>, 0, BallContested
                     else
                         let newIdx = MatchSpatial.nearestIdxToBall attSlots bx by
+
                         match attSlots[newIdx] with
-                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state
-                        | _ -> Unchecked.defaultof<Player>, 0, PlayerAction.Idle
+                        | PlayerSlot.Active s -> s.Player, newIdx, decide s.Player s.Profile newIdx ctx state clock
+                        | _ -> Unchecked.defaultof<Player>, 0, BallContested
 
             let prevAttackingClub = state.AttackingClub
-            let playerEvents = resolve homeId tick.SubTick action ctx state
+
+            let playerEvents, playerHasBall =
+                match action with
+                | BallContested -> [], false
+                | PlayerActing act -> resolve tick.SubTick act ctx state clock, true
+
             let possessionChanged = state.AttackingClub <> prevAttackingClub
 
             let att =
@@ -182,7 +202,7 @@ module PlayerAgent =
 
                     match foulerOpt with
                     | Some fouler ->
-                        let actions = RefereeAgent.decideCard tick.SubTick fouler ctx state
+                        let actions = RefereeAgent.decideCard fouler ctx state
                         actions |> List.collect (fun a -> RefereeAgent.resolve tick.SubTick a ctx state)
                     | None -> [])
 
@@ -207,6 +227,7 @@ module PlayerAgent =
                     | MatchEventType.PassMisplaced _ -> true
                     | _ -> false)
                 || state.AttackingClub <> prevAttackingClub
+                || not playerHasBall
 
             if hasTerminatingEvent allEventsWithCards || chainBreaks then
                 let transition = transitionFromEvents allEventsWithCards
@@ -239,7 +260,7 @@ module PlayerAgent =
                         | Some kickerId ->
                             let foulPos = SimStateOps.defaultSpatial bx2 by2
 
-                            [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.foulDelay
+                            [ { SubTick = tick.SubTick + delayFrom BalanceConfig.foulDelay
                                 Priority = TickPriority.SetPiece
                                 SequenceId = 0L
                                 Kind = FreeKickTick(kickerId, foulPos, 0) } ]
@@ -249,14 +270,22 @@ module PlayerAgent =
                 let spawned =
                     if hasGoal then
                         let kt =
-                            { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.goalDelay
+                            { SubTick = tick.SubTick + delayFrom BalanceConfig.goalDelay
                               Priority = TickPriority.MatchControl
                               SequenceId = 0L
                               Kind = KickOffTick }
 
                         addPossessionTick [ kt ]
                     else
-                        let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                        let dt =
+                            match state.Ball.Possession with
+                            | Owned(_, pid) -> Some pid
+                            | _ -> None
+                            |> fun pidOpt ->
+                                match pidOpt with
+                                | Some pid -> spawnDecisionTick tick.SubTick 0 (Some pid)
+                                | None -> spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
+
                         addPossessionTick (foulTick @ [ dt ])
 
                 { Events = allEventsWithCards
@@ -266,7 +295,7 @@ module PlayerAgent =
                 let attSlots2 = SimStateOps.getSlots state state.AttackingClub
 
                 if attSlots2.Length = 0 then
-                    let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                    let dt = spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
 
                     { Events = allEventsWithCards
                       Spawned = addPossessionTick [ dt ]
@@ -280,13 +309,20 @@ module PlayerAgent =
                         | PlayerSlot.Active s -> s.Player, s.Profile
                         | _ -> Unchecked.defaultof<Player>, BehavioralProfile.neutral
 
-                    let newAction = decide newAtt newAttProfile newAttIdx ctx state
+                    let spawned' =
+                        match decide newAtt newAttProfile newAttIdx ctx state clock with
+                        | BallContested ->
+                            [ { SubTick = tick.SubTick + delayFrom BalanceConfig.duelChainDelay
+                                Priority = TickPriority.Duel
+                                SequenceId = 0L
+                                Kind = DuelTick 0 } ]
+                        | PlayerActing act -> [ spawnPlayerActionTick tick.SubTick (depth + 1) act newAtt.Id ]
 
                     { Events = allEventsWithCards
-                      Spawned = addPossessionTick [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
+                      Spawned = addPossessionTick spawned'
                       Transition = None }
             else
-                let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                let dt = spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
 
                 { Events = allEventsWithCards
                   Spawned = addPossessionTick [ dt ]
@@ -294,7 +330,8 @@ module PlayerAgent =
 
         | PlayerActionTick(depth, action, attId) ->
             let prevAttackingClub = state.AttackingClub
-            let playerEvents = resolve homeId tick.SubTick action ctx state
+            let playerEvents = resolve tick.SubTick action ctx state clock
+            let playerHasBall = true
             let possessionChanged = state.AttackingClub <> prevAttackingClub
 
             let att =
@@ -347,7 +384,7 @@ module PlayerAgent =
 
                     match foulerOpt with
                     | Some fouler ->
-                        let actions = RefereeAgent.decideCard tick.SubTick fouler ctx state
+                        let actions = RefereeAgent.decideCard fouler ctx state
                         actions |> List.collect (fun a -> RefereeAgent.resolve tick.SubTick a ctx state)
                     | None -> [])
 
@@ -372,6 +409,7 @@ module PlayerAgent =
                     | MatchEventType.PassMisplaced _ -> true
                     | _ -> false)
                 || state.AttackingClub <> prevAttackingClub
+                || not playerHasBall
 
             if hasTerminatingEvent allEventsWithCards || chainBreaks then
                 let transition = transitionFromEvents allEventsWithCards
@@ -404,7 +442,7 @@ module PlayerAgent =
                         | Some kickerId ->
                             let foulPos = SimStateOps.defaultSpatial bx2 by2
 
-                            [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.foulDelay
+                            [ { SubTick = tick.SubTick + delayFrom BalanceConfig.foulDelay
                                 Priority = TickPriority.SetPiece
                                 SequenceId = 0L
                                 Kind = FreeKickTick(kickerId, foulPos, 0) } ]
@@ -414,14 +452,22 @@ module PlayerAgent =
                 let spawned =
                     if hasGoal then
                         let kt =
-                            { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.goalDelay
+                            { SubTick = tick.SubTick + delayFrom BalanceConfig.goalDelay
                               Priority = TickPriority.MatchControl
                               SequenceId = 0L
                               Kind = KickOffTick }
 
                         addPossessionTick [ kt ]
                     else
-                        let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                        let dt =
+                            match state.Ball.Possession with
+                            | Owned(_, pid) -> Some pid
+                            | _ -> None
+                            |> fun pidOpt ->
+                                match pidOpt with
+                                | Some pid -> spawnDecisionTick tick.SubTick 0 (Some pid)
+                                | None -> spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
+
                         addPossessionTick (foulTick @ [ dt ])
 
                 { Events = allEventsWithCards
@@ -431,7 +477,7 @@ module PlayerAgent =
                 let attSlots2 = SimStateOps.getSlots state state.AttackingClub
 
                 if attSlots2.Length = 0 then
-                    let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                    let dt = spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
 
                     { Events = allEventsWithCards
                       Spawned = addPossessionTick [ dt ]
@@ -445,13 +491,20 @@ module PlayerAgent =
                         | PlayerSlot.Active s -> s.Player, s.Profile
                         | _ -> Unchecked.defaultof<Player>, BehavioralProfile.neutral
 
-                    let newAction = decide newAtt newAttProfile newAttIdx ctx state
+                    let spawned' =
+                        match decide newAtt newAttProfile newAttIdx ctx state clock with
+                        | BallContested ->
+                            [ { SubTick = tick.SubTick + delayFrom BalanceConfig.duelChainDelay
+                                Priority = TickPriority.Duel
+                                SequenceId = 0L
+                                Kind = DuelTick 0 } ]
+                        | PlayerActing act -> [ spawnPlayerActionTick tick.SubTick (depth + 1) act newAtt.Id ]
 
                     { Events = allEventsWithCards
-                      Spawned = addPossessionTick [ spawnPlayerActionTick tick.SubTick (depth + 1) newAction newAtt.Id ]
+                      Spawned = addPossessionTick spawned'
                       Transition = None }
             else
-                let dt = spawnNextDuel tick.SubTick (Stats.delayFrom BalanceConfig.duelNextDelay)
+                let dt = spawnNextDuel tick.SubTick (delayFrom BalanceConfig.duelNextDelay)
 
                 { Events = allEventsWithCards
                   Spawned = addPossessionTick [ dt ]

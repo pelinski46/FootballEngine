@@ -4,31 +4,31 @@ open FootballEngine
 open FootballEngine.Domain
 open SimStateOps
 open FootballEngine.PlayerSteering
+open FootballEngine.PhysicsContract
+open SimulationClock
 
 module MovementEngine =
 
     let handlePossessionChange (currentSubTick: int) (ctx: MatchContext) (state: SimState) (loserClub: ClubSide) =
-        let slots = SimStateOps.getSlots state loserClub
-        let bx = state.Ball.Position.X
-        let by = state.Ball.Position.Y
+        let slots = getSlots state loserClub
+        let ballPos = state.Ball.Position
 
         let nearest =
             slots
             |> Array.mapi (fun i slot ->
                 match slot with
-                | PlayerSlot.Active s ->
-                    let dx = s.Pos.X - bx
-                    let dy = s.Pos.Y - by
-                    i, dx * dx + dy * dy, s
-                | Sidelined _ -> i, System.Double.MaxValue, Unchecked.defaultof<ActiveSlot>)
-            |> Array.filter (fun (_, d, _) -> d < System.Double.MaxValue)
+                | PlayerSlot.Active s -> i, s.Pos.DistSqTo2D ballPos, s
+                | Sidelined _ -> i, PhysicsContract.MaxDistanceSq, Unchecked.defaultof<ActiveSlot>)
+            |> Array.filter (fun (_, d, _) -> d < PhysicsContract.MaxDistanceSq)
             |> Array.sortBy (fun (_, d, _) -> d)
             |> Array.take (min 3 slots.Length)
 
         let expiry = currentSubTick + 80
 
         for (idx, _, s) in nearest do
-            let pressDir = Directive.create Press bx by 1.2 0.9 expiry "possession_loss"
+            let pressDir =
+                Directive.create Press ballPos.X ballPos.Y 1.2 0.9 expiry "possession_loss"
+
             let existing = s.Directives
             let buf = System.Collections.Generic.List<Directive>(existing.Length + 1)
 
@@ -39,7 +39,7 @@ module MovementEngine =
             buf.Add(pressDir)
             slots[idx] <- PlayerSlot.Active { s with Directives = buf.ToArray() }
 
-        let runs = SimStateOps.getActiveRuns state loserClub
+        let runs = getActiveRuns state loserClub
 
         let filtered =
             runs
@@ -51,12 +51,12 @@ module MovementEngine =
                 | ThirdManRun -> false
                 | _ -> RunAssignment.isActive currentSubTick r)
 
-        SimStateOps.setActiveRuns state loserClub filtered
+        setActiveRuns state loserClub filtered
 
         // Build-up shape directives for the team that gained possession
         let winnerClub = ClubSide.flip loserClub
-        let winnerSlots = SimStateOps.getSlots state winnerClub
-        let basePos = SimStateOps.getBasePositions state winnerClub
+        let winnerSlots = getSlots state winnerClub
+        let basePos = getBasePositions state winnerClub
         let shapeExpiry = currentSubTick + 160
 
         for i = 0 to winnerSlots.Length - 1 do
@@ -118,8 +118,8 @@ module MovementEngine =
         currentSubTick
         (modifiers: DirectiveModifiers)
         (tw: float byref)
-        (sx: float byref)
-        (sy: float byref)
+        (sx: float<meter> byref)
+        (sy: float<meter> byref)
         (ds: Directive[])
         =
         for i = 0 to ds.Length - 1 do
@@ -148,8 +148,8 @@ module MovementEngine =
         currentSubTick
         (modifiers: DirectiveModifiers)
         (tw: float byref)
-        (sx: float byref)
-        (sy: float byref)
+        (sx: float<meter> byref)
+        (sy: float<meter> byref)
         (d: Directive)
         =
         if not (Directive.expired currentSubTick d) && d.Weight > 0.0 then
@@ -171,46 +171,50 @@ module MovementEngine =
             sx <- d.TargetX * w + sx
             sy <- d.TargetY * w + sy
 
-    let updateTeamSide (currentSubTick: int) (ctx: MatchContext) (state: SimState) (clubSide: ClubSide) (dt: float) =
-        let slots = SimStateOps.getSlots state clubSide
-        let oppSlots = SimStateOps.getSlots state (ClubSide.flip clubSide)
+    let updateTeamSide
+        (currentSubTick: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        (clubSide: ClubSide)
+        (dt: float<second>)
+        (steeringRate: int)
+        (cognitiveRate: int)
+        =
+        let slots = getSlots state clubSide
+        let oppSlots = getSlots state (ClubSide.flip clubSide)
         let dir = attackDirFor clubSide state
 
-        let lastShapeSubTick = SimStateOps.getLastShapeSubTick state clubSide
+        let lastShapeSubTick = getLastShapeSubTick state clubSide
         let shapeNeedsUpdate = currentSubTick - lastShapeSubTick >= 600
 
-        let lastMarkingSubTick = SimStateOps.getLastMarkingSubTick state clubSide
+        let lastMarkingSubTick = getLastMarkingSubTick state clubSide
 
-        let markingNeedsUpdate =
-            currentSubTick - lastMarkingSubTick >= PhysicsContract.MarkingIntervalSubTicks
+        let markingNeedsUpdate = currentSubTick - lastMarkingSubTick >= cognitiveRate
 
-        if currentSubTick % PhysicsContract.SteeringIntervalSubTicks <> 0 then
+        if currentSubTick % steeringRate <> 0 then
             ()
         else
-            let activeRuns =
-                SimStateOps.activeRunsFilter currentSubTick (SimStateOps.getActiveRuns state clubSide)
+            let activeRuns = activeRunsFilter currentSubTick (getActiveRuns state clubSide)
 
             let phase = phaseFromBallZone dir state.Ball.Position.X
 
             let shapeTargets =
                 if shapeNeedsUpdate then
                     ShapeEngine.computeShapeTargets
-                        (SimStateOps.getBasePositions state clubSide)
+                        (getBasePositions state clubSide)
                         dir
                         phase
                         state.Ball.Position.X
-                        (tacticsConfig
-                            (SimStateOps.getTactics state clubSide)
-                            (SimStateOps.getInstructions state clubSide))
+                        (tacticsConfig (getTactics state clubSide) (getInstructions state clubSide))
                 else
                     let n = slots.Length
-                    let arr = Array.zeroCreate<float * float> n
-                    let basePos = SimStateOps.getBasePositions state clubSide
+                    let arr = Array.zeroCreate<float<meter> * float<meter>> n
+                    let basePos = getBasePositions state clubSide
 
                     for i = 0 to n - 1 do
                         match slots[i] with
                         | PlayerSlot.Active _ -> arr[i] <- (basePos[i].X, basePos[i].Y)
-                        | Sidelined _ -> arr[i] <- (52.5, 34.0)
+                        | Sidelined _ -> arr[i] <- (52.5<meter>, 34.0<meter>)
 
                     arr
 
@@ -247,14 +251,12 @@ module MovementEngine =
                         | PlayerSlot.Active s ->
                             if s.Player.Position <> GK then
                                 let mutable bestIdx = 0
-                                let mutable bestDistSq = System.Double.MaxValue
+                                let mutable bestDistSq = PhysicsContract.MaxDistanceSq
 
                                 for j = 0 to oppSlots.Length - 1 do
                                     match oppSlots[j] with
                                     | PlayerSlot.Active os when os.Player.Position <> GK ->
-                                        let dx = s.Pos.X - os.Pos.X
-                                        let dy = s.Pos.Y - os.Pos.Y
-                                        let dSq = dx * dx + dy * dy
+                                        let dSq = s.Pos.DistSqTo2D os.Pos
 
                                         if dSq < bestDistSq then
                                             bestDistSq <- dSq
@@ -271,29 +273,28 @@ module MovementEngine =
                                 None
                         | Sidelined _ -> None)
 
-            let emergentState = SimStateOps.getEmergentState state clubSide
+            let emergentState = getEmergentState state clubSide
             let emergentModifiers = EmergentLoops.toDirectiveModifiers emergentState
-            let ballX = state.Ball.Position.X
-            let ballY = state.Ball.Position.Y
+            let ballPos = state.Ball.Position
 
             let chasingSet =
                 slots
                 |> Array.mapi (fun i slot ->
                     match slot with
-                    | PlayerSlot.Active s ->
-                        let dx = s.Pos.X - ballX
-                        let dy = s.Pos.Y - ballY
-                        i, dx * dx + dy * dy
-                    | Sidelined _ -> i, System.Double.MaxValue)
-                |> Array.filter (fun (_, d) -> d < System.Double.MaxValue)
+                    | PlayerSlot.Active s -> i, s.Pos.DistSqTo2D ballPos
+                    | Sidelined _ -> i, PhysicsContract.MaxDistanceSq)
+                |> Array.filter (fun (_, d) -> d < PhysicsContract.MaxDistanceSq)
                 |> Array.sortBy snd
                 |> Array.take (min 3 slots.Length)
                 |> Array.map fst
 
             let inline isChasing (idx: int) : bool =
                 let mutable found = false
+
                 for j = 0 to chasingSet.Length - 1 do
-                    if chasingSet[j] = idx then found <- true
+                    if chasingSet[j] = idx then
+                        found <- true
+
                 found
 
             let currentPositions = Array.zeroCreate<Spatial> slots.Length
@@ -314,8 +315,8 @@ module MovementEngine =
                     let stX, stY = shapeTargets[i]
 
                     let mutable tw = 0.0
-                    let mutable sx = 0.0
-                    let mutable sy = 0.0
+                    let mutable sx = 0.0<meter>
+                    let mutable sy = 0.0<meter>
 
                     foldSingleDirective
                         currentSubTick
@@ -365,15 +366,25 @@ module MovementEngine =
 
                     let chaseRank =
                         let mutable r = -1
+
                         if isChasing i then
                             for j = 0 to chasingSet.Length - 1 do
-                                if chasingSet[j] = i then r <- j
+                                if chasingSet[j] = i then
+                                    r <- j
+
                         r
 
-                    if chaseRank = 0 then
+                    let hasBallCtrl =
+                        match state.Ball.Possession with
+                        | Owned(_, pid) when pid = p.Id -> true
+                        | _ -> false
+
+                    if hasBallCtrl then
+                        ()
+                    elif chaseRank = 0 then
                         tw <- tw + 10.0
-                        sx <- sx + ballX * 10.0
-                        sy <- sy + ballY * 10.0
+                        sx <- sx + ballPos.X * 10.0
+                        sy <- sy + ballPos.Y * 10.0
                     elif chaseRank > 0 then
                         let chaseWeight =
                             match chaseRank with
@@ -386,10 +397,13 @@ module MovementEngine =
                             &tw
                             &sx
                             &sy
-                            (Directive.create Run ballX ballY chaseWeight 1.0 (currentSubTick + 40) "chase")
+                            (Directive.create Run ballPos.X ballPos.Y chaseWeight 1.0 (currentSubTick + 40) "chase")
 
                     let finalTargetX, finalTargetY =
-                        if tw = 0.0 then (52.5, 34.0) else (sx / tw, sy / tw)
+                        if tw = 0.0 then
+                            (52.5<meter>, 34.0<meter>)
+                        else
+                            (sx / tw, sy / tw)
 
                     let driftX, driftY = OrganicDrift.compute p.Position p.Id currentSubTick
                     let adjustedTargetX = finalTargetX + driftX * 0.15
@@ -404,7 +418,7 @@ module MovementEngine =
                             currentPositions
                             (adjustedTargetX, adjustedTargetY)
                             state.Ball.Position
-                            (chaseRank = 0)
+                            hasBallCtrl
                             (chaseRank >= 0 && chaseRank < 3)
                             dt
 
@@ -432,15 +446,17 @@ module MovementEngine =
         (state: SimState)
         (clubSide: ClubSide)
         (events: ResizeArray<MatchEvent>)
+        (cognitiveRate: int)
+        (clock: SimulationClock)
         =
 
-        let lastCogSubTick = SimStateOps.getLastCognitiveSubTick state clubSide
+        let lastCogSubTick = getLastCognitiveSubTick state clubSide
 
-        if currentSubTick - lastCogSubTick < PhysicsContract.CognitiveIntervalSubTicks then
+        if currentSubTick - lastCogSubTick < cognitiveRate then
             ()
         else
-            let slots = SimStateOps.getSlots state clubSide
-            let oppSlots = SimStateOps.getSlots state (ClubSide.flip clubSide)
+            let slots = getSlots state clubSide
+            let oppSlots = getSlots state (ClubSide.flip clubSide)
             let dir = attackDirFor clubSide state
 
             let momentum =
@@ -491,13 +507,13 @@ module MovementEngine =
                     | PlayerSlot.Active s -> s.Pos
                     | Sidelined _ -> kickOffSpatial)
 
-            let chemistry = SimStateOps.getChemistry ctx clubSide
-            let emergentState = SimStateOps.getEmergentState state clubSide
+            let chemistry = getChemistry ctx clubSide
+            let emergentState = getEmergentState state clubSide
 
             let newMentalStates = Array.zeroCreate slots.Length
             let newDirectiveMap = Array.zeroCreate<Directive[]> slots.Length
             let newRuns = System.Collections.Generic.List<RunAssignment>()
-            let basePositions = SimStateOps.getBasePositions state clubSide
+            let basePositions = getBasePositions state clubSide
 
             let teamRead =
                 GameRead.computeTeam positions oppPositions state.Ball.Position.X state.Ball.Position.Y dir
@@ -556,11 +572,11 @@ module MovementEngine =
 
                     update.RunAssignments |> List.iter newRuns.Add
 
-            let matchMinute = PhysicsContract.subTicksToSeconds currentSubTick / 60.0
+            let matchMinute = subTicksToSeconds clock currentSubTick / 60.0
 
             let isPressing =
-                SimStateOps.getTactics state clubSide = TeamTactics.Pressing
-                || SimStateOps.getInstructions state clubSide
+                getTactics state clubSide = TeamTactics.Pressing
+                || getInstructions state clubSide
                    |> Option.exists (fun instr -> instr.PressingIntensity >= 4)
 
             let degradedConditions =
@@ -588,7 +604,7 @@ module MovementEngine =
                 |> EmergentLoops.updateWingPlay
                 <| flankRate
 
-            let existingRuns = SimStateOps.getActiveRuns state clubSide
+            let existingRuns = getActiveRuns state clubSide
 
             let allRuns =
                 if newRuns.Count = 0 then
@@ -622,11 +638,13 @@ module MovementEngine =
         (state: SimState)
         (clubSide: ClubSide)
         (events: ResizeArray<MatchEvent>)
+        (adaptiveRate: int)
+        (clock: SimulationClock)
         =
 
-        let lastAdaptiveSubTick = SimStateOps.getLastAdaptiveSubTick state clubSide
+        let lastAdaptiveSubTick = getLastAdaptiveSubTick state clubSide
 
-        if currentSubTick - lastAdaptiveSubTick < PhysicsContract.AdaptiveIntervalSubTicks then
+        if currentSubTick - lastAdaptiveSubTick < adaptiveRate then
             ()
         else
             let recentEvts = EventWindow.recentEvents 12000 events
@@ -644,7 +662,7 @@ module MovementEngine =
                                 LostPossession
 
                         AdaptiveTactics.recordAttempt pattern result st)
-                    (SimStateOps.getAdaptiveState state clubSide)
+                    (getAdaptiveState state clubSide)
 
             setAdaptiveState state clubSide updatedAdaptive
             setLastAdaptiveSubTick state clubSide currentSubTick

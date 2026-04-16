@@ -1,8 +1,9 @@
 namespace FootballEngine
 
-open System
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 open FootballEngine.Domain.TacticalInstructions
+open SimulationClock
 
 type DirectiveModifiers =
     { Shape: float
@@ -47,8 +48,8 @@ type DirectiveKind =
 [<Struct>]
 type Directive =
     { Kind: DirectiveKind
-      TargetX: float
-      TargetY: float
+      TargetX: float<meter>
+      TargetY: float<meter>
       Weight: float
       Urgency: float
       ExpirySubTick: int
@@ -68,8 +69,8 @@ module Directive =
 
     let composeDirectives currentSubTick (directives: Directive[]) (modifiers: DirectiveModifiers) =
         let mutable tw = 0.0
-        let mutable sx = 0.0
-        let mutable sy = 0.0
+        let mutable sx = 0.0<meter>
+        let mutable sy = 0.0<meter>
         let mutable hasActive = false
 
         let applyModifier kind weight =
@@ -96,8 +97,8 @@ module Directive =
                 sx <- sx + d.TargetX * w
                 sy <- sy + d.TargetY * w
 
-        if not hasActive then (52.5, 34.0)
-        elif tw = 0.0 then (52.5, 34.0)
+        if not hasActive then (52.5<meter>, 34.0<meter>)
+        elif tw = 0.0 then (52.5<meter>, 34.0<meter>)
         else (sx / tw, sy / tw)
 
 type RunType =
@@ -120,8 +121,9 @@ type RunTrigger =
     | CounterAttack
 
 type RunTrajectory =
-    | Linear of float * float * float * float
-    | Waypoints of (float * float)[]
+    | Linear of float<meter> * float<meter> * float<meter> * float<meter>
+    | Waypoints of (float<meter> * float<meter>)[]
+
 
 type RunAssignment =
     { PlayerId: PlayerId
@@ -149,7 +151,7 @@ module RunAssignment =
         | Linear(sx, sy, ex, ey) -> (sx + (ex - sx) * t, sy + (ey - sy) * t)
         | Waypoints pts ->
             if Array.isEmpty pts then
-                (52.5, 34.0)
+                (52.5<meter>, 34.0<meter>)
             elif pts.Length = 1 then
                 pts[0]
             else
@@ -255,12 +257,33 @@ type PlayerOut =
 
 [<Struct>]
 type Spatial =
-    { X: float
-      Y: float
-      Z: float
-      Vx: float
-      Vy: float
-      Vz: float }
+    { X: float<meter>
+      Y: float<meter>
+      Z: float<meter>
+      Vx: float<meter / second>
+      Vy: float<meter / second>
+      Vz: float<meter / second> }
+
+    member this.XY = this.X, this.Y
+    member this.XYZ = this.X, this.Y, this.Z
+    member this.Vel = this.Vx, this.Vy, this.Vz
+
+    member this.DistSqTo(other: Spatial) =
+        let dx = this.X - other.X
+        let dy = this.Y - other.Y
+        let dz = this.Z - other.Z
+        dx * dx + dy * dy + dz * dz
+
+    member this.DistTo(other: Spatial) = sqrt (this.DistSqTo(other))
+
+    member this.DistSqTo2D(other: Spatial) =
+        let dx = this.X - other.X
+        let dy = this.Y - other.Y
+        dx * dx + dy * dy
+
+    member this.DistTo2D(other: Spatial) = sqrt (this.DistSqTo2D(other))
+    member this.VelMagSq = this.Vx * this.Vx + this.Vy * this.Vy + this.Vz * this.Vz
+    member this.VelMag = sqrt this.VelMagSq
 
 [<Struct>]
 type ActiveSlot =
@@ -278,35 +301,45 @@ type PlayerSlot =
 
 
 [<Struct>]
-type Spin = { Top: float; Side: float }
+type Spin =
+    { Top: float<radianPerSecond>
+      Side: float<radianPerSecond> }
 
 module Spin =
-    let zero = { Top = 0.0; Side = 0.0 }
+    let zero =
+        { Top = 0.0<radianPerSecond>
+          Side = 0.0<radianPerSecond> }
 
 [<Struct>]
-type PossessionPhase =
-    | InPossession of ClubSide
-    | Transition of ClubSide
-    | Contest of ClubSide
-    | InFlight of ClubSide
-    | SetPiece of ClubSide
+type SetPieceKind =
+    | KickOff
+    | ThrowIn
+    | Corner
+    | GoalKick
+    | FreeKick
+    | Penalty
+
+type Possession =
+    | Loose
+    | Owned of ClubSide * PlayerId
+    | InFlight of ClubSide * PlayerId
+    | SetPiece of ClubSide * SetPieceKind
 
 type OffsideSnapshot =
     { PasserId: PlayerId
       ReceiverId: PlayerId
-      ReceiverXAtPass: float
-      SecondLastDefenderX: float
-      BallXAtPass: float
+      ReceiverXAtPass: float<meter>
+      SecondLastDefenderX: float<meter>
+      BallXAtPass: float<meter>
       Dir: AttackDir }
 
 type BallPhysicsState =
     { Position: Spatial
       Spin: Spin
-      ControlledBy: PlayerId option
+      Possession: Possession
       LastTouchBy: PlayerId option
-      IsInPlay: bool
-      Phase: PossessionPhase
-      PendingOffsideSnapshot: OffsideSnapshot option }
+      PendingOffsideSnapshot: OffsideSnapshot option
+      StationarySinceSubTick: int option }
 
 type PenaltyShootout =
     { HomeKicks: (PlayerId * bool * int) list
@@ -365,22 +398,27 @@ type SimState() =
 
     member val Ball =
         { Position =
-            { X = 52.5
-              Y = 34.0
-              Z = 0.0
-              Vx = 0.0
-              Vy = 0.0
-              Vz = 0.0 }
-          Spin = { Top = 0.0; Side = 0.0 }
-          ControlledBy = None
+            { X = 52.5<meter>
+              Y = 34.0<meter>
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
+          Spin =
+            { Top = 0.0<radianPerSecond>
+              Side = 0.0<radianPerSecond> }
           LastTouchBy = None
-          IsInPlay = true
-          Phase = PossessionPhase.SetPiece HomeClub
-          PendingOffsideSnapshot = None } with get, set
+          Possession = SetPiece(HomeClub, KickOff)
+          PendingOffsideSnapshot = None
+          StationarySinceSubTick = None } with get, set
 
     member this.AttackingClub =
-        match this.Ball.Phase with
-        | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s -> s
+        match this.Ball.Possession with
+        | Owned(club, _) -> club
+        | InFlight(club, _) -> club
+        | SetPiece(club, _) -> club
+        | Loose -> HomeClub
+
     member val HomeAttackDir = LeftToRight with get, set
     member val Momentum = 0.0 with get, set
 
@@ -395,21 +433,22 @@ type SimSnapshot =
     { SubTick: int
       HomePositions: Spatial[]
       AwayPositions: Spatial[]
-      BallX: float
-      BallY: float
-      BallVx: float
-      BallVy: float
-      BallControlledBy: PlayerId option
+      BallX: float<meter>
+      BallY: float<meter>
+      BallVx: float<meter / second>
+      BallVy: float<meter / second>
+      BallZ: float<meter>
+      BallVz: float<meter / second>
+      BallSpinTop: float<radianPerSecond>
+      BallSpinSide: float<radianPerSecond>
+      Possession: Possession
       HomeScore: int
       AwayScore: int
       HomeConditions: int[]
       AwayConditions: int[]
       HomeSidelined: Map<PlayerId, PlayerOut>
       AwaySidelined: Map<PlayerId, PlayerOut>
-      AttackingClub: ClubSide
-      HomeAttackDir: AttackDir
-      Momentum: float
-      Phase: PossessionPhase }
+      Momentum: float }
 
 type MatchReplay =
     { Context: MatchContext
@@ -418,6 +457,8 @@ type MatchReplay =
       Snapshots: SimSnapshot[] }
 
 module SimStateOps =
+
+
 
     [<Struct>]
     type TacticsConfig =
@@ -460,6 +501,18 @@ module SimStateOps =
               DefensiveDrop = 6.0
               PressingIntensity = 0.8 }
 
+
+
+    let ofBallX (x: float<meter>) (dir: AttackDir) : PitchZone =
+        let effectiveX =
+            match dir with
+            | LeftToRight -> x
+            | RightToLeft -> PhysicsContract.PitchLength - x
+
+        if effectiveX < 30.0<meter> then DefensiveZone
+        elif effectiveX <= 70.0<meter> then MidfieldZone
+        else AttackingZone
+
     let tacticsConfig (teamTactics: TeamTactics) (instructions: TacticalInstructions option) =
         let baseCfg = baseTacticsConfig teamTactics
         let instr = instructions |> Option.defaultValue defaultInstructions
@@ -473,13 +526,13 @@ module SimStateOps =
           DefensiveDrop = baseCfg.DefensiveDrop - mentalityMod * 5.0 - defensiveLineMod * 0.5
           PressingIntensity = baseCfg.PressingIntensity * (1.0 + pressingMod) }
 
-    let defaultSpatial (x: float) (y: float) : Spatial =
+    let defaultSpatial (x: float<meter>) (y: float<meter>) : Spatial =
         { X = x
           Y = y
-          Z = 0.0
-          Vx = 0.0
-          Vy = 0.0
-          Vz = 0.0 }
+          Z = 0.0<meter>
+          Vx = 0.0<meter / second>
+          Vy = 0.0<meter / second>
+          Vz = 0.0<meter / second> }
 
     let kickOffSpatial =
         defaultSpatial PhysicsContract.HalfwayLineX (PhysicsContract.PitchWidth / 2.0)
@@ -491,69 +544,99 @@ module SimStateOps =
         if clubId = ctx.Home.Id then state.Home else state.Away
 
     let updateTeamByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (f: TeamSimState -> TeamSimState) =
-        if clubId = ctx.Home.Id then state.Home <- f state.Home else state.Away <- f state.Away
+        if clubId = ctx.Home.Id then
+            state.Home <- f state.Home
+        else
+            state.Away <- f state.Away
 
     let setTeam (state: SimState) (side: ClubSide) (team: TeamSimState) =
-        if side = HomeClub then state.Home <- team else state.Away <- team
+        if side = HomeClub then
+            state.Home <- team
+        else
+            state.Away <- team
 
     let updateTeam (state: SimState) (side: ClubSide) (f: TeamSimState -> TeamSimState) =
-        if side = HomeClub then state.Home <- f state.Home else state.Away <- f state.Away
+        if side = HomeClub then
+            state.Home <- f state.Home
+        else
+            state.Away <- f state.Away
 
     let getSlots (state: SimState) (side: ClubSide) = (getTeam state side).Slots
+
     let setSlots (state: SimState) (side: ClubSide) (slots: PlayerSlot[]) =
         updateTeam state side (fun t -> { t with Slots = slots })
 
     let getSidelined (state: SimState) (side: ClubSide) = (getTeam state side).Sidelined
+
     let setSidelined (state: SimState) (side: ClubSide) (m: Map<PlayerId, PlayerOut>) =
         updateTeam state side (fun t -> { t with Sidelined = m })
 
     let getYellows (state: SimState) (side: ClubSide) = (getTeam state side).Yellows
+
     let setYellows (state: SimState) (side: ClubSide) (m: Map<PlayerId, int>) =
         updateTeam state side (fun t -> { t with Yellows = m })
 
     let getSubsUsed (state: SimState) (side: ClubSide) = (getTeam state side).SubsUsed
+
     let setSubsUsed (state: SimState) (side: ClubSide) (n: int) =
         updateTeam state side (fun t -> { t with SubsUsed = n })
 
     let getTactics (state: SimState) (side: ClubSide) = (getTeam state side).Tactics
+
     let setTactics (state: SimState) (side: ClubSide) (tac: TeamTactics) =
         updateTeam state side (fun ts -> { ts with Tactics = tac })
 
     let getInstructions (state: SimState) (side: ClubSide) = (getTeam state side).Instructions
+
     let setInstructions (state: SimState) (side: ClubSide) (i: TacticalInstructions option) =
         updateTeam state side (fun t -> { t with Instructions = i })
 
     let getBasePositions (state: SimState) (side: ClubSide) =
-        if side = HomeClub then state.HomeBasePositions else state.AwayBasePositions
+        if side = HomeClub then
+            state.HomeBasePositions
+        else
+            state.AwayBasePositions
 
     let getActiveRuns (state: SimState) (side: ClubSide) = (getTeam state side).ActiveRuns
+
     let setActiveRuns (state: SimState) (side: ClubSide) (runs: RunAssignment list) =
         updateTeam state side (fun t -> { t with ActiveRuns = runs })
 
     let getChemistry (ctx: MatchContext) (side: ClubSide) =
-        if side = HomeClub then ctx.HomeChemistry else ctx.AwayChemistry
+        if side = HomeClub then
+            ctx.HomeChemistry
+        else
+            ctx.AwayChemistry
 
     let getEmergentState (state: SimState) (side: ClubSide) = (getTeam state side).EmergentState
+
     let setEmergentState (state: SimState) (side: ClubSide) (s: EmergentState) =
         updateTeam state side (fun t -> { t with EmergentState = s })
 
     let getAdaptiveState (state: SimState) (side: ClubSide) = (getTeam state side).AdaptiveState
+
     let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) =
         updateTeam state side (fun t -> { t with AdaptiveState = s })
 
-    let getLastCognitiveSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastCognitiveSubTick
+    let getLastCognitiveSubTick (state: SimState) (side: ClubSide) =
+        (getTeam state side).LastCognitiveSubTick
+
     let setLastCognitiveSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastCognitiveSubTick = t })
 
     let getLastShapeSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastShapeSubTick
+
     let setLastShapeSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastShapeSubTick = t })
 
     let getLastMarkingSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastMarkingSubTick
+
     let setLastMarkingSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastMarkingSubTick = t })
 
-    let getLastAdaptiveSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastAdaptiveSubTick
+    let getLastAdaptiveSubTick (state: SimState) (side: ClubSide) =
+        (getTeam state side).LastAdaptiveSubTick
+
     let setLastAdaptiveSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastAdaptiveSubTick = t })
 
@@ -590,45 +673,43 @@ module SimStateOps =
     let defaultBall =
         { Position = kickOffSpatial
           Spin = Spin.zero
-          ControlledBy = None
+          Possession = SetPiece(HomeClub, KickOff)
           LastTouchBy = None
-          IsInPlay = true
-          Phase = PossessionPhase.Contest HomeClub
-          PendingOffsideSnapshot = None }
+          PendingOffsideSnapshot = None
+          StationarySinceSubTick = None }
 
-    let resetBallToCenter (state: SimState) =
+    let resetBallForKickOff (receivingClub: ClubSide) (state: SimState) =
         state.Ball <-
             { state.Ball with
                 Position = kickOffSpatial
                 Spin = Spin.zero
-                ControlledBy = None
-                LastTouchBy = None
-                IsInPlay = true
-                PendingOffsideSnapshot = None }
+                Possession = SetPiece(receivingClub, SetPieceKind.KickOff)
+                PendingOffsideSnapshot = None
+                StationarySinceSubTick = None }
 
     let clearOffsideSnapshot (state: SimState) =
-        state.Ball <- { state.Ball with PendingOffsideSnapshot = None }
-
-    let hasPossession (state: SimState) (pid: PlayerId) : bool =
-        match state.Ball.ControlledBy with
-        | Some c -> c = pid
-        | None -> false
-
-    let losePossession (state: SimState) =
-        let club =
-            match state.Ball.Phase with
-            | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s -> s
-        state.Ball <- { state.Ball with ControlledBy = None; Phase = PossessionPhase.Contest club }
-
-    let flipPossession (state: SimState) =
-        let club =
-            match state.Ball.Phase with
-            | PossessionPhase.InPossession s | PossessionPhase.Transition s | PossessionPhase.Contest s | PossessionPhase.InFlight s | PossessionPhase.SetPiece s ->
-                ClubSide.flip s
         state.Ball <-
             { state.Ball with
-                ControlledBy = None
-                Phase = PossessionPhase.Contest club
+                PendingOffsideSnapshot = None }
+
+    let hasPossession (state: SimState) (pid: PlayerId) : bool =
+        match state.Ball.Possession with
+        | Owned(_, p) -> p = pid
+        | _ -> false
+
+    let losePossession (state: SimState) =
+        state.Ball <- { state.Ball with Possession = Loose }
+
+    let loosePossession (state: SimState) =
+        state.Ball <-
+            { state.Ball with
+                Possession = Loose
+                PendingOffsideSnapshot = None }
+
+    let givePossessionTo (club: ClubSide) (pid: PlayerId) (state: SimState) =
+        state.Ball <-
+            { state.Ball with
+                Possession = Owned(club, pid)
                 PendingOffsideSnapshot = None }
 
     let awardGoal
@@ -640,13 +721,12 @@ module SimStateOps =
         =
         if scoringClub = HomeClub then
             state.HomeScore <- state.HomeScore + 1
-            state.Momentum <- Math.Clamp(state.Momentum + 3.0, -10.0, 10.0)
+            state.Momentum <- PhysicsContract.clampFloat (state.Momentum + 3.0) -10.0 10.0
         else
             state.AwayScore <- state.AwayScore + 1
-            state.Momentum <- Math.Clamp(state.Momentum - 3.0, -10.0, 10.0)
+            state.Momentum <- PhysicsContract.clampFloat (state.Momentum - 3.0) -10.0 10.0
 
-        resetBallToCenter state
-        state.Ball <- { state.Ball with Phase = PossessionPhase.SetPiece(ClubSide.flip scoringClub) }
+        resetBallForKickOff (ClubSide.flip scoringClub) state
 
         let clubId = if scoringClub = HomeClub then ctx.Home.Id else ctx.Away.Id
 
@@ -659,7 +739,7 @@ module SimStateOps =
         | None -> []
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
-        state.Momentum <- Math.Clamp(state.Momentum + AttackDir.momentumDelta dir delta, -10.0, 10.0)
+        state.Momentum <- PhysicsContract.clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
 
 
 
@@ -674,14 +754,12 @@ module SimStateOps =
     let pressureMultiplier (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         1.1 - float (max -2 (min 2 (goalDiff clubId ctx state))) * 0.25
 
-    let matchUrgency (clubId: ClubId) (ctx: MatchContext) (state: SimState) : float =
-        let elapsedSeconds = PhysicsContract.subTicksToSeconds state.SubTick
+    let matchUrgency (clubId: ClubId) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : float =
+        let elapsedSeconds = subTicksToSeconds clock state.SubTick
         let late = elapsedSeconds > 60.0 * 60.0
 
         let ts =
-            tacticsConfig
-                (getTacticsByClubId clubId ctx state)
-                (getInstructionsByClubId clubId ctx state)
+            tacticsConfig (getTacticsByClubId clubId ctx state) (getInstructionsByClubId clubId ctx state)
 
         match goalDiff clubId ctx state, late with
         | d, true when d < 0 -> 1.35 * ts.UrgencyMultiplier
@@ -690,7 +768,7 @@ module SimStateOps =
         | _, true -> 1.10 * ts.UrgencyMultiplier
         | _ -> 1.00 * ts.UrgencyMultiplier
 
-    let phaseFromBallZone (dir: AttackDir) (x: float) =
+    let phaseFromBallZone (dir: AttackDir) (x: float<meter>) =
         let effectiveX =
             match dir with
             | LeftToRight -> x

@@ -19,13 +19,13 @@ let setPieceTests =
               let apos = [| 100.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.Contest AwayClub)
+                  buildState home hpos away apos 52.5 34.0 (Contest AwayClub)
 
               RefereeAgent.resolve 1 (AwardThrowIn HomeClub) ctx s |> ignore
 
               Expect.equal
                   s.Ball.Phase
-                  (PossessionPhase.SetPiece HomeClub)
+                  (SetPiece HomeClub)
                   $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Phase}, expected SetPiece HomeClub."
 
               Expect.equal
@@ -41,13 +41,13 @@ let setPieceTests =
               let apos = [| 100.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.Contest HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Contest HomeClub)
 
               RefereeAgent.resolve 1 (AwardCorner AwayClub) ctx s |> ignore
 
               Expect.equal
                   s.Ball.Phase
-                  (PossessionPhase.SetPiece AwayClub)
+                  (SetPiece AwayClub)
                   $"AwardCorner AwayClub: Phase = %A{s.Ball.Phase}, expected SetPiece AwayClub."
 
           testCase "KickOffTick (HomeClub kicking) → Phase = SetPiece HomeClub"
@@ -58,7 +58,7 @@ let setPieceTests =
               let apos = [| 55.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.SetPiece AwayClub)
+                  buildState home hpos away apos 52.5 34.0 (SetPiece AwayClub)
 
               s.HomeAttackDir <- LeftToRight
 
@@ -72,7 +72,7 @@ let setPieceTests =
 
               Expect.equal
                   s.Ball.Phase
-                  (PossessionPhase.SetPiece HomeClub)
+                  (SetPiece HomeClub)
                   $"KickOffTick(HomeClub kicking): Phase = %A{s.Ball.Phase}, expected SetPiece HomeClub."
 
           testCase "FreeKick always emits FreeKick event"
@@ -83,9 +83,9 @@ let setPieceTests =
               let apos = [| 45.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 40.0 34.0 (PossessionPhase.SetPiece HomeClub)
+                  buildState home hpos away apos 40.0 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = None }
+              s.Ball <- { s.Ball with Possessor = None }
               let events = SetPlayAction.resolveFreeKick 1 ctx s
 
               Expect.isTrue
@@ -100,9 +100,9 @@ let setPieceTests =
               let apos = [| 99.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (PossessionPhase.SetPiece HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = None }
+              s.Ball <- { s.Ball with Possessor = None }
               let events = SetPlayAction.resolveCorner 1 ctx s
 
               Expect.isTrue
@@ -117,9 +117,9 @@ let setPieceTests =
               let apos = [| 15.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 10.0 34.0 (PossessionPhase.SetPiece HomeClub)
+                  buildState home hpos away apos 10.0 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with ControlledBy = None }
+              s.Ball <- { s.Ball with Possessor = None }
               let events = SetPlayAction.resolveThrowIn 1 ctx s HomeClub
 
               let hasPass =
@@ -151,9 +151,9 @@ let setPieceTests =
                       let apos = [| 99.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 80.0 34.0 (PossessionPhase.SetPiece HomeClub)
+                          buildState home hpos away apos 80.0 34.0 (SetPiece HomeClub)
 
-                      s.Ball <- { s.Ball with ControlledBy = None }
+                      s.Ball <- { s.Ball with Possessor = None }
                       let events = SetPlayAction.resolveFreeKick (1000 + i) ctx s
                       if hasGoal events then 1 else 0)
 

@@ -13,4 +13,3 @@ type PlayerAction =
     | Corner
     | ThrowIn    of side: ClubSide
     | Penalty    of kicker: Player * side: ClubSide * kickNum: int
-    | Idle

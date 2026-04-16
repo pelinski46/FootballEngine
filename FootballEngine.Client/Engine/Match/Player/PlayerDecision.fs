@@ -2,12 +2,16 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 
+type DecisionOutcome =
+    | PlayerActing of PlayerAction
+    | BallContested
+
 module PlayerDecision =
 
     let private canCross (profile: BehavioralProfile) =
         abs (profile.LateralTendency - 0.5) > 0.3
 
-    let decide (ctx: AgentContext) (scores: ActionScores) : PlayerAction =
+    let decide (ctx: AgentContext) (scores: ActionScores) : DecisionOutcome =
         let shootBlocked =
             scores.Shoot < 0.15 || ctx.Zone = DefensiveZone
 
@@ -31,5 +35,5 @@ module PlayerDecision =
               scores.LongBall * (1.0 + ctx.Urgency * 0.15), PlayerAction.LongBall ]
 
         match candidates |> List.sortByDescending fst |> List.tryHead with
-        | Some(_, action) -> action
-        | None -> Idle
+        | Some(_, action) -> PlayerActing action
+        | None -> BallContested

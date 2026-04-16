@@ -17,9 +17,9 @@ module ActionContext =
         let dir = attackDirFor state.AttackingClub state
         let attSide = state.AttackingClub
         let defSide = ClubSide.flip attSide
-        let zone = PitchZone.ofBallX state.Ball.Position.X dir
+        let zone = SimStateOps.ofBallX state.Ball.Position.X dir
 
-        let momentum = AttackDir.momentumDelta dir state.Momentum
+        let momentum = PhysicsContract.momentumDelta dir state.Momentum
 
         { Dir = dir
           AttSide = attSide

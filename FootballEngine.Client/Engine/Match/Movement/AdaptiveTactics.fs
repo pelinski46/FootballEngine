@@ -5,7 +5,7 @@ namespace FootballEngine.Movement
 // AdaptiveState.Records es PatternRecord[] (array, no Map).
 
 open FootballEngine
-open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 
 module AdaptiveTactics =
 
@@ -25,7 +25,7 @@ module AdaptiveTactics =
                     | LostPossession -> { r with Attempts = r.Attempts + 1 }
                     | StillInProgress -> r) }
 
-    let toTacticalDirectives (state: AdaptiveState) (dir: AttackDir) : Directive list =
+    let toTacticalDirectives (state: AdaptiveState) (clock: SimulationClock) : Directive list =
 
         let weakness =
             state.Records
@@ -41,11 +41,11 @@ module AdaptiveTactics =
         match weakness with
         | None -> []
         | Some pattern ->
-            let expiry = PhysicsContract.AdaptiveIntervalSubTicks + 30
+            let expiry = clock.AdaptiveRate + 30
 
             match pattern with
-            | LeftFlank -> [ Directive.create Flank 15.0 20.0 0.6 0.5 expiry "adaptive" ]
-            | RightFlank -> [ Directive.create Flank 15.0 80.0 0.6 0.5 expiry "adaptive" ]
-            | Central -> [ Directive.create Support 50.0 50.0 0.5 0.4 expiry "adaptive" ]
-            | AttackPattern.LongBall -> [ Directive.create Run 60.0 50.0 0.5 0.6 expiry "adaptive" ]
-            | ShortPass -> [ Directive.create Support 40.0 50.0 0.4 0.3 expiry "adaptive" ]
+            | LeftFlank -> [ Directive.create Flank 15.0<meter> 20.0<meter> 0.6 0.5 expiry "adaptive" ]
+            | RightFlank -> [ Directive.create Flank 15.0<meter> 80.0<meter> 0.6 0.5 expiry "adaptive" ]
+            | Central -> [ Directive.create Support 50.0<meter> 50.0<meter> 0.5 0.4 expiry "adaptive" ]
+            | AttackPattern.LongBall -> [ Directive.create Run 60.0<meter> 50.0<meter> 0.5 0.6 expiry "adaptive" ]
+            | ShortPass -> [ Directive.create Support 40.0<meter> 50.0<meter> 0.4 0.3 expiry "adaptive" ]

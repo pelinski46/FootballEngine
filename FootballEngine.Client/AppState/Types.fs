@@ -123,6 +123,7 @@ module AppTypes =
           IsPlaying: bool
           PlaybackSpeed: int
           InterpolationT: float
+          RenderAccumulator: float
           Inbox: InboxState
           PrevUserClubSkills: Map<PlayerId, int> option
           PrevUserClubStatus: Map<PlayerId, PlayerStatus> option

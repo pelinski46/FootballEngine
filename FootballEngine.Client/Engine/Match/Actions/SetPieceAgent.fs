@@ -1,20 +1,23 @@
 namespace FootballEngine
 
+open BalanceConfig.TickDelay
 open FootballEngine.Domain
 open FootballEngine.MatchSpatial
 open SimStateOps
 open SchedulingTypes
+open SimulationClock
+open FootballEngine.PhysicsContract
 
 module SetPieceAgent =
 
-    let agent homeId homeSquad awaySquad tick ctx state : AgentOutput =
+    let agent tick ctx state (clock: SimulationClock) : AgentOutput =
         match tick.Kind with
         | FreeKickTick(_kickerId, _position, _chainDepth) ->
             let events = SetPlayAction.resolveFreeKick tick.SubTick ctx state
 
             { Events = events
               Spawned =
-                [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.freeKickDelay
+                [ { SubTick = tick.SubTick + delayFrom BalanceConfig.freeKickDelay
                     Priority = TickPriority.Duel
                     SequenceId = 0L
                     Kind = DuelTick 0 } ]
@@ -25,7 +28,7 @@ module SetPieceAgent =
 
             { Events = events
               Spawned =
-                [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.cornerDelay
+                [ { SubTick = tick.SubTick + delayFrom BalanceConfig.cornerDelay
                     Priority = TickPriority.Duel
                     SequenceId = 0L
                     Kind = DuelTick 0 } ]
@@ -36,7 +39,7 @@ module SetPieceAgent =
 
             { Events = events
               Spawned =
-                [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.throwInDelay
+                [ { SubTick = tick.SubTick + delayFrom BalanceConfig.throwInDelay
                     Priority = TickPriority.Duel
                     SequenceId = 0L
                     Kind = DuelTick 0 } ]
@@ -58,12 +61,11 @@ module SetPieceAgent =
 
             let kickClub = if isHome then HomeClub else AwayClub
 
-            let events =
-                SetPlayAction.resolvePenalty tick.SubTick ctx state kickerPlayer kickClub 1
+            let events = SetPlayAction.resolvePenalty ctx state kickerPlayer kickClub 1 clock
 
             { Events = events
               Spawned =
-                [ { SubTick = tick.SubTick + Stats.delayFrom BalanceConfig.foulDelay
+                [ { SubTick = tick.SubTick + delayFrom BalanceConfig.foulDelay
                     Priority = TickPriority.Duel
                     SequenceId = 0L
                     Kind = DuelTick 0 } ]
@@ -85,13 +87,10 @@ module SetPieceAgent =
                         { state.Ball.Position with
                             X = centerX
                             Y = centerY
-                            Vx = 0.0
-                            Vy = 0.0
-                            Vz = 0.0 }
-                    ControlledBy = None
-                    LastTouchBy = None
-                    IsInPlay = true
-                    Phase = PossessionPhase.SetPiece kickingClub }
+                            Vx = 0.0<meter / second>
+                            Vy = 0.0<meter / second>
+                            Vz = 0.0<meter / second> }
+                    Possession = Possession.SetPiece(kickingClub, SetPieceKind.KickOff) }
 
             let kickerOpt =
                 kickingSlots
@@ -132,20 +131,20 @@ module SetPieceAgent =
                 let targetX, targetY =
                     match partnerOpt with
                     | Some partner -> partner.Pos.X, partner.Pos.Y
-                    | None -> centerX - 3.0, centerY + 2.0
+                    | None -> centerX - 3.0<meter>, centerY + 2.0<meter>
 
                 state.Ball <-
                     { state.Ball with
                         LastTouchBy = Some kicker.Player.Id
-                        ControlledBy = None }
+                        Possession = Owned(kickingClub, kicker.Player.Id) }
 
                 let dx = targetX - centerX
                 let dy = targetY - centerY
                 let dist = sqrt (dx * dx + dy * dy)
                 let speed = BalanceConfig.PassSpeed
 
-                if dist > 0.1 then
-                    withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0 state
+                if dist > 0.1<meter> then
+                    withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter / second> state
 
                 { Events =
                     [ { SubTick = tick.SubTick
@@ -159,7 +158,7 @@ module SetPieceAgent =
                               |> Option.defaultValue kicker.Player.Id
                           ) } ]
                   Spawned =
-                    [ { SubTick = tick.SubTick + PhysicsContract.secondsToSubTicks 1.5
+                    [ { SubTick = tick.SubTick + secondsToSubTicks clock 1.5
                         Priority = TickPriority.Duel
                         SequenceId = 0L
                         Kind = DuelTick 0 } ]

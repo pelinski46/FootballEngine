@@ -1,8 +1,8 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 open SimStateOps
-open MatchSpatial
 
 type AgentContext =
     { Me: Player
@@ -16,7 +16,7 @@ type AgentContext =
       NearestTeammate: (Player * Spatial) option
       NearestOpponent: (Player * Spatial) option
       BestPassTarget: (Player * Spatial) option
-      DistToGoal: float
+      DistToGoal: float<meter>
       GoalDiff: int
       Minute: int
       Urgency: float
@@ -24,78 +24,99 @@ type AgentContext =
 
 module AgentContext =
 
-    let build (me: Player) (profile: BehavioralProfile) (meIdx: int) (ctx: MatchContext) (state: SimState) : AgentContext =
-        let dir = attackDirFor state.AttackingClub state
-
-        let isHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = me.Id
-                | _ -> false)
-
-        let slots = if isHome then state.Home.Slots else state.Away.Slots
-
-        let mutable myPos = kickOffSpatial
-        let mutable myCond = 100
-
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s when s.Player.Id = me.Id ->
-                myPos <- s.Pos
-                myCond <- s.Condition
-            | _ -> ()
-
-        let zone = PitchZone.ofBallX state.Ball.Position.X dir
-        let phase = phaseFromBallZone dir state.Ball.Position.X
-
+    let build
+        (me: Player)
+        (profile: BehavioralProfile)
+        (meIdx: int)
+        (state: SimState)
+        (clock: SimulationClock)
+        : AgentContext =
         let ballState = state.Ball
+        let bX = ballState.Position.X
 
-        let nearestTM =
-            findNearestTeammate me ctx state dir
-            |> Option.map (fun (p, _, xy) ->
-                p,
-                { X = fst xy
-                  Y = snd xy
-                  Z = 0.0
-                  Vx = 0.0
-                  Vy = 0.0
-                  Vz = 0.0 })
+        let dir =
+            attackDirFor
+                (if state.AttackingClub = HomeClub then
+                     HomeClub
+                 else
+                     AwayClub)
+                state
 
-        let nearestOpp =
-            findNearestOpponent me ctx state dir
-            |> Option.map (fun (p, _, xy) ->
-                p,
-                { X = fst xy
-                  Y = snd xy
-                  Z = 0.0
-                  Vx = 0.0
-                  Vy = 0.0
-                  Vz = 0.0 })
+        let phase = phaseFromBallZone dir bX
+        let zone = ofBallX bX dir
 
-        let bestPass =
-            findBestPassTarget me ctx state dir
-            |> Option.map (fun (p, _, xy) ->
-                p,
-                { X = fst xy
-                  Y = snd xy
-                  Z = 0.0
-                  Vx = 0.0
-                  Vy = 0.0
-                  Vz = 0.0 })
-
-        let distToGoal = AttackDir.distToGoal myPos.X dir
-        let clubId = if isHome then ctx.Home.Id else ctx.Away.Id
-        let gd = goalDiff clubId ctx state
+        let gd =
+            if dir = LeftToRight then
+                state.HomeScore - state.AwayScore
+            else
+                state.AwayScore - state.HomeScore
 
         let tacticsCfg =
             tacticsConfig
-                (SimStateOps.getTactics state (if isHome then HomeClub else AwayClub))
-                (SimStateOps.getInstructions state (if isHome then HomeClub else AwayClub))
+                (getTactics state (if dir = LeftToRight then HomeClub else AwayClub))
+                (getInstructions state (if dir = LeftToRight then HomeClub else AwayClub))
+
+        let nearestTM, nearestOpp, bestPass, distToGoal =
+            let attSlots = getSlots state (if dir = LeftToRight then HomeClub else AwayClub)
+
+            let defSlots = getSlots state (if dir = LeftToRight then AwayClub else HomeClub)
+
+            let myPos =
+                match attSlots[meIdx] with
+                | PlayerSlot.Active s -> s.Pos
+                | _ -> defaultSpatial 50.0<meter> 34.0<meter>
+
+            let mutable nearestTM: (Player * Spatial) option = None
+            let mutable nearestOpp: (Player * Spatial) option = None
+            let mutable minDistTM = PhysicsContract.MaxDistanceSq
+            let mutable minDistOpp = PhysicsContract.MaxDistanceSq
+
+            for i = 0 to attSlots.Length - 1 do
+                if i <> meIdx then
+                    match attSlots[i] with
+                    | PlayerSlot.Active s ->
+                        let dx = s.Pos.X - myPos.X
+                        let dy = s.Pos.Y - myPos.Y
+                        let d = dx * dx + dy * dy
+
+                        if d < minDistTM then
+                            minDistTM <- d
+                            nearestTM <- Some(s.Player, s.Pos)
+                    | _ -> ()
+
+            for i = 0 to defSlots.Length - 1 do
+                match defSlots[i] with
+                | PlayerSlot.Active s ->
+                    let dx = s.Pos.X - myPos.X
+                    let dy = s.Pos.Y - myPos.Y
+                    let d = dx * dx + dy * dy
+
+                    if d < minDistOpp then
+                        minDistOpp <- d
+                        nearestOpp <- Some(s.Player, s.Pos)
+                | _ -> ()
+
+            let goalX =
+                if dir = LeftToRight then
+                    PhysicsContract.PitchLength
+                else
+                    0.0<meter>
+
+            let bestPass =
+                MatchSpatial.findBestPassTarget me state dir
+                |> Option.map (fun (p, _, (x, y)) -> p, SimStateOps.defaultSpatial x y)
+
+            let dist = abs (myPos.X - goalX)
+
+            nearestTM, nearestOpp, bestPass, dist
 
         { Me = me
           Profile = profile
-          MyCondition = myCond
-          MyPos = myPos
+          MyCondition = me.Condition
+          MyPos =
+            match state.Home.Slots[meIdx] with
+            | PlayerSlot.Active s -> s.Pos
+            | _ -> defaultSpatial 50.0<meter> 34.0<meter>
           BallState = ballState
           Dir = dir
           Phase = phase
@@ -105,6 +126,6 @@ module AgentContext =
           BestPassTarget = bestPass
           DistToGoal = distToGoal
           GoalDiff = gd
-          Minute = int (PhysicsContract.subTicksToSeconds state.SubTick / 60.0)
+          Minute = int (SimulationClock.subTicksToSeconds clock state.SubTick / 60.0)
           Urgency = 1.0
           Tactics = tacticsCfg }

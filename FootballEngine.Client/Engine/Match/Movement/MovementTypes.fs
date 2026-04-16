@@ -1,5 +1,7 @@
 namespace FootballEngine.Movement
 
+open FootballEngine.PhysicsContract
+
 type RunType =
     | DeepRun
     | OverlapRun
@@ -20,8 +22,9 @@ type RunTrigger =
     | CounterAttack
 
 type RunTrajectory =
-    | Linear of float * float * float * float
-    | Waypoints of (float * float)[]
+    | Linear of float<meter> * float<meter> * float<meter> * float<meter>
+    | Waypoints of (float<meter> * float<meter>)[]
+
 
 type MovementMode =
     | OpenPlay

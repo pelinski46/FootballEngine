@@ -34,7 +34,7 @@ module Views =
             playbackTimer.Value <- None
         | None, true ->
             let timer =
-                new Avalonia.Threading.DispatcherTimer(Interval = System.TimeSpan.FromMilliseconds 33.0)
+                new Avalonia.Threading.DispatcherTimer(Interval = System.TimeSpan.FromMilliseconds 16.67)
 
             timer.Tick.Add(fun _ -> dispatch TickInterpolation)
             timer.Start()

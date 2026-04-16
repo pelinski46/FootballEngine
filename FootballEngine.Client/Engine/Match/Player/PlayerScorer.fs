@@ -21,9 +21,9 @@ module PlayerScorer =
         let finishing = normStat me.Technical.Finishing * 0.35
         let longShots = normStat me.Technical.LongShots * 0.15
         let composure = normStat me.Mental.Composure * 0.20
-        let distNorm = (1.0 - Math.Clamp(ctx.DistToGoal / 30.0, 0.0, 1.0)) * 0.20
+        let distNorm = (1.0 - PhysicsContract.clampFloat (float ctx.DistToGoal / 30.0) 0.0 1.0) * 0.20
         let posBonus = ctx.Profile.Directness * 0.10 + ctx.Profile.AttackingDepth * 0.08
-        let distPenalty = Math.Clamp(ctx.DistToGoal / 40.0, 0.0, 0.5)
+        let distPenalty = PhysicsContract.clampFloat (float ctx.DistToGoal / 40.0) 0.0 0.5
 
         (finishing + longShots + composure + distNorm + posBonus - distPenalty)
         * normCond ctx.MyCondition
@@ -91,7 +91,7 @@ module PlayerScorer =
                 let dx = ctx.MyPos.X - oppPos.X
                 let dy = ctx.MyPos.Y - oppPos.Y
                 let dist = sqrt (dx * dx + dy * dy)
-                Math.Clamp(dist / 10.0, 0.3, 1.0)
+                PhysicsContract.clampFloat (float dist / 10.0) 0.3 1.0
             | None -> 0.7
 
         let phaseMod =

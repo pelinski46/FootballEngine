@@ -1,6 +1,7 @@
 namespace FootballEngine.Movement
 
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 
 module OrganicDrift =
 
@@ -32,4 +33,4 @@ module OrganicDrift =
             dx <- dx + ampX[i] * posMul * sin (freq * (float simSecond / p + seed * 0.01 + phase))
             dy <- dy + ampY[i] * posMul * sin (freq * (float simSecond / p + seed * 0.013 + phase))
 
-        (dx, dy)
+        (dx * 1.0<meter>, dy * 1.0<meter>)

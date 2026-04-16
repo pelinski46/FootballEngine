@@ -17,16 +17,16 @@ let phaseTransitionTests =
 
           let matches = [ 1..20 ] |> List.map (fun _ -> runMatchWithSnapshots ())
 
-          testCase "never ControlledBy = Some with Phase = SetPiece"
+          testCase "never Possessor = Some with Phase = SetPiece"
           <| fun () ->
               for idx, r in List.indexed matches do
                   match r with
                   | Ok replay ->
                       for i, snap in replay.Snapshots |> Array.indexed do
-                          match snap.BallControlledBy, snap.Phase with
-                          | Some pid, PossessionPhase.SetPiece c ->
+                          match snap.BallPossessor, snap.Phase with
+                          | Some pid, SetPiece c ->
                               failtest
-                                  $"match {idx}, snapshot {i}: ControlledBy = Some({pid}), Phase = SetPiece %A{c}. Set pieces must have ControlledBy = None."
+                                  $"match {idx}, snapshot {i}: Possessor = Some({pid}), Phase = SetPiece %A{c}. Set pieces must have Possessor = None."
                           | _ -> ()
                   | Error e -> failtestf $"match {idx}: simulation error: %A{e}"
 
@@ -38,11 +38,11 @@ let phaseTransitionTests =
                       for i, snap in replay.Snapshots |> Array.indexed do
                           let clubFromPhase =
                               match snap.Phase with
-                              | PossessionPhase.InPossession c
-                              | PossessionPhase.Transition c
-                              | PossessionPhase.Contest c
-                              | PossessionPhase.InFlight c
-                              | PossessionPhase.SetPiece c -> c
+                              | Owned c
+                              | Transition c
+                              | Contest c
+                              | InFlight c
+                              | SetPiece c -> c
 
                           Expect.equal
                               snap.AttackingClub
@@ -52,21 +52,21 @@ let phaseTransitionTests =
 
           testCase "Phase transitions follow allowed graph"
           <| fun () ->
-              let allowed (from': PossessionPhase) (to': PossessionPhase) =
+              let allowed (from': Possession) (to': Possession) =
                   match from', to' with
-                  | PossessionPhase.InPossession _,
-                    (PossessionPhase.InPossession _ | PossessionPhase.InFlight _ | PossessionPhase.Contest _ | PossessionPhase.Transition _ | PossessionPhase.SetPiece _) ->
+                  | Owned _,
+                    (Owned _ | InFlight _ | Contest _ | Transition _ | SetPiece _) ->
                       true
-                  | PossessionPhase.Transition _,
-                    (PossessionPhase.InPossession _ | PossessionPhase.Contest _ | PossessionPhase.InFlight _ | PossessionPhase.Transition _) -> true
-                  | PossessionPhase.Contest _,
-                    (PossessionPhase.InPossession _ | PossessionPhase.Contest _ | PossessionPhase.SetPiece _ | PossessionPhase.InFlight _) ->
+                  | Transition _,
+                    (Owned _ | Contest _ | InFlight _ | Transition _) -> true
+                  | Contest _,
+                    (Owned _ | Contest _ | SetPiece _ | InFlight _) ->
                       true
-                  | PossessionPhase.InFlight _,
-                    (PossessionPhase.InPossession _ | PossessionPhase.Contest _ | PossessionPhase.SetPiece _ | PossessionPhase.InFlight _ | PossessionPhase.Transition _) ->
+                  | InFlight _,
+                    (Owned _ | Contest _ | SetPiece _ | InFlight _ | Transition _) ->
                       true
-                  | PossessionPhase.SetPiece _,
-                    (PossessionPhase.InFlight _ | PossessionPhase.Contest _ | PossessionPhase.InPossession _ | PossessionPhase.SetPiece _) -> true
+                  | SetPiece _,
+                    (InFlight _ | Contest _ | Owned _ | SetPiece _) -> true
                   | _ -> false
 
               for idx, r in List.indexed matches do

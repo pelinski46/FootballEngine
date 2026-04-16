@@ -1,13 +1,14 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 
 module GoalDetector =
 
     let detect (ball: BallPhysicsState) : ClubSide option =
         let pos = ball.Position
         let inGoalY = pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
-        let inGoalZ = pos.Z >= 0.0 && pos.Z <= PhysicsContract.CrossbarHeight
+        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= PhysicsContract.CrossbarHeight
 
         if pos.X >= PhysicsContract.GoalLineHome && inGoalY && inGoalZ then
             Some HomeClub
@@ -19,7 +20,6 @@ module GoalDetector =
     let scorer
         (scoringClub: ClubSide)
         (ball: BallPhysicsState)
-        (ctx: MatchContext)
         (state: SimState)
         : PlayerId option * bool =
         let lastTouchId = ball.LastTouchBy

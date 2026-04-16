@@ -2,6 +2,7 @@ module FootballEngine.Tests.MatchEngineTests.Helpers
 
 open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 
 // ============================================================================
 // Default stats blocks (reused by factories)
@@ -167,13 +168,13 @@ let awayClub =
 // State builder
 // ============================================================================
 
-let spatialAt x y : Spatial =
-    { X = x
-      Y = y
-      Z = 0.0
-      Vx = 0.0
-      Vy = 0.0
-      Vz = 0.0 }
+let spatialAt (x: float) (y: float) : Spatial =
+    { X = x * 1.0<meter>
+      Y = y * 1.0<meter>
+      Z = 0.0<meter>
+      Vx = 0.0<meter/second>
+      Vy = 0.0<meter/second>
+      Vz = 0.0<meter/second> }
 
 let buildState
     (homePlayers: Player[])
@@ -182,7 +183,7 @@ let buildState
     (awayPos: (float * float)[])
     (ballX: float)
     (ballY: float)
-    (phase: PossessionPhase)
+    (phase: Possession)
     : MatchContext * SimState =
 
     let hSp = homePos |> Array.map (fun (x, y) -> spatialAt x y)
@@ -213,11 +214,10 @@ let buildState
     state.Ball <-
         { Position = spatialAt ballX ballY
           Spin = Spin.zero
-          ControlledBy = None
+          Possession = phase
           LastTouchBy = None
-          IsInPlay = true
-          Phase = phase
-          PendingOffsideSnapshot = None }
+          PendingOffsideSnapshot = None
+          StationarySinceSubTick = None }
 
     state.Home <-
         { TeamSimState.empty with
@@ -248,9 +248,9 @@ let buildState
 let mkSnap () =
     { PasserId = 1
       ReceiverId = 2
-      ReceiverXAtPass = 80.0
-      SecondLastDefenderX = 75.0
-      BallXAtPass = 52.5
+      ReceiverXAtPass = 80.0<meter>
+      SecondLastDefenderX = 75.0<meter>
+      BallXAtPass = 52.5<meter>
       Dir = LeftToRight }
 
 // ============================================================================
@@ -258,13 +258,13 @@ let mkSnap () =
 // ============================================================================
 
 let resolveAction
-    (clubId: ClubId)
-    (subTick: int)
+    (second: int)
     (action: PlayerAction)
     (ctx: MatchContext)
     (state: SimState)
+    (clock: SimulationClock)
     : MatchEvent list =
-    PlayerAgent.resolve clubId subTick action ctx state
+    PlayerAgent.resolve second action ctx state clock
 
 // ============================================================================
 // Event helpers
