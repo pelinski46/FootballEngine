@@ -41,9 +41,14 @@ module MatchFormulas =
 module PitchMath =
 
     let inline distance (x1, y1) (x2, y2) =
-        sqrt ((x1 - x2) ** 2.0 + (y1 - y2) ** 2.0)
+        let dx = x1 - x2
+        let dy = y1 - y2
+        sqrt (dx * dx + dy * dy)
 
-    let inline distanceSq (x1, y1) (x2, y2) = (x1 - x2) ** 2.0 + (y1 - y2) ** 2.0
+    let inline distanceSq (x1, y1) (x2, y2) = 
+        let dx = x1 - x2
+        let dy = y1 - y2
+        dx * dx + dy * dy
 
     let inline nearestIdx (positions: (float * float)[]) (point: float * float) =
         positions

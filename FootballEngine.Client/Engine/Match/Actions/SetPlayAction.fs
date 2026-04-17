@@ -19,81 +19,78 @@ module SetPlayAction =
 
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        let kickerIdx = nearestIdxToBall attSlots bX bY
+        match MatchSpatial.nearestActiveSlot attSlots bX bY with
+        | ValueNone -> []
+        | ValueSome kickerSlot ->
+            let kicker, kickerCond = kickerSlot.Player, kickerSlot.Condition
+            let defPlayers = playersArray defSlots
 
-        let kicker, kickerCond =
-            match attSlots[kickerIdx] with
-            | PlayerSlot.Active s -> s.Player, s.Condition
-            | _ -> Unchecked.defaultof<Player>, 0
+            let shotPower =
+                effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale 2.0
+                + effectiveStat kicker.Mental.Composure kickerCond kicker.Morale (1.5 + actx.AttBonus.FreeKick)
+                + effectiveStat kicker.Technical.LongShots kickerCond kicker.Morale 1.0
+                + pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise
 
-        let defPlayers = playersArray defSlots
+            let gk = defPlayers |> Array.tryFind (fun p -> p.Position = GK)
 
-        let shotPower =
-            effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale 2.0
-            + effectiveStat kicker.Mental.Composure kickerCond kicker.Morale (1.5 + actx.AttBonus.FreeKick)
-            + effectiveStat kicker.Technical.LongShots kickerCond kicker.Morale 1.0
-            + pressureNoise kicker.Mental.Composure BalanceConfig.PenaltyComposureNoise
+            let savePower =
+                match gk with
+                | Some g ->
+                    effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale 2.5
+                    + effectiveStat g.Goalkeeping.OneOnOne g.Condition g.Morale 3.5
+                    + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale 2.0
+                | None -> normalSample 50.0 10.0
 
-        let gk = defPlayers |> Array.tryFind (fun p -> p.Position = GK)
+            let spin =
+                { Top =
+                    -(PhysicsContract.normaliseAttr kicker.Technical.FreeKick)
+                    * 0.5<radianPerSecond>
+                  Side = (PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * 0.9<radianPerSecond> }
 
-        let savePower =
-            match gk with
-            | Some g ->
-                effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale 2.5
-                + effectiveStat g.Goalkeeping.OneOnOne g.Condition g.Morale 3.5
-                + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale 2.0
-            | None -> normalSample 50.0 10.0
+            let scored =
+                shotPower > savePower
+                            + BalanceConfig.FreeKickSavePowerThreshold
+                            + normalSample 0.0 BalanceConfig.FreeKickSaveVariance
 
-        let spin =
-            { Top =
-                -(PhysicsContract.normaliseAttr kicker.Technical.FreeKick)
-                * 0.5<radianPerSecond>
-              Side = (PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * 0.9<radianPerSecond> }
+            if scored then
+                let goalEvents = awardGoal actx.AttSide (Some kicker.Id) subTick ctx state
+                state.Ball <- { state.Ball with Spin = spin }
+                (createEvent subTick kicker.Id clubId (FreeKick true)) :: goalEvents
+            else
+                let targetX =
+                    if actx.Dir = LeftToRight then
+                        BalanceConfig.FreeKickTargetX
+                    else
+                        PhysicsContract.PitchLength - BalanceConfig.FreeKickTargetX
 
-        let scored =
-            shotPower > savePower
-                        + BalanceConfig.FreeKickSavePowerThreshold
-                        + normalSample 0.0 BalanceConfig.FreeKickSaveVariance
+                let bX = state.Ball.Position.X
+                let bY = state.Ball.Position.Y
 
-        if scored then
-            let goalEvents = awardGoal actx.AttSide (Some kicker.Id) subTick ctx state
-            state.Ball <- { state.Ball with Spin = spin }
-            (createEvent subTick kicker.Id clubId (FreeKick true)) :: goalEvents
-        else
-            let targetX =
-                if actx.Dir = LeftToRight then
-                    BalanceConfig.FreeKickTargetX
-                else
-                    PhysicsContract.PitchLength - BalanceConfig.FreeKickTargetX
+                ballTowards bX bY targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
+                loosePossession state
+                state.Ball <- { state.Ball with Spin = spin }
 
-            let bX = state.Ball.Position.X
-            let bY = state.Ball.Position.Y
+                let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
 
-            ballTowards bX bY targetX bY BalanceConfig.FreeKickSpeed BalanceConfig.FreeKickVz state
-            loosePossession state
-            state.Ball <- { state.Ball with Spin = spin }
+                let events =
+                    [ yield createEvent subTick kicker.Id clubId (FreeKick false)
+                      match gk with
+                      | Some g -> yield createEvent subTick g.Id gkClubId Save
+                      | None -> () ]
 
-            let gkClubId = if actx.DefSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+                if bernoulli BalanceConfig.PostShotClearProbability then
+                    let clearY = PhysicsContract.PitchWidth / 2.0 + (normalSample 0.0 10.0) * 1.0<meter>
 
-            let events =
-                [ yield createEvent subTick kicker.Id clubId (FreeKick false)
-                  match gk with
-                  | Some g -> yield createEvent subTick g.Id gkClubId Save
-                  | None -> () ]
+                    ballTowards
+                        state.Ball.Position.X
+                        state.Ball.Position.Y
+                        PhysicsContract.HalfwayLineX
+                        clearY
+                        16.0<meter / second>
+                        1.5<meter / second>
+                        state
 
-            if bernoulli BalanceConfig.PostShotClearProbability then
-                let clearY = PhysicsContract.PitchWidth / 2.0 + (normalSample 0.0 10.0) * 1.0<meter>
-
-                ballTowards
-                    state.Ball.Position.X
-                    state.Ball.Position.Y
-                    PhysicsContract.HalfwayLineX
-                    clearY
-                    16.0<meter / second>
-                    1.5<meter / second>
-                    state
-
-            events
+                events
 
     let resolveCorner (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         let actx = ActionContext.build state
@@ -277,10 +274,17 @@ module SetPlayAction =
                 |> Array.map fst
                 |> Array.head
 
-            let nearestTeammate = findNearestTeammate thrower state
+            let attSlots = getSlots state throwClub
+            let bX = state.Ball.Position.X
+            let bY = state.Ball.Position.Y
+            let nearestTeammate = nearestActiveSlotExcluding attSlots thrower.Id bX bY
 
             match nearestTeammate with
-            | Some(teammate, _teammateId, (tX, tY)) ->
+            | ValueSome slot ->
+                let teammate = slot.Player
+                let _teammateId = slot.Player.Id
+                let tX = slot.Pos.X
+                let tY = slot.Pos.Y
                 ballTowards
                     state.Ball.Position.X
                     state.Ball.Position.Y
@@ -293,7 +297,7 @@ module SetPlayAction =
                 adjustMomentum actx.Dir BalanceConfig.ThrowInMomentum state
 
                 [ createEvent subTick teammate.Id clubId (PassCompleted(thrower.Id, teammate.Id)) ]
-            | None -> []
+            | ValueNone -> []
 
     let resolvePenalty
         (ctx: MatchContext)

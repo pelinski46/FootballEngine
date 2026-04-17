@@ -1,4 +1,4 @@
-module FootballEngine.Tests.MatchEngineTests.PhaseTransitionTests
+module FootballEngine.Tests.MatchEngineTests.PossessionTransitionTests
 
 open Expecto
 open FootballEngine
@@ -17,16 +17,16 @@ let phaseTransitionTests =
 
           let matches = [ 1..20 ] |> List.map (fun _ -> runMatchWithSnapshots ())
 
-          testCase "never Possessor = Some with Phase = SetPiece"
+          testCase "never Possession = Owned(HomeClub, with Phase = SetPiece"
           <| fun () ->
               for idx, r in List.indexed matches do
                   match r with
                   | Ok replay ->
                       for i, snap in replay.Snapshots |> Array.indexed do
-                          match snap.BallPossessor, snap.Phase with
+                          match snap.BallPossessor, snap.Possession with
                           | Some pid, SetPiece c ->
                               failtest
-                                  $"match {idx}, snapshot {i}: Possessor = Some({pid}), Phase = SetPiece %A{c}. Set pieces must have Possessor = None."
+                                  $"match {idx}, snapshot {i}: Possessor = Some({pid}), Phase = SetPiece %A{c}. Set pieces must have Possession = Loose."
                           | _ -> ()
                   | Error e -> failtestf $"match {idx}: simulation error: %A{e}"
 
@@ -37,7 +37,7 @@ let phaseTransitionTests =
                   | Ok replay ->
                       for i, snap in replay.Snapshots |> Array.indexed do
                           let clubFromPhase =
-                              match snap.Phase with
+                              match snap.Possession with
                               | Owned c
                               | Transition c
                               | Contest c
@@ -47,7 +47,7 @@ let phaseTransitionTests =
                           Expect.equal
                               snap.AttackingClub
                               clubFromPhase
-                              $"match {idx}, snapshot {i}: AttackingClub = %A{snap.AttackingClub}, but Phase = %A{snap.Phase} (club = %A{clubFromPhase})."
+                              $"match {idx}, snapshot {i}: AttackingClub = %A{snap.AttackingClub}, but Phase = %A{snap.Possession} (club = %A{clubFromPhase})."
                   | Error e -> failtestf $"match {idx}: simulation error: %A{e}"
 
           testCase "Phase transitions follow allowed graph"
@@ -73,8 +73,8 @@ let phaseTransitionTests =
                   match r with
                   | Ok replay ->
                       for i = 0 to replay.Snapshots.Length - 2 do
-                          let from = replay.Snapshots[i].Phase
-                          let to' = replay.Snapshots[i + 1].Phase
+                          let from = replay.Snapshots[i].Possession
+                          let to' = replay.Snapshots[i + 1].Possession
 
                           if not (allowed from to') then
                               failtest

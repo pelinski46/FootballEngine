@@ -41,16 +41,6 @@ module MatchSimulator =
                 Priority = TickPriority.MatchControl
                 SequenceId = 1L
                 Kind = RefereeTick }
-          yield
-              { SubTick = sub 12.0
-                Priority = TickPriority.Manager
-                SequenceId = 1L
-                Kind = CognitiveTick }
-          yield
-              { SubTick = sub 60.0
-                Priority = TickPriority.Manager
-                SequenceId = 2L
-                Kind = AdaptiveTick }
           yield! subs
           yield
               { SubTick = halfTime clock
@@ -68,18 +58,6 @@ module MatchSimulator =
                 SequenceId = -1L
                 Kind = KickOffTick } ]
 
-    let private spawnCognitiveTick (tick: ScheduledTick) (clock: SimulationClock) =
-        { SubTick = tick.SubTick + clock.CognitiveRate
-          Priority = TickPriority.Manager
-          SequenceId = 0L
-          Kind = CognitiveTick }
-
-    let private spawnAdaptiveTick (tick: ScheduledTick) (clock: SimulationClock) =
-        { SubTick = tick.SubTick + clock.AdaptiveRate
-          Priority = TickPriority.Manager
-          SequenceId = 0L
-          Kind = AdaptiveTick }
-
     let private runTick
         (tick: ScheduledTick)
         (ctx: MatchContext)
@@ -92,8 +70,6 @@ module MatchSimulator =
             | DuelTick _
             | DecisionTick _
             | PlayerActionTick _
-            | CognitiveTick
-            | AdaptiveTick
             | PossessionChangeTick _ -> PlayerAgent.agent tick ctx state clock
             | RefereeTick -> RefereeAgent.agent tick ctx state clock
             | FreeKickTick _
@@ -111,6 +87,7 @@ module MatchSimulator =
             | SubstitutionTick _
             | ManagerReactionTick _ -> ManagerAgent.agent tick ctx state clock
 
+
         dispatchAgent tick ctx state clock
 
     let runLoopDes (ctx: MatchContext) (state: SimState) (saveSnapshots: bool) (clock: SimulationClock) =
@@ -127,7 +104,7 @@ module MatchSimulator =
             { Context = ctx
               State = state
               Events = ResizeArray()
-              PlayState = SetPiece KickOff
+              PlayState = LivePlay // CAMBIO: Empezar en LivePlay para que procese el KickOffTick sin filtros
               Snapshots = snapshots
               MatchEndScheduled = false
               SequenceCounter = scheduler.Count |> int64 }
@@ -148,171 +125,136 @@ module MatchSimulator =
         let snapshotInterval = clock.SubTicksPerSecond
 
 
-        let rec loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt clock =
-            match scheduler.Dequeue() with
-            | ValueNone -> ls.State, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
+        let loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt clock =
+            let mutable currentLs = ls
+            let mutable currentScheduler = scheduler
+            let mutable currentLastSnapshotAt = lastSnapshotAt
+            let mutable running = true
 
-            | ValueSome tick ->
-                ls.State.SubTick <- tick.SubTick
+            while running do
+                match currentScheduler.Dequeue() with
+                | ValueNone -> running <- false
+                | ValueSome tick ->
+                    currentLs.State.SubTick <- tick.SubTick
 
-                match tick.Kind with
-                | FullTimeTick ->
-                    ls.State.SubTick <- tick.SubTick
-                    ls.State, ls.Events |> Seq.toList, ls.Snapshots |> Option.map _.ToArray()
+                    match tick.Kind with
+                    | FullTimeTick ->
+                        currentLs.State.SubTick <- tick.SubTick
+                        running <- false
+                    | _ ->
+                        let shouldProcess =
+                            match currentLs.PlayState, tick.Kind with
+                            | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
+                            | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
+                            | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
+                            | _ -> true
 
-                | _ ->
-                    let shouldProcess =
-                        match ls.PlayState, tick.Kind with
-                        | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
-                        | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
-                        | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
-                        | _ -> true
+                        if shouldProcess then
+                            let result = runTick tick currentLs.Context currentLs.State clock
 
-                    if not shouldProcess then
-                        loop ls scheduler lastSnapshotAt clock
-                    else
-                        let result = runTick tick ls.Context ls.State clock
+                            let autoSpawned =
+                                match tick.Kind with
+                                | RefereeTick ->
+                                    [ { tick with
+                                          Kind = RefereeTick
+                                          SubTick = tick.SubTick + clock.PhysicsRate } ]
+                                | _ -> []
 
-                        let autoSpawned =
                             match tick.Kind with
-                            | CognitiveTick -> [ spawnCognitiveTick tick clock ]
-                            | AdaptiveTick -> [ spawnAdaptiveTick tick clock ]
-                            | RefereeTick ->
-                                [ { tick with
-                                      Kind = RefereeTick
-                                      SubTick = tick.SubTick + clock.PhysicsRate } ]
-                            | _ -> []
+                            | PhysicsTick ->
+                                if tick.SubTick % clock.SteeringRate = 0 then
+                                    let dtPlayer = SimulationClock.dtPlayer clock
 
-                        match tick.Kind with
-                        | PhysicsTick ->
-                            if tick.SubTick % clock.SteeringRate = 0 then
-                                let dtPlayer = SimulationClock.dtPlayer clock
+                                    MovementEngine.updateTeamSide
+                                        tick.SubTick
+                                        currentLs.Context
+                                        currentLs.State
+                                        HomeClub
+                                        dtPlayer
+                                        clock.SteeringRate
+                                        clock.CognitiveRate
 
-                                MovementEngine.updateTeamSide
-                                    tick.SubTick
-                                    ls.Context
-                                    ls.State
-                                    HomeClub
-                                    dtPlayer
-                                    clock.SteeringRate
-                                    clock.CognitiveRate
+                                    MovementEngine.updateTeamSide
+                                        tick.SubTick
+                                        currentLs.Context
+                                        currentLs.State
+                                        AwayClub
+                                        dtPlayer
+                                        clock.SteeringRate
+                                        clock.CognitiveRate
 
-                                MovementEngine.updateTeamSide
-                                    tick.SubTick
-                                    ls.Context
-                                    ls.State
-                                    AwayClub
-                                    dtPlayer
-                                    clock.SteeringRate
-                                    clock.CognitiveRate
+                            | RefereeTick -> ()
 
-                        | CognitiveTick ->
-                            MovementEngine.updateCognitive
-                                tick.SubTick
-                                ls.Context
-                                ls.State
-                                HomeClub
-                                ls.Events
-                                clock.CognitiveRate
-                                clock
+                            | _ -> ()
 
-                            MovementEngine.updateCognitive
-                                tick.SubTick
-                                ls.Context
-                                ls.State
-                                AwayClub
-                                ls.Events
-                                clock.CognitiveRate
-                                clock
+                            let newLastSnapshotAt =
+                                match currentLs.Snapshots with
+                                | Some snaps when tick.SubTick >= currentLastSnapshotAt + snapshotInterval ->
+                                    snaps.Add
+                                        { SubTick = currentLs.State.SubTick
+                                          HomePositions =
+                                            currentLs.State.Home.Slots
+                                            |> Array.map (function
+                                                | PlayerSlot.Active s -> s.Pos
+                                                | Sidelined _ -> kickOffSpatial)
+                                          AwayPositions =
+                                            currentLs.State.Away.Slots
+                                            |> Array.map (function
+                                                | PlayerSlot.Active s -> s.Pos
+                                                | Sidelined _ -> kickOffSpatial)
+                                          BallX = currentLs.State.Ball.Position.X
+                                          BallY = currentLs.State.Ball.Position.Y
+                                          BallVx = currentLs.State.Ball.Position.Vx
+                                          BallVy = currentLs.State.Ball.Position.Vy
+                                          BallZ = currentLs.State.Ball.Position.Z
+                                          BallVz = currentLs.State.Ball.Position.Vz
+                                          BallSpinTop = currentLs.State.Ball.Spin.Top
+                                          BallSpinSide = currentLs.State.Ball.Spin.Side
+                                          Possession = currentLs.State.Ball.Possession
+                                          HomeScore = currentLs.State.HomeScore
+                                          AwayScore = currentLs.State.AwayScore
+                                          HomeConditions =
+                                            currentLs.State.Home.Slots
+                                            |> Array.map (function
+                                                | PlayerSlot.Active s -> s.Condition
+                                                | Sidelined _ -> 0)
+                                          AwayConditions =
+                                            currentLs.State.Away.Slots
+                                            |> Array.map (function
+                                                | PlayerSlot.Active s -> s.Condition
+                                                | Sidelined _ -> 0)
+                                          HomeSidelined = currentLs.State.Home.Sidelined
+                                          AwaySidelined = currentLs.State.Away.Sidelined
+                                          Momentum = currentLs.State.Momentum }
 
-                        | AdaptiveTick ->
-                            MovementEngine.updateAdaptive
-                                tick.SubTick
-                                ls.Context
-                                ls.State
-                                HomeClub
-                                ls.Events
-                                clock.AdaptiveRate
-                                clock
+                                    tick.SubTick + snapshotInterval
+                                | _ -> currentLastSnapshotAt
 
-                            MovementEngine.updateAdaptive
-                                tick.SubTick
-                                ls.Context
-                                ls.State
-                                AwayClub
-                                ls.Events
-                                clock.AdaptiveRate
-                                clock
+                            let allSpawned =
+                                match autoSpawned with
+                                | [] -> result.Spawned
+                                | _ -> autoSpawned @ result.Spawned
 
-                        | RefereeTick -> ()
+                            let stampedTicks, newCounter =
+                                allSpawned
+                                |> List.mapFold
+                                    (fun seq t -> { t with SequenceId = seq }, seq + 1L)
+                                    currentLs.SequenceCounter
 
-                        | _ -> ()
+                            stampedTicks |> List.iter currentScheduler.Insert
 
-                        let newLastSnapshotAt =
-                            match ls.Snapshots with
-                            | Some snaps when tick.SubTick >= lastSnapshotAt + snapshotInterval ->
-                                snaps.Add
-                                    { SubTick = ls.State.SubTick
-                                      HomePositions =
-                                        ls.State.Home.Slots
-                                        |> Array.map (function
-                                            | PlayerSlot.Active s -> s.Pos
-                                            | Sidelined _ -> kickOffSpatial)
-                                      AwayPositions =
-                                        ls.State.Away.Slots
-                                        |> Array.map (function
-                                            | PlayerSlot.Active s -> s.Pos
-                                            | Sidelined _ -> kickOffSpatial)
-                                      BallX = ls.State.Ball.Position.X
-                                      BallY = ls.State.Ball.Position.Y
-                                      BallVx = ls.State.Ball.Position.Vx
-                                      BallVy = ls.State.Ball.Position.Vy
-                                      BallZ = ls.State.Ball.Position.Z
-                                      BallVz = ls.State.Ball.Position.Vz
-                                      BallSpinTop = ls.State.Ball.Spin.Top
-                                      BallSpinSide = ls.State.Ball.Spin.Side
-                                      Possession = ls.State.Ball.Possession
-                                      HomeScore = ls.State.HomeScore
-                                      AwayScore = ls.State.AwayScore
-                                      HomeConditions =
-                                        ls.State.Home.Slots
-                                        |> Array.map (function
-                                            | PlayerSlot.Active s -> s.Condition
-                                            | Sidelined _ -> 0)
-                                      AwayConditions =
-                                        ls.State.Away.Slots
-                                        |> Array.map (function
-                                            | PlayerSlot.Active s -> s.Condition
-                                            | Sidelined _ -> 0)
-                                      HomeSidelined = ls.State.Home.Sidelined
-                                      AwaySidelined = ls.State.Away.Sidelined
-                                      Momentum = ls.State.Momentum }
+                            let newPlayState = result.Transition |> Option.defaultValue currentLs.PlayState
 
-                                tick.SubTick + snapshotInterval
-                            | _ -> lastSnapshotAt
+                            result.Events |> List.iter currentLs.Events.Add
 
-                        let allSpawned =
-                            match autoSpawned with
-                            | [] -> result.Spawned
-                            | _ -> autoSpawned @ result.Spawned
+                            currentLs <-
+                                { currentLs with
+                                    PlayState = newPlayState
+                                    SequenceCounter = newCounter }
 
-                        let stampedTicks, newCounter =
-                            allSpawned
-                            |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) ls.SequenceCounter
+                            currentLastSnapshotAt <- newLastSnapshotAt
 
-                        stampedTicks |> List.iter scheduler.Insert
-
-                        let newPlayState = result.Transition |> Option.defaultValue ls.PlayState
-
-                        result.Events |> List.iter ls.Events.Add
-
-                        loop
-                            { ls with
-                                PlayState = newPlayState
-                                SequenceCounter = newCounter }
-                            scheduler
-                            newLastSnapshotAt
-                            clock
+            currentLs.State, currentLs.Events |> Seq.toList, currentLs.Snapshots |> Option.map _.ToArray()
 
         loop initialState scheduler 0 clock
 
@@ -491,7 +433,9 @@ module MatchSimulator =
                               Condition = p.Condition
                               Mental = MentalState.initial p
                               Directives = Array.empty
-                              Profile = prof })
+                              Profile = prof
+                              CachedTarget = (hPos[i].X, hPos[i].Y)
+                              CachedExecution = 1.0 })
                 Tactics = homeTactics
                 Instructions = homeInstructions |> Option.orElse (Some defaultInstr) }
 
@@ -508,7 +452,9 @@ module MatchSimulator =
                               Condition = p.Condition
                               Mental = MentalState.initial p
                               Directives = Array.empty
-                              Profile = prof })
+                              Profile = prof
+                              CachedTarget = (aPos[i].X, aPos[i].Y)
+                              CachedExecution = 1.0 })
                 Tactics = awayTactics
                 Instructions = awayInstructions |> Option.orElse (Some defaultInstr) }
 

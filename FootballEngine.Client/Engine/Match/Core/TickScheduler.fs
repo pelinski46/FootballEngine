@@ -5,37 +5,40 @@ open FootballEngine.SchedulingTypes
 
 type TickScheduler(maxSubTick: int) =
     let pq = PriorityQueue<ScheduledTick, ScheduledTick>()
+    let cancelled = HashSet<int64>()
 
     member _.Insert(tick: ScheduledTick) =
         if tick.SubTick <= maxSubTick then
             pq.Enqueue(tick, tick)
 
     member _.Dequeue() : ScheduledTick voption =
-        if pq.Count > 0 then ValueSome(pq.Dequeue()) else ValueNone
+        let mutable result = ValueNone
+        let mutable found = false
+        
+        while not found && pq.Count > 0 do
+            let tick = pq.Dequeue()
+            if not (cancelled.Remove(tick.SequenceId)) then
+                result <- ValueSome tick
+                found <- true
+        
+        if pq.Count = 0 && cancelled.Count > 0 then
+            cancelled.Clear()
+            
+        result
 
     member _.CancelTicks(predicate: TickKind -> bool) =
-        let items =
-            pq.UnorderedItems
-            |> Seq.map (fun struct (element, _) -> element)
-            |> Seq.filter (fun t -> not (predicate t.Kind))
-            |> Seq.toArray
+        // Mark for lazy removal
+        for struct (tick, _) in pq.UnorderedItems do
+            if predicate tick.Kind then
+                cancelled.Add(tick.SequenceId) |> ignore
 
-        pq.Clear()
-
-        for item in items do
-            pq.Enqueue(item, item)
+    member _.CancelTick(sequenceId: int64) =
+        cancelled.Add(sequenceId) |> ignore
 
     member _.PurgeAfter(subTick: int) : unit =
-        let items =
-            pq.UnorderedItems
-            |> Seq.map (fun struct (element, _) -> element)
-            |> Seq.filter (fun t -> t.SubTick <= subTick)
-            |> Seq.toArray
-
-        pq.Clear()
-
-        for item in items do
-            pq.Enqueue(item, item)
+        for struct (tick, _) in pq.UnorderedItems do
+            if tick.SubTick > subTick then
+                cancelled.Add(tick.SequenceId) |> ignore
 
     member _.IsEmpty: bool = pq.Count = 0
     member _.Count: int = pq.Count

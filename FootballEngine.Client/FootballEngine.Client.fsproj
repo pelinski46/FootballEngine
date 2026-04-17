@@ -54,9 +54,11 @@
         <Compile Include="Engine\Match\Movement\MovementTypes.fs"/>
         <Compile Include="Engine\Match\Movement\EventWindow.fs"/>
         <Compile Include="Engine\Match\Movement\ShapeEngine.fs"/>
-        <Compile Include="Engine\Match\Movement\CognitiveLayer.fs"/>
         <Compile Include="Engine\Match\Movement\EmergentLoops.fs"/>
         <Compile Include="Engine\Match\Movement\AdaptiveTactics.fs"/>
+        <Compile Include="Engine\Match\Movement\ShapePipeline.fs"/>
+        <Compile Include="Engine\Match\Movement\TacticalPipeline.fs"/>
+        <Compile Include="Engine\Match\Movement\SteeringPipeline.fs"/>
         <Compile Include="Engine\Match\Movement\MovementEngine.fs"/>
         <Compile Include="Engine\Match\Ball\BallAgent.fs"/>
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
@@ -72,6 +74,7 @@
         <Compile Include="Engine\Match\Referee\RefereeAction.fs"/>
         <Compile Include="Engine\Match\Referee\GoalDetector.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeAgent.fs"/>
+        <Compile Include="Engine\Match\Core\MatchEventProcessor.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAgent.fs"/>
         <Compile Include="Engine\Match\Manager\ManagerAction.fs"/>
         <Compile Include="Engine\Match\Manager\ManagerAgent.fs"/>

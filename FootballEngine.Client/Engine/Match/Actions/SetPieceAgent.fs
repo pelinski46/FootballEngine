@@ -133,10 +133,14 @@ module SetPieceAgent =
                     | Some partner -> partner.Pos.X, partner.Pos.Y
                     | None -> centerX - 3.0<meter>, centerY + 2.0<meter>
 
+                let partnerId = 
+                    partnerOpt |> Option.map (fun p -> p.Player.Id) |> Option.defaultValue kicker.Player.Id
+
+                // CAMBIO: La pelota sale "InFlight", no "Owned"
                 state.Ball <-
                     { state.Ball with
                         LastTouchBy = Some kicker.Player.Id
-                        Possession = Owned(kickingClub, kicker.Player.Id) }
+                        Possession = InFlight(kickingClub, partnerId) }
 
                 let dx = targetX - centerX
                 let dy = targetY - centerY
@@ -150,18 +154,8 @@ module SetPieceAgent =
                     [ { SubTick = tick.SubTick
                         PlayerId = kicker.Player.Id
                         ClubId = kickingClubId
-                        Type =
-                          PassCompleted(
-                              kicker.Player.Id,
-                              partnerOpt
-                              |> Option.map (fun p -> p.Player.Id)
-                              |> Option.defaultValue kicker.Player.Id
-                          ) } ]
-                  Spawned =
-                    [ { SubTick = tick.SubTick + secondsToSubTicks clock 1.5
-                        Priority = TickPriority.Duel
-                        SequenceId = 0L
-                        Kind = DuelTick 0 } ]
+                        Type = MatchEventType.KickOff } ]
+                  Spawned = [] // Ya no necesitamos spawnear un DuelTick manual, el BallAgent lo hará al detectar la recepción
                   Transition = Some LivePlay }
 
         | _ ->

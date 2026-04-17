@@ -29,15 +29,15 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       52.5
                       34.0
-                      (Owned HomeClub)
+                      (Owned(HomeClub, 1))
 
               flipPossession s
               let expected = Contest AwayClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"flipPossession(InPossession HomeClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"flipPossession(InPossession HomeClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
               Expect.isNone s.Ball.ControlledBy $"flipPossession: ControlledBy = %A{s.Ball.ControlledBy}, expected None"
 
@@ -57,9 +57,9 @@ let possessionPhaseTests =
               let expected = Contest HomeClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"flipPossession(Transition AwayClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"flipPossession(Transition AwayClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "flipPossession from SetPiece HomeClub → Contest AwayClub"
           <| fun () ->
@@ -77,9 +77,9 @@ let possessionPhaseTests =
               let expected = Contest AwayClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"flipPossession(SetPiece HomeClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"flipPossession(SetPiece HomeClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "flipPossession from InFlight AwayClub → Contest HomeClub"
           <| fun () ->
@@ -97,9 +97,9 @@ let possessionPhaseTests =
               let expected = Contest HomeClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"flipPossession(InFlight AwayClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"flipPossession(InFlight AwayClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "flipPossession clears PendingOffsideSnapshot"
           <| fun () ->
@@ -111,7 +111,7 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       52.5
                       34.0
-                      (Owned HomeClub)
+                      (Owned(HomeClub, 1))
 
               s.Ball <-
                   { s.Ball with
@@ -133,15 +133,15 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       52.5
                       34.0
-                      (Owned HomeClub)
+                      (Owned(HomeClub, 1))
 
               losePossession s
               let expected = Contest HomeClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"losePossession(InPossession HomeClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"losePossession(InPossession HomeClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
               Expect.isNone s.Ball.ControlledBy $"losePossession: ControlledBy = %A{s.Ball.ControlledBy}, expected None"
 
@@ -161,9 +161,9 @@ let possessionPhaseTests =
               let expected = Contest AwayClub
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   expected
-                  $"losePossession(Transition AwayClub): Phase = %A{s.Ball.Phase}, expected %A{expected}"
+                  $"losePossession(Transition AwayClub): Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "awardGoal HomeClub → SetPiece AwayClub, HomeScore incremented"
           <| fun () ->
@@ -175,13 +175,13 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       52.5
                       34.0
-                      (Owned HomeClub)
+                      (Owned(HomeClub, 1))
 
               s.HomeScore <- 0
               awardGoal HomeClub (Some 1) 0 ctx s
               Expect.equal s.HomeScore 1 $"awardGoal HomeClub: HomeScore = {s.HomeScore}, expected 1"
               let expected = SetPiece AwayClub
-              Expect.equal s.Ball.Phase expected $"awardGoal HomeClub: Phase = %A{s.Ball.Phase}, expected %A{expected}"
+              Expect.equal s.Ball.Possession expected $"awardGoal HomeClub: Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
               Expect.equal
                   s.Ball.Position.X
@@ -198,13 +198,13 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       52.5
                       34.0
-                      (Owned AwayClub)
+                      (Owned(AwayClub, 1))
 
               s.AwayScore <- 0
               awardGoal AwayClub (Some 2) 0 ctx s
               Expect.equal s.AwayScore 1 $"awardGoal AwayClub: AwayScore = {s.AwayScore}, expected 1"
               let expected = SetPiece HomeClub
-              Expect.equal s.Ball.Phase expected $"awardGoal AwayClub: Phase = %A{s.Ball.Phase}, expected %A{expected}"
+              Expect.equal s.Ball.Possession expected $"awardGoal AwayClub: Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "resetBallToCenter preserves Phase, resets position"
           <| fun () ->
@@ -216,9 +216,9 @@ let possessionPhaseTests =
                       [| 52.5, 34.0 |]
                       80.0
                       30.0
-                      (Owned AwayClub)
+                      (Owned(AwayClub, 1))
 
-              s.Ball <- { s.Ball with Possessor = Some 1 }
+              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1 }
               resetBallToCenter s
 
               Expect.equal
@@ -236,7 +236,7 @@ let possessionPhaseTests =
                   $"resetBallToCenter: ControlledBy = %A{s.Ball.ControlledBy}, expected None"
 
               let expected = Owned AwayClub
-              Expect.equal s.Ball.Phase expected $"resetBallToCenter: Phase = %A{s.Ball.Phase}, expected %A{expected}"
+              Expect.equal s.Ball.Possession expected $"resetBallToCenter: Phase = %A{s.Ball.Possession}, expected %A{expected}"
 
           testCase "clearOffsideSnapshot sets PendingOffsideSnapshot to None"
           <| fun () ->

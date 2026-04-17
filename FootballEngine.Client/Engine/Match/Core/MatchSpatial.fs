@@ -5,60 +5,8 @@ open FootballEngine.PhysicsContract
 
 module MatchSpatial =
 
-    type PlayerInfo =
-        { Player: Player
-          PlayerId: PlayerId
-          Pos: Spatial
-          Condition: int }
-
     let spatialXY (sp: Spatial) = sp.X, sp.Y
 
-
-    let teamRoster (players: Player[]) (positions: Spatial[]) (conditions: int[]) : (Player * Spatial * int)[] =
-        let len = players.Length
-        let arr = Array.zeroCreate len
-
-        for i = 0 to len - 1 do
-            arr[i] <- (players[i], positions[i], conditions[i])
-
-        arr
-
-    let outfieldRoster (players: Player[]) (positions: Spatial[]) (conditions: int[]) : (Player * Spatial * int)[] =
-        let mutable count = 0
-
-        for i = 0 to players.Length - 1 do
-            if players[i].Position <> GK then
-                count <- count + 1
-
-        let arr = Array.zeroCreate count
-        let mutable j = 0
-
-        for i = 0 to players.Length - 1 do
-            if players[i].Position <> GK then
-                arr[j] <- (players[i], positions[i], conditions[i])
-                j <- j + 1
-
-        arr
-
-    let nearestOutfield (players: Player[]) (positions: Spatial[]) (x: float<meter>) (y: float<meter>) : (Player * Spatial) option =
-        let target = { X = x; Y = y; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let mutable bestPlayer: Player option = None
-        let mutable bestSp: Spatial option = None
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-
-        for i = 0 to players.Length - 1 do
-            if players[i].Position <> GK then
-                let sp = positions[i]
-                let dSq = sp.DistSqTo2D target
-
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestPlayer <- Some players[i]
-                    bestSp <- Some sp
-
-        match bestPlayer, bestSp with
-        | Some p, Some sp -> Some(p, sp)
-        | _ -> None
 
     let withBallVelocity (vx: float<meter/second>) (vy: float<meter/second>) (vz: float<meter/second>) (state: SimState) =
         state.Ball <- { state.Ball with Position = { state.Ball.Position with Vx = vx; Vy = vy; Vz = vz } }
@@ -83,9 +31,9 @@ module MatchSpatial =
             let dy = targetY - originY
             withBallVelocity (dx / dist * speed) (dy / dist * speed) vz state
 
-    let nearestIdxToBall (slots: PlayerSlot[]) (ballX: float<meter>) (ballY: float<meter>) : int =
+    let nearestActiveSlot (slots: PlayerSlot[]) (ballX: float<meter>) (ballY: float<meter>) : ActiveSlot voption =
         let target = { X = ballX; Y = ballY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let mutable bestIdx = 0
+        let mutable bestSlot = ValueNone
         let mutable bestDistSq = PhysicsContract.MaxDistanceSq
 
         for i = 0 to slots.Length - 1 do
@@ -94,151 +42,31 @@ module MatchSpatial =
                 let dSq = s.Pos.DistSqTo2D target
                 if dSq < bestDistSq then
                     bestDistSq <- dSq
-                    bestIdx <- i
+                    bestSlot <- ValueSome s
             | _ -> ()
 
-        bestIdx
+        bestSlot
 
-    let tryNearestToBall (slots: PlayerSlot[]) (ballX: float<meter>) (ballY: float<meter>) : ActiveSlot option =
-        let idx = nearestIdxToBall slots ballX ballY
-
-        match slots[idx] with
-        | PlayerSlot.Active s -> Some s
-        | _ -> None
-
-    let findNearestOpponentToPos (x: float<meter>) (y: float<meter>) (state: SimState) : (Player * Spatial) option =
+    let nearestActiveSlotExcluding
+        (slots: PlayerSlot[])
+        (excludeId: PlayerId)
+        (x: float<meter>)
+        (y: float<meter>)
+        : ActiveSlot voption =
         let target = { X = x; Y = y; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let mutable bestPlayer: Player option = None
-        let mutable bestSp: Spatial option = None
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-
-        let checkSlots (slots: PlayerSlot[]) =
-            for i = 0 to slots.Length - 1 do
-                match slots[i] with
-                | PlayerSlot.Active s when s.Player.Position <> GK ->
-                    let dSq = s.Pos.DistSqTo2D target
-                    if dSq < bestDistSq then
-                        bestDistSq <- dSq
-                        bestPlayer <- Some s.Player
-                        bestSp <- Some s.Pos
-                | _ -> ()
-
-        checkSlots state.Home.Slots
-        checkSlots state.Away.Slots
-
-        match bestPlayer, bestSp with
-        | Some p, Some sp -> Some(p, sp)
-        | _ -> None
-
-    let findNearestTeammateToPos (excludePlayerId: PlayerId) (targetX: float<meter>) (targetY: float<meter>) (state: SimState) (attSide: ClubSide) : (Player * Spatial) option =
-        let target = { X = targetX; Y = targetY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let slots = if attSide = HomeClub then state.Home.Slots else state.Away.Slots
-        let mutable bestPlayer: Player option = None
-        let mutable bestSp: Spatial option = None
+        let mutable bestSlot = ValueNone
         let mutable bestDistSq = PhysicsContract.MaxDistanceSq
 
         for i = 0 to slots.Length - 1 do
             match slots[i] with
-            | PlayerSlot.Active s when s.Player.Id <> excludePlayerId && s.Player.Position <> GK ->
+            | PlayerSlot.Active s when s.Player.Id <> excludeId ->
                 let dSq = s.Pos.DistSqTo2D target
                 if dSq < bestDistSq then
                     bestDistSq <- dSq
-                    bestPlayer <- Some s.Player
-                    bestSp <- Some s.Pos
+                    bestSlot <- ValueSome s
             | _ -> ()
 
-        match bestPlayer, bestSp with
-        | Some p, Some sp -> Some(p, sp)
-        | _ -> None
-
-    let getPlayerInfo
-        (players: Player[])
-        (positions: Spatial[])
-        (conditions: int[])
-        (pid: PlayerId)
-        : PlayerInfo option =
-        match players |> Array.tryFindIndex (fun p -> p.Id = pid) with
-        | Some i ->
-            Some
-                { Player = players[i]
-                  PlayerId = pid
-                  Pos = positions[i]
-                  Condition = conditions[i] }
-        | None -> None
-
-    let findNearestTeammate (attacker: Player) (state: SimState) =
-        let isHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = attacker.Id
-                | _ -> false)
-
-        let slots = if isHome then state.Home.Slots else state.Away.Slots
-        let mutable attackerPos = None
-
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s when s.Player.Id = attacker.Id -> attackerPos <- Some s.Pos
-            | _ -> ()
-
-        match attackerPos with
-        | None -> None
-        | Some aPos ->
-            let mutable bestPlayer: Player option = None
-            let mutable bestSp: Spatial option = None
-            let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-
-            for i = 0 to slots.Length - 1 do
-                match slots[i] with
-                | PlayerSlot.Active s when s.Player.Id <> attacker.Id && s.Player.Position <> GK ->
-                    let dSq = s.Pos.DistSqTo2D aPos
-                    if dSq < bestDistSq then
-                        bestDistSq <- dSq
-                        bestPlayer <- Some s.Player
-                        bestSp <- Some s.Pos
-                | _ -> ()
-
-            match bestPlayer, bestSp with
-            | Some p, Some sp -> Some(p, p.Id, sp.XY)
-            | _ -> None
-
-    let findNearestOpponent (attacker: Player) (state: SimState) =
-        let isHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = attacker.Id
-                | _ -> false)
-
-        let attSlots = if isHome then state.Home.Slots else state.Away.Slots
-        let defSlots = if isHome then state.Away.Slots else state.Home.Slots
-
-        let mutable aPos = None
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s when s.Player.Id = attacker.Id -> aPos <- Some s.Pos
-            | _ -> ()
-
-        match aPos with
-        | None -> None
-        | Some pos ->
-            let mutable bestPlayer: Player option = None
-            let mutable bestSp: Spatial option = None
-            let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-
-            for i = 0 to defSlots.Length - 1 do
-                match defSlots[i] with
-                | PlayerSlot.Active s when s.Player.Position <> GK ->
-                    let dSq = s.Pos.DistSqTo2D pos
-                    if dSq < bestDistSq then
-                        bestDistSq <- dSq
-                        bestPlayer <- Some s.Player
-                        bestSp <- Some s.Pos
-                | _ -> ()
-
-            match bestPlayer, bestSp with
-            | Some p, Some sp -> Some(p, p.Id, sp.XY)
-            | _ -> None
+        bestSlot
 
     let findBestPassTarget (attacker: Player) (state: SimState) (dir: AttackDir) =
         let isHome =

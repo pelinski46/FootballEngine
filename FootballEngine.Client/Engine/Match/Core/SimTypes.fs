@@ -53,19 +53,26 @@ type Directive =
       Weight: float
       Urgency: float
       ExpirySubTick: int
-      Source: string }
+      Source: string
+      Priority: int }
 
 module Directive =
+    // Priority levels: higher = more urgent
+    let emergencyPriority = 2  // Possession loss, immediate threats
+    let tacticalPriority = 1   // Marking, pressing decisions
+    let strategicPriority = 0  // Base shape, positioning
+    
     let expired currentSubTick (d: Directive) = currentSubTick > d.ExpirySubTick
 
-    let create kind targetX targetY weight urgency expiry source =
+    let create kind targetX targetY weight urgency expiry source priority =
         { Kind = kind
           TargetX = targetX
           TargetY = targetY
           Weight = weight
           Urgency = urgency
           ExpirySubTick = expiry
-          Source = source }
+          Source = source
+          Priority = priority }
 
     let composeDirectives currentSubTick (directives: Directive[]) (modifiers: DirectiveModifiers) =
         let mutable tw = 0.0
@@ -292,7 +299,9 @@ type ActiveSlot =
       Condition: int
       Mental: MentalState
       Directives: Directive[]
-      Profile: BehavioralProfile }
+      Profile: BehavioralProfile
+      CachedTarget: float<meter> * float<meter>
+      CachedExecution: float }
 
 type PlayerSlot =
     | Active of ActiveSlot
@@ -817,10 +826,9 @@ module SimStateOps =
             | _ -> 0)
 
     let playersArray (slots: PlayerSlot[]) : Player[] =
-        Array.init slots.Length (fun i ->
-            match slots[i] with
-            | PlayerSlot.Active s -> s.Player
-            | _ -> Unchecked.defaultof<Player>)
+        slots |> Array.choose (function
+            | PlayerSlot.Active s -> Some s.Player
+            | _ -> None)
 
     let activeRunsFilter currentSubTick (runs: RunAssignment list) =
         runs |> List.filter (RunAssignment.isActive currentSubTick)

@@ -24,9 +24,9 @@ let setPieceTests =
               RefereeAgent.resolve 1 (AwardThrowIn HomeClub) ctx s |> ignore
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   (SetPiece HomeClub)
-                  $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Phase}, expected SetPiece HomeClub."
+                  $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
 
               Expect.equal
                   s.Ball.Position.X
@@ -46,9 +46,9 @@ let setPieceTests =
               RefereeAgent.resolve 1 (AwardCorner AwayClub) ctx s |> ignore
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   (SetPiece AwayClub)
-                  $"AwardCorner AwayClub: Phase = %A{s.Ball.Phase}, expected SetPiece AwayClub."
+                  $"AwardCorner AwayClub: Phase = %A{s.Ball.Possession}, expected SetPiece AwayClub."
 
           testCase "KickOffTick (HomeClub kicking) → Phase = SetPiece HomeClub"
           <| fun () ->
@@ -71,9 +71,9 @@ let setPieceTests =
               SetPieceAgent.agent 100 [] [] tick ctx s |> ignore
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   (SetPiece HomeClub)
-                  $"KickOffTick(HomeClub kicking): Phase = %A{s.Ball.Phase}, expected SetPiece HomeClub."
+                  $"KickOffTick(HomeClub kicking): Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
 
           testCase "FreeKick always emits FreeKick event"
           <| fun () ->
@@ -85,7 +85,7 @@ let setPieceTests =
               let ctx, s =
                   buildState home hpos away apos 40.0 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with Possessor = None }
+              s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveFreeKick 1 ctx s
 
               Expect.isTrue
@@ -102,7 +102,7 @@ let setPieceTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with Possessor = None }
+              s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveCorner 1 ctx s
 
               Expect.isTrue
@@ -119,7 +119,7 @@ let setPieceTests =
               let ctx, s =
                   buildState home hpos away apos 10.0 34.0 (SetPiece HomeClub)
 
-              s.Ball <- { s.Ball with Possessor = None }
+              s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveThrowIn 1 ctx s HomeClub
 
               let hasPass =
@@ -153,7 +153,7 @@ let setPieceTests =
                       let ctx, s =
                           buildState home hpos away apos 80.0 34.0 (SetPiece HomeClub)
 
-                      s.Ball <- { s.Ball with Possessor = None }
+                      s.Ball <- { s.Ball with Possession = Loose }
                       let events = SetPlayAction.resolveFreeKick (1000 + i) ctx s
                       if hasGoal events then 1 else 0)
 

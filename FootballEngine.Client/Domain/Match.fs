@@ -35,6 +35,7 @@ type MatchEventType =
     | ShotOffTarget
     | Save
     | FoulCommitted
+    | KickOff
 
 
 type MatchEvent =

@@ -44,8 +44,8 @@ module AdaptiveTactics =
             let expiry = clock.AdaptiveRate + 30
 
             match pattern with
-            | LeftFlank -> [ Directive.create Flank 15.0<meter> 20.0<meter> 0.6 0.5 expiry "adaptive" ]
-            | RightFlank -> [ Directive.create Flank 15.0<meter> 80.0<meter> 0.6 0.5 expiry "adaptive" ]
-            | Central -> [ Directive.create Support 50.0<meter> 50.0<meter> 0.5 0.4 expiry "adaptive" ]
-            | AttackPattern.LongBall -> [ Directive.create Run 60.0<meter> 50.0<meter> 0.5 0.6 expiry "adaptive" ]
-            | ShortPass -> [ Directive.create Support 40.0<meter> 50.0<meter> 0.4 0.3 expiry "adaptive" ]
+            | LeftFlank -> [ Directive.create Flank 15.0<meter> 20.0<meter> 0.6 0.5 expiry "adaptive" Directive.tacticalPriority ]
+            | RightFlank -> [ Directive.create Flank 15.0<meter> 80.0<meter> 0.6 0.5 expiry "adaptive" Directive.tacticalPriority ]
+            | Central -> [ Directive.create Support 50.0<meter> 50.0<meter> 0.5 0.4 expiry "adaptive" Directive.tacticalPriority ]
+            | AttackPattern.LongBall -> [ Directive.create Run 60.0<meter> 50.0<meter> 0.5 0.6 expiry "adaptive" Directive.tacticalPriority ]
+            | ShortPass -> [ Directive.create Support 40.0<meter> 50.0<meter> 0.4 0.3 expiry "adaptive" Directive.tacticalPriority ]

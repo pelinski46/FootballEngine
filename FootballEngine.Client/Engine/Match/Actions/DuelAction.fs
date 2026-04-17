@@ -33,98 +33,86 @@ module DuelAction =
         let attSlots = getSlots state actx.AttSide
         let defSlots = getSlots state actx.DefSide
 
-        let attIdx = nearestIdxToBall attSlots bX bY
-        let defIdx = nearestIdxToBall defSlots bX bY
+        match MatchSpatial.nearestActiveSlot attSlots bX bY, MatchSpatial.nearestActiveSlot defSlots bX bY with
+        | ValueSome att, ValueSome def ->
+            let attConditions = att.Condition
+            let defConditions = def.Condition
+            let attP = att.Player
+            let defP = def.Player
 
-        let att, attConditions =
-            match attSlots[attIdx] with
-            | PlayerSlot.Active s -> s.Player, s.Condition
-            | _ -> Unchecked.defaultof<Player>, 0
+            // Build attacker feature-weight list (normalized values)
+            let attFeatures : (float * float) list =
+                [ (PhysicsContract.normaliseAttr attP.Technical.Dribbling, BalanceConfig.DuelAttackerDribblingWeight)
+                  (PhysicsContract.normaliseAttr attP.Physical.Agility, BalanceConfig.DuelAttackerAgilityWeight)
+                  (PhysicsContract.normaliseAttr attP.Physical.Balance, BalanceConfig.DuelAttackerBalanceWeight) ]
 
-        let def, defConditions =
-            match defSlots[defIdx] with
-            | PlayerSlot.Active s -> s.Player, s.Condition
-            | _ -> Unchecked.defaultof<Player>, 0
+            let defFeatures : (float * float) list =
+                [ (PhysicsContract.normaliseAttr defP.Technical.Tackling, BalanceConfig.DuelDefenderTacklingWeight)
+                  (PhysicsContract.normaliseAttr defP.Physical.Strength, BalanceConfig.DuelDefenderStrengthWeight)
+                  (PhysicsContract.normaliseAttr defP.Physical.Agility, BalanceConfig.DuelDefenderStrengthWeight) ]
+            
+            let attScore = ActionMath.evalWeighted attFeatures attConditions 0.05
+            let defScore = ActionMath.evalWeighted defFeatures defConditions 0.05
 
-        // Build attacker feature-weight list (normalized values)
-        let attFeatures : (float * float) list =
-            [ (PhysicsContract.normaliseAttr att.Technical.Dribbling, BalanceConfig.DuelAttackerDribblingWeight)
-              (PhysicsContract.normaliseAttr att.Physical.Agility, BalanceConfig.DuelAttackerAgilityWeight)
-              (PhysicsContract.normaliseAttr att.Physical.Balance, BalanceConfig.DuelAttackerBalanceWeight) ]
+            let diff = float attScore - float defScore
 
-        let defFeatures : (float * float) list =
-            [ (PhysicsContract.normaliseAttr def.Technical.Tackling, BalanceConfig.DuelDefenderTacklingWeight)
-              (PhysicsContract.normaliseAttr def.Physical.Strength, BalanceConfig.DuelDefenderStrengthWeight)
-              (PhysicsContract.normaliseAttr def.Mental.Positioning, BalanceConfig.DuelDefenderPositionWeight) ]
+            let aX, aY = att.Pos.X, att.Pos.Y
+            let dX, dY = def.Pos.X, def.Pos.Y
 
-        let attScore = ActionMath.evalWeighted attFeatures attConditions 0.05
-        let defScore = ActionMath.evalWeighted defFeatures defConditions 0.05
+            let duelEvents =
+                if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
+                    let nx, ny =
+                        PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
 
-        let diff = float attScore - float defScore
+                    state.Ball <-
+                        { state.Ball with
+                            Position =
+                                { state.Ball.Position with
+                                    X = nx
+                                    Y = ny }
+                            Possession = Owned(actx.AttSide, att.Player.Id) }
 
-        let aX, aY =
-            match attSlots[attIdx] with
-            | PlayerSlot.Active s -> s.Pos.X, s.Pos.Y
-            | _ -> bX, bY
+                    state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
+                    [ createEvent subTick att.Player.Id attClubId DribbleSuccess ]
+                elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
+                    let nx, ny =
+                        PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
 
-        let dX, dY =
-            match defSlots[defIdx] with
-            | PlayerSlot.Active s -> s.Pos.X, s.Pos.Y
-            | _ -> bX, bY
+                    loosePossession state
 
-        let duelEvents =
-            if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
-                let nx, ny =
-                    PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
+                    state.Ball <-
+                        { state.Ball with
+                            Position =
+                                { state.Ball.Position with
+                                    X = nx
+                                    Y = ny } }
 
-                state.Ball <-
-                    { state.Ball with
-                        Position =
-                            { state.Ball.Position with
-                                X = nx
-                                Y = ny }
-                        Possession = Owned(actx.AttSide, att.Id) }
+                    state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
+                    [ createEvent subTick att.Player.Id attClubId DribbleFail ]
+                else
+                    let nx, ny =
+                        PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
 
-                state.Momentum <- Math.Clamp(state.Momentum + BalanceConfig.DuelMomentumBonus, -10.0, 10.0)
-                [ createEvent subTick att.Id attClubId DribbleSuccess ]
-            elif logisticBernoulli (-diff) BalanceConfig.DuelRecoverProbabilityBase then
-                let nx, ny =
-                    PitchMath.jitter bX bY dX dY 0.5 BalanceConfig.DuelJitterRecover BalanceConfig.DuelJitterRecover
+                    withBallVelocity
+                        (float (nx - bX) * BalanceConfig.DuelSpeedKeep)
+                        (float (ny - bY) * BalanceConfig.DuelSpeedKeep)
+                        BalanceConfig.DuelSpeedKeepVz
+                        state
 
-                loosePossession state
+                    [ createEvent subTick att.Player.Id attClubId DribbleKeep ]
 
-                state.Ball <-
-                    { state.Ball with
-                        Position =
-                            { state.Ball.Position with
-                                X = nx
-                                Y = ny } }
+            let aggressionNorm = def.Mental.AggressionLevel
+            let foulChance = 0.06 + aggressionNorm * 0.10
 
-                state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
-                [ createEvent subTick att.Id attClubId DribbleFail ]
+            if bernoulli foulChance then
+                if state.AttackingClub = actx.AttSide then
+                    loosePossession state
+
+                adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
+                duelEvents @ [ createEvent subTick def.Player.Id defClubId FoulCommitted ]
             else
-                let nx, ny =
-                    PitchMath.jitter bX bY bX bY 0.0 BalanceConfig.DuelJitterKeep BalanceConfig.DuelJitterKeep
-
-                withBallVelocity
-                    (float (nx - bX) * BalanceConfig.DuelSpeedKeep)
-                    (float (ny - bY) * BalanceConfig.DuelSpeedKeep)
-                    BalanceConfig.DuelSpeedKeepVz
-                    state
-
-                [ createEvent subTick att.Id attClubId DribbleKeep ]
-
-        let aggressionNorm = PhysicsContract.normaliseAttr def.Mental.Aggression
-        let foulChance = 0.06 + aggressionNorm * 0.10
-
-        if bernoulli foulChance then
-            if state.AttackingClub = actx.AttSide then
-                loosePossession state
-
-            adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
-            duelEvents @ [ createEvent subTick def.Id defClubId FoulCommitted ]
-        else
-            duelEvents
+                duelEvents
+        | _ -> []
 
     let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list =
         let actx = ActionContext.build state
@@ -192,9 +180,9 @@ module DuelAction =
                 match bestPlayer with
                 | Some p -> p
                 | None ->
-                    match attSlots[0] with
-                    | PlayerSlot.Active s -> s.Player
-                    | _ -> Unchecked.defaultof<Player>
+                    match attSlots |> Array.tryFind (function | PlayerSlot.Active _ -> true | _ -> false) with
+                    | Some (PlayerSlot.Active s) -> s.Player
+                    | _ -> failwith "No active players found in attacker slots"
 
             let attFeatures : (float * float) list =
                 [ (PhysicsContract.normaliseAttr attacker.Technical.Dribbling, BalanceConfig.DribbleTechnicalWeight)

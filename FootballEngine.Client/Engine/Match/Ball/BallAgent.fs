@@ -116,7 +116,7 @@ module BallAgent =
             let impactSpeed = resolved.Position.VelMag
 
             let canControl =
-                resolved.Position.Z < 0.6<meter> || impactSpeed < 3.0<meter / second>
+                resolved.Position.Z < 1.2<meter> || impactSpeed < 18.0<meter / second>
 
             if canControl then
                 let club =
@@ -207,16 +207,23 @@ module BallAgent =
                         else
                             None }
 
-        let physicsRate = int (round ((float dt * 40.0)))
+        let physicsRate = clock.PhysicsRate
         let nextSubTick = tick.SubTick + physicsRate
 
         let decisionSpawn =
-            match prevPossession, ctrl with
-            | Loose, Some pid ->
+            match prevPossession, state.Ball.Possession with
+            // Si la pelota no tenía dueño (suelta, en aire o set piece) y ahora sí
+            | (Loose | InFlight _ | Possession.SetPiece _), Owned(_, pid) ->
                 [ { SubTick = nextSubTick
                     Priority = TickPriority.Duel
                     SequenceId = 0L
                     Kind = DecisionTick(0, Some pid) } ]
+            // Si hubo un cambio de dueño (recepción de pase)
+            | Owned(_, oldPid), Owned(_, newPid) when oldPid <> newPid ->
+                [ { SubTick = nextSubTick
+                    Priority = TickPriority.Duel
+                    SequenceId = 0L
+                    Kind = DecisionTick(0, Some newPid) } ]
             | _ -> []
 
         { Events = []

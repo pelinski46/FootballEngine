@@ -335,7 +335,9 @@ module ManagerAgent =
                               Condition = incoming.Condition
                               Mental = MentalState.initial incoming
                               Directives = Array.empty
-                              Profile = Player.profile incoming }
+                              Profile = Player.profile incoming
+                              CachedTarget = (inheritedPos.X, inheritedPos.Y)
+                              CachedExecution = 1.0 }
 
                     setSlots
                         state

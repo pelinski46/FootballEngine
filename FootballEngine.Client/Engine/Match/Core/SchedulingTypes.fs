@@ -57,8 +57,6 @@ module SchedulingTypes =
         | ResumePlayTick
         | SubstitutionTick of clubId: ClubId
         | ManagerReactionTick of trigger: ReactionTrigger
-        | CognitiveTick
-        | AdaptiveTick
         | RefereeTick
         | PossessionChangeTick of ClubSide
 
@@ -83,16 +81,19 @@ module SchedulingTypes =
           SequenceId: int64 // tiebreaker within same SubTick + Priority
           Kind: TickKind }
 
+        interface IComparable<ScheduledTick> with
+            member this.CompareTo o =
+                match compare this.SubTick o.SubTick with
+                | 0 ->
+                    match compare this.Priority o.Priority with
+                    | 0 -> compare this.SequenceId o.SequenceId
+                    | c -> c
+                | c -> c
+
         interface IComparable with
             member this.CompareTo other =
                 match other with
-                | :? ScheduledTick as o ->
-                    match compare this.SubTick o.SubTick with
-                    | 0 ->
-                        match compare this.Priority o.Priority with
-                        | 0 -> compare this.SequenceId o.SequenceId
-                        | c -> c
-                    | c -> c
+                | :? ScheduledTick as o -> (this :> IComparable<ScheduledTick>).CompareTo(o)
                 | _ -> invalidArg "other" "Not a ScheduledTick"
 
         override this.Equals other =

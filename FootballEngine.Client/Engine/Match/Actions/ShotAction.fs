@@ -51,20 +51,16 @@ module ShotAction =
         let bY = state.Ball.Position.Y
 
         let inChance = actx.Zone = AttackingZone || actx.Zone = MidfieldZone
-        let shooterIdx = nearestIdxToBall attSlots bX bY
-        let shooter = playersArray attSlots |> Array.item shooterIdx
+        match MatchSpatial.nearestActiveSlot attSlots bX bY with
+        | ValueNone -> []
+        | ValueSome shooterSlot ->
+            let shooter = shooterSlot.Player
+            if not inChance then
+                [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
+            else
 
-        if not inChance then
-            [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
-        else
 
-
-            let shooterIdx = nearestIdxToBall attSlots bX bY
-
-            let shooter, shooterCond, shooterProfile =
-                match attSlots[shooterIdx] with
-                | PlayerSlot.Active s -> s.Player, s.Condition, s.Profile
-                | _ -> Unchecked.defaultof<Player>, 0, BehavioralProfile.neutral
+            let shooter, shooterCond, shooterProfile = shooterSlot.Player, shooterSlot.Condition, shooterSlot.Profile
 
             let defPlayers = playersArray defSlots
 

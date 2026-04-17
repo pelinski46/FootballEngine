@@ -18,9 +18,9 @@ let shotActionTests =
               let apos = [| 99.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 85.0 34.0 (Owned HomeClub)
+                  buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possessor = Some 1 }
+              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
               let events = ShotAction.resolve 1 ctx s
 
               let isShotClass =
@@ -45,15 +45,15 @@ let shotActionTests =
               let apos = [| 99.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 85.0 34.0 (Owned HomeClub)
+                  buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possessor = Some 1 }
+              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
               let _ = ShotAction.resolve 1 ctx s
 
               Expect.equal
-                  s.Ball.Phase
+                  s.Ball.Possession
                   (InFlight HomeClub)
-                  $"after shot: Phase = %A{s.Ball.Phase}, expected InFlight HomeClub."
+                  $"after shot: Phase = %A{s.Ball.Possession}, expected InFlight HomeClub."
 
           testCase "shot from own half (x=5) never scores"
           <| fun () ->
@@ -63,9 +63,9 @@ let shotActionTests =
               let apos = [| 99.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 5.0 34.0 (Owned HomeClub)
+                  buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possessor = Some 1 }
+              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
               let events = ShotAction.resolve 1 ctx s
 
               Expect.isFalse
@@ -83,9 +83,9 @@ let shotActionTests =
                       let apos = [| 99.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 85.0 34.0 (Owned HomeClub)
+                          buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
 
-                      s.Ball <- { s.Ball with Possessor = Some 1 }
+                      s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
                       let events = ShotAction.resolve (1000 + i) ctx s
                       if hasGoal events then 1 else 0)
 
@@ -102,9 +102,9 @@ let shotActionTests =
                       let apos = [| 99.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 85.0 34.0 (Owned HomeClub)
+                          buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
 
-                      s.Ball <- { s.Ball with Possessor = Some 1 }
+                      s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
                       let events = ShotAction.resolve (1000 + i) ctx s
                       if hasGoal events then 1 else 0)
 

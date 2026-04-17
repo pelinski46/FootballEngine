@@ -326,7 +326,7 @@ module RefereeAgent =
                     Priority = TickPriority.SetPiece
                     SequenceId = 0L
                     Kind = KickOffTick } ]
-              Transition = Some(SetPiece KickOff) }
+              Transition = Some(SetPiece SetPieceKind.KickOff) }
         | FullTimeTick
         | MatchEndTick
         | ExtraTimeTick _ ->

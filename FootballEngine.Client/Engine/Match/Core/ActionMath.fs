@@ -28,9 +28,11 @@ module ActionMath =
         let base' = (norm e.TechnicalA * 0.55) + (norm e.TechnicalB * 0.25) + (norm e.PhysicalA * 0.20)
         (base' * sqrt (cond e.Condition)) |> clampFloat 0.05 1.0 |> LanguagePrimitives.FloatWithMeasure<execution>
 
-    let combineScores (i: float<intention>) (e: float<execution>) (noise: float) : float<outcome> =
-        let product = float i * float e
-        Stats.normalSample product (noise * (1.0 - product)) |> clampFloat 0.0 1.0 |> LanguagePrimitives.FloatWithMeasure<outcome>
+    /// Calculate movement execution using Agility, Balance, Acceleration
+    /// Used by SteeringPipeline for physical movement
+    let calcMovementExecution (agility: int) (balance: int) (acceleration: int) (condition: int) : float<execution> =
+        let base' = (norm agility * 0.55) + (norm balance * 0.25) + (norm acceleration * 0.20)
+        (base' * sqrt (cond condition)) |> clampFloat 0.05 1.0 |> LanguagePrimitives.FloatWithMeasure<execution>
 
     /// Evaluate a weighted feature list with a condition modifier.
     let evalWeighted (features: (float * float) list) (condition: int) (minVal: float) : float =
