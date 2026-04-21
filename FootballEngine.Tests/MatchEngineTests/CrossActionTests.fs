@@ -12,17 +12,16 @@ let crossActionTests =
 
           testCase "blocked cross → Phase = Contest(defClub) AND PendingOffsideSnapshot = None"
           <| fun () ->
-              let home = [| makePlayer 1 MR 10 |]
-              let hpos = [| 5.0, 34.0 |]
+              let home = [| makePlayer 1 MR 10; worstAttacker 4 ST |]
+              let hpos = [| 5.0, 34.0; 90.0, 34.0 |]
               let away = [| makePlayer 2 DC 20; makePlayer 3 GK 10 |]
               let apos = [| 90.0, 34.0; 99.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
 
               s.Ball <-
                   { s.Ball with
-                      Possession = Owned(HomeClub, 1
+                      Possession = Owned(HomeClub, 1)
                       PendingOffsideSnapshot = Some(mkSnap ()) }
 
               let events = CrossAction.resolve 1 ctx s
@@ -44,17 +43,19 @@ let crossActionTests =
                       s.Ball.PendingOffsideSnapshot
                       $"blocked cross: PendingOffsideSnapshot = %A{s.Ball.PendingOffsideSnapshot}, expected None."
 
-          testCase "successful cross → Phase = InFlight(AttSide)"
+          testCase "successful cross → Phase = SetPiece(AttSide)"
           <| fun () ->
               let home = [| makePlayer 1 MR 20; eliteAttacker 3 ST |]
               let hpos = [| 5.0, 34.0; 90.0, 34.0 |]
               let away = [| makePlayer 2 GK 1 |]
               let apos = [| 99.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1 }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let events = CrossAction.resolve 1 ctx s
 
               let hasCrossSuccess =
@@ -67,8 +68,8 @@ let crossActionTests =
               if hasCrossSuccess then
                   Expect.equal
                       s.Ball.Possession
-                      (InFlight HomeClub)
-                      $"successful cross: Phase = %A{s.Ball.Possession}, expected InFlight HomeClub."
+                      (SetPiece (HomeClub, SetPieceKind.FreeKick))
+                      $"successful cross: Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
 
           testCase "cross always emits CrossAttempt event"
           <| fun () ->
@@ -77,10 +78,12 @@ let crossActionTests =
               let away = [| makePlayer 2 DC 10; makePlayer 3 GK 10 |]
               let apos = [| 85.0, 34.0; 99.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1 }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let events = CrossAction.resolve 1 ctx s
 
               Expect.isTrue
@@ -89,4 +92,4 @@ let crossActionTests =
                        match e.Type with
                        | MatchEventType.CrossAttempt _ -> true
                        | _ -> false))
-                  $"cross produced events: %A{events |> List.map _.Type}. Expected CrossAttempt." ]
+                  $"cross produced events: %A{events |> List.map (fun e -> e.Type)}. Expected CrossAttempt." ]

@@ -22,8 +22,8 @@ module PlayerScorer =
         let longShots = normStat me.Technical.LongShots * 0.15
         let composure = normStat me.Mental.Composure * 0.20
         let distNorm = (1.0 - PhysicsContract.clampFloat (float ctx.DistToGoal / 30.0) 0.0 1.0) * 0.20
-        let posBonus = ctx.Profile.Directness * 0.10 + ctx.Profile.AttackingDepth * 0.08
-        let distPenalty = PhysicsContract.clampFloat (float ctx.DistToGoal / 40.0) 0.0 0.5
+        let posBonus = ctx.Profile.Directness * 0.10 + ctx.Profile.AttackingDepth * 0.08 + if me.Position = ST then 0.20 else 0.0
+        let distPenalty = PhysicsContract.clampFloat (float ctx.DistToGoal / 50.0) 0.0 0.5
 
         (finishing + longShots + composure + distNorm + posBonus - distPenalty)
         * normCond ctx.MyCondition

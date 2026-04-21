@@ -23,7 +23,9 @@ let statisticalContractsTests =
 
           sw.Stop()
           let msPerGame = sw.Elapsed.TotalMilliseconds / 100.0
-          let matches = results |> Array.mapi (fun i r -> i + 1, r, int msPerGame) |> Array.toList
+
+          let matches =
+              results |> Array.mapi (fun i r -> i + 1, r, int msPerGame) |> Array.toList
 
           testCase "avg goals/match in [1.5, 4.0] over 100 trials"
           <| fun () ->
@@ -236,5 +238,3 @@ let statisticalContractsTests =
               let totalTime = matches |> List.sumBy (fun (_, _, ms) -> ms)
               let avg = float totalTime / 100.0
               Expect.isLessThan avg 150.0 $"avg match time = {avg:F0}ms over 100 trials. Expected < 150ms." ]
-
-         

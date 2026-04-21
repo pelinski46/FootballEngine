@@ -1,8 +1,5 @@
 namespace FootballEngine.Movement
 
-// AdaptiveTactics.fs — lógica de táctica adaptativa.
-// Usa AdaptiveState canónico de FootballEngine (MatchStateTypes.fs).
-// AdaptiveState.Records es PatternRecord[] (array, no Map).
 
 open FootballEngine
 open FootballEngine.PhysicsContract

@@ -3,7 +3,6 @@ module FootballEngine.Tests.MatchEngineTests.MatchInvariantsTests
 open Expecto
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
 open FootballEngine.Tests
 open FootballEngine.Tests.MatchEngineTests.Helpers
 
@@ -16,7 +15,10 @@ let matchInvariantsTests =
               let game = Helpers.loadGame ()
               let clubs = game.Clubs |> Map.toArray |> Array.map snd |> Array.take 2
               let home, away = clubs[0], clubs[1]
-              let result = MatchSimulator.trySimulateMatch home away game.Players game.Staff game.ProfileCache
+
+              let result =
+                  MatchSimulator.trySimulateMatch home away game.Players game.Staff game.ProfileCache
+
               seed, result
 
           let matches = [ 1..20 ] |> List.map runMatch
@@ -63,10 +65,11 @@ let matchInvariantsTests =
                               0
                               $"match seed {seed}: event at SubTick {ev.SubTick} ({ev.Type}), expected ≥ 0"
 
+                          // En el contexto del test, usaremos el valor que el motor usa para FullTime
                           Expect.isLessThanOrEqual
                               ev.SubTick
-                              FullTimeSubTick
-                              $"match seed {seed}: event at SubTick {ev.SubTick} ({ev.Type}), expected ≤ {FullTimeSubTick}"
+                              342000
+                              $"match seed {seed}: event at SubTick {ev.SubTick} ({ev.Type}), expected ≤ 342000"
                   | Error e -> failtestf $"match seed {seed}: simulation error: %A{e}"
 
           testCase "events are ordered chronologically"

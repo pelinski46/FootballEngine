@@ -329,9 +329,8 @@ module SetPlayAction =
         let kickerMorale = float kicker.Morale
 
         let pressNoise =
-            match state.AttackingClub with
-            | c when c = kickerClub -> 0.0
-            | _ -> pressureNoise kicker.Mental.Composure 1.5
+            if state.AttackingSide = kickerClub then 0.0
+            else pressureNoise kicker.Mental.Composure 1.5
 
         let gkBonus =
             match gk with

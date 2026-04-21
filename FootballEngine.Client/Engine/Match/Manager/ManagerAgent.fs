@@ -315,14 +315,12 @@ module ManagerAgent =
         | MakeSubstitution(clubId, outIdx, incoming) ->
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub
-            let subsUsed = getSubsUsed state side
+            let team = getTeam state side
 
-            if subsUsed >= maxSubs then
+            if team.SubsUsed >= maxSubs then
                 []
             else
-                let slots = getSlots state side
-
-                match slots[outIdx] with
+                match team.Slots[outIdx] with
                 | Sidelined _ -> []
                 | PlayerSlot.Active s ->
                     let playerOut = s.Player
@@ -339,16 +337,14 @@ module ManagerAgent =
                               CachedTarget = (inheritedPos.X, inheritedPos.Y)
                               CachedExecution = 1.0 }
 
-                    setSlots
-                        state
-                        side
-                        (slots
-                         |> fun arr ->
-                             arr[outIdx] <- newSlot
-                             arr)
+                    let newSlots = Array.copy team.Slots
+                    newSlots[outIdx] <- newSlot
 
-                    setSubsUsed state side (subsUsed + 1)
-                    setSidelined state side (Map.add playerOut.Id SidelinedBySub (getSidelined state side))
+                    updateTeam state side (fun t -> 
+                        { t with 
+                            Slots = newSlots
+                            SubsUsed = t.SubsUsed + 1
+                            Sidelined = Map.add playerOut.Id SidelinedBySub t.Sidelined })
 
                     [ createEvent subTick playerOut.Id clubId SubstitutionOut
                       createEvent subTick incoming.Id clubId SubstitutionIn ]
@@ -372,8 +368,9 @@ module ManagerAgent =
                 |> List.rev
 
             { Events = events
-              Spawned = []
-              Transition = None }
+              Continuation = EndChain // Periodic check, doesn't start a chain
+              Transition = None
+              SideEffects = [] }
 
         | ManagerReactionTick trigger ->
             let actions = decide tick.SubTick ctx state (Some trigger) clock
@@ -388,10 +385,12 @@ module ManagerAgent =
                 |> List.rev
 
             { Events = events
-              Spawned = []
-              Transition = Some LivePlay }
+              Continuation = EndChain // Manager reaction doesn't control game state or chain
+              Transition = None
+              SideEffects = [] }
 
         | _ ->
             { Events = []
-              Spawned = []
-              Transition = None }
+              Continuation = EndChain
+              Transition = None
+              SideEffects = [] }

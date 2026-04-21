@@ -46,191 +46,122 @@ module BallAgent =
         (currentController: PlayerId option)
         : BallPhysicsState * PlayerId option =
 
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-        let mutable bestPlayer: Player option = None
-
-        let mutable bestPos =
-            { X = 0.0<meter>
-              Y = 0.0<meter>
-              Z = 0.0<meter>
-              Vx = 0.0<meter / second>
-              Vy = 0.0<meter / second>
-              Vz = 0.0<meter / second> }
-
         let bp = ball.Position
 
-        let inline checkContact (player: Player) (pPos: Spatial) =
-            let playerRadius =
-                BalanceConfig.BallContactRadius
-                + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+        let winner, winnerPosOpt, contested =
+            Interception.chooseBestInterceptor bp homeSlots awaySlots
 
-            let dSq = bp.DistSqTo pPos
-            let rSq = playerRadius * playerRadius
+        match winner, contested with
+        | Some p, false ->
+            match winnerPosOpt with
+            | Some pos ->
+                let resolved = resolveContact ball pos
+                resolved, Some p.Id
+            | None -> ball, Some p.Id
+        | _, _ -> ball, None
 
-            if dSq < rSq && dSq < bestDistSq then
-                bestDistSq <- dSq
-                bestPlayer <- Some player
-                bestPos <- pPos
+    let private findNearestChaser
+        (ballPos: Spatial)
+        (homeSlots: PlayerSlot[])
+        (awaySlots: PlayerSlot[])
+        : PlayerId option =
+        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
+        let mutable bestPlayerId: PlayerId option = None
+        let mutable bestIsHome = true
 
         for i = 0 to homeSlots.Length - 1 do
             match homeSlots[i] with
-            | PlayerSlot.Active s -> checkContact s.Player s.Pos
+            | PlayerSlot.Active s ->
+                let dSq = ballPos.DistSqTo2D s.Pos
+
+                if dSq < bestDistSq then
+                    bestDistSq <- dSq
+                    bestPlayerId <- Some s.Player.Id
+                    bestIsHome <- true
             | _ -> ()
 
         for i = 0 to awaySlots.Length - 1 do
             match awaySlots[i] with
-            | PlayerSlot.Active s -> checkContact s.Player s.Pos
+            | PlayerSlot.Active s ->
+                let dSq = ballPos.DistSqTo2D s.Pos
+
+                if dSq < bestDistSq then
+                    bestDistSq <- dSq
+                    bestPlayerId <- Some s.Player.Id
+                    bestIsHome <- false
             | _ -> ()
 
-        let findPlayerById pid =
-            let mutable found: Player * Spatial * float<meter^2> = Unchecked.defaultof<_>
-            let mutable foundIt = false
-
-            for i = 0 to homeSlots.Length - 1 do
-                match homeSlots[i] with
-                | PlayerSlot.Active s when s.Player.Id = pid ->
-                    found <- (s.Player, s.Pos, bp.DistSqTo s.Pos)
-                    foundIt <- true
-                | _ -> ()
-
-            if not foundIt then
-                for i = 0 to awaySlots.Length - 1 do
-                    match awaySlots[i] with
-                    | PlayerSlot.Active s when s.Player.Id = pid ->
-                        found <- (s.Player, s.Pos, bp.DistSqTo s.Pos)
-                        foundIt <- true
-                    | _ -> ()
-
-            if foundIt then Some found else None
-
-        let hysteresis = 0.30<meter>
-
-        let currentPossession =
-            match ball.Possession with
-            | Owned(_, pid) -> Some pid
-            | _ -> None
-
-        match currentPossession, bestPlayer with
-        | _, Some best ->
-            let resolved = resolveContact ball bestPos
-            let impactSpeed = resolved.Position.VelMag
-
-            let canControl =
-                resolved.Position.Z < 1.2<meter> || impactSpeed < 18.0<meter / second>
-
-            if canControl then
-                let club =
-                    if Array.contains best (SimStateOps.activePlayers homeSlots) then
-                        HomeClub
-                    else
-                        AwayClub
-
-                { resolved with
-                    Possession = Owned(club, best.Id) },
-                Some best.Id
-            else
-                resolved, None
-        | _, _ -> ball, None
+        bestPlayerId
 
     let agent tick (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
-        let prevPossession = state.Ball.Possession
         let dt = SimulationClock.dt clock
+        let physicsRate = clock.PhysicsRate
         let stepped = BallPhysics.update dt state.Ball
 
-        let resolved, ctrl =
-            resolveContacts
-                stepped
-                state.Home.Slots
-                state.Away.Slots
-                (match prevPossession with
-                 | Owned(_, pid) -> Some pid
-                 | _ -> None)
 
-        state.Ball <-
-            match ctrl with
-            | Some pid ->
-                let club =
-                    match SimStateOps.clubSideOf state pid with
-                    | Some c -> c
-                    | None -> state.AttackingClub
 
-                let playerOpt =
-                    match
-                        state.Home.Slots
+        let winner, winnerPosOpt, contested =
+            Interception.chooseBestInterceptor stepped.Position state.Home.Slots state.Away.Slots
+
+        let finalWinner =
+            match winner with
+            | Some p -> Some p
+            | None ->
+                let chaserId = findNearestChaser stepped.Position state.Home.Slots state.Away.Slots
+
+                match chaserId with
+                | Some pid ->
+                    let chaserSlot =
+                        let slots = Array.append state.Home.Slots state.Away.Slots
+
+                        slots
                         |> Array.tryPick (function
-                            | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
-                            | _ -> None)
-                    with
-                    | Some p -> Some p
-                    | None ->
-                        state.Away.Slots
-                        |> Array.tryPick (function
-                            | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
+                            | PlayerSlot.Active s when s.Player.Id = pid -> Some s
                             | _ -> None)
 
-                let ballControlNorm =
-                    match playerOpt with
-                    | Some p -> float p.Technical.BallControl / 20.0
-                    | None -> 0.5
+                    match chaserSlot with
+                    | Some s when stepped.Position.DistTo2D s.Pos < 1.0<meter> -> Some s.Player
+                    | _ -> None
+                | None -> None
 
-                let damp = 0.35 - ballControlNorm * 0.30
+        match finalWinner with
+        | Some p ->
+            let club = SimStateOps.clubSideOf state p.Id |> Option.get
 
-                let dampened =
-                    { resolved.Position with
-                        Vx = resolved.Position.Vx * damp
-                        Vy = resolved.Position.Vy * damp
-                        Vz = 0.0<meter / second> }
-
-                { resolved with
-                    Position = dampened
-                    Possession = Owned(club, pid)
-                    LastTouchBy = Some pid }
-            | None -> { resolved with Possession = Loose }
-
-        match ctrl with
-        | Some _ ->
             state.Ball <-
-                { state.Ball with
-                    StationarySinceSubTick = None }
+                { stepped with
+                    Possession = Owned(club, p.Id)
+                    LastTouchBy = Some p.Id }
+
+            let delay = BalanceConfig.TickDelay.delayFrom BalanceConfig.duelChainDelay
+
+            { Events =[]
+              Continuation = SelfReschedule physicsRate
+              Transition = Some LivePlay
+              SideEffects =[
+                  { SubTick = tick.SubTick + delay
+                    Priority = TickPriority.Duel
+                    SequenceId = 0L
+                    Kind = DecisionTick(0, Some p.Id) }
+              ] }
         | None ->
-            let vel =
-                sqrt (
-                    state.Ball.Position.Vx * state.Ball.Position.Vx
-                    + state.Ball.Position.Vy * state.Ball.Position.Vy
-                )
+            match state.Ball.Possession with
+            | Possession.SetPiece _ ->
+                state.Ball <- { stepped with Possession = Loose }
 
-            state.Ball <-
-                { state.Ball with
-                    StationarySinceSubTick =
-                        if vel < 1.0<meter / second> then
-                            state.Ball.StationarySinceSubTick |> Option.orElse (Some state.SubTick)
-                        else
-                            None }
+                { Events = []
+                  Continuation = SelfReschedule physicsRate
+                  Transition = Some LivePlay
+                  SideEffects = [] }
+            | _ ->
+                state.Ball <-
+                    if contested then
+                        { stepped with
+                            Possession = Contest state.AttackingSide }
+                    else
+                        stepped
 
-        let physicsRate = clock.PhysicsRate
-        let nextSubTick = tick.SubTick + physicsRate
-
-        let decisionSpawn =
-            match prevPossession, state.Ball.Possession with
-            // Si la pelota no tenía dueño (suelta, en aire o set piece) y ahora sí
-            | (Loose | InFlight _ | Possession.SetPiece _), Owned(_, pid) ->
-                [ { SubTick = nextSubTick
-                    Priority = TickPriority.Duel
-                    SequenceId = 0L
-                    Kind = DecisionTick(0, Some pid) } ]
-            // Si hubo un cambio de dueño (recepción de pase)
-            | Owned(_, oldPid), Owned(_, newPid) when oldPid <> newPid ->
-                [ { SubTick = nextSubTick
-                    Priority = TickPriority.Duel
-                    SequenceId = 0L
-                    Kind = DecisionTick(0, Some newPid) } ]
-            | _ -> []
-
-        { Events = []
-          Spawned =
-            [ { SubTick = nextSubTick
-                Priority = TickPriority.Physics
-                SequenceId = 0L
-                Kind = PhysicsTick } ]
-            @ decisionSpawn
-          Transition = None }
+                { Events = []
+                  Continuation = SelfReschedule physicsRate
+                  Transition = None
+                  SideEffects = [] }

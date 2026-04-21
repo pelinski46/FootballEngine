@@ -34,13 +34,7 @@ module AgentContext =
         let ballState = state.Ball
         let bX = ballState.Position.X
 
-        let dir =
-            attackDirFor
-                (if state.AttackingClub = HomeClub then
-                     HomeClub
-                 else
-                     AwayClub)
-                state
+        let dir = attackDirFor state.AttackingSide state
 
         let phase = phaseFromBallZone dir bX
         let zone = ofBallX bX dir
@@ -56,7 +50,7 @@ module AgentContext =
                 (getTactics state (if dir = LeftToRight then HomeClub else AwayClub))
                 (getInstructions state (if dir = LeftToRight then HomeClub else AwayClub))
 
-        let nearestTM, nearestOpp, bestPass, distToGoal =
+        let nearestTM, nearestOpp, bestPass, distToGoal, myPos =
             let attSlots = getSlots state (if dir = LeftToRight then HomeClub else AwayClub)
 
             let defSlots = getSlots state (if dir = LeftToRight then AwayClub else HomeClub)
@@ -108,15 +102,12 @@ module AgentContext =
 
             let dist = abs (myPos.X - goalX)
 
-            nearestTM, nearestOpp, bestPass, dist
+            nearestTM, nearestOpp, bestPass, dist, myPos
 
         { Me = me
           Profile = profile
           MyCondition = me.Condition
-          MyPos =
-            match state.Home.Slots[meIdx] with
-            | PlayerSlot.Active s -> s.Pos
-            | _ -> defaultSpatial 50.0<meter> 34.0<meter>
+          MyPos = myPos
           BallState = ballState
           Dir = dir
           Phase = phase

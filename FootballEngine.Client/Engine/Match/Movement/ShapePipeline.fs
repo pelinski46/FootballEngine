@@ -7,8 +7,6 @@ open SimStateOps
 
 module ShapePipeline =
 
-    /// Calculate shape directives for a team
-    /// Called every 600 subTicks (strategic frequency)
     let calculate
         (basePositions: Spatial[])
         (dir: AttackDir)
@@ -16,8 +14,8 @@ module ShapePipeline =
         (ballX: float<meter>)
         (tacticsCfg: TacticsConfig)
         (currentSubTick: int)
-        (modifiers: DirectiveModifiers)
         : Directive[] =
+
 
         let shapeTargets =
             ShapeEngine.computeShapeTargets basePositions dir phase ballX tacticsCfg
@@ -27,6 +25,7 @@ module ShapePipeline =
 
         for i = 0 to shapeTargets.Length - 1 do
             let (targetX, targetY) = shapeTargets[i]
+
 
             result.Add(
                 Directive.create Shape targetX targetY 0.4 0.5 expiry "shape-pipeline" Directive.strategicPriority

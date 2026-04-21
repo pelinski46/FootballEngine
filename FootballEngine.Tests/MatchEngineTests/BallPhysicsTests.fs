@@ -89,8 +89,8 @@ let ballPhysicsTests =
                   { baseBall with
                       Spin = { Top = 3.0<radianPerSecond>; Side = 2.0<radianPerSecond> } }
 
-              let baseAfter = BallPhysics.update baseBall
-              let spinAfter = BallPhysics.update spinBall
+              let baseAfter = BallPhysics.update 1.0<second> baseBall
+              let spinAfter = BallPhysics.update 1.0<second> spinBall
               let dx = float (baseAfter.Position.X - spinAfter.Position.X)
               let dy = float (baseAfter.Position.Y - spinAfter.Position.Y)
               let dist = sqrt (dx * dx + dy * dy)
@@ -116,7 +116,7 @@ let ballPhysicsTests =
                     PendingOffsideSnapshot = None
                     StationarySinceSubTick = None }
 
-              let stepped = BallPhysics.update ball
+              let stepped = BallPhysics.update 1.0<second> ball
 
               let moved =
                   abs (float (stepped.Position.X - ball.Position.X)) > 0.001
@@ -150,7 +150,7 @@ let ballPhysicsTests =
                     PendingOffsideSnapshot = Some snapshot
                     StationarySinceSubTick = None }
 
-              let stepped = BallPhysics.update ball
+              let stepped = BallPhysics.update 1.0<second> ball
 
               Expect.equal
                   stepped.PendingOffsideSnapshot

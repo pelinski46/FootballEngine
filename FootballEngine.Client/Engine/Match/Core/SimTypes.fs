@@ -104,8 +104,12 @@ module Directive =
                 sx <- sx + d.TargetX * w
                 sy <- sy + d.TargetY * w
 
-        if not hasActive then (52.5<meter>, 34.0<meter>)
-        elif tw = 0.0 then (52.5<meter>, 34.0<meter>)
+        if not hasActive then 
+            printfn "DEBUG: Player lost directives (not hasActive). Defaulting to center."
+            (52.5<meter>, 34.0<meter>)
+        elif tw = 0.0 then 
+            printfn "DEBUG: Player total weight zero (tw=0.0). Defaulting to center."
+            (52.5<meter>, 34.0<meter>)
         else (sx / tw, sy / tw)
 
 type RunType =
@@ -332,6 +336,8 @@ type Possession =
     | Loose
     | Owned of ClubSide * PlayerId
     | InFlight of ClubSide * PlayerId
+    | Contest of ClubSide
+    | Transition of ClubSide
     | SetPiece of ClubSide * SetPieceKind
 
 type OffsideSnapshot =
@@ -421,12 +427,18 @@ type SimState() =
           PendingOffsideSnapshot = None
           StationarySinceSubTick = None } with get, set
 
+    member val LastAttackingClub = HomeClub with get, set
+
     member this.AttackingClub =
         match this.Ball.Possession with
-        | Owned(club, _) -> club
-        | InFlight(club, _) -> club
-        | SetPiece(club, _) -> club
-        | Loose -> HomeClub
+        | Owned(club, _) -> Some club
+        | InFlight(club, _) -> Some club
+        | SetPiece(club, _) -> Some club
+        | Contest(club) -> Some club
+        | Transition(club) -> Some club
+        | Loose -> None
+
+    member this.AttackingSide = this.AttackingClub |> Option.defaultValue this.LastAttackingClub
 
     member val HomeAttackDir = LeftToRight with get, set
     member val Momentum = 0.0 with get, set
@@ -437,33 +449,6 @@ type SimState() =
     member val AwayBasePositions = Array.empty<Spatial> with get, set
     member val Home = TeamSimState.empty with get, set
     member val Away = TeamSimState.empty with get, set
-
-type SimSnapshot =
-    { SubTick: int
-      HomePositions: Spatial[]
-      AwayPositions: Spatial[]
-      BallX: float<meter>
-      BallY: float<meter>
-      BallVx: float<meter / second>
-      BallVy: float<meter / second>
-      BallZ: float<meter>
-      BallVz: float<meter / second>
-      BallSpinTop: float<radianPerSecond>
-      BallSpinSide: float<radianPerSecond>
-      Possession: Possession
-      HomeScore: int
-      AwayScore: int
-      HomeConditions: int[]
-      AwayConditions: int[]
-      HomeSidelined: Map<PlayerId, PlayerOut>
-      AwaySidelined: Map<PlayerId, PlayerOut>
-      Momentum: float }
-
-type MatchReplay =
-    { Context: MatchContext
-      Final: SimState
-      Events: MatchEvent list
-      Snapshots: SimSnapshot[] }
 
 module SimStateOps =
 
@@ -638,6 +623,14 @@ module SimStateOps =
     let setLastShapeSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastShapeSubTick = t })
 
+    let setCachedTarget (state: SimState) (side: ClubSide) (idx: int) (x: float<meter>) (y: float<meter>) =
+        updateTeam state side (fun t -> 
+            let slots = Array.copy t.Slots
+            match slots[idx] with
+            | Active s -> slots[idx] <- Active { s with CachedTarget = (x, y) }
+            | _ -> ()
+            { t with Slots = slots })
+
     let getLastMarkingSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastMarkingSubTick
 
     let setLastMarkingSubTick (state: SimState) (side: ClubSide) (t: int) =
@@ -688,6 +681,7 @@ module SimStateOps =
           StationarySinceSubTick = None }
 
     let resetBallForKickOff (receivingClub: ClubSide) (state: SimState) =
+        state.LastAttackingClub <- receivingClub
         state.Ball <-
             { state.Ball with
                 Position = kickOffSpatial
@@ -716,6 +710,7 @@ module SimStateOps =
                 PendingOffsideSnapshot = None }
 
     let givePossessionTo (club: ClubSide) (pid: PlayerId) (state: SimState) =
+        state.LastAttackingClub <- club
         state.Ball <-
             { state.Ball with
                 Possession = Owned(club, pid)
@@ -798,7 +793,7 @@ module SimStateOps =
             | RightToLeft -> LeftToRight
 
     let currentPhase (state: SimState) =
-        let dir = attackDirFor state.AttackingClub state
+        let dir = attackDirFor state.AttackingSide state
         phaseFromBallZone dir state.Ball.Position.X
 
     let clubSideOf (state: SimState) (pid: PlayerId) : ClubSide option =
@@ -818,6 +813,17 @@ module SimStateOps =
                     | _ -> false)
 
             if foundAway then Some AwayClub else None
+
+    let findActivePlayer (state: SimState) (pid: PlayerId) : Player option =
+        let slots =
+            match clubSideOf state pid with
+            | Some HomeClub -> state.Home.Slots
+            | Some AwayClub -> state.Away.Slots
+            | None -> [||]
+        
+        slots |> Array.tryPick (function
+            | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
+            | _ -> None)
 
     let conditionsArray (slots: PlayerSlot[]) : int[] =
         Array.init slots.Length (fun i ->

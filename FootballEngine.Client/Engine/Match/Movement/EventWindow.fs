@@ -67,7 +67,7 @@ module EventWindow =
                     | MatchEventType.CrossAttempt false -> flankTotal <- flankTotal + 1
                     | _ -> ()
 
-            let result = List.ofSeq recentList |> List.rev // Volver al orden cronológico
+            let result = List.ofSeq recentList |> List.rev 
 
             let calcRate total success =
                 if total = 0 then 0.5 else float success / float total

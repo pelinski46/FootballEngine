@@ -9,13 +9,21 @@ module MatchFormulas =
 
 
 
-    let inline effectiveStat (stat: int) (condition: int) (morale: int) (sigma: float) =
-        let normStat = PhysicsContract.normaliseAttr stat
-        let normCond = PhysicsContract.normaliseCondition condition
-        let normMorale = PhysicsContract.normaliseCondition morale
-        let base' = normStat * normCond * (0.8 + normMorale / 2.5)
-        let sample = normalSample base' (sigma * 0.1) // Reduced sigma for stability
-        Math.Max(0.05, sample)
+    let sigmoid x = 1.0 / (1.0 + exp (-x))
+
+    let inline effectiveStat (stat: int) (condition: int) (morale: int) (weight: float) =
+        let normStat = float stat / 20.0
+        let normCond = float condition / 100.0
+        let normMorale = float morale / 100.0
+
+        // Curva de rendimiento: el stat base se procesa de forma no lineal
+        // k=10.0 controla la agresividad de la curva, x0=0.5 es el punto de inflexión
+        let rawValue = (normStat * 0.75) + (normCond * 0.15) + (normMorale * 0.10)
+        let scaled = sigmoid (10.0 * (rawValue - 0.5))
+
+        Math.Max(0.01, scaled * weight)
+
+    let physicalVariation (cond: int) = 0.85 + (float cond / 100.0) * 0.30 // Retorno de varianza entre 0.85 y 1.15
 
     let attackEffort (phase: MatchPhase) (att: Player) (cond: int) =
         match phase with
@@ -45,7 +53,7 @@ module PitchMath =
         let dy = y1 - y2
         sqrt (dx * dx + dy * dy)
 
-    let inline distanceSq (x1, y1) (x2, y2) = 
+    let inline distanceSq (x1, y1) (x2, y2) =
         let dx = x1 - x2
         let dy = y1 - y2
         dx * dx + dy * dy
@@ -57,8 +65,14 @@ module PitchMath =
         |> fst
 
     let jitter (oX: float<meter>) (oY: float<meter>) (tX: float<meter>) (tY: float<meter>) scale nx ny =
-        PhysicsContract.clamp (oX + (tX - oX) * scale + (normalSample 0.0 nx) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchLength,
-        PhysicsContract.clamp (oY + (tY - oY) * scale + (normalSample 0.0 ny) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchWidth
+        PhysicsContract.clamp
+            (oX + (tX - oX) * scale + (normalSample 0.0 nx) * 1.0<meter>)
+            0.0<meter>
+            PhysicsContract.PitchLength,
+        PhysicsContract.clamp
+            (oY + (tY - oY) * scale + (normalSample 0.0 ny) * 1.0<meter>)
+            0.0<meter>
+            PhysicsContract.PitchWidth
 
     type PlayerRole =
         | Defender

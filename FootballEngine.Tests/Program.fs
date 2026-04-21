@@ -3,6 +3,7 @@
 open Expecto
 open Expecto.Logging
 open FootballEngine.Tests.EngineTests
+open FootballEngine.Tests.MatchEngineTests.StateInvariantTests
 open FootballEngine.Tests.WorldTests
 open FootballEngine.Tests.TrainingSystemTests
 open FootballEngine.Tests.DeterminismTests
@@ -17,11 +18,12 @@ open FootballEngine.Tests.MatchEngineTests.CrossActionTests
 open FootballEngine.Tests.MatchEngineTests.SetPieceTests
 open FootballEngine.Tests.MatchEngineTests.MatchInvariantsTests
 open FootballEngine.Tests.MatchEngineTests.StatisticalContractsTests
-open FootballEngine.Tests.MatchEngineTests.PhaseTransitionTests
+
 
 [<EntryPoint>]
 let main argv =
 
+    let stateinvariant = testList "stateinvariant" [ stateInvariantTests ]
 
     let matchEngineTests =
         testList
@@ -35,8 +37,7 @@ let main argv =
               crossActionTests
               setPieceTests
               matchInvariantsTests
-              statisticalContractsTests
-              phaseTransitionTests ]
+              statisticalContractsTests ]
 
     let engineTests =
         testList "Engine" [ batchTests; doubleSimGuardTests; standingUpdateTests; fixtureIntegrityTests ]
@@ -64,6 +65,7 @@ let main argv =
               worldTests
               trainingTests
               determinismTests
-              schedulerTests ]
+              schedulerTests
+              stateinvariant ]
 
     runTestsWithCLIArgs [ Verbosity LogLevel.Verbose ] argv all

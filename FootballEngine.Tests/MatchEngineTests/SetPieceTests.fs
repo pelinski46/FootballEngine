@@ -18,15 +18,14 @@ let setPieceTests =
               let away = [| makePlayer 2 MR 10 |]
               let apos = [| 100.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (Contest AwayClub)
+              let ctx, s = buildState home hpos away apos 52.5 34.0 (Contest AwayClub)
 
               RefereeAgent.resolve 1 (AwardThrowIn HomeClub) ctx s |> ignore
 
               Expect.equal
                   s.Ball.Possession
-                  (SetPiece HomeClub)
-                  $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
+                  (Possession.SetPiece(HomeClub, SetPieceKind.ThrowIn))
+                  $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Possession}, expected SetPiece(HomeClub, ThrowIn)."
 
               Expect.equal
                   s.Ball.Position.X
@@ -40,15 +39,14 @@ let setPieceTests =
               let away = [| makePlayer 2 MR 10 |]
               let apos = [| 100.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (Contest HomeClub)
+              let ctx, s = buildState home hpos away apos 52.5 34.0 (Contest HomeClub)
 
               RefereeAgent.resolve 1 (AwardCorner AwayClub) ctx s |> ignore
 
               Expect.equal
                   s.Ball.Possession
-                  (SetPiece AwayClub)
-                  $"AwardCorner AwayClub: Phase = %A{s.Ball.Possession}, expected SetPiece AwayClub."
+                  (Possession.SetPiece(AwayClub, SetPieceKind.Corner))
+                  $"AwardCorner AwayClub: Phase = %A{s.Ball.Possession}, expected SetPiece(AwayClub, Corner)."
 
           testCase "KickOffTick (HomeClub kicking) → Phase = SetPiece HomeClub"
           <| fun () ->
@@ -58,7 +56,7 @@ let setPieceTests =
               let apos = [| 55.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (SetPiece AwayClub)
+                  buildState home hpos away apos 52.5 34.0 (Possession.SetPiece(AwayClub, SetPieceKind.KickOff))
 
               s.HomeAttackDir <- LeftToRight
 
@@ -68,12 +66,13 @@ let setPieceTests =
                     SequenceId = 0L
                     Kind = KickOffTick }
 
-              SetPieceAgent.agent 100 [] [] tick ctx s |> ignore
+              let clock = SimulationClock.defaultClock
+              SetPieceAgent.agent tick ctx s clock |> ignore
 
               Expect.equal
                   s.Ball.Possession
-                  (SetPiece HomeClub)
-                  $"KickOffTick(HomeClub kicking): Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
+                  (Possession.SetPiece(HomeClub, SetPieceKind.KickOff))
+                  $"KickOffTick(HomeClub kicking): Phase = %A{s.Ball.Possession}, expected SetPiece(HomeClub, KickOff)."
 
           testCase "FreeKick always emits FreeKick event"
           <| fun () ->
@@ -83,13 +82,17 @@ let setPieceTests =
               let apos = [| 45.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 40.0 34.0 (SetPiece HomeClub)
+                  buildState home hpos away apos 40.0 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.FreeKick))
 
               s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveFreeKick 1 ctx s
 
               Expect.isTrue
-                  (events |> List.exists (fun e -> match e.Type with MatchEventType.FreeKick _ -> true | _ -> false))
+                  (events
+                   |> List.exists (fun e ->
+                       match e.Type with
+                       | MatchEventType.FreeKick _ -> true
+                       | _ -> false))
                   $"FreeKick produced events: %A{events |> List.map _.Type}. Expected FreeKick."
 
           testCase "Corner always emits Corner event"
@@ -100,7 +103,7 @@ let setPieceTests =
               let apos = [| 99.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (SetPiece HomeClub)
+                  buildState home hpos away apos 52.5 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.Corner))
 
               s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveCorner 1 ctx s
@@ -117,7 +120,7 @@ let setPieceTests =
               let apos = [| 15.0, 34.0 |]
 
               let ctx, s =
-                  buildState home hpos away apos 10.0 34.0 (SetPiece HomeClub)
+                  buildState home hpos away apos 10.0 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.ThrowIn))
 
               s.Ball <- { s.Ball with Possession = Loose }
               let events = SetPlayAction.resolveThrowIn 1 ctx s HomeClub
@@ -151,7 +154,14 @@ let setPieceTests =
                       let apos = [| 99.0, 34.0 |]
 
                       let ctx, s =
-                          buildState home hpos away apos 80.0 34.0 (SetPiece HomeClub)
+                          buildState
+                              home
+                              hpos
+                              away
+                              apos
+                              80.0
+                              34.0
+                              (Possession.SetPiece(HomeClub, SetPieceKind.FreeKick))
 
                       s.Ball <- { s.Ball with Possession = Loose }
                       let events = SetPlayAction.resolveFreeKick (1000 + i) ctx s

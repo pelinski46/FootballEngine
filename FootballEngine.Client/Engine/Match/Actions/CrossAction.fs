@@ -21,7 +21,7 @@ module CrossAction =
             let crosserPos = crosserSlot.Pos
             state.Ball <-
                 { state.Ball with
-                    Possession = InFlight (state.AttackingClub, crosser.Id) }
+                    Possession = InFlight (state.AttackingSide, crosser.Id) }
 
             let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
             let condNorm = PhysicsContract.normaliseCondition crosserCond
@@ -56,12 +56,14 @@ module CrossAction =
                 |> Array.choose id
                 |> Array.sortBy (fun (_, sp) ->
                     let defDist =
-                        defOutfield
-                        |> Array.map (fun (_, dSp) ->
-                            let dx = dSp.X - sp.X
-                            let dy = dSp.Y - sp.Y
-                            dx * dx + dy * dy)
-                        |> Array.min
+                        if defOutfield.Length = 0 then 999.0<meterSquared>
+                        else
+                            defOutfield
+                            |> Array.map (fun (_, dSp) ->
+                                let dx = dSp.X - sp.X
+                                let dy = dSp.Y - sp.Y
+                                dx * dx + dy * dy)
+                            |> Array.min
 
                     -(defDist))
 
@@ -93,8 +95,8 @@ module CrossAction =
                       Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.8<radianPerSecond> }
 
                 if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
-                    let goalEvents = awardGoal actx.AttSide (Some target.Id) subTick ctx state
-                    (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
+                    [ createEvent subTick crosser.Id attClubId (CrossAttempt true)
+                      createEvent subTick target.Id attClubId Goal ]
                 else
                     let blockPos =
                         defOutfield
@@ -113,7 +115,7 @@ module CrossAction =
 
                     state.Ball <-
                         { state.Ball with
-                            Possession = Loose
+                            Possession = Contest(defClub)
                             Spin = spin }
 
                     clearOffsideSnapshot state
@@ -134,7 +136,7 @@ module CrossAction =
 
                 state.Ball <-
                     { state.Ball with
-                        Possession = Loose }
+                        Possession = Contest(defClub) }
                 clearOffsideSnapshot state
 
                 [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]

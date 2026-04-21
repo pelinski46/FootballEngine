@@ -31,6 +31,7 @@ let duelNextDelay = TickDelay.ofSeconds 24.0 5.0 12.0 38.0
 let shotDelay = TickDelay.ofSeconds 2.0 0.5 1.0 4.0
 let foulDelay = TickDelay.ofSeconds 5.0 1.5 3.0 9.0
 let goalDelay = TickDelay.ofSeconds 28.0 4.0 20.0 38.0
+let kickOffDelay = TickDelay.ofSeconds 1.0 0.0 1.0 1.0
 let cornerDelay = TickDelay.ofSeconds 11.0 2.0 7.0 16.0
 let freeKickDelay = TickDelay.ofSeconds 10.0 2.0 6.0 15.0
 let throwInDelay = TickDelay.ofSeconds 5.0 1.0 3.0 8.0
@@ -73,7 +74,7 @@ let HomeFatigueReduction = 0.10 * HomeAdvantageStrength
 // ============================================================================
 
 let GoalDifficulty = 1.3
-let ShotQualityGate = 0.18
+let ShotQualityGate = 0.10
 let FoulBaseRate = 0.35
 let CornerOnFailedCross = 0.85
 let PostShotClearProbability = 0.40
@@ -89,7 +90,7 @@ let OnTargetBase = 0.40 + (1.0 - ShotQualityGate) * 0.20
 let ShotAngleSpreadBase = 0.30
 let ShotVzBase = PhysicsContract.LongBallVz // reuse loft constant
 let ShotVzVariance = 1.5
-let ShotOnTargetBase = 0.50
+let ShotOnTargetBase = 0.25
 let ShotOnTargetMultiplier = 0.30
 
 /// Distance at which shot quality normalises to 0. In metres (pitch is 105m long).
@@ -102,8 +103,8 @@ let ShotFinishingMax = 1.00
 // Duel — attribute weights and probability bases
 // ============================================================================
 
-let DuelWinProbabilityBase = 0.50
-let DuelRecoverProbabilityBase = 0.35
+let DuelWinProbabilityBase = 3.0
+let DuelRecoverProbabilityBase = 5.0
 let DuelMomentumBonus = 0.50
 let DuelMomentumRecover = 1.00
 let DuelMoraleBonusMultiplier = 0.05
@@ -135,7 +136,7 @@ let DuelFatigueDecay = 0.04
 // Pass
 // ============================================================================
 
-let PassBaseMean = 0.88
+let PassBaseMean = 0.60
 let PassTechnicalWeight = 0.15
 let PassVisionWeight = 0.15
 let PassSuccessShapeAlpha = 10.0

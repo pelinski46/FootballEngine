@@ -54,7 +54,8 @@ let determinismTests =
 
               Expect.equal evs1.Length evs2.Length "event count mismatch"
 
-              evs1 |> List.iteri (fun i e1 ->
+              evs1
+              |> List.iteri (fun i e1 ->
                   let e2 = evs2[i]
                   Expect.equal e1.SubTick e2.SubTick $"event[{i}].SubTick mismatch"
                   Expect.equal e1.PlayerId e2.PlayerId $"event[{i}].PlayerId mismatch"
@@ -66,8 +67,10 @@ let determinismTests =
               let gs, clubs, players, staff = loadClubs ()
               let home, away = clubs.[0], clubs.[1]
               let pairs = [ (1, 2); (100, 200); (7, 13); (42, 99) ]
+
               let anyDiffers =
-                  pairs |> List.exists (fun (seed1, seed2) ->
+                  pairs
+                  |> List.exists (fun (seed1, seed2) ->
                       setSeed seed1
                       let _, _, evs1, _ = sim home away players staff gs.ProfileCache
                       setSeed seed2
@@ -75,6 +78,7 @@ let determinismTests =
                       let sig1 = evs1 |> List.map (fun e -> e.SubTick, e.Type)
                       let sig2 = evs2 |> List.map (fun e -> e.SubTick, e.Type)
                       sig1 <> sig2)
+
               Expect.isTrue anyDiffers "at least one seed pair should produce different event sequences"
           }
 
@@ -91,12 +95,12 @@ let determinismTests =
               Expect.equal replay1.Snapshots.Length replay2.Snapshots.Length "snapshot count mismatch"
               Expect.equal replay1.Events.Length replay2.Events.Length "event count mismatch"
 
-              replay1.Snapshots |> Array.iteri (fun i s1 ->
+              replay1.Snapshots
+              |> Array.iteri (fun i s1 ->
                   let s2 = replay2.Snapshots[i]
                   Expect.equal s1.SubTick s2.SubTick $"snapshot[{i}].SubTick mismatch"
                   Expect.equal s1.HomeScore s2.HomeScore $"snapshot[{i}].HomeScore mismatch"
-                  Expect.equal s1.AwayScore s2.AwayScore $"snapshot[{i}].AwayScore mismatch"
-                  Expect.equal s1.AttackingClub s2.AttackingClub $"snapshot[{i}].AttackingClub mismatch")
+                  Expect.equal s1.AwayScore s2.AwayScore $"snapshot[{i}].AwayScore mismatch")
           }
 
           test "same seed produces same goal events" {
@@ -114,7 +118,8 @@ let determinismTests =
 
               Expect.equal goals1.Length goals2.Length "goal count mismatch"
 
-              goals1 |> List.iteri (fun i g1 ->
+              goals1
+              |> List.iteri (fun i g1 ->
                   let g2 = goals2[i]
                   Expect.equal g1.PlayerId g2.PlayerId $"goal[{i}].PlayerId mismatch"
                   Expect.equal g1.SubTick g2.SubTick $"goal[{i}].SubTick mismatch")

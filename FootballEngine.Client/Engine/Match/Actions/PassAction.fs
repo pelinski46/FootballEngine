@@ -82,7 +82,7 @@ module PassAction =
             let passerOpt =
                 match state.Ball.Possession with
                 | Owned(_, ctrlId) -> attSlots |> Array.tryPick (function | PlayerSlot.Active s when s.Player.Id = ctrlId -> Some s | _ -> None)
-                | Loose | InFlight _ | SetPiece _ -> attSlots |> Array.tryPick (function | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id -> Some s | _ -> None)
+                | Loose | InFlight _ | SetPiece _ | Contest _ | Transition _ -> attSlots |> Array.tryPick (function | PlayerSlot.Active s when state.Ball.LastTouchBy = Some s.Player.Id -> Some s | _ -> None)
 
             match passerOpt with
             | None -> []
@@ -187,9 +187,8 @@ module PassAction =
                                 Spin =
                                     { Top = 0.0<radianPerSecond>
                                       Side = 0.0<radianPerSecond> }
-                                Possession = InFlight(actx.AttSide, target.Id)
+                                Possession = InFlight(actx.AttSide, passer.Id)
                                 PendingOffsideSnapshot = Some snapshot }
-
                         [ createEvent subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
                 elif bernoulli deflectRate then
                     let deflectedById =
@@ -463,4 +462,3 @@ module PassAction =
                 loosePossession state
                 adjustMomentum actx.Dir (-BalanceConfig.LongBallFailMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
-        | ValueNone -> []

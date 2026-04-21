@@ -14,8 +14,8 @@ type ActionContext =
 
 module ActionContext =
     let build (state: SimState) : ActionContext =
-        let dir = attackDirFor state.AttackingClub state
-        let attSide = state.AttackingClub
+        let dir = attackDirFor state.AttackingSide state
+        let attSide = state.AttackingSide
         let defSide = ClubSide.flip attSide
         let zone = SimStateOps.ofBallX state.Ball.Position.X dir
 

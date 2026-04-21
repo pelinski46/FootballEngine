@@ -54,12 +54,20 @@ module DuelAction =
             let attScore = ActionMath.evalWeighted attFeatures attConditions 0.05
             let defScore = ActionMath.evalWeighted defFeatures defConditions 0.05
 
-            let diff = float attScore - float defScore
+            let aggressionNorm = def.Mental.AggressionLevel
+            let foulChance = 0.06 + aggressionNorm * 0.10
 
-            let aX, aY = att.Pos.X, att.Pos.Y
-            let dX, dY = def.Pos.X, def.Pos.Y
+            if bernoulli foulChance then
+                // Bug 5 Fix: Foul check first, mutual exclusion with duel result
+                state.Ball <- { state.Ball with Possession = Contest(actx.DefSide) }
+                adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
+                [ createEvent subTick def.Player.Id defClubId FoulCommitted ]
+            else
+                let diff = float attScore - float defScore
 
-            let duelEvents =
+                let aX, aY = att.Pos.X, att.Pos.Y
+                let dX, dY = def.Pos.X, def.Pos.Y
+
                 if logisticBernoulli diff BalanceConfig.DuelWinProbabilityBase then
                     let nx, ny =
                         PitchMath.jitter bX bY aX aY 0.5 BalanceConfig.DuelJitterWin BalanceConfig.DuelJitterWin
@@ -100,18 +108,6 @@ module DuelAction =
                         state
 
                     [ createEvent subTick att.Player.Id attClubId DribbleKeep ]
-
-            let aggressionNorm = def.Mental.AggressionLevel
-            let foulChance = 0.06 + aggressionNorm * 0.10
-
-            if bernoulli foulChance then
-                if state.AttackingClub = actx.AttSide then
-                    loosePossession state
-
-                adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
-                duelEvents @ [ createEvent subTick def.Player.Id defClubId FoulCommitted ]
-            else
-                duelEvents
         | _ -> []
 
     let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list =
@@ -216,7 +212,7 @@ module DuelAction =
                 let foulChance = betaSample adjustedFoulRate BalanceConfig.TackleFoulShapeBeta
 
                 if bernoulli foulChance then
-                    loosePossession state
+                    state.Ball <- { state.Ball with Possession = SetPiece(actx.AttSide, SetPieceKind.FreeKick) }
                     adjustMomentum actx.Dir (-BalanceConfig.TackleFoulMomentum) state
                     [ createEvent subTick defender.Id clubId FoulCommitted ]
                 else

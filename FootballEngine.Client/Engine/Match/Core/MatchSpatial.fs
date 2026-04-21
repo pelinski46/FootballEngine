@@ -159,6 +159,13 @@ module MatchSpatial =
                     | PlayerSlot.Active s -> s.Player.Id = player.Id
                     | _ -> false)
 
+            let dir =
+                if isAttHome then state.HomeAttackDir
+                else
+                    match state.HomeAttackDir with
+                    | LeftToRight -> RightToLeft
+                    | RightToLeft -> LeftToRight
+
             let defSlots = if isAttHome then state.Away.Slots else state.Home.Slots
 
             let mutable firstX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
@@ -167,7 +174,7 @@ module MatchSpatial =
 
             for i = 0 to defSlots.Length - 1 do
                 match defSlots[i] with
-                | PlayerSlot.Active s when s.Player.Position <> GK ->
+                | PlayerSlot.Active s ->
                     let x = s.Pos.X
                     found <- found + 1
 
@@ -184,21 +191,25 @@ module MatchSpatial =
                         secondX <- x
                 | _ -> ()
 
-            if found < 2 then
-                false
-            else
-                let secondLastX = secondX
-                let ballX = state.Ball.Position.X
-
-                let inOwnHalf =
+            let ballX = state.Ball.Position.X
+            let offsideLine =
+                if found < 2 then
                     match dir with
-                    | LeftToRight -> playerX < 50.0<meter>
-                    | RightToLeft -> playerX > 50.0<meter>
+                    | LeftToRight -> 106.0<meter>
+                    | RightToLeft -> -1.0<meter>
+                else
+                    match dir with
+                    | LeftToRight -> max secondX ballX
+                    | RightToLeft -> min secondX ballX
 
-                not inOwnHalf
-                && match dir with
-                   | LeftToRight -> playerX > secondLastX && playerX > ballX
-                   | RightToLeft -> playerX < secondLastX && playerX < ballX
+            let inOwnHalf =
+                match dir with
+                | LeftToRight -> playerX <= 50.0<meter>
+                | RightToLeft -> playerX >= 50.0<meter>
+
+            not inOwnHalf && (match dir with
+                              | LeftToRight -> playerX > offsideLine + 0.1<meter>
+                              | RightToLeft -> playerX < offsideLine - 0.1<meter>)
 
     let private secondLastDefenderXSlots (slots: PlayerSlot[]) (dir: AttackDir) : float<meter> =
         let mutable firstX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
@@ -207,7 +218,7 @@ module MatchSpatial =
 
         for i = 0 to slots.Length - 1 do
             match slots[i] with
-            | PlayerSlot.Active s when s.Player.Position <> GK ->
+            | PlayerSlot.Active s ->
                 let x = s.Pos.X
                 found <- found + 1
 

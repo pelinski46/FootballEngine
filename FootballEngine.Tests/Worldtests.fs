@@ -410,7 +410,7 @@ let lineupTests =
     testList
         "Lineup & Formation Contracts"
         [ test "all formations produce 11-slot lineup" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -433,7 +433,7 @@ let lineupTests =
                   "formation produced <11 slots"
           }
           test "lineup has exactly 11 filled slots" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -451,7 +451,7 @@ let lineupTests =
                   "lineup does not have 11 filled players"
           }
           test "all lineup players belong to the club" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -473,7 +473,7 @@ let lineupTests =
                   "lineup references foreign player"
           }
           test "lineup always has a GK" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -491,7 +491,7 @@ let lineupTests =
                   "lineup has no goalkeeper"
           }
           test "all lineup slot positions in [0, 1]" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs
@@ -511,7 +511,7 @@ let lineupTests =
                   "slot position out of [0,1]"
           }
           test "no player appears twice in a lineup" {
-              let clubs, players, staff = loadClubs ()
+              let gs, clubs, players, staff = loadClubs ()
 
               Expect.isTrue
                   (clubs

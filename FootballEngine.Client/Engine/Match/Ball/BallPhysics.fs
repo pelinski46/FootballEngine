@@ -1,6 +1,5 @@
 namespace FootballEngine
 
-open System
 open FootballEngine.PhysicsContract
 
 module BallPhysics =
@@ -9,7 +8,10 @@ module BallPhysics =
         let speed = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy + pos.Vz * pos.Vz)
 
         let magnusX = float spin.Side * BalanceConfig.BallMagnusCoeff * pos.Vy / 1.0<second>
-        let magnusY = float spin.Side * BalanceConfig.BallMagnusCoeff * (-pos.Vx) / 1.0<second>
+
+        let magnusY =
+            float spin.Side * BalanceConfig.BallMagnusCoeff * (-pos.Vx) / 1.0<second>
+
         let magnusZ = float spin.Top * BalanceConfig.BallMagnusCoeff * speed / 1.0<second>
 
         let vx = pos.Vx * BalanceConfig.BallAirDrag + magnusX * dt
@@ -73,26 +75,42 @@ module BallPhysics =
         else
             pos
 
-    let private stopThreshold = 0.06
+    let private stopThreshold = 0.15
 
     let private applyStopThreshold (pos: Spatial) : Spatial =
-        if pos.Z > 0.0<meter> then
+        if pos.Z > 0.05<meter> then
             pos
         else
             let speed = sqrt (pos.Vx * pos.Vx + pos.Vy * pos.Vy)
-            if speed < stopThreshold * 1.0<meter/second> then
-                { pos with Vx = 0.0<meter/second>; Vy = 0.0<meter/second> }
+
+            if speed < stopThreshold * 1.0<meter / second> then
+                { pos with
+                    Vx = 0.0<meter / second>
+                    Vy = 0.0<meter / second>
+                    Vz = 0.0<meter / second> }
             else
                 { pos with
-                    Vx = if abs pos.Vx < stopThreshold * 1.0<meter/second> then 0.0<meter/second> else pos.Vx
-                    Vy = if abs pos.Vy < stopThreshold * 1.0<meter/second> then 0.0<meter/second> else pos.Vy }
+                    Vx =
+                        if abs pos.Vx < stopThreshold * 0.5<meter / second> then
+                            0.0<meter / second>
+                        else
+                            pos.Vx
+                    Vy =
+                        if abs pos.Vy < stopThreshold * 0.5<meter / second> then
+                            0.0<meter / second>
+                        else
+                            pos.Vy }
 
     let update (dt: float<second>) (ball: BallPhysicsState) : BallPhysicsState =
         let pos = ball.Position
         let spin = ball.Spin
 
-        // Fast path: grounded ball with no spin — skip aerodynamics, posts, gravity
-        if pos.Z = 0.0<meter> && pos.Vz = 0.0<meter/second> && spin.Top = 0.0<radianPerSecond> && spin.Side = 0.0<radianPerSecond> then
+        if
+            pos.Z = 0.0<meter>
+            && pos.Vz = 0.0<meter / second>
+            && spin.Top = 0.0<radianPerSecond>
+            && spin.Side = 0.0<radianPerSecond>
+        then
             let newPos =
                 { pos with
                     X = pos.X + pos.Vx * dt

@@ -30,15 +30,18 @@ module ShapeEngine =
         let n = basePositions.Length
         let result = Array.zeroCreate<(float<meter> * float<meter>)> n
 
-        // tacticsCfg.ForwardPush/DefensiveDrop are numeric offsets in metres (dimensionless values), convert to metre units
+
         let tacticalPush = tacticsCfg.ForwardPush * 1.0<meter> * forwardDir
         let defensiveDrop = tacticsCfg.DefensiveDrop * 1.0<meter> * forwardDir
         let ballPullBase = (ballX - HalfwayLineX) * 0.15 * forwardDir
         let pressureCoeff = tacticsCfg.PressureDistance * 0.01
 
+        let damping = 0.2 
+
         for i = 0 to n - 1 do
             let basePos = basePositions[i]
-            let ballPullX = ballPullBase
+            let targetPullX = PhysicsContract.clamp (ballPullBase * (float i / float (n - 1))) -8.0<meter> 8.0<meter>
+            let ballPullX = targetPullX * damping
 
             let compactShift =
                 (basePos.Y - 34.0<meter>) * pressureCoeff
@@ -46,8 +49,11 @@ module ShapeEngine =
             let x = basePos.X + phaseShift + tacticalPush + defensiveDrop + ballPullX
             let y = basePos.Y + compactShift
 
-            result[i] <-
-                (PhysicsContract.clamp x 2.0<meter> 98.0<meter>,
-                 PhysicsContract.clamp y 2.0<meter> 98.0<meter>)
+            let finalX = PhysicsContract.clamp x 2.0<meter> 98.0<meter>
+            let finalY = PhysicsContract.clamp y 2.0<meter> 98.0<meter>
+            
+
+
+            result[i] <- (finalX, finalY)
 
         result

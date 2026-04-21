@@ -103,7 +103,7 @@ let tickSchedulerTests =
           }
 
           test "Large volume stress — realistic match load" {
-              let s = TickScheduler(PhysicsContract.MaxMatchSubTicks)
+              let s = TickScheduler(342000)
 
               for i = 0 to 199 do
                   s.Insert(mkTick i TickPriority.Physics (int64 i) PhysicsTick)
@@ -114,7 +114,7 @@ let tickSchedulerTests =
 
               for i = 0 to 2 do
                   let t = 80 * (i + 1)
-                  s.Insert(mkTick t TickPriority.Manager (int64 (300 + i)) CognitiveTick)
+                  s.Insert(mkTick t TickPriority.Manager (int64 (300 + i)) RefereeTick)
 
               s.Insert(mkTick 2400 TickPriority.Manager 400L (SubstitutionTick 1))
               s.Insert(mkTick 2400 TickPriority.Manager 401L (SubstitutionTick 2))

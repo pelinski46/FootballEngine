@@ -69,8 +69,7 @@ module MatchSimulator =
             | PhysicsTick -> BallAgent.agent tick ctx state clock
             | DuelTick _
             | DecisionTick _
-            | PlayerActionTick _
-            | PossessionChangeTick _ -> PlayerAgent.agent tick ctx state clock
+            | PlayerActionTick _ -> PlayerAgent.agent tick ctx state clock
             | RefereeTick -> RefereeAgent.agent tick ctx state clock
             | FreeKickTick _
             | CornerTick _
@@ -90,22 +89,90 @@ module MatchSimulator =
 
         dispatchAgent tick ctx state clock
 
-    let runLoopDes (ctx: MatchContext) (state: SimState) (saveSnapshots: bool) (clock: SimulationClock) =
+    let private resolveContinuation
+        (tick: ScheduledTick)
+        (cont: Continuation)
+        (transition: PlayState option)
+        (counter: int64)
+        (clock: SimulationClock)
+        (playState: PlayState)
+        (totalChainDepth: int)
+        =
+        if totalChainDepth >= BalanceConfig.MaxChainLength * 2 then
+            [], counter
+        else
+            match cont with
+            | SelfReschedule offset ->
+                [ { tick with
+                      SubTick = tick.SubTick + offset
+                      SequenceId = counter } ],
+                counter + 1L
+
+            | ChainTo(head, tail, delay) ->
+                let kinds = head :: tail
+
+                let ticks =
+                    kinds
+                    |> List.mapi (fun i k ->
+                        { SubTick = tick.SubTick + delay
+                          Priority = tick.Priority
+                          SequenceId = counter + int64 i
+                          Kind = k })
+
+                ticks, counter + int64 kinds.Length
+
+            | Defer(delay, kind) ->
+                let offset = BalanceConfig.TickDelay.delayFrom delay
+
+                [ { SubTick = tick.SubTick + offset
+                    Priority = TickPriority.Duel
+                    SequenceId = counter
+                    Kind = kind } ],
+                counter + 1L
+
+            | EndChain ->
+                let offset = BalanceConfig.TickDelay.delayFrom BalanceConfig.duelNextDelay
+
+                [ { SubTick = tick.SubTick + offset
+                    Priority = TickPriority.Duel
+                    SequenceId = counter
+                    Kind = DuelTick 0 } ],
+                counter + 1L
+
+            | StopPlay _ -> [], counter
+
+    let private isChainReset =
+        function
+        | DuelTick 0
+        | FreeKickTick _
+        | CornerTick _
+        | ThrowInTick _
+        | PenaltyTick _
+        | GoalKickTick
+        | KickOffTick
+        | ResumePlayTick
+        | HalfTimeTick
+        | InjuryTick _
+        | SubstitutionTick _
+        | ManagerReactionTick _ -> true
+        | _ -> false
+
+    let private isChainLink =
+        function
+        | DuelTick _
+        | DecisionTick _
+        | PlayerActionTick _ -> true
+        | _ -> false
+
+    let runLoopFast (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : SimState * MatchEvent list =
         let scheduler = TickScheduler(fullTime clock)
         generateInitialTicks ctx clock |> List.iter scheduler.Insert
 
-        let snapshots =
-            if saveSnapshots then
-                Some(System.Collections.Generic.List<SimSnapshot>())
-            else
-                None
-
-        let initialState =
+        let mutable initialState =
             { Context = ctx
               State = state
               Events = ResizeArray()
-              PlayState = LivePlay // CAMBIO: Empezar en LivePlay para que procese el KickOffTick sin filtros
-              Snapshots = snapshots
+              PlayState = LivePlay
               MatchEndScheduled = false
               SequenceCounter = scheduler.Count |> int64 }
 
@@ -122,150 +189,220 @@ module MatchSimulator =
               SequenceId = -1L
               Kind = DuelTick 0 }
 
+        let mutable running = true
+        let mutable totalChainDepth = 0
+
+        while running do
+            match scheduler.Dequeue() with
+            | ValueNone -> running <- false
+            | ValueSome tick ->
+                initialState.State.SubTick <- tick.SubTick
+
+                match tick.Kind with
+                | FullTimeTick ->
+                    initialState.State.SubTick <- tick.SubTick
+                    running <- false
+                | _ ->
+                    let shouldProcess =
+                        match initialState.PlayState, tick.Kind with
+                        | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
+                        | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
+                        | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
+                        | _ -> true
+
+                    if shouldProcess then
+
+                        if isChainReset tick.Kind then
+                            totalChainDepth <- 0
+                        elif isChainLink tick.Kind then
+                            totalChainDepth <- totalChainDepth + 1
+
+                        let result = runTick tick initialState.Context initialState.State clock
+
+                        match tick.Kind with
+                        | PhysicsTick ->
+                            if tick.SubTick % clock.SteeringRate = 0 then
+                                let dtPlayer = SimulationClock.dtPlayer clock
+
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    initialState.Context
+                                    initialState.State
+                                    HomeClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
+
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    initialState.Context
+                                    initialState.State
+                                    AwayClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
+                        | _ -> ()
+
+                        let continuationTicks, counterAfterCont =
+                            resolveContinuation
+                                tick
+                                result.Continuation
+                                result.Transition
+                                initialState.SequenceCounter
+                                clock
+                                initialState.PlayState
+                                totalChainDepth
+
+                        let sideEffectTicks, newCounter =
+                            result.SideEffects
+                            |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) counterAfterCont
+
+                        continuationTicks |> List.iter scheduler.Insert
+                        sideEffectTicks |> List.iter scheduler.Insert
+
+                        match result.Transition with
+                        | Some(Stopped _ | PlayState.SetPiece _) ->
+                            scheduler.CancelTicks (function
+                                | DuelTick _
+                                | DecisionTick _
+                                | PlayerActionTick _ -> true
+                                | _ -> false)
+                        | _ -> ()
+
+                        initialState <-
+                            { initialState with
+                                PlayState = result.Transition |> Option.defaultValue initialState.PlayState
+                                SequenceCounter = newCounter }
+
+                        result.Events |> List.iter initialState.Events.Add
+
+        initialState.State, initialState.Events |> Seq.toList
+
+    let runLoopFull (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchReplay =
+        let scheduler = TickScheduler(fullTime clock)
+        generateInitialTicks ctx clock |> List.iter scheduler.Insert
+        let snapshots = System.Collections.Generic.List<SimSnapshot>()
         let snapshotInterval = clock.SubTicksPerSecond
 
+        let mutable initialState =
+            { Context = ctx
+              State = state
+              Events = ResizeArray()
+              PlayState = LivePlay
+              MatchEndScheduled = false
+              SequenceCounter = scheduler.Count |> int64 }
 
-        let loop (ls: LoopState) (scheduler: TickScheduler) lastSnapshotAt clock =
-            let mutable currentLs = ls
-            let mutable currentScheduler = scheduler
-            let mutable currentLastSnapshotAt = lastSnapshotAt
-            let mutable running = true
+        let firstDuelInterval =
+            normalInt
+                (float BalanceConfig.duelNextDelay.MeanST)
+                (float BalanceConfig.duelNextDelay.StdST)
+                BalanceConfig.duelNextDelay.MinST
+                BalanceConfig.duelNextDelay.MaxST
 
-            while running do
-                match currentScheduler.Dequeue() with
-                | ValueNone -> running <- false
-                | ValueSome tick ->
-                    currentLs.State.SubTick <- tick.SubTick
+        scheduler.Insert
+            { SubTick = firstDuelInterval
+              Priority = TickPriority.Duel
+              SequenceId = -1L
+              Kind = DuelTick 0 }
 
-                    match tick.Kind with
-                    | FullTimeTick ->
-                        currentLs.State.SubTick <- tick.SubTick
-                        running <- false
-                    | _ ->
-                        let shouldProcess =
-                            match currentLs.PlayState, tick.Kind with
-                            | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
-                            | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
-                            | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
-                            | _ -> true
+        let mutable lastSnapshotAt = 0
+        let mutable running = true
+        let mutable totalChainDepth = 0
 
-                        if shouldProcess then
-                            let result = runTick tick currentLs.Context currentLs.State clock
+        while running do
+            match scheduler.Dequeue() with
+            | ValueNone -> running <- false
+            | ValueSome tick ->
+                initialState.State.SubTick <- tick.SubTick
 
-                            let autoSpawned =
-                                match tick.Kind with
-                                | RefereeTick ->
-                                    [ { tick with
-                                          Kind = RefereeTick
-                                          SubTick = tick.SubTick + clock.PhysicsRate } ]
-                                | _ -> []
+                // Snapshot check ALWAYS runs
+                if tick.SubTick >= lastSnapshotAt + snapshotInterval then
+                    snapshots.Add(SnapshotBuilder.take initialState.State)
+                    lastSnapshotAt <- tick.SubTick + snapshotInterval
 
-                            match tick.Kind with
-                            | PhysicsTick ->
-                                if tick.SubTick % clock.SteeringRate = 0 then
-                                    let dtPlayer = SimulationClock.dtPlayer clock
+                match tick.Kind with
+                | FullTimeTick ->
+                    initialState.State.SubTick <- tick.SubTick
+                    running <- false
+                | _ ->
+                    let shouldProcess =
+                        match initialState.PlayState, tick.Kind with
+                        | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
+                        | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
+                        | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
+                        | _ -> true
 
-                                    MovementEngine.updateTeamSide
-                                        tick.SubTick
-                                        currentLs.Context
-                                        currentLs.State
-                                        HomeClub
-                                        dtPlayer
-                                        clock.SteeringRate
-                                        clock.CognitiveRate
+                    if shouldProcess then
+                        // Bug 12: Track total chain depth per subtick to prevent SideEffects accumulation
+                        if isChainReset tick.Kind then
+                            totalChainDepth <- 0
+                        elif isChainLink tick.Kind then
+                            totalChainDepth <- totalChainDepth + 1
 
-                                    MovementEngine.updateTeamSide
-                                        tick.SubTick
-                                        currentLs.Context
-                                        currentLs.State
-                                        AwayClub
-                                        dtPlayer
-                                        clock.SteeringRate
-                                        clock.CognitiveRate
+                        let result = runTick tick initialState.Context initialState.State clock
 
-                            | RefereeTick -> ()
+                        match tick.Kind with
+                        | PhysicsTick ->
+                            if tick.SubTick % clock.SteeringRate = 0 then
+                                let dtPlayer = SimulationClock.dtPlayer clock
 
-                            | _ -> ()
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    initialState.Context
+                                    initialState.State
+                                    HomeClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
 
-                            let newLastSnapshotAt =
-                                match currentLs.Snapshots with
-                                | Some snaps when tick.SubTick >= currentLastSnapshotAt + snapshotInterval ->
-                                    snaps.Add
-                                        { SubTick = currentLs.State.SubTick
-                                          HomePositions =
-                                            currentLs.State.Home.Slots
-                                            |> Array.map (function
-                                                | PlayerSlot.Active s -> s.Pos
-                                                | Sidelined _ -> kickOffSpatial)
-                                          AwayPositions =
-                                            currentLs.State.Away.Slots
-                                            |> Array.map (function
-                                                | PlayerSlot.Active s -> s.Pos
-                                                | Sidelined _ -> kickOffSpatial)
-                                          BallX = currentLs.State.Ball.Position.X
-                                          BallY = currentLs.State.Ball.Position.Y
-                                          BallVx = currentLs.State.Ball.Position.Vx
-                                          BallVy = currentLs.State.Ball.Position.Vy
-                                          BallZ = currentLs.State.Ball.Position.Z
-                                          BallVz = currentLs.State.Ball.Position.Vz
-                                          BallSpinTop = currentLs.State.Ball.Spin.Top
-                                          BallSpinSide = currentLs.State.Ball.Spin.Side
-                                          Possession = currentLs.State.Ball.Possession
-                                          HomeScore = currentLs.State.HomeScore
-                                          AwayScore = currentLs.State.AwayScore
-                                          HomeConditions =
-                                            currentLs.State.Home.Slots
-                                            |> Array.map (function
-                                                | PlayerSlot.Active s -> s.Condition
-                                                | Sidelined _ -> 0)
-                                          AwayConditions =
-                                            currentLs.State.Away.Slots
-                                            |> Array.map (function
-                                                | PlayerSlot.Active s -> s.Condition
-                                                | Sidelined _ -> 0)
-                                          HomeSidelined = currentLs.State.Home.Sidelined
-                                          AwaySidelined = currentLs.State.Away.Sidelined
-                                          Momentum = currentLs.State.Momentum }
+                                MovementEngine.updateTeamSide
+                                    tick.SubTick
+                                    initialState.Context
+                                    initialState.State
+                                    AwayClub
+                                    dtPlayer
+                                    clock.SteeringRate
+                                    clock.CognitiveRate
+                        | _ -> ()
 
-                                    tick.SubTick + snapshotInterval
-                                | _ -> currentLastSnapshotAt
+                        let continuationTicks, counterAfterCont =
+                            resolveContinuation
+                                tick
+                                result.Continuation
+                                result.Transition
+                                initialState.SequenceCounter
+                                clock
+                                initialState.PlayState
+                                totalChainDepth
 
-                            let allSpawned =
-                                match autoSpawned with
-                                | [] -> result.Spawned
-                                | _ -> autoSpawned @ result.Spawned
+                        let sideEffectTicks, newCounter =
+                            result.SideEffects
+                            |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) counterAfterCont
 
-                            let stampedTicks, newCounter =
-                                allSpawned
-                                |> List.mapFold
-                                    (fun seq t -> { t with SequenceId = seq }, seq + 1L)
-                                    currentLs.SequenceCounter
+                        continuationTicks |> List.iter scheduler.Insert
+                        sideEffectTicks |> List.iter scheduler.Insert
 
-                            stampedTicks |> List.iter currentScheduler.Insert
+                        // Bug 4: Cancel ticks on transition to stopped or set piece
+                        match result.Transition with
+                        | Some(Stopped _ | PlayState.SetPiece _) ->
+                            scheduler.CancelTicks (function
+                                | DuelTick _
+                                | DecisionTick _
+                                | PlayerActionTick _ -> true
+                                | _ -> false)
+                        | _ -> ()
 
-                            let newPlayState = result.Transition |> Option.defaultValue currentLs.PlayState
+                        initialState <-
+                            { initialState with
+                                PlayState = result.Transition |> Option.defaultValue initialState.PlayState
+                                SequenceCounter = newCounter }
 
-                            result.Events |> List.iter currentLs.Events.Add
+                        result.Events |> List.iter initialState.Events.Add
 
-                            currentLs <-
-                                { currentLs with
-                                    PlayState = newPlayState
-                                    SequenceCounter = newCounter }
-
-                            currentLastSnapshotAt <- newLastSnapshotAt
-
-            currentLs.State, currentLs.Events |> Seq.toList, currentLs.Snapshots |> Option.map _.ToArray()
-
-        loop initialState scheduler 0 clock
-
-    let runLoopFastDes ctx state =
-        let s, evs, _ = runLoopDes ctx state false defaultClock
-        s, evs
-
-    let private runLoopFullDes ctx state =
-        match runLoopDes ctx state true defaultClock with
-        | s, evs, Some snaps -> s, evs, snaps
-        | s, evs, None -> s, evs, [||]
+        { Context = ctx
+          Final = initialState.State
+          Events = initialState.Events |> Seq.toList
+          Snapshots = snapshots.ToArray() }
 
     open FsToolkit.ErrorHandling
 
@@ -327,12 +464,9 @@ module MatchSimulator =
     let private positionArrayOf (players: Player[]) (posMap: Map<PlayerId, float<meter> * float<meter>>) : Spatial[] =
         players
         |> Array.map (fun p ->
-            let x, y =
-                posMap
-                |> Map.tryFind p.Id
-                |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
-
-            defaultSpatial x y)
+            match Map.tryFind p.Id posMap with
+            | Some(x, y) -> defaultSpatial x y
+            | None -> failwithf "Position missing for player %s (%A)" p.Name p.Id)
 
     let private initSimState
         home
@@ -595,32 +729,20 @@ module MatchSimulator =
         : Result<int * int * MatchEvent list * SimState, SimulationError> =
         result {
             let! ctx, state, _, _ = setup home away players staff false profileMap
-            let final, events = runLoopFastDes ctx state
+            let final, events = runLoopFast ctx state defaultClock
             return final.HomeScore, final.AwayScore, events, final
         }
 
     let trySimulateMatchFull home away players staff profileMap : Result<MatchReplay, SimulationError> =
         result {
             let! ctx, state, _, _ = setup home away players staff false profileMap
-            let final, events, snapshots = runLoopFullDes ctx state
-
-            return
-                { Context = ctx
-                  Final = final
-                  Events = events
-                  Snapshots = snapshots }
+            return runLoopFull ctx state defaultClock
         }
 
     let trySimulateMatchKnockout home away players staff profileMap : Result<MatchReplay * bool, SimulationError> =
         result {
             let! ctx, state, _, _ = setup home away players staff true profileMap
-            let final, events, snapshots = runLoopFullDes ctx state
-
-            let replay =
-                { Context = ctx
-                  Final = final
-                  Events = events
-                  Snapshots = snapshots }
+            let replay = runLoopFull ctx state defaultClock
 
             if replay.Final.HomeScore = replay.Final.AwayScore then
                 let! shootout = simulatePenaltyShootout ctx replay.Final players defaultClock

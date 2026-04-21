@@ -58,7 +58,6 @@ module SchedulingTypes =
         | SubstitutionTick of clubId: ClubId
         | ManagerReactionTick of trigger: ReactionTrigger
         | RefereeTick
-        | PossessionChangeTick of ClubSide
 
 
 
@@ -108,14 +107,22 @@ module SchedulingTypes =
         override this.GetHashCode() =
             HashCode.Combine(this.SubTick, int this.Priority, this.SequenceId)
 
+    type Continuation =
+        | SelfReschedule of offsetSubTicks: int
+        | ChainTo of head: TickKind * tail: TickKind list * delay: int
+        | Defer of delay: BalanceConfig.TickDelay * kind: TickKind
+        | EndChain
+        | StopPlay of reason: StopReason
+
     // -------------------------------------------------------------------------
     // Agent contract
     // -------------------------------------------------------------------------
 
     type AgentOutput =
         { Events: MatchEvent list
-          Spawned: ScheduledTick list
-          Transition: PlayState option }
+          Continuation: Continuation
+          Transition: PlayState option
+          SideEffects: ScheduledTick list }
 
     type TickResult = AgentOutput
 
@@ -134,6 +141,5 @@ module SchedulingTypes =
           State: SimState
           Events: ResizeArray<MatchEvent>
           PlayState: PlayState
-          Snapshots: System.Collections.Generic.List<SimSnapshot> option
           MatchEndScheduled: bool
           SequenceCounter: int64 }

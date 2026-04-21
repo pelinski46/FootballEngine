@@ -15,17 +15,25 @@ let passActionTests =
               let home = [| elitePasser 1 MC; makePlayer 3 ST 10 |]
               let hpos = [| 52.5, 34.0; 60.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos [||] [||] 52.5 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos [||] [||] 52.5 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let target = makePlayer 3 ST 10
               let events = PassAction.resolve 1 ctx s target
 
-              if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
+              if
+                  events
+                  |> List.exists (fun e ->
+                      match e.Type with
+                      | MatchEventType.PassCompleted _ -> true
+                      | _ -> false)
+              then
                   Expect.equal
                       s.Ball.Possession
-                      (InFlight HomeClub)
+                      (InFlight(HomeClub, 1))
                       $"pass complete: Phase = %A{s.Ball.Possession}, expected InFlight HomeClub."
 
           testCase "pass complete → PendingOffsideSnapshot = Some"
@@ -35,14 +43,22 @@ let passActionTests =
               let away = [| makePlayer 2 DC 10 |]
               let apos = [| 55.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let target = makePlayer 3 ST 10
               let events = PassAction.resolve 1 ctx s target
 
-              if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
+              if
+                  events
+                  |> List.exists (fun e ->
+                      match e.Type with
+                      | MatchEventType.PassCompleted _ -> true
+                      | _ -> false)
+              then
                   Expect.isSome
                       s.Ball.PendingOffsideSnapshot
                       $"pass complete: PendingOffsideSnapshot = %A{s.Ball.PendingOffsideSnapshot}, expected Some."
@@ -52,10 +68,12 @@ let passActionTests =
               let home = [| elitePasser 1 MC |]
               let hpos = [| 52.5, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos [||] [||] 52.5 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos [||] [||] 52.5 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let events = PassAction.resolve 1 ctx s (makePlayer 99 ST 10)
               Expect.isEmpty events $"pass to player 99 (not in state): {events.Length} events. Expected 0."
 
@@ -66,10 +84,12 @@ let passActionTests =
               let away = [| makePlayer 2 DC 10 |]
               let apos = [| 55.0, 34.0 |]
 
-              let ctx, s =
-                  buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
+              let ctx, s = buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+              s.Ball <-
+                  { s.Ball with
+                      Possession = Owned(HomeClub, 1) }
+
               let target = makePlayer 3 ST 1
               let events = PassAction.resolve 1 ctx s target
 
@@ -96,13 +116,21 @@ let passActionTests =
                       let away = [| makePlayer 2 DC 10 |]
                       let apos = [| 70.0, 34.0 |]
 
-                      let ctx, s =
-                          buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
+                      let ctx, s = buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-                      s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+                      s.Ball <-
+                          { s.Ball with
+                              Possession = Owned(HomeClub, 1) }
+
                       let events = PassAction.resolve (1000 + i) ctx s (makePlayer 3 ST 10)
 
-                      if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
+                      if
+                          events
+                          |> List.exists (fun e ->
+                              match e.Type with
+                              | MatchEventType.PassCompleted _ -> true
+                              | _ -> false)
+                      then
                           1
                       else
                           0)
@@ -122,13 +150,21 @@ let passActionTests =
                       let away = [| makePlayer 2 DC 10 |]
                       let apos = [| 55.0, 34.0 |]
 
-                      let ctx, s =
-                          buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
+                      let ctx, s = buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-                      s.Ball <- { s.Ball with Possession = Owned(HomeClub, 1) }
+                      s.Ball <-
+                          { s.Ball with
+                              Possession = Owned(HomeClub, 1) }
+
                       let events = PassAction.resolve (1000 + i) ctx s (makePlayer 3 ST 10)
 
-                      if events |> List.exists (fun e -> match e.Type with MatchEventType.PassCompleted _ -> true | _ -> false) then
+                      if
+                          events
+                          |> List.exists (fun e ->
+                              match e.Type with
+                              | MatchEventType.PassCompleted _ -> true
+                              | _ -> false)
+                      then
                           1
                       else
                           0)

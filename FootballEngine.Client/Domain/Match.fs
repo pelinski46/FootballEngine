@@ -9,6 +9,7 @@ type MatchPhase =
 
 type MatchEventType =
     | Goal
+    | GoalKick
     | OwnGoal
     | Assist
     | YellowCard

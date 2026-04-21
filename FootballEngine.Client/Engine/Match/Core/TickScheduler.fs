@@ -27,7 +27,6 @@ type TickScheduler(maxSubTick: int) =
         result
 
     member _.CancelTicks(predicate: TickKind -> bool) =
-        // Mark for lazy removal
         for struct (tick, _) in pq.UnorderedItems do
             if predicate tick.Kind then
                 cancelled.Add(tick.SequenceId) |> ignore
@@ -40,5 +39,5 @@ type TickScheduler(maxSubTick: int) =
             if tick.SubTick > subTick then
                 cancelled.Add(tick.SequenceId) |> ignore
 
-    member _.IsEmpty: bool = pq.Count = 0
-    member _.Count: int = pq.Count
+    member _.IsEmpty: bool = pq.Count = cancelled.Count
+    member _.Count: int = pq.Count - cancelled.Count

@@ -6,7 +6,6 @@ open FootballEngine.MatchSpatial
 open SimStateOps
 open SchedulingTypes
 open Stats
-open SimulationClock
 open PhysicsContract
 
 module RefereeAgent =
@@ -121,7 +120,7 @@ module RefereeAgent =
 
         let stuckBallIntent =
             match state.Ball.StationarySinceSubTick with
-            | Some since when state.SubTick - since >= BalanceConfig.stuckBallDelay -> [ DropBall state.AttackingClub ]
+            | Some since when state.SubTick - since >= BalanceConfig.stuckBallDelay -> [ DropBall state.AttackingSide ]
             | _ -> []
 
         goalIntent @ throwInIntent @ injuryIntent @ stuckBallIntent
@@ -304,35 +303,29 @@ module RefereeAgent =
         | HalfTimeTick ->
             state.HomeAttackDir <- RightToLeft
 
-            setSlots
-                state
-                HomeClub
-                (state.Home.Slots
-                 |> Array.map (function
-                     | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
-                     | Sidelined(p, r) -> Sidelined(p, r)))
+            let mirrorSlots slots =
+                slots
+                |> Array.map (function
+                    | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
+                    | Sidelined(p, r) -> Sidelined(p, r))
 
-            setSlots
-                state
-                AwayClub
-                (state.Away.Slots
-                 |> Array.map (function
-                     | PlayerSlot.Active s -> PlayerSlot.Active { s with Pos = mirrorSpatial s.Pos }
-                     | Sidelined(p, r) -> Sidelined(p, r)))
+            setSlots state HomeClub (mirrorSlots (getSlots state HomeClub))
+            setSlots state AwayClub (mirrorSlots (getSlots state AwayClub))
+
+            state.HomeBasePositions <- Array.map mirrorSpatial state.HomeBasePositions
+            state.AwayBasePositions <- Array.map mirrorSpatial state.AwayBasePositions
 
             { Events = []
-              Spawned =
-                [ { SubTick = tick.SubTick + secondsToSubTicks clock 1.0
-                    Priority = TickPriority.SetPiece
-                    SequenceId = 0L
-                    Kind = KickOffTick } ]
-              Transition = Some(SetPiece SetPieceKind.KickOff) }
+              Continuation = Defer(BalanceConfig.kickOffDelay, KickOffTick)
+              Transition = Some(SetPiece SetPieceKind.KickOff)
+              SideEffects = [] }
         | FullTimeTick
         | MatchEndTick
         | ExtraTimeTick _ ->
             { Events = []
-              Spawned = []
-              Transition = None }
+              Continuation = EndChain // Match ends, no more ticks expected
+              Transition = None
+              SideEffects = [] }
 
         | InjuryTick(playerId, _severity) ->
             let player =
@@ -367,17 +360,15 @@ module RefereeAgent =
                 | None -> []
 
             { Events = events
-              Spawned =
-                [ { SubTick = tick.SubTick + delayFrom BalanceConfig.injuryDelay
-                    Priority = TickPriority.MatchControl
-                    SequenceId = 0L
-                    Kind = ResumePlayTick } ]
-              Transition = Some(Stopped Injury) }
+              Continuation = Defer(BalanceConfig.injuryDelay, ResumePlayTick)
+              Transition = Some(Stopped Injury)
+              SideEffects = [] }
 
         | ResumePlayTick ->
             { Events = []
-              Spawned = []
-              Transition = Some LivePlay }
+              Continuation = EndChain // Transitioning to LivePlay, fallback DuelTick will be spawned by loop
+              Transition = Some LivePlay
+              SideEffects = [] }
 
         | RefereeTick ->
             let refActions = decide None None ctx state
@@ -435,7 +426,7 @@ module RefereeAgent =
                 else
                     []
 
-            let spawned = (setpieceSpawn |> Option.map fst |> Option.toList) @ duelTick
+            let sideEffects = (setpieceSpawn |> Option.map fst |> Option.toList) @ duelTick
 
             let transition =
                 if hasDropBall then
@@ -446,13 +437,15 @@ module RefereeAgent =
                     | None -> None
 
             { Events = evs
-              Spawned = spawned
-              Transition = transition }
+              Continuation = SelfReschedule clock.PhysicsRate
+              Transition = transition
+              SideEffects = sideEffects }
 
         | _ ->
             { Events = []
-              Spawned = []
-              Transition = None }
+              Continuation = EndChain // No action for other tick kinds in referee agent
+              Transition = None
+              SideEffects = [] }
 
     let runRefereeStep subTick (att: Player option) (def: Player option) ctx state =
         let actions = decide att def ctx state

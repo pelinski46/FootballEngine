@@ -13,9 +13,9 @@ let offsideTests =
 
           testCase "GK is never offside"
           <| fun () ->
-              let home = [| makePlayer 1 ST 10 |]
+              let home = [| makePlayer 1 GK 10 |]
               let hpos = [| 80.0, 34.0 |]
-              let away = [| makePlayer 2 GK 10 |]
+              let away =[| makePlayer 2 GK 10 |]
               let apos = [| 85.0, 34.0 |]
 
               let ctx, s =
@@ -25,7 +25,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 ST 10) gkSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 GK 10) gkSp.X s actx.Dir)
                   $"isOffside(LeftToRight): GK at x=80, defender GK at x=85 → Offside. GK should never be offside."
 
           testCase "player in own half is never offside"
@@ -42,7 +42,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 MC 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 MC 10) receiverSp.X s actx.Dir)
                   $"isOffside(LeftToRight): player at x=40 (own half), defender at x=45 → Offside. Player in own half should never be offside."
 
           testCase "player level with second-last defender is not offside"
@@ -59,7 +59,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
                   $"isOffside(LeftToRight): receiver at x=75, defenders at [75, 70] → Offside. Player level with second-last defender should not be offside."
 
           testCase "player ahead of second-last defender is offside"
@@ -76,7 +76,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
                   $"isOffside(LeftToRight): receiver at x=80, defenders at [75, 70] → NotOffside. Expected Offside."
 
           testCase "RightToLeft direction mirrors LeftToRight"
@@ -94,7 +94,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
                   $"isOffside(RightToLeft): receiver at x=25, defenders at [30, 35] → NotOffside. Expected Offside."
 
           testCase "only GK as defender: offside depends on ball position"
@@ -111,7 +111,7 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
                   $"isOffside(LeftToRight): receiver at x=90, only GK at x=85, ball at x=70 → NotOffside. Expected Offside."
 
           testCase "player exactly at halfway line is not offside"
@@ -128,5 +128,5 @@ let offsideTests =
               let actx = ActionContext.build s
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 MC 10) receiverSp.X ctx s actx.Dir)
+                  (isOffside (makePlayer 1 MC 10) receiverSp.X s actx.Dir)
                   $"isOffside(LeftToRight): player at x=52.5 (halfway line), defender at x=50 → Offside. Player at own half boundary should not be offside." ]

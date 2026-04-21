@@ -37,5 +37,5 @@ module ActionMath =
     /// Evaluate a weighted feature list with a condition modifier.
     let evalWeighted (features: (float * float) list) (condition: int) (minVal: float) : float =
         let base' = features |> List.sumBy (fun (value, weight) -> value * weight)
-        let result = base' * cond condition
+        let result = base' * sqrt (cond condition)
         clampFloat minVal 1.0 result
