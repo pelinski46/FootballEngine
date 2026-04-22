@@ -2,12 +2,11 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
-open FootballEngine
 
 module Interception =
-    let estimateTimeToBall (player: Player) (pPos: Spatial) (ballPos: Spatial) : float =
+    let estimateTimeToBall (config: PhysicsConfig) (player: Player) (pPos: Spatial) (ballPos: Spatial) : float =
         let captureRadius =
-            BalanceConfig.BallContactRadius
+            config.ContactRadius
             + (float player.Technical.BallControl / 20.0) * 0.20<meter>
 
         let dist = float (ballPos.DistTo2D pPos)
@@ -19,12 +18,12 @@ module Interception =
             if maxSpeed <= 1e-6 then System.Double.PositiveInfinity
             else (dist - float captureRadius) / maxSpeed
 
-    let chooseBestInterceptor (ballPos: Spatial) (homeSlots: PlayerSlot[]) (awaySlots: PlayerSlot[]) : Player option * Spatial option * bool =
+    let chooseBestInterceptor (config: PhysicsConfig) (ballPos: Spatial) (homeSlots: PlayerSlot[]) (awaySlots: PlayerSlot[]) : Player option * Spatial option * bool =
         let mutable touching =[]
 
         let consider (player: Player) (pPos: Spatial) =
             let captureRadius =
-                BalanceConfig.BallContactRadius
+                config.ContactRadius
                 + (float player.Technical.BallControl / 20.0) * 0.20<meter>
 
             let dist = float (ballPos.DistTo2D pPos)

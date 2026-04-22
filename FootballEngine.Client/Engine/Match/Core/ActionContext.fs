@@ -4,27 +4,19 @@ open FootballEngine.Domain
 open FootballEngine.SimStateOps
 
 type ActionContext =
-    { Dir: AttackDir
-      AttSide: ClubSide
-      DefSide: ClubSide
-      Zone: PitchZone
-      AttBonus: HomeBonus
-      DefBonus: HomeBonus
+    { Att     : TeamPerspective
+      Def     : TeamPerspective
+      Zone    : PitchZone
       Momentum: float }
 
 module ActionContext =
-    let build (state: SimState) : ActionContext =
-        let dir = attackDirFor state.AttackingSide state
+    let build (ctx: MatchContext) (state: SimState) : ActionContext =
         let attSide = state.AttackingSide
-        let defSide = ClubSide.flip attSide
-        let zone = SimStateOps.ofBallX state.Ball.Position.X dir
-
-        let momentum = PhysicsContract.momentumDelta dir state.Momentum
-
-        { Dir = dir
-          AttSide = attSide
-          DefSide = defSide
-          Zone = zone
-          AttBonus = HomeBonus.build attSide
-          DefBonus = HomeBonus.build defSide
+        let att     = SimStateOps.buildTeamPerspective attSide ctx state
+        let def     = SimStateOps.buildTeamPerspective (ClubSide.flip attSide) ctx state
+        let zone    = SimStateOps.ofBallX state.Ball.Position.X att.AttackDir
+        let momentum = PhysicsContract.momentumDelta att.AttackDir state.Momentum
+        { Att      = att
+          Def      = def
+          Zone     = zone
           Momentum = momentum }

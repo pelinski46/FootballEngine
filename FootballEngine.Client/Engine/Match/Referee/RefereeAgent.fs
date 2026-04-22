@@ -1,6 +1,5 @@
 namespace FootballEngine
 
-open BalanceConfig.TickDelay
 open FootballEngine.Domain
 open FootballEngine.MatchSpatial
 open SimStateOps
@@ -10,11 +9,11 @@ open PhysicsContract
 
 module RefereeAgent =
 
-    let cardProbability (playerClub: ClubSide) (p: Player) =
+    let cardProbability (config: HomeAdvantageConfig) (playerClub: ClubSide) (p: Player) =
         let baseProb = 0.010 + float p.Mental.Aggression * 0.0004
 
         match playerClub with
-        | HomeClub -> baseProb * (1.0 - BalanceConfig.HomeCardReduction)
+        | HomeClub -> baseProb * (1.0 - config.CardReduction)
         | AwayClub -> baseProb
 
     let injuryProbability (p: Player) =
@@ -120,7 +119,7 @@ module RefereeAgent =
 
         let stuckBallIntent =
             match state.Ball.StationarySinceSubTick with
-            | Some since when state.SubTick - since >= BalanceConfig.stuckBallDelay -> [ DropBall state.AttackingSide ]
+            | Some since when state.SubTick - since >= state.Config.Timing.StuckBallDelay -> [ DropBall state.AttackingSide ]
             | _ -> []
 
         goalIntent @ throwInIntent @ injuryIntent @ stuckBallIntent
@@ -316,16 +315,15 @@ module RefereeAgent =
             state.AwayBasePositions <- Array.map mirrorSpatial state.AwayBasePositions
 
             { Events = []
-              Continuation = Defer(BalanceConfig.kickOffDelay, KickOffTick)
               Transition = Some(SetPiece SetPieceKind.KickOff)
-              SideEffects = [] }
+              Intent = ResumeAfter(state.Config.Timing.KickOffDelay, KickOffTick) }
+
         | FullTimeTick
         | MatchEndTick
         | ExtraTimeTick _ ->
             { Events = []
-              Continuation = EndChain // Match ends, no more ticks expected
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }
 
         | InjuryTick(playerId, _severity) ->
             let player =
@@ -360,15 +358,13 @@ module RefereeAgent =
                 | None -> []
 
             { Events = events
-              Continuation = Defer(BalanceConfig.injuryDelay, ResumePlayTick)
               Transition = Some(Stopped Injury)
-              SideEffects = [] }
+              Intent = StopPlay Injury }
 
         | ResumePlayTick ->
             { Events = []
-              Continuation = EndChain // Transitioning to LivePlay, fallback DuelTick will be spawned by loop
               Transition = Some LivePlay
-              SideEffects = [] }
+              Intent = NoOp }
 
         | RefereeTick ->
             let refActions = decide None None ctx state
@@ -388,64 +384,38 @@ module RefereeAgent =
                     | DropBall _ -> true
                     | _ -> false)
 
-            let setpieceSpawn =
+            let setpieceIntent =
                 refActions
                 |> List.tryPick (function
-                    | AwardThrowIn team ->
-                        Some(
-                            { SubTick = tick.SubTick + 1
-                              Priority = TickPriority.SetPiece
-                              SequenceId = 0L
-                              Kind = ThrowInTick(team, 0) },
-                            SetPieceKind.ThrowIn
-                        )
-                    | AwardCorner team ->
-                        Some(
-                            { SubTick = tick.SubTick + 1
-                              Priority = TickPriority.SetPiece
-                              SequenceId = 0L
-                              Kind = CornerTick(team, 0) },
-                            SetPieceKind.Corner
-                        )
-                    | AwardGoalKick _ ->
-                        Some(
-                            { SubTick = tick.SubTick + 1
-                              Priority = TickPriority.SetPiece
-                              SequenceId = 0L
-                              Kind = GoalKickTick },
-                            SetPieceKind.GoalKick
-                        )
+                    | AwardThrowIn team -> Some(ScheduleSetPiece(SetPieceKind.ThrowIn, team))
+                    | AwardCorner team -> Some(ScheduleSetPiece(SetPieceKind.Corner, team))
+                    | AwardGoalKick team -> Some(ScheduleSetPiece(SetPieceKind.GoalKick, team))
                     | _ -> None)
 
-            let duelTick =
+            let intent =
                 if hasDropBall then
-                    [ { SubTick = tick.SubTick + delayFrom BalanceConfig.duelChainDelay
-                        Priority = TickPriority.Duel
-                        SequenceId = 0L
-                        Kind = DuelTick 0 } ]
+                    FindNextDuel
                 else
-                    []
-
-            let sideEffects = (setpieceSpawn |> Option.map fst |> Option.toList) @ duelTick
+                    match setpieceIntent with
+                    | Some intent -> intent
+                    | None -> NoOp
 
             let transition =
                 if hasDropBall then
                     Some LivePlay
                 else
-                    match setpieceSpawn with
-                    | Some(_, kind) -> Some(PlayState.SetPiece kind)
-                    | None -> None
+                    match setpieceIntent with
+                    | Some(ScheduleSetPiece(kind, _)) -> Some(PlayState.SetPiece kind)
+                    | _ -> None
 
             { Events = evs
-              Continuation = SelfReschedule clock.PhysicsRate
               Transition = transition
-              SideEffects = sideEffects }
+              Intent = intent }
 
         | _ ->
             { Events = []
-              Continuation = EndChain // No action for other tick kinds in referee agent
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }
 
     let runRefereeStep subTick (att: Player option) (def: Player option) ctx state =
         let actions = decide att def ctx state

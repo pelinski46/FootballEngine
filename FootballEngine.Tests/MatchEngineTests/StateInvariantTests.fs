@@ -68,8 +68,8 @@ let stateInvariantTests =
                       let output = SetPieceAgent.agent tick ctx s clock
                       events <- events @ output.Events
 
-                      match output.Continuation with
-                      | EndChain ->
+                       match output.Intent with
+                       | NoOp ->
                           scheduler.Insert
                               { SubTick = tick.SubTick + 1000
                                 Priority = TickPriority.Duel
@@ -132,12 +132,12 @@ let stateInvariantTests =
               | Possession.Owned(HomeClub, 1) ->
                   Expect.isGreaterThan output.Events.Length 0 "BallAgent cambió posesión pero no generó eventos."
               | _ ->
-                  Expect.isTrue
-                      (output.Continuation <> EndChain)
-                      (sprintf
-                          "BallAgent no cambió posesión y terminó cadena. Posesión: %A. Eventos: %A"
-                          s.Ball.Possession
-                          output.Events)
+                   Expect.isTrue
+                       (output.Intent <> NoOp)
+                       (sprintf
+                           "BallAgent no cambió posesión y no generó intent. Posesión: %A. Eventos: %A"
+                           s.Ball.Possession
+                           output.Events)
 
           testCase "Un SetPiece nunca debe persistir por más de 5 ticks físicos"
           <| fun () ->
@@ -227,9 +227,9 @@ let stateInvariantTests =
               let tick = mkPhysicsTick 0
               let output = BallAgent.agent tick ctx s clock
 
-              Expect.isTrue
-                  (output.Continuation <> EndChain)
-                  "El motor se detuvo abruptamente (EndChain sin transición)."
+               Expect.isTrue
+                   (output.Intent <> NoOp)
+                   "El motor se detuvo abruptamente (NoOp sin transición)."
 
           testCase "Los jugadores deben cambiar de posición tras varios ticks (Steering activo)"
           <| fun () ->

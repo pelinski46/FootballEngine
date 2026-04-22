@@ -1,319 +1,680 @@
-module BalanceConfig
+namespace FootballEngine
 
-open FootballEngine
 open FootballEngine.PhysicsContract
-open FootballEngine.Stats
-open SimulationClock
+open FootballEngine.SimulationClock
 
 // ============================================================================
-// Timing — all delays expressed in SubTicks via SimulationClock
+// Balance Config Records
 // ============================================================================
 
-/// Delays are in SubTicks. Use SimulationClock.secondsToSubTicks to convert.
-type TickDelay =
-    { MeanST: int // mean in SubTicks
-      StdST: int // standard deviation in SubTicks
-      MinST: int
-      MaxST: int }
+type DuelConfig = {
+    WinProbabilityBase: float
+    RecoverProbabilityBase: float
+    MomentumBonus: float
+    JitterWin: float
+    JitterRecover: float
+    JitterKeep: float
+    SpeedKeep: float<meter / second>
+    SpeedKeepVz: float<meter / second>
+    AttackerDribblingWeight: float
+    AttackerAgilityWeight: float
+    AttackerBalanceWeight: float
+    DefenderTacklingWeight: float
+    DefenderStrengthWeight: float
+    DefenderPositionWeight: float
+    FatigueThreshold: int
+    FatigueDecay: float
+}
 
-module TickDelay =
-    let ofSeconds mean std min max =
-        { MeanST = secondsToSubTicks defaultClock mean
-          StdST = secondsToSubTicks defaultClock std
-          MinST = secondsToSubTicks defaultClock min
-          MaxST = secondsToSubTicks defaultClock max }
+type ShotConfig = {
+    QualityGate: float
+    AngleSpreadBase: float
+    VzBase: float<meter / second>
+    VzVariance: float
+    OnTargetBase: float
+    OnTargetMultiplier: float
+    NormalisationDistance: float<meter>
+    DistanceToGoalMultiplier: float
+    FinishingMin: float
+    FinishingMax: float
+    FinishingBonusST: float
+    FinishingBonusAM: float
+    FinishingBonusMC: float
+    FinishingBonusOther: float
+    CondFactorDivisor: float
+    ComposureMultiplier: float
+    UrgencyMultiplier: float
+    BasePowerDivisor: float
+    SpinTopMultiplier: float
+    PositionDirectnessWeight: float
+    PositionDepthWeight: float
+    PositionCreativityWeight: float
+    DistNormWeight: float
+    PositionBonusWeight: float
+    HeavyTouchDivisor: float
+    HeavyTouchMultiplier: float
+    JitterStdDev: float
+    GkReflexesStatMult: float
+    GkOneOnOneStatMult: float
+    SaveDenominatorOffset: float
+}
 
-    let delayFrom (d: TickDelay) : int =
-        normalInt d.MeanST d.StdST d.MinST d.MaxST
-// Action chain — how quickly actions follow each other within a sequence
-let duelChainDelay = TickDelay.ofSeconds 4.0 1.0 2.0 7.0
-let duelNextDelay = TickDelay.ofSeconds 24.0 5.0 12.0 38.0
-let shotDelay = TickDelay.ofSeconds 2.0 0.5 1.0 4.0
-let foulDelay = TickDelay.ofSeconds 5.0 1.5 3.0 9.0
-let goalDelay = TickDelay.ofSeconds 28.0 4.0 20.0 38.0
-let kickOffDelay = TickDelay.ofSeconds 1.0 0.0 1.0 1.0
-let cornerDelay = TickDelay.ofSeconds 11.0 2.0 7.0 16.0
-let freeKickDelay = TickDelay.ofSeconds 10.0 2.0 6.0 15.0
-let throwInDelay = TickDelay.ofSeconds 5.0 1.0 3.0 8.0
-let injuryDelay = TickDelay.ofSeconds 30.0 6.0 20.0 45.0
-let managerReactDelay = TickDelay.ofSeconds 8.0 2.5 5.0 15.0
-let subsDelay = TickDelay.ofSeconds 22.0 3.0 14.0 30.0
+type PassConfig = {
+    BaseMean: float
+    TechnicalWeight: float
+    VisionWeight: float
+    SuccessShapeAlpha: float
+    SuccessConditionMultiplier: float
+    OffsideMomentum: float
+    SuccessMomentum: float
+    FailMomentum: float
+    DeflectBaseRate: float
+    MisplacedBaseRate: float
+    InterceptBaseRate: float
+    InterceptionRadius: float<meter>
+    PressureDistance: float<meter>
+    DeflectPressureMultiplier: float
+    InterceptPaceWeight: float
+    InterceptPositioningWeight: float
+    ScrambleJitter: float<meter>
+    Speed: float<meter / second>
+    Vz: float<meter / second>
+    InterceptDistFactorWeight: float
+    InterceptPositioningContrib: float
+    InterceptVisionContrib: float
+    CreativityWeight: float
+    DirectnessWeight: float
+    MeanMin: float
+    MeanMax: float
+    DefaultNearestDefDist: float<meter>
+    DefaultTackling: float
+    HeavyTouchDivisor: float
+    HeavyTouchMultiplier: float
+    JitterStdDev: float
+    DeflectedSpeedMult: float
+    DeflectedVzMult: float
+    InterceptProbMax: float
+    MisplacedSpeedMult: float
+    LongBallBaseMean: float
+    LongBallLongShotsWeight: float
+    LongBallPassingWeight: float
+    LongBallVisionWeight: float
+    LongBallSuccessShapeAlpha: float
+    LongBallSuccessConditionMultiplier: float
+    LongBallOffsideMomentum: float
+    LongBallSuccessMomentum: float
+    LongBallFailMomentum: float
+    LongBallSpeed: float<meter / second>
+    LongBallVz: float<meter / second>
+    LongBallDeflectMult: float
+    LongBallInterceptMult: float
+    LongBallPressureContrib: float
+    ForwardDepthThreshold: float
+    ForwardCreativityThreshold: float
+    LongBallScrambleJitterMult: float
+}
+
+type CrossConfig = {
+    BaseMean: float
+    CrossingWeight: float
+    PassingWeight: float
+    SuccessShapeAlpha: float
+    SuccessConditionMultiplier: float
+    FailMomentum: float
+    Speed: float<meter / second>
+    Vz: float<meter / second>
+    AerialThreatThreshold: float
+    AttackingDepthThreshold: float
+    GkSkillDefault: float
+    GkSkillDivisor: float
+    SpinTopMult: float
+    SpinSideMult: float
+    HeaderLogisticSteepness: float
+    FallbackSpeed: float<meter / second>
+    FallbackVz: float<meter / second>
+}
+
+type DribbleConfig = {
+    TechnicalWeight: float
+    AgilityWeight: float
+    BalanceWeight: float
+    ForwardDistance: float
+    SuccessMomentum: float
+    FailMomentum: float
+    CrossProbability: float
+    PassProbability: float
+    ShotProbability: float
+}
+
+type TackleConfig = {
+    TechnicalWeight: float
+    PositioningWeight: float
+    StrengthWeight: float
+    AggressionWeight: float
+    PositioningReduction: float
+    FoulShapeBeta: float
+    FoulMomentum: float
+    SuccessMomentum: float
+    FailMomentum: float
+}
+
+type SetPieceConfig = {
+    FreeKickTargetX: float<meter>
+    FreeKickSpeed: float<meter / second>
+    FreeKickVz: float<meter / second>
+    FreeKickSavePowerThreshold: float
+    FreeKickSaveVariance: float
+    FreeKickSpinTopMult: float
+    FreeKickSpinSideMult: float
+    CornerBoxXThreshold: float<meter>
+    CornerDefenderBoxThreshold: float<meter>
+    CornerSecondPhaseProbability: float
+    CornerKeepPossessionProbability: float
+    CornerSpeed: float<meter / second>
+    CornerVz: float<meter / second>
+    CornerDensityBase: float
+    CornerDensityPenalty: float
+    CornerLogisticSteepness: float
+    CornerDefScoreDefault: float
+    ThrowInSpeed: float<meter / second>
+    ThrowInVz: float<meter / second>
+    ThrowInMomentum: float
+    PenaltySkillMultiplier: float
+    PenaltyMoraleMultiplier: float
+    PenaltyPressureMultiplier: float
+    PenaltyComposureNoise: float
+    PenaltyLogisticBase: float
+    PenaltyGkReflexesMult: float
+    PenaltyGkHandlingMult: float
+    PenaltySkillDivisor: float
+    PenaltyCondDivisor: float
+    PenaltyMoraleBase: float
+    PenaltyMoraleDivisor: float
+    PenaltyGkSkillDivisor: float
+    PostShotClearProbability: float
+    ClearSpeed: float<meter / second>
+    ClearVz: float<meter / second>
+    ClearYStdDev: float
+    GoalKickFallbackDistHome: float<meter>
+    GoalKickFallbackDistAway: float<meter>
+    KickOffPartnerOffsetX: float<meter>
+    KickOffPartnerOffsetY: float<meter>
+    FoulBaseRate: float
+    CornerOnFailedCross: float
+}
+
+type HomeAdvantageConfig = {
+    Strength: float
+    DuelAttackBonus: float
+    DuelDefenseBonus: float
+    ShotComposureBonus: float
+    PassAccuracyBonus: float
+    DribbleBonus: float
+    SetPlayAccuracyBonus: float
+    TackleBonus: float
+    FreeKickComposure: float
+    PenaltyBonus: float
+    CardReduction: float
+    FatigueReduction: float
+}
+
+type PhysicsConfig = {
+    Gravity: float<meter / second^2>
+    AirDrag: float
+    GroundRestitution: float
+    GroundFriction: float
+    PostRestitution: float
+    SpinDecay: float
+    MagnusCoeff: float
+    ContactRadius: float<meter>
+    PlayerMaxForce: float<meter / second^2>
+    PlayerMassBase: float
+    PlayerMassWeightCoeff: float
+    PlayerMassStrengthCoeff: float
+    SteeringSlowRadius: float<meter>
+    SteeringFleeRadius: float<meter>
+    SteeringAlignmentWeight: float
+    CohesionWeight: float
+    TurnConstraintAgilityCoeff: float
+    TurnConstraintBaseLimit: float
+    MoveSpeedMax: float<meter / second>
+    MoveSpeedMin: float<meter / second>
+    SeparationMinDistance: float<meter>
+    BallContestSeparationRadius: float<meter>
+    SeparationStrength: float
+    SeparationAgilityMultiplier: float
+    JitterBase: float
+    JitterAgilityMultiplier: float
+    BallStopThreshold: float
+    AirborneCheckThreshold: float<meter>
+    AxisStopThreshold: float
+    AirborneRestitutionBase: float
+    AirborneRestitutionCoeff: float
+    AirborneRestitutionFloor: float
+    GroundRestitutionBase: float
+    GroundRestitutionCoeff: float
+    GroundRestitutionFloor: float
+    ChaserProximity: float<meter>
+    AirborneThreshold: float<meter>
+}
+
+type TimingConfig = {
+    DuelChainDelay: TickDelay
+    DuelNextDelay: TickDelay
+    ShotDelay: TickDelay
+    FoulDelay: TickDelay
+    GoalDelay: TickDelay
+    KickOffDelay: TickDelay
+    CornerDelay: TickDelay
+    FreeKickDelay: TickDelay
+    ThrowInDelay: TickDelay
+    InjuryDelay: TickDelay
+    ManagerReactDelay: TickDelay
+    SubsDelay: TickDelay
+    StuckBallDelay: int
+}
+
+type MatchVolumeConfig = {
+    MaxChainLength: int
+    TargetDuelTicksPerMatch: int
+    TargetShotsPerMatch: float
+    TargetDribblesPerMatch: float
+    TargetPassesPerMatch: float
+    TargetCrossesPerMatch: float
+    TargetLongBallsPerMatch: float
+}
+
+type ManagerConfig = {
+    FatigueReactionThreshold: int
+    SustainedMomentumSubTicks: int
+    MomentumThreshold: float
+    FatigueCheckSubTicks: int
+    ConditionThresholdLosing: int
+    ConditionThresholdDrawing: int
+    ConditionThresholdWinning: int
+    SubWindowMinutes: int[]
+}
+
+type BuildUpConfig = {
+    PassSuccessBonus: float
+    DribblePenalty: float
+    LongBallPenalty: float
+    GKDistributionBonus: float
+    DCPassingBonus: float
+}
+
+type DecisionConfig = {
+    ShootFinishingWeight: float
+    ShootLongShotsWeight: float
+    ShootComposureWeight: float
+    ShootDistNormWeight: float
+    ShootDistNormDivisor: float
+    ShootPosDirectnessWeight: float
+    ShootPosDepthWeight: float
+    ShootSTBonus: float
+    ShootDistPenaltyDivisor: float
+    ShootDistPenaltyMax: float
+    PassPassingWeight: float
+    PassVisionWeight: float
+    PassTargetBonus: float
+    PassAttackPhasePenalty: float
+    DribbleZoneBonusAttacking: float
+    DribbleZoneBonusMidfield: float
+    DribbleAttackPhaseBonus: float
+    CrossCrossingWeight: float
+    CrossLateralTendencyWeight: float
+    CrossLateralTendencyBase: float
+    CrossZoneBonus: float
+    LongBallPassingWeight: float
+    LongBallVisionWeight: float
+    LongBallPressDistBase: float
+    LongBallPressMin: float
+    LongBallPressMax: float
+    LongBallPressNoOpponent: float
+    LongBallAttackPhaseBonus: float
+    CreativityWeight: float
+    DirectnessWeight: float
+}
+
+type BalanceConfig = {
+    Duel: DuelConfig
+    Shot: ShotConfig
+    Pass: PassConfig
+    Cross: CrossConfig
+    Dribble: DribbleConfig
+    Tackle: TackleConfig
+    SetPiece: SetPieceConfig
+    HomeAdvantage: HomeAdvantageConfig
+    Physics: PhysicsConfig
+    Timing: TimingConfig
+    MatchVolume: MatchVolumeConfig
+    Manager: ManagerConfig
+    BuildUp: BuildUpConfig
+    Decision: DecisionConfig
+}
 
 // ============================================================================
-// Match volume targets — used for balance calibration only, not physics
+// Default config value
 // ============================================================================
 
-let MaxChainLength = 6
-let TargetDuelTicksPerMatch = 228
-let TargetShotsPerMatch = 25.0
-let TargetDribblesPerMatch = 25.0
-let TargetPassesPerMatch = 200.0
-let TargetCrossesPerMatch = 20.0
-let TargetLongBallsPerMatch = 40.0
+module BalanceConfig =
 
-// ============================================================================
-// Home advantage
-// ============================================================================
+    let private clock = defaultClock
 
-let HomeAdvantageStrength = 4.0
-
-let HomeDuelAttackBonus = 4.0 * HomeAdvantageStrength
-let HomeDuelDefenseBonus = 2.0 * HomeAdvantageStrength
-let HomeShotComposureBonus = 4.0 * HomeAdvantageStrength
-let HomePassAccuracyBonus = 0.05 * HomeAdvantageStrength
-let HomeDribbleBonus = 2.0 * HomeAdvantageStrength
-let HomeSetPlayAccuracyBonus = 0.04 * HomeAdvantageStrength
-let HomeTackleBonus = 6.0 * HomeAdvantageStrength
-let HomeFreeKickComposure = 5.0 * HomeAdvantageStrength
-let HomePenaltyBonus = 0.04 * HomeAdvantageStrength
-let HomeCardReduction = 0.20 * HomeAdvantageStrength
-let HomeFatigueReduction = 0.10 * HomeAdvantageStrength
-
-// ============================================================================
-// Goal / shot difficulty
-// ============================================================================
-
-let GoalDifficulty = 1.3
-let ShotQualityGate = 0.10
-let FoulBaseRate = 0.35
-let CornerOnFailedCross = 0.85
-let PostShotClearProbability = 0.40
-
-let GkSaveBonus = (GoalDifficulty - 1.0) * 4.0
-let OnTargetBase = 0.40 + (1.0 - ShotQualityGate) * 0.20
-
-// ============================================================================
-// Shot — velocities reference PhysicsContract
-// ============================================================================
-
-/// Angle spread (radians) for a Finishing=1 shot. Decreases linearly with skill.
-let ShotAngleSpreadBase = 0.30
-let ShotVzBase = PhysicsContract.LongBallVz // reuse loft constant
-let ShotVzVariance = 1.5
-let ShotOnTargetBase = 0.25
-let ShotOnTargetMultiplier = 0.30
-
-/// Distance at which shot quality normalises to 0. In metres (pitch is 105m long).
-let ShotNormalisationDistance = 30.0<meter>
-let ShotDistanceToGoalMultiplier = 0.15
-let ShotFinishingMin = 0.20
-let ShotFinishingMax = 1.00
-
-// ============================================================================
-// Duel — attribute weights and probability bases
-// ============================================================================
-
-let DuelWinProbabilityBase = 3.0
-let DuelRecoverProbabilityBase = 5.0
-let DuelMomentumBonus = 0.50
-let DuelMomentumRecover = 1.00
-let DuelMoraleBonusMultiplier = 0.05
-let DuelReputationBonusMultiplier = 0.002
-let DuelAttributeSteepness = 2.50
-
-// Jitter in metres — how far the ball moves from its current position on each outcome
-let DuelJitterWin = 8.0 // metres — attacker carries it forward
-let DuelJitterRecover = 2.0 // metres — defender pokes it away
-let DuelJitterKeep = 2.5 // metres — loose ball, no clear winner
-
-// Ball speed after a loose-ball duel outcome (m/s)
-let DuelSpeedKeep = 3.0<meter / second>
-let DuelSpeedKeepVz = 0.20<meter / second>
-
-// Attribute weights — all normalised against AttrMax (20) at call sites
-let DuelAttackerDribblingWeight = 0.50
-let DuelAttackerAgilityWeight = 0.30
-let DuelAttackerBalanceWeight = 0.20
-let DuelDefenderTacklingWeight = 0.50
-let DuelDefenderStrengthWeight = 0.30
-let DuelDefenderPositionWeight = 0.20
-
-// Fatigue model — exponential drop-off below a condition threshold
-let DuelFatigueThreshold = 50 // condition % below which fatigue accelerates
-let DuelFatigueDecay = 0.04
-
-// ============================================================================
-// Pass
-// ============================================================================
-
-let PassBaseMean = 0.60
-let PassTechnicalWeight = 0.15
-let PassVisionWeight = 0.15
-let PassSuccessShapeAlpha = 10.0
-let PassSuccessConditionMultiplier = 6.0
-let PassForwardBonus = 0.15
-let PassLaneClearBonus = 0.20
-let PassOffsideMomentum = 0.30
-let PassSuccessMomentum = 0.30
-let PassFailMomentum = 0.50
-
-// Pass outcomes — multi-outcome model
-let PassDeflectBaseRate = 0.06
-let PassMisplacedBaseRate = 0.03
-let PassInterceptBaseRate = 0.05
-let PassInterceptionRadius = 5.0<meter>
-let PassPressureDistance = 8.0<meter>
-let PassDeflectPressureMultiplier = 0.12
-let PassInterceptPaceWeight = 0.35
-let PassInterceptPositioningWeight = 0.45
-let PassScrambleJitter = 3.0<meter>
-
-// Velocities come from PhysicsContract — no local redefinition
-let PassSpeed = PhysicsContract.PassSpeed
-let PassVz = PhysicsContract.PassVz
-
-// ============================================================================
-// Dribble
-// ============================================================================
-
-let DribbleTechnicalWeight = 0.50
-let DribbleAgilityWeight = 0.30
-let DribbleBalanceWeight = 0.20
-let DribbleForwardDistance = 5.0 // metres the ball moves on a successful dribble
-let DribbleSuccessMomentum = 0.50
-let DribbleFailMomentum = 0.60
-let DribbleCrossProbability = 0.05
-let DribblePassProbability = 0.75
-let DribbleShotProbability = 0.20
-
-// ============================================================================
-// Cross
-// ============================================================================
-
-let CrossBaseMean = 0.50
-let CrossCrossingWeight = 0.25
-let CrossPassingWeight = 0.10
-let CrossSuccessShapeAlpha = 6.0
-let CrossSuccessConditionMultiplier = 8.0
-let CrossFailMomentum = 0.30
-
-let CrossSpeed = PhysicsContract.CrossSpeed
-let CrossVz = PhysicsContract.CrossVz
-
-// ============================================================================
-// Long ball
-// ============================================================================
-
-let LongBallBaseMean = 0.40
-let LongBallLongShotsWeight = 0.20
-let LongBallPassingWeight = 0.20
-let LongBallVisionWeight = 0.15
-let LongBallSuccessShapeAlpha = 5.0
-let LongBallSuccessConditionMultiplier = 10.0
-let LongBallOffsideMomentum = 0.40
-let LongBallSuccessMomentum = 0.50
-let LongBallFailMomentum = 0.40
-
-let LongBallSpeed = PhysicsContract.LongBallSpeed
-let LongBallVz = PhysicsContract.LongBallVz
-
-// ============================================================================
-// Tackle
-// ============================================================================
-
-let TackleTechnicalWeight = 0.50
-let TacklePositioningWeight = 0.30
-let TackleStrengthWeight = 0.20
-let TackleAggressionWeight = 0.15
-let TacklePositioningReduction = 0.10
-let TackleFoulShapeBeta = 10.0
-let TackleFoulMomentum = 0.30
-let TackleSuccessMomentum = 0.80
-let TackleFailMomentum = 0.50
-
-// ============================================================================
-// Set pieces — positions in metres, velocities from PhysicsContract
-// ============================================================================
-
-// Free kick
-let FreeKickTargetX =
-    PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
-
-let FreeKickSpeed = 16.0<meter / second>
-let FreeKickVz = 1.50<meter / second>
-let FreeKickSavePowerThreshold = 2.0
-let FreeKickSaveVariance = 1.5
-
-// Corner
-let CornerBoxXThreshold =
-    PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
-
-let CornerDefenderBoxThreshold =
-    PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth - 5.0<meter>
-
-let CornerSecondPhaseProbability = 0.35
-let CornerKeepPossessionProbability = 0.55
-let CornerSpeed = 14.0<meter / second>
-let CornerVz = 1.0<meter / second>
-
-// Throw-in
-let ThrowInSpeed = 12.0<meter / second>
-let ThrowInVz = 0.50<meter / second>
-let ThrowInMomentum = 0.10
-
-// Penalty
-let PenaltySkillMultiplier = 0.04
-let PenaltyMoraleMultiplier = 0.01
-let PenaltyPressureMultiplier = 0.01
-let PenaltyComposureNoise = 1.40
-let PenaltyLogisticBase = 0.80
-
-// ============================================================================
-// Ball physics — all from PhysicsContract
-// ============================================================================
-
-let BallGravity = PhysicsContract.Gravity
-let BallAirDrag = PhysicsContract.BallAirDrag
-let BallGroundRestitution = PhysicsContract.BallGroundRestitution
-let BallGroundFriction = PhysicsContract.BallGroundFriction
-let BallPostRestitution = PhysicsContract.BallPostRestitution
-let BallSpinDecay = PhysicsContract.BallSpinDecay
-let BallMagnusCoeff = PhysicsContract.BallMagnusCoeff
-
-// ============================================================================
-// Player physics — derived from PhysicsContract, no magic numbers
-// ============================================================================
-
-let BallContactRadius = PhysicsContract.BallContactRadius
-let PlayerMaxForce = 25.0<meter / second^2> // N/kg — caps total steering force
-let PlayerMassBase = 70.0 // kg baseline
-let PlayerMassWeightCoeff = 0.30 // kg per kg of player weight (proportion)
-let PlayerMassStrengthCoeff = 0.50 // kg per strength point (1–20)
-
-let SteeringSlowRadius = PhysicsContract.SteeringSlowRadius
-let SteeringFleeRadius = 8.0<meter> // metres — beyond this, flee behaviour turns off
-let SteeringAlignmentWeight = 0.30
-let CohesionWeight = 0.08
-
-let TurnConstraintAgilityCoeff = PhysicsContract.TurnConstraintAgilityCoeff
-let TurnConstraintBaseLimit = PhysicsContract.TurnConstraintBase
-
-let MoveSpeedMax = PhysicsContract.PlayerSpeedMax
-let MoveSpeedMin = PhysicsContract.PlayerSpeedMin
-let SeparationMinDistance = PhysicsContract.PlayerSeparationRadius
-let BallContestSeparationRadius = PhysicsContract.BallContestSeparationRadius
-
-let SeparationStrength = 0.10
-let SeparationAgilityMultiplier = 0.15
-let JitterBase = 0.30 // metres of random noise on player movement
-let JitterAgilityMultiplier = 0.50
-
-// ============================================================================
-// Manager / cognitive timing — in SubTicks via SimulationClock
-// ============================================================================
-
-let ManagerFatigueReactionThreshold = 60 // condition % that triggers reaction
-let ManagerSustainedMomentumSubTicks = secondsToSubTicks defaultClock 600 // 10 min sustained negative momentum
-let ManagerMomentumThreshold = -2.0
-let ManagerFatigueCheckSubTicks = secondsToSubTicks defaultClock 120 // check every 2 min
-let stuckBallDelay = secondsToSubTicks defaultClock 5.0
-
-// ============================================================================
-// Build-Up Phase
-// ============================================================================
-
-let BuildUpPassSuccessBonus = 0.06
-let BuildUpDribblePenalty = 0.12
-let BuildUpLongBallPenalty = 0.08
-let BuildUpGKDistributionBonus = 0.08
-let BuildUpDCPassingBonus = 0.05
+    let defaultConfig : BalanceConfig = {
+        Duel = {
+            WinProbabilityBase = 3.0
+            RecoverProbabilityBase = 5.0
+            MomentumBonus = 0.50
+            JitterWin = 8.0
+            JitterRecover = 2.0
+            JitterKeep = 2.5
+            SpeedKeep = 3.0<meter / second>
+            SpeedKeepVz = 0.20<meter / second>
+            AttackerDribblingWeight = 0.50
+            AttackerAgilityWeight = 0.30
+            AttackerBalanceWeight = 0.20
+            DefenderTacklingWeight = 0.50
+            DefenderStrengthWeight = 0.30
+            DefenderPositionWeight = 0.20
+            FatigueThreshold = 50
+            FatigueDecay = 0.04
+        }
+        Shot = {
+            QualityGate = 0.10
+            AngleSpreadBase = 0.30
+            VzBase = PhysicsContract.LongBallVz
+            VzVariance = 1.5
+            OnTargetBase = 0.25
+            OnTargetMultiplier = 0.30
+            NormalisationDistance = 30.0<meter>
+            DistanceToGoalMultiplier = 0.15
+            FinishingMin = 0.20
+            FinishingMax = 1.00
+            FinishingBonusST = 2.0
+            FinishingBonusAM = 2.0
+            FinishingBonusMC = 1.2
+            FinishingBonusOther = 0.5
+            CondFactorDivisor = 100.0
+            ComposureMultiplier = 0.1
+            UrgencyMultiplier = 0.05
+            BasePowerDivisor = 20.0
+            SpinTopMultiplier = 0.4
+            PositionDirectnessWeight = 0.3
+            PositionDepthWeight = 0.2
+            PositionCreativityWeight = 0.1
+            DistNormWeight = 0.7
+            PositionBonusWeight = 0.3
+            HeavyTouchDivisor = 20.0
+            HeavyTouchMultiplier = 0.25
+            JitterStdDev = 2.0
+            GkReflexesStatMult = 2.5
+            GkOneOnOneStatMult = 3.5
+            SaveDenominatorOffset = 1.0
+        }
+        Pass = {
+            BaseMean = 0.60
+            TechnicalWeight = 0.15
+            VisionWeight = 0.15
+            SuccessShapeAlpha = 10.0
+            SuccessConditionMultiplier = 6.0
+            OffsideMomentum = 0.30
+            SuccessMomentum = 0.30
+            FailMomentum = 0.50
+            DeflectBaseRate = 0.06
+            MisplacedBaseRate = 0.03
+            InterceptBaseRate = 0.05
+            InterceptionRadius = 5.0<meter>
+            PressureDistance = 8.0<meter>
+            DeflectPressureMultiplier = 0.12
+            InterceptPaceWeight = 0.35
+            InterceptPositioningWeight = 0.45
+            ScrambleJitter = 3.0<meter>
+            Speed = PhysicsContract.PassSpeed
+            Vz = PhysicsContract.PassVz
+            InterceptDistFactorWeight = 0.3
+            InterceptPositioningContrib = 0.15
+            InterceptVisionContrib = 0.10
+            CreativityWeight = 0.06
+            DirectnessWeight = 0.06
+            MeanMin = 0.01
+            MeanMax = 0.99
+            DefaultNearestDefDist = 10.0<meter>
+            DefaultTackling = 0.5
+            HeavyTouchDivisor = 20.0
+            HeavyTouchMultiplier = 0.25
+            JitterStdDev = 2.0
+            DeflectedSpeedMult = 0.6
+            DeflectedVzMult = 0.5
+            InterceptProbMax = 0.8
+            MisplacedSpeedMult = 0.7
+            LongBallBaseMean = 0.40
+            LongBallLongShotsWeight = 0.20
+            LongBallPassingWeight = 0.20
+            LongBallVisionWeight = 0.15
+            LongBallSuccessShapeAlpha = 5.0
+            LongBallSuccessConditionMultiplier = 10.0
+            LongBallOffsideMomentum = 0.40
+            LongBallSuccessMomentum = 0.50
+            LongBallFailMomentum = 0.40
+            LongBallSpeed = PhysicsContract.LongBallSpeed
+            LongBallVz = PhysicsContract.LongBallVz
+            LongBallDeflectMult = 1.5
+            LongBallInterceptMult = 1.5
+            LongBallPressureContrib = 0.3
+            ForwardDepthThreshold = 0.5
+            ForwardCreativityThreshold = 0.4
+            LongBallScrambleJitterMult = 2.0
+        }
+        Cross = {
+            BaseMean = 0.50
+            CrossingWeight = 0.25
+            PassingWeight = 0.10
+            SuccessShapeAlpha = 6.0
+            SuccessConditionMultiplier = 8.0
+            FailMomentum = 0.30
+            Speed = PhysicsContract.CrossSpeed
+            Vz = PhysicsContract.CrossVz
+            AerialThreatThreshold = 0.4
+            AttackingDepthThreshold = 0.5
+            GkSkillDefault = 50.0
+            GkSkillDivisor = 150.0
+            SpinTopMult = 0.2
+            SpinSideMult = 0.8
+            HeaderLogisticSteepness = 3.0
+            FallbackSpeed = 15.0<meter / second>
+            FallbackVz = 2.0<meter / second>
+        }
+        Dribble = {
+            TechnicalWeight = 0.50
+            AgilityWeight = 0.30
+            BalanceWeight = 0.20
+            ForwardDistance = 5.0
+            SuccessMomentum = 0.50
+            FailMomentum = 0.60
+            CrossProbability = 0.05
+            PassProbability = 0.75
+            ShotProbability = 0.20
+        }
+        Tackle = {
+            TechnicalWeight = 0.50
+            PositioningWeight = 0.30
+            StrengthWeight = 0.20
+            AggressionWeight = 0.15
+            PositioningReduction = 0.10
+            FoulShapeBeta = 10.0
+            FoulMomentum = 0.30
+            SuccessMomentum = 0.80
+            FailMomentum = 0.50
+        }
+        SetPiece = {
+            FreeKickTargetX = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
+            FreeKickSpeed = 16.0<meter / second>
+            FreeKickVz = 1.50<meter / second>
+            FreeKickSavePowerThreshold = 2.0
+            FreeKickSaveVariance = 1.5
+            FreeKickSpinTopMult = 0.5
+            FreeKickSpinSideMult = 0.9
+            CornerBoxXThreshold = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
+            CornerDefenderBoxThreshold = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth - 5.0<meter>
+            CornerSecondPhaseProbability = 0.35
+            CornerKeepPossessionProbability = 0.55
+            CornerSpeed = 14.0<meter / second>
+            CornerVz = 1.0<meter / second>
+            CornerDensityBase = 3.0
+            CornerDensityPenalty = 0.05
+            CornerLogisticSteepness = 2.5
+            CornerDefScoreDefault = 0.5
+            ThrowInSpeed = 12.0<meter / second>
+            ThrowInVz = 0.50<meter / second>
+            ThrowInMomentum = 0.10
+            PenaltySkillMultiplier = 0.04
+            PenaltyMoraleMultiplier = 0.01
+            PenaltyPressureMultiplier = 0.01
+            PenaltyComposureNoise = 1.40
+            PenaltyLogisticBase = 0.80
+            PenaltyGkReflexesMult = 2.5
+            PenaltyGkHandlingMult = 2.0
+            PenaltySkillDivisor = 20.0
+            PenaltyCondDivisor = 200.0
+            PenaltyMoraleBase = 0.7
+            PenaltyMoraleDivisor = 166.6
+            PenaltyGkSkillDivisor = 40.0
+            PostShotClearProbability = 0.40
+            ClearSpeed = 16.0<meter / second>
+            ClearVz = 1.5<meter / second>
+            ClearYStdDev = 10.0
+            GoalKickFallbackDistHome = 30.0<meter>
+            GoalKickFallbackDistAway = 75.0<meter>
+            KickOffPartnerOffsetX = -3.0<meter>
+            KickOffPartnerOffsetY = 2.0<meter>
+            FoulBaseRate = 0.35
+            CornerOnFailedCross = 0.85
+        }
+        HomeAdvantage = {
+            Strength = 4.0
+            DuelAttackBonus = 16.0
+            DuelDefenseBonus = 8.0
+            ShotComposureBonus = 16.0
+            PassAccuracyBonus = 0.20
+            DribbleBonus = 8.0
+            SetPlayAccuracyBonus = 0.16
+            TackleBonus = 24.0
+            FreeKickComposure = 20.0
+            PenaltyBonus = 0.16
+            CardReduction = 0.80
+            FatigueReduction = 0.40
+        }
+        Physics = {
+            Gravity = PhysicsContract.Gravity
+            AirDrag = PhysicsContract.BallAirDrag
+            GroundRestitution = PhysicsContract.BallGroundRestitution
+            GroundFriction = PhysicsContract.BallGroundFriction
+            PostRestitution = PhysicsContract.BallPostRestitution
+            SpinDecay = PhysicsContract.BallSpinDecay
+            MagnusCoeff = PhysicsContract.BallMagnusCoeff
+            ContactRadius = PhysicsContract.BallContactRadius
+            PlayerMaxForce = 25.0<meter / second^2>
+            PlayerMassBase = 70.0
+            PlayerMassWeightCoeff = 0.30
+            PlayerMassStrengthCoeff = 0.50
+            SteeringSlowRadius = PhysicsContract.SteeringSlowRadius
+            SteeringFleeRadius = 8.0<meter>
+            SteeringAlignmentWeight = 0.30
+            CohesionWeight = 0.08
+            TurnConstraintAgilityCoeff = PhysicsContract.TurnConstraintAgilityCoeff
+            TurnConstraintBaseLimit = PhysicsContract.TurnConstraintBase
+            MoveSpeedMax = PhysicsContract.PlayerSpeedMax
+            MoveSpeedMin = PhysicsContract.PlayerSpeedMin
+            SeparationMinDistance = PhysicsContract.PlayerSeparationRadius
+            BallContestSeparationRadius = PhysicsContract.BallContestSeparationRadius
+            SeparationStrength = 0.10
+            SeparationAgilityMultiplier = 0.15
+            JitterBase = 0.30
+            JitterAgilityMultiplier = 0.50
+            BallStopThreshold = 0.15
+            AirborneCheckThreshold = 0.05<meter>
+            AxisStopThreshold = 0.5
+            AirborneRestitutionBase = 0.35
+            AirborneRestitutionCoeff = 0.25
+            AirborneRestitutionFloor = 0.008
+            GroundRestitutionBase = 0.50
+            GroundRestitutionCoeff = 0.20
+            GroundRestitutionFloor = 0.005
+            ChaserProximity = 1.0<meter>
+            AirborneThreshold = 0.3<meter>
+        }
+        Timing = {
+            DuelChainDelay = TickDelay.ofSeconds clock 4.0 1.0 2.0 7.0
+            DuelNextDelay = TickDelay.ofSeconds clock 24.0 5.0 12.0 38.0
+            ShotDelay = TickDelay.ofSeconds clock 2.0 0.5 1.0 4.0
+            FoulDelay = TickDelay.ofSeconds clock 5.0 1.5 3.0 9.0
+            GoalDelay = TickDelay.ofSeconds clock 28.0 4.0 20.0 38.0
+            KickOffDelay = TickDelay.ofSeconds clock 1.0 0.0 1.0 1.0
+            CornerDelay = TickDelay.ofSeconds clock 11.0 2.0 7.0 16.0
+            FreeKickDelay = TickDelay.ofSeconds clock 10.0 2.0 6.0 15.0
+            ThrowInDelay = TickDelay.ofSeconds clock 5.0 1.0 3.0 8.0
+            InjuryDelay = TickDelay.ofSeconds clock 30.0 6.0 20.0 45.0
+            ManagerReactDelay = TickDelay.ofSeconds clock 8.0 2.5 5.0 15.0
+            SubsDelay = TickDelay.ofSeconds clock 22.0 3.0 14.0 30.0
+            StuckBallDelay = secondsToSubTicks clock 5.0
+        }
+        MatchVolume = {
+            MaxChainLength = 6
+            TargetDuelTicksPerMatch = 228
+            TargetShotsPerMatch = 25.0
+            TargetDribblesPerMatch = 25.0
+            TargetPassesPerMatch = 200.0
+            TargetCrossesPerMatch = 20.0
+            TargetLongBallsPerMatch = 40.0
+        }
+        Manager = {
+            FatigueReactionThreshold = 60
+            SustainedMomentumSubTicks = secondsToSubTicks clock 600
+            MomentumThreshold = -2.0
+            FatigueCheckSubTicks = secondsToSubTicks clock 120
+            ConditionThresholdLosing = 75
+            ConditionThresholdDrawing = 65
+            ConditionThresholdWinning = 55
+            SubWindowMinutes = [| 60; 75; 85 |]
+        }
+        BuildUp = {
+            PassSuccessBonus = 0.06
+            DribblePenalty = 0.12
+            LongBallPenalty = 0.08
+            GKDistributionBonus = 0.08
+            DCPassingBonus = 0.05
+        }
+        Decision = {
+            ShootFinishingWeight = 0.35
+            ShootLongShotsWeight = 0.15
+            ShootComposureWeight = 0.20
+            ShootDistNormWeight = 0.20
+            ShootDistNormDivisor = 30.0
+            ShootPosDirectnessWeight = 0.10
+            ShootPosDepthWeight = 0.08
+            ShootSTBonus = 0.20
+            ShootDistPenaltyDivisor = 50.0
+            ShootDistPenaltyMax = 0.5
+            PassPassingWeight = 0.40
+            PassVisionWeight = 0.30
+            PassTargetBonus = 0.30
+            PassAttackPhasePenalty = -0.03
+            DribbleZoneBonusAttacking = 0.1
+            DribbleZoneBonusMidfield = 0.05
+            DribbleAttackPhaseBonus = 0.05
+            CrossCrossingWeight = 0.60
+            CrossLateralTendencyWeight = 0.60
+            CrossLateralTendencyBase = 0.10
+            CrossZoneBonus = 0.15
+            LongBallPassingWeight = 0.30
+            LongBallVisionWeight = 0.20
+            LongBallPressDistBase = 10.0
+            LongBallPressMin = 0.3
+            LongBallPressMax = 1.0
+            LongBallPressNoOpponent = 0.7
+            LongBallAttackPhaseBonus = 0.05
+            CreativityWeight = 0.10
+            DirectnessWeight = 0.06
+        }
+    }

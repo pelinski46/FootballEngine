@@ -9,9 +9,10 @@ open FootballEngine.PhysicsContract
 module CrossAction =
 
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        let actx = ActionContext.build state
-        let attSlots = getSlots state actx.AttSide
-        let defSlots = getSlots state actx.DefSide
+        let actx = ActionContext.build ctx state
+        let cc = ctx.Config.Cross
+        let attSlots = actx.Att.OwnSlots
+        let defSlots = actx.Def.OwnSlots
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
         match MatchSpatial.nearestActiveSlot attSlots bX bY with
         | ValueNone -> []
@@ -23,22 +24,22 @@ module CrossAction =
                 { state.Ball with
                     Possession = InFlight (state.AttackingSide, crosser.Id) }
 
-            let attClubId = if actx.AttSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+            let attClubId = actx.Att.ClubId
             let condNorm = PhysicsContract.normaliseCondition crosserCond
 
             let crossMean =
-                BalanceConfig.CrossBaseMean
+                cc.BaseMean
                 + PhysicsContract.normaliseAttr crosser.Technical.Crossing
-                  * BalanceConfig.CrossCrossingWeight
+                  * cc.CrossingWeight
                 + PhysicsContract.normaliseAttr crosser.Technical.Passing
-                  * BalanceConfig.CrossPassingWeight
-                + actx.AttBonus.SetPlay
+                  * cc.PassingWeight
+                + actx.Att.Bonus.SetPlay
 
             let successChance =
                 betaSample
                     crossMean
-                    (BalanceConfig.CrossSuccessShapeAlpha
-                     + condNorm * BalanceConfig.CrossSuccessConditionMultiplier)
+                    (cc.SuccessShapeAlpha
+                     + condNorm * cc.SuccessConditionMultiplier)
 
             let defOutfield =
                 defSlots
@@ -50,7 +51,7 @@ module CrossAction =
             let targets =
                 attSlots
                 |> Array.map (function
-                    | PlayerSlot.Active s when s.Profile.AerialThreat > 0.4 || s.Profile.AttackingDepth > 0.5 ->
+                    | PlayerSlot.Active s when s.Profile.AerialThreat > cc.AerialThreatThreshold || s.Profile.AttackingDepth > cc.AttackingDepthThreshold ->
                         Some(s.Player, s.Pos)
                     | _ -> None)
                 |> Array.choose id
@@ -77,13 +78,13 @@ module CrossAction =
                         | _ -> None)
 
                 let gkSkill =
-                    gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue 50.0
+                    gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue cc.GkSkillDefault
 
                 let headerScore =
                     PhysicsContract.normaliseAttr (min 20 (target.Physical.Strength + target.Technical.Heading))
                     * physicalVariation crosserCond
 
-                let gkScore = gkSkill / 150.0
+                let gkScore = gkSkill / cc.GkSkillDivisor
 
                 let nearDefs =
                     defOutfield
@@ -91,10 +92,10 @@ module CrossAction =
                     |> fun v -> v / float (max 1 defOutfield.Length)
 
                 let spin =
-                    { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.2<radianPerSecond>
-                      Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * 0.8<radianPerSecond> }
+                    { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>
+                      Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
 
-                if logisticBernoulli (headerScore - gkScore - nearDefs) 3.0 then
+                if logisticBernoulli (headerScore - gkScore - nearDefs) cc.HeaderLogisticSteepness then
                     [ createEvent subTick crosser.Id attClubId (CrossAttempt true)
                       createEvent subTick target.Id attClubId Goal ]
                 else
@@ -109,9 +110,9 @@ module CrossAction =
 
                     let bx, by = blockPos
 
-                    ballTowards crosserPos.X crosserPos.Y bx by BalanceConfig.CrossSpeed BalanceConfig.CrossVz state
+                    ballTowards crosserPos.X crosserPos.Y bx by cc.Speed cc.Vz state
 
-                    let defClub = ClubSide.flip actx.AttSide
+                    let defClub = ClubSide.flip actx.Att.ClubSide
 
                     state.Ball <-
                         { state.Ball with
@@ -120,19 +121,19 @@ module CrossAction =
 
                     clearOffsideSnapshot state
 
-                    adjustMomentum actx.Dir (-BalanceConfig.CrossFailMomentum) state
+                    adjustMomentum actx.Att.AttackDir (-cc.FailMomentum) state
 
                     [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
             else
                 let targetX =
-                    if actx.Dir = LeftToRight then
+                    if actx.Att.AttackDir = LeftToRight then
                         PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
                     else
                         PhysicsContract.PenaltyAreaDepth
 
-                let defClub = ClubSide.flip actx.AttSide
+                let defClub = ClubSide.flip actx.Att.ClubSide
 
-                ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) 15.0<meter/second> 2.0<meter/second> state
+                ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
 
                 state.Ball <-
                     { state.Ball with

@@ -6,9 +6,9 @@ open SchedulingTypes
 
 module BallAgent =
 
-    let private resolveContact (ball: BallPhysicsState) (playerPos: Spatial) : BallPhysicsState =
+    let private resolveContact (config: PhysicsConfig) (ball: BallPhysicsState) (playerPos: Spatial) : BallPhysicsState =
 
-        let r = BalanceConfig.BallContactRadius
+        let r = config.ContactRadius
         let bp = ball.Position
         let dist = bp.DistTo playerPos
 
@@ -20,13 +20,13 @@ module BallAgent =
 
             if dot > 0.0<meter / second> then
                 let impactSpeed = bp.VelMag
-                let isAirborne = bp.Z > 0.3<meter>
+                let isAirborne = bp.Z > config.AirborneThreshold
 
                 let restitution =
                     if isAirborne then
-                        0.35 + min 0.25 (float impactSpeed * 0.008)
+                        config.AirborneRestitutionBase + min config.AirborneRestitutionCoeff (float impactSpeed * config.AirborneRestitutionFloor)
                     else
-                        0.50 + min 0.20 (float impactSpeed * 0.005)
+                        config.GroundRestitutionBase + min config.GroundRestitutionCoeff (float impactSpeed * config.GroundRestitutionFloor)
 
                 { ball with
                     Position =
@@ -39,75 +39,65 @@ module BallAgent =
         else
             ball
 
-    let private resolveContacts
-        (ball: BallPhysicsState)
-        (homeSlots: PlayerSlot[])
-        (awaySlots: PlayerSlot[])
-        (currentController: PlayerId option)
-        : BallPhysicsState * PlayerId option =
+    let private findNearestOfSide (ballPos: Spatial) (side: ClubSide) (homeSlots: PlayerSlot[]) (awaySlots: PlayerSlot[]) : (Player * Spatial) option =
+        let slots = if side = HomeClub then homeSlots else awaySlots
+        let mutable best: (Player * Spatial) option = None
+        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
 
-        let bp = ball.Position
+        for i = 0 to slots.Length - 1 do
+            match slots[i] with
+            | PlayerSlot.Active s ->
+                let dSq = ballPos.DistSqTo2D s.Pos
+                if dSq < bestDistSq then
+                    bestDistSq <- dSq
+                    best <- Some(s.Player, s.Pos)
+            | _ -> ()
 
-        let winner, winnerPosOpt, contested =
-            Interception.chooseBestInterceptor bp homeSlots awaySlots
-
-        match winner, contested with
-        | Some p, false ->
-            match winnerPosOpt with
-            | Some pos ->
-                let resolved = resolveContact ball pos
-                resolved, Some p.Id
-            | None -> ball, Some p.Id
-        | _, _ -> ball, None
+        best
 
     let private findNearestChaser
+        (config: PhysicsConfig)
         (ballPos: Spatial)
         (homeSlots: PlayerSlot[])
         (awaySlots: PlayerSlot[])
         : PlayerId option =
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
+        let mutable bestTime = System.Double.PositiveInfinity
         let mutable bestPlayerId: PlayerId option = None
-        let mutable bestIsHome = true
+
+        let consider (player: Player) (pPos: Spatial) =
+            let t = Interception.estimateTimeToBall config player pPos ballPos
+            if t < bestTime then
+                bestTime <- t
+                bestPlayerId <- Some player.Id
 
         for i = 0 to homeSlots.Length - 1 do
             match homeSlots[i] with
-            | PlayerSlot.Active s ->
-                let dSq = ballPos.DistSqTo2D s.Pos
-
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestPlayerId <- Some s.Player.Id
-                    bestIsHome <- true
+            | PlayerSlot.Active s -> consider s.Player s.Pos
             | _ -> ()
 
-        for i = 0 to awaySlots.Length - 1 do
+        for i = awaySlots.Length - 1 downto 0 do
             match awaySlots[i] with
-            | PlayerSlot.Active s ->
-                let dSq = ballPos.DistSqTo2D s.Pos
-
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestPlayerId <- Some s.Player.Id
-                    bestIsHome <- false
+            | PlayerSlot.Active s -> consider s.Player s.Pos
             | _ -> ()
 
         bestPlayerId
 
-    let agent tick (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
-        let dt = SimulationClock.dt clock
-        let physicsRate = clock.PhysicsRate
-        let stepped = BallPhysics.update dt state.Ball
+    let private ballNearlyStopped (ball: BallPhysicsState) : bool =
+        let vSq = ball.Position.Vx * ball.Position.Vx + ball.Position.Vy * ball.Position.Vy + ball.Position.Vz * ball.Position.Vz
+        vSq < 1.0<meter/second> * 1.0<meter/second>
 
-
+    let agent (tick: ScheduledTick) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
+        let pcfg = ctx.Config.Physics
+        let stepped = BallPhysics.update pcfg (SimulationClock.dt clock) state.Ball
 
         let winner, winnerPosOpt, contested =
-            Interception.chooseBestInterceptor stepped.Position state.Home.Slots state.Away.Slots
+            Interception.chooseBestInterceptor pcfg stepped.Position state.Home.Slots state.Away.Slots
 
         let finalWinner =
             match winner with
             | Some p -> Some p
             | None ->
-                let chaserId = findNearestChaser stepped.Position state.Home.Slots state.Away.Slots
+                let chaserId = findNearestChaser pcfg stepped.Position state.Home.Slots state.Away.Slots
 
                 match chaserId with
                 | Some pid ->
@@ -120,9 +110,11 @@ module BallAgent =
                             | _ -> None)
 
                     match chaserSlot with
-                    | Some s when stepped.Position.DistTo2D s.Pos < 1.0<meter> -> Some s.Player
+                    | Some s when stepped.Position.DistTo2D s.Pos < pcfg.ChaserProximity -> Some s.Player
                     | _ -> None
                 | None -> None
+
+        let prevPossession = state.Ball.Possession
 
         match finalWinner with
         | Some p ->
@@ -133,35 +125,142 @@ module BallAgent =
                     Possession = Owned(club, p.Id)
                     LastTouchBy = Some p.Id }
 
-            let delay = BalanceConfig.TickDelay.delayFrom BalanceConfig.duelChainDelay
+            let intent =
+                match prevPossession with
+                | Owned(_, existingPid) when existingPid = p.Id -> NoOp
+                | _ -> GiveDecisionTo p.Id
 
-            { Events =[]
-              Continuation = SelfReschedule physicsRate
+            { Events = []
               Transition = Some LivePlay
-              SideEffects =[
-                  { SubTick = tick.SubTick + delay
-                    Priority = TickPriority.Duel
-                    SequenceId = 0L
-                    Kind = DecisionTick(0, Some p.Id) }
-              ] }
+              Intent = intent }
+
         | None ->
             match state.Ball.Possession with
             | Possession.SetPiece _ ->
                 state.Ball <- { stepped with Possession = Loose }
 
                 { Events = []
-                  Continuation = SelfReschedule physicsRate
                   Transition = Some LivePlay
-                  SideEffects = [] }
-            | _ ->
-                state.Ball <-
-                    if contested then
-                        { stepped with
-                            Possession = Contest state.AttackingSide }
-                    else
-                        stepped
+                  Intent = FindNextDuel }
 
+            | Possession.Contest side ->
+                let nearest = findNearestOfSide stepped.Position side state.Home.Slots state.Away.Slots
+                match nearest with
+                | Some (player, _pos) ->
+                    state.Ball <-
+                        { stepped with
+                            Possession = Owned(side, player.Id)
+                            LastTouchBy = Some player.Id }
+
+                    { Events = []
+                      Transition = Some LivePlay
+                      Intent = GiveDecisionTo player.Id }
+                | None ->
+                    state.Ball <- { stepped with Possession = Loose }
+
+                    { Events = []
+                      Transition = Some LivePlay
+                      Intent = FindNextDuel }
+
+            | Possession.InFlight _ ->
+                if ballNearlyStopped stepped then
+                    let chaserId = findNearestChaser pcfg stepped.Position state.Home.Slots state.Away.Slots
+                    match chaserId with
+                    | Some pid ->
+                        let club = SimStateOps.clubSideOf state pid |> Option.defaultValue state.AttackingSide
+                        let chaserSlot =
+                            let slots = Array.append state.Home.Slots state.Away.Slots
+                            slots |> Array.tryPick (function
+                                | PlayerSlot.Active s when s.Player.Id = pid -> Some s
+                                | _ -> None)
+
+                        match chaserSlot with
+                        | Some s ->
+                            state.Ball <-
+                                { stepped with
+                                    Possession = Owned(club, s.Player.Id)
+                                    LastTouchBy = Some s.Player.Id }
+
+                            { Events = []
+                              Transition = Some LivePlay
+                              Intent = GiveDecisionTo s.Player.Id }
+                        | None ->
+                            state.Ball <- { stepped with Possession = Loose }
+                            { Events = []
+                              Transition = Some LivePlay
+                              Intent = FindNextDuel }
+                    | None ->
+                        state.Ball <- { stepped with Possession = Loose }
+                        { Events = []
+                          Transition = Some LivePlay
+                          Intent = FindNextDuel }
+                else
+                    state.Ball <- stepped
+
+                    { Events = []
+                      Transition = None
+                      Intent = NoOp }
+
+            | Possession.Loose ->
+                let chaserId = findNearestChaser pcfg stepped.Position state.Home.Slots state.Away.Slots
+                match chaserId with
+                | Some pid ->
+                    let club = SimStateOps.clubSideOf state pid |> Option.defaultValue state.AttackingSide
+                    let chaserSlot =
+                        let slots = Array.append state.Home.Slots state.Away.Slots
+                        slots |> Array.tryPick (function
+                            | PlayerSlot.Active s when s.Player.Id = pid -> Some s
+                            | _ -> None)
+
+                    match chaserSlot with
+                    | Some s ->
+                        let timeToBall = Interception.estimateTimeToBall pcfg s.Player s.Pos stepped.Position
+                        if timeToBall < 2.0 then
+                            state.Ball <-
+                                { stepped with
+                                    Possession = Owned(club, s.Player.Id)
+                                    LastTouchBy = Some s.Player.Id }
+
+                            { Events = []
+                              Transition = Some LivePlay
+                              Intent = GiveDecisionTo s.Player.Id }
+                        else
+                            state.Ball <- stepped
+                            { Events = []
+                              Transition = None
+                              Intent = NoOp }
+                    | None ->
+                        state.Ball <- stepped
+                        { Events = []
+                          Transition = None
+                          Intent = NoOp }
+                | None ->
+                    state.Ball <- stepped
+                    { Events = []
+                      Transition = None
+                      Intent = NoOp }
+
+            | Possession.Owned _ ->
+                state.Ball <- stepped
                 { Events = []
-                  Continuation = SelfReschedule physicsRate
                   Transition = None
-                  SideEffects = [] }
+                  Intent = NoOp }
+
+            | Possession.Transition _ ->
+                let chaserId = findNearestChaser pcfg stepped.Position state.Home.Slots state.Away.Slots
+                match chaserId with
+                | Some pid ->
+                    let club = SimStateOps.clubSideOf state pid |> Option.defaultValue state.AttackingSide
+                    state.Ball <-
+                        { stepped with
+                            Possession = Owned(club, pid)
+                            LastTouchBy = Some pid }
+
+                    { Events = []
+                      Transition = Some LivePlay
+                      Intent = GiveDecisionTo pid }
+                | None ->
+                    state.Ball <- { stepped with Possession = Loose }
+                    { Events = []
+                      Transition = Some LivePlay
+                      Intent = FindNextDuel }

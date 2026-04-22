@@ -16,15 +16,15 @@ type HomeBonus = {
 }
 
 module HomeBonus =
-    let build (clubSide: ClubSide) : HomeBonus =
+    let build (clubSide: ClubSide) (config: HomeAdvantageConfig) : HomeBonus =
         let isHome = clubSide = HomeClub
-        { AttackDuel   = if isHome then BalanceConfig.HomeDuelAttackBonus else 0.0
-          DefendDuel   = if isHome then BalanceConfig.HomeDuelDefenseBonus else 0.0
-          Tackle       = if isHome then BalanceConfig.HomeTackleBonus else 0.0
-          PassAcc      = if isHome then BalanceConfig.HomePassAccuracyBonus else 0.0
-          ShotCompos   = if isHome then BalanceConfig.HomeShotComposureBonus else 0.0
-          SetPlay      = if isHome then BalanceConfig.HomeSetPlayAccuracyBonus else 0.0
-          FreeKick     = if isHome then BalanceConfig.HomeFreeKickComposure else 0.0
-          Penalty      = if isHome then BalanceConfig.HomePenaltyBonus else 0.0
-          CardReduc    = if isHome then BalanceConfig.HomeCardReduction else 0.0
-          FatigueReduc = if isHome then BalanceConfig.HomeFatigueReduction else 0.0 }
+        { AttackDuel   = if isHome then config.DuelAttackBonus else 0.0
+          DefendDuel   = if isHome then config.DuelDefenseBonus else 0.0
+          Tackle       = if isHome then config.TackleBonus else 0.0
+          PassAcc      = if isHome then config.PassAccuracyBonus else 0.0
+          ShotCompos   = if isHome then config.ShotComposureBonus else 0.0
+          SetPlay      = if isHome then config.SetPlayAccuracyBonus else 0.0
+          FreeKick     = if isHome then config.FreeKickComposure else 0.0
+          Penalty      = if isHome then config.PenaltyBonus else 0.0
+          CardReduc    = if isHome then config.CardReduction else 0.0
+          FatigueReduc = if isHome then config.FatigueReduction else 0.0 }

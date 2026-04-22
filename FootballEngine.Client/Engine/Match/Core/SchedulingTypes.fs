@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.SimulationClock
 
 module SchedulingTypes =
 
@@ -107,22 +108,30 @@ module SchedulingTypes =
         override this.GetHashCode() =
             HashCode.Combine(this.SubTick, int this.Priority, this.SequenceId)
 
-    type Continuation =
-        | SelfReschedule of offsetSubTicks: int
-        | ChainTo of head: TickKind * tail: TickKind list * delay: int
-        | Defer of delay: BalanceConfig.TickDelay * kind: TickKind
-        | EndChain
-        | StopPlay of reason: StopReason
+    // -------------------------------------------------------------------------
+    // TickIntent — what an agent wants to happen next
+    // Agents declare intention; TickOrchestrator translates to ScheduledTick
+    // -------------------------------------------------------------------------
+
+    type TickIntent =
+        | NoOp
+        | FindNextDuel
+        | GiveDecisionTo of PlayerId
+        | ScheduleSetPiece of SetPieceKind * ClubSide
+        | ScheduleFreeKick of kicker: PlayerId * position: Spatial
+        | ScheduleInjury of player: PlayerId * severity: int
+        | ScheduleSubstitution of clubId: ClubId
+        | StopPlay of StopReason
+        | ResumeAfter of delay: TickDelay * kind: TickKind
 
     // -------------------------------------------------------------------------
-    // Agent contract
+    // Agent contract — agents are pure: events + optional state transition
     // -------------------------------------------------------------------------
 
     type AgentOutput =
         { Events: MatchEvent list
-          Continuation: Continuation
           Transition: PlayState option
-          SideEffects: ScheduledTick list }
+          Intent: TickIntent }
 
     type TickResult = AgentOutput
 

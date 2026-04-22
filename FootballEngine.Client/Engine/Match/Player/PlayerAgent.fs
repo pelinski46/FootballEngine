@@ -1,8 +1,6 @@
 namespace FootballEngine
 
-open BalanceConfig.TickDelay
 open FootballEngine.Domain
-open FootballEngine.SimStateOps
 open SchedulingTypes
 
 module PlayerAgent =
@@ -15,7 +13,14 @@ module PlayerAgent =
         (state: SimState)
         (clock: SimulationClock)
         : DecisionOutcome =
-        let actx = AgentContext.build me profile meIdx state clock
+        let clubSide =
+            SimStateOps.clubSideOf state me.Id |> Option.defaultValue state.AttackingSide
+
+        let team = SimStateOps.buildTeamPerspective clubSide ctx state
+
+        let actx =
+            AgentContext.build me profile meIdx team None 0 state clock state.Config.Decision state.Config.BuildUp
+
         let scores = PlayerScorer.computeAll actx
         PlayerDecision.decide actx scores
 
@@ -33,45 +38,31 @@ module PlayerAgent =
         | PlayerAction.Penalty(kicker, side, kickNum) ->
             SetPlayAction.resolvePenalty ctx state kicker side kickNum clock
 
-    let private fatigue p pressing tactics instructions =
-        let config = SimStateOps.tacticsConfig tactics instructions
-        let base' = (100 - p.Physical.Stamina) / 20
-        let workRate = p.Mental.WorkRate / 15
-
-        int (
-            float (base' + workRate)
-            * (if pressing then 1.5 else 1.0)
-            * config.PressingIntensity
-        )
-
-    let private spawnNextDuel subTick interval =
-        { SubTick = subTick + interval
-          Priority = TickPriority.Duel
-          SequenceId = 0L
-          Kind = DuelTick 0 }
-
-    let private spawnDecisionTick subTick depth controllerId =
-        { SubTick = subTick + delayFrom BalanceConfig.duelChainDelay
-          Priority = TickPriority.Duel
-          SequenceId = 0L
-          Kind = DecisionTick(depth, controllerId) }
-
-    let agent tick (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
+    let agent (tick: ScheduledTick) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentOutput =
         match tick.Kind with
         | DuelTick _ ->
             match state.Ball.Possession with
             | Owned(_, pid) ->
                 { Events = []
-                  Continuation = Defer(BalanceConfig.duelChainDelay, DecisionTick(0, Some pid))
                   Transition = None
-                  SideEffects = [] }
+                  Intent = GiveDecisionTo pid }
             | _ ->
                 { Events = []
-                  Continuation = Defer(BalanceConfig.duelNextDelay, DuelTick 0)
                   Transition = None
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
 
-        | DecisionTick(depth, controllerId) ->
+        | DecisionTick(_depth, controllerId) ->
+            let controllerHasBall =
+                match state.Ball.Possession, controllerId with
+                | Possession.Owned(_, pid), Some ctrlPid -> pid = ctrlPid
+                | _ -> false
+
+            if not controllerHasBall then
+                { Events = []
+                  Transition = None
+                  Intent = FindNextDuel }
+            else
+
             let bx, by = state.Ball.Position.X, state.Ball.Position.Y
             let prevAttackingClub = state.AttackingSide
 
@@ -112,7 +103,6 @@ module PlayerAgent =
                         | ValueSome s -> s.Player, 0, decide s.Player s.Profile 0 ctx state clock
                         | ValueNone -> Unchecked.defaultof<Player>, 0, BallContested
 
-            // Bug 6 Fix: Capture defOpt BEFORE action resolve
             let defSide = ClubSide.flip prevAttackingClub
             let defSlots = SimStateOps.getSlots state defSide
 
@@ -143,15 +133,13 @@ module PlayerAgent =
             let allEvents = EventPipeline.run (playerEvents @ refEvents) ctx state tick.SubTick
 
             { Events = allEvents
-              Continuation = Defer(BalanceConfig.duelNextDelay, DuelTick 0)
               Transition = None
-              SideEffects = [] }
+              Intent = FindNextDuel }
 
         | PlayerActionTick(depth, action, attId) ->
             let bx, by = state.Ball.Position.X, state.Ball.Position.Y
             let prevAttackingClub = state.AttackingSide
 
-            // Bug 6 Fix: Capture defOpt BEFORE action resolve
             let defSide = ClubSide.flip prevAttackingClub
             let defSlots = SimStateOps.getSlots state defSide
 
@@ -181,6 +169,5 @@ module PlayerAgent =
 
         | _ ->
             { Events = []
-              Continuation = EndChain
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }

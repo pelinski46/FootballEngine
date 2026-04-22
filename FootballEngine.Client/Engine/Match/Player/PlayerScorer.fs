@@ -18,72 +18,77 @@ module PlayerScorer =
 
     let private shootScore (ctx: AgentContext) =
         let me = ctx.Me
-        let finishing = normStat me.Technical.Finishing * 0.35
-        let longShots = normStat me.Technical.LongShots * 0.15
-        let composure = normStat me.Mental.Composure * 0.20
-        let distNorm = (1.0 - PhysicsContract.clampFloat (float ctx.DistToGoal / 30.0) 0.0 1.0) * 0.20
-        let posBonus = ctx.Profile.Directness * 0.10 + ctx.Profile.AttackingDepth * 0.08 + if me.Position = ST then 0.20 else 0.0
-        let distPenalty = PhysicsContract.clampFloat (float ctx.DistToGoal / 50.0) 0.0 0.5
+        let d = ctx.Decision
+        let finishing = normStat me.Technical.Finishing * d.ShootFinishingWeight
+        let longShots = normStat me.Technical.LongShots * d.ShootLongShotsWeight
+        let composure = normStat me.Mental.Composure * d.ShootComposureWeight
+        let distNorm = (1.0 - PhysicsContract.clampFloat (float ctx.DistToGoal / d.ShootDistNormDivisor) 0.0 1.0) * d.ShootDistNormWeight
+        let posBonus = ctx.Profile.Directness * d.ShootPosDirectnessWeight + ctx.Profile.AttackingDepth * d.ShootPosDepthWeight + if me.Position = ST then d.ShootSTBonus else 0.0
+        let distPenalty = PhysicsContract.clampFloat (float ctx.DistToGoal / d.ShootDistPenaltyDivisor) 0.0 d.ShootDistPenaltyMax
 
         (finishing + longShots + composure + distNorm + posBonus - distPenalty)
         * normCond ctx.MyCondition
 
     let private passScore (ctx: AgentContext) =
         let me = ctx.Me
-        let passing = normStat me.Technical.Passing * 0.40
-        let vision = normStat me.Mental.Vision * 0.30
-        let targetBonus = if ctx.BestPassTarget.IsSome then 0.30 else 0.0
+        let d = ctx.Decision
+        let passing = normStat me.Technical.Passing * d.PassPassingWeight
+        let vision = normStat me.Mental.Vision * d.PassVisionWeight
+        let targetBonus = if ctx.BestPassTarget.IsSome then d.PassTargetBonus else 0.0
 
         let phaseMod =
             match ctx.Phase with
             | BuildUp ->
                 let posBonus =
                     match me.Position with
-                    | GK -> BalanceConfig.BuildUpGKDistributionBonus
+                    | GK -> ctx.BuildUp.GKDistributionBonus
                     | DC
-                    | DM -> BalanceConfig.BuildUpDCPassingBonus
+                    | DM -> ctx.BuildUp.DCPassingBonus
                     | _ -> 0.0
 
-                BalanceConfig.BuildUpPassSuccessBonus + posBonus
+                ctx.BuildUp.PassSuccessBonus + posBonus
             | Midfield -> 0.0
-            | Attack -> -0.03
+            | Attack -> d.PassAttackPhasePenalty
 
-        let creativityMod = ctx.Profile.CreativityWeight * 0.10 + (1.0 - ctx.Profile.Directness) * 0.06
+        let creativityMod = ctx.Profile.CreativityWeight * d.CreativityWeight + (1.0 - ctx.Profile.Directness) * d.DirectnessWeight
 
         (passing + vision + targetBonus + phaseMod + creativityMod) * normCond ctx.MyCondition
 
     let private dribbleScore (ctx: AgentContext) =
         let me = ctx.Me
-        let dribbling = normStat me.Technical.Dribbling * 0.50
-        let agility = normStat me.Physical.Agility * 0.30
-        let balance = normStat me.Physical.Balance * 0.20
+        let d = ctx.Decision
+        let dribbling = normStat me.Technical.Dribbling * ctx.Dribble.TechnicalWeight
+        let agility = normStat me.Physical.Agility * ctx.Dribble.AgilityWeight
+        let balance = normStat me.Physical.Balance * ctx.Dribble.BalanceWeight
 
         let zoneBonus =
             match ctx.Zone with
-            | AttackingZone -> 0.1
-            | MidfieldZone -> 0.05
+            | AttackingZone -> d.DribbleZoneBonusAttacking
+            | MidfieldZone -> d.DribbleZoneBonusMidfield
             | DefensiveZone -> 0.0
 
         let phaseMod =
             match ctx.Phase with
-            | BuildUp -> -BalanceConfig.BuildUpDribblePenalty
+            | BuildUp -> -ctx.BuildUp.DribblePenalty
             | Midfield -> 0.0
-            | Attack -> 0.05
+            | Attack -> d.DribbleAttackPhaseBonus
 
         (dribbling + agility + balance + zoneBonus + phaseMod)
         * normCond ctx.MyCondition
 
     let private crossScore (ctx: AgentContext) =
         let me = ctx.Me
-        let crossing = normStat me.Technical.Crossing * 0.60
-        let posBonus = abs (ctx.Profile.LateralTendency - 0.5) * 0.60 + 0.10
-        let zoneBonus = if ctx.Zone = AttackingZone then 0.15 else 0.0
+        let d = ctx.Decision
+        let crossing = normStat me.Technical.Crossing * d.CrossCrossingWeight
+        let posBonus = abs (ctx.Profile.LateralTendency - 0.5) * d.CrossLateralTendencyWeight
+        let zoneBonus = if ctx.Zone = AttackingZone then d.CrossZoneBonus else 0.0
         (crossing + posBonus + zoneBonus) * normCond ctx.MyCondition
 
     let private longBallScore (ctx: AgentContext) =
         let me = ctx.Me
-        let passing = normStat me.Technical.Passing * 0.30
-        let vision = normStat me.Mental.Vision * 0.20
+        let d = ctx.Decision
+        let passing = normStat me.Technical.Passing * d.LongBallPassingWeight
+        let vision = normStat me.Mental.Vision * d.LongBallVisionWeight
 
         let pressureMod =
             match ctx.NearestOpponent with
@@ -91,14 +96,14 @@ module PlayerScorer =
                 let dx = ctx.MyPos.X - oppPos.X
                 let dy = ctx.MyPos.Y - oppPos.Y
                 let dist = sqrt (dx * dx + dy * dy)
-                PhysicsContract.clampFloat (float dist / 10.0) 0.3 1.0
-            | None -> 0.7
+                PhysicsContract.clampFloat (float dist / d.LongBallPressDistBase) d.LongBallPressMin d.LongBallPressMax
+            | None -> d.LongBallPressNoOpponent
 
         let phaseMod =
             match ctx.Phase with
-            | BuildUp -> -BalanceConfig.BuildUpLongBallPenalty
+            | BuildUp -> -ctx.BuildUp.LongBallPenalty
             | Midfield -> 0.0
-            | Attack -> 0.05
+            | Attack -> d.LongBallAttackPhaseBonus
 
         (passing + vision) * pressureMod * normCond ctx.MyCondition + phaseMod
 

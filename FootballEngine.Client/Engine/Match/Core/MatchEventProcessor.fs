@@ -31,6 +31,40 @@ module MatchEventProcessor =
                 | MatchEventType.Corner -> Some(SetPiece SetPieceKind.Corner)
                 | _ -> None)
 
+    let private intentFromEvents
+        (events: MatchEvent list)
+        (possessionChanged: bool)
+        (playerHasBall: bool)
+        (tc: TimingConfig)
+        (state: SimState)
+        : TickIntent =
+
+        let hasGoal =
+            events |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.OwnGoal)
+
+        let hasFoul =
+            events |> List.exists (fun e -> e.Type = MatchEventType.FoulCommitted)
+
+        let chainBreaks =
+            events
+            |> List.exists (fun e ->
+                match e.Type with
+                | MatchEventType.PassDeflected _
+                | MatchEventType.PassMisplaced _ -> true
+                | _ -> false)
+            || possessionChanged
+            || not playerHasBall
+
+        if hasGoal then
+            StopPlay Goal
+        elif hasFoul then
+            StopPlay Foul
+        elif chainBreaks then
+            match state.Ball.Possession with
+            | Owned(_, pid) -> GiveDecisionTo pid
+            | _ -> FindNextDuel
+        else
+            FindNextDuel
 
     let processEventsAndSpawnTicks
         (subTick: int)
@@ -44,8 +78,12 @@ module MatchEventProcessor =
         (clock: SimulationClock)
         : AgentOutput =
 
+        let tc = ctx.Config.Timing
+        let mv = ctx.Config.MatchVolume
+
         let possessionChanged = state.AttackingSide <> prevAttackingClub
 
+        let hasTerminating = hasTerminatingEvent allEvents
         let chainBreaks =
             allEvents
             |> List.exists (fun e ->
@@ -56,73 +94,59 @@ module MatchEventProcessor =
             || possessionChanged
             || not playerHasBall
 
-        if hasTerminatingEvent allEvents || chainBreaks then
+        if hasTerminating || chainBreaks then
             let transition = transitionFromEvents allEvents
-
-            let hasGoal =
-                allEvents
-                |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.OwnGoal)
-
-            let hasFoul =
-                allEvents |> List.exists (fun e -> e.Type = MatchEventType.FoulCommitted)
-
-            let continuation =
-                if hasGoal then
-                    Defer(BalanceConfig.goalDelay, KickOffTick)
-                elif hasFoul then
-
-                    let attSlots2 = SimStateOps.getSlots state prevAttackingClub
-                    let bx2, by2 = state.Ball.Position.X, state.Ball.Position.Y
-
-                    match MatchSpatial.nearestActiveSlot attSlots2 bx2 by2 with
-                    | ValueSome s ->
-                        let foulPos = SimStateOps.defaultSpatial bx2 by2
-                        Defer(BalanceConfig.foulDelay, FreeKickTick(s.Player.Id, foulPos, 0))
-                    | ValueNone -> Defer(BalanceConfig.duelNextDelay, DuelTick 0)
-                else
-                    match state.Ball.Possession with
-                    | Owned(_, pid) -> Defer(BalanceConfig.duelChainDelay, DecisionTick(0, Some pid))
-                    | _ -> Defer(BalanceConfig.duelNextDelay, DuelTick 0)
+            let intent = intentFromEvents allEvents possessionChanged playerHasBall tc state
 
             { Events = allEvents
-              Continuation = continuation
               Transition = transition
-              SideEffects = [] }
-        elif depth < BalanceConfig.MaxChainLength - 1 then
+              Intent = intent }
+        elif depth < mv.MaxChainLength - 1 then
             let currentAttSide = state.AttackingSide
             let attSlots2 = SimStateOps.getSlots state currentAttSide
 
             if attSlots2.Length = 0 then
                 { Events = allEvents
-                  Continuation = Defer(BalanceConfig.duelNextDelay, DuelTick 0)
                   Transition = None
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
             else
                 let bx', by' = state.Ball.Position.X, state.Ball.Position.Y
 
                 match MatchSpatial.nearestActiveSlot attSlots2 bx' by' with
                 | ValueSome s ->
-                    let actx = AgentContext.build s.Player s.Profile 0 state clock
+                    let team = SimStateOps.buildTeamPerspective state.AttackingSide ctx state
+
+                    let actx =
+                        AgentContext.build
+                            s.Player
+                            s.Profile
+                            0
+                            team
+                            s.MovementIntent
+                            s.IntentLockExpiry
+                            state
+                            clock
+                            state.Config.Decision
+                            state.Config.BuildUp
+
                     let scores = PlayerScorer.computeAll actx
 
-                    let continuation' =
+                    let intent =
                         match PlayerDecision.decide actx scores with
-                        | BallContested -> Defer(BalanceConfig.duelChainDelay, DuelTick 0)
+                        | BallContested -> FindNextDuel
                         | PlayerActing act ->
-                            Defer(BalanceConfig.duelChainDelay, PlayerActionTick(depth + 1, act, Some s.Player.Id))
+                            let _ = act
+                            FindNextDuel
 
                     { Events = allEvents
-                      Continuation = continuation'
                       Transition = None
-                      SideEffects = [] }
+                      Intent = intent }
                 | ValueNone ->
                     { Events = allEvents
-                      Continuation = EndChain
                       Transition = None
-                      SideEffects = [] }
+                      Intent = FindNextDuel }
 
         else
             { Events = allEvents
-              Continuation = Defer(BalanceConfig.duelNextDelay, DuelTick 0)
               Transition = None
-              SideEffects = [] }
+              Intent = FindNextDuel }

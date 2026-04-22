@@ -83,12 +83,12 @@ let awayClub = { Id = 200; Name = "Away"; Nationality = "AR"; Reputation = 50; P
 let buildState (homePlayers: Player[]) (homePos: (float * float)[]) (awayPlayers: Player[]) (awayPos: (float * float)[]) (ballX: float) (ballY: float) (phase: Possession) : MatchContext * SimState =
     let hSp = homePos |> Array.map (fun (x, y) -> spatialAt x y)
     let aSp = awayPos |> Array.map (fun (x, y) -> spatialAt x y)
-    let ctx = { Home = homeClub; Away = awayClub; HomeCoach = Unchecked.defaultof<Staff>; AwayCoach = Unchecked.defaultof<Staff>; HomePlayers = homePlayers; AwayPlayers = awayPlayers; HomeBasePositions = hSp; AwayBasePositions = aSp; HomeChemistry = ChemistryGraph.init homePlayers.Length; AwayChemistry = ChemistryGraph.init awayPlayers.Length; IsKnockoutMatch = false }
+    let ctx = { Home = homeClub; Away = awayClub; HomeCoach = Unchecked.defaultof<Staff>; AwayCoach = Unchecked.defaultof<Staff>; HomePlayers = homePlayers; AwayPlayers = awayPlayers; HomeBasePositions = hSp; AwayBasePositions = aSp; HomeChemistry = ChemistryGraph.init homePlayers.Length; AwayChemistry = ChemistryGraph.init awayPlayers.Length; IsKnockoutMatch = false; Config = BalanceConfig.defaultConfig }
     let state = SimState()
     state.HomeBasePositions <- hSp; state.AwayBasePositions <- aSp
     state.Ball <- { Position = spatialAt ballX ballY; Spin = Spin.zero; Possession = phase; LastTouchBy = None; PendingOffsideSnapshot = None; StationarySinceSubTick = None }
-    state.Home <- { TeamSimState.empty with Slots = Array.init homePlayers.Length (fun i -> PlayerSlot.Active { Player = homePlayers[i]; Pos = hSp[i]; Condition = 100; Mental = MentalState.initial homePlayers[i]; Directives = [||]; Profile = Player.profile homePlayers[i]; CachedTarget = (hSp[i].X, hSp[i].Y); CachedExecution = 1.0 }) }
-    state.Away <- { TeamSimState.empty with Slots = Array.init awayPlayers.Length (fun i -> PlayerSlot.Active { Player = awayPlayers[i]; Pos = aSp[i]; Condition = 100; Mental = MentalState.initial awayPlayers[i]; Directives = [||]; Profile = Player.profile awayPlayers[i]; CachedTarget = (aSp[i].X, aSp[i].Y); CachedExecution = 1.0 }) }
+    state.Home <- { TeamSimState.empty with Slots = Array.init homePlayers.Length (fun i -> PlayerSlot.Active { Player = homePlayers[i]; Pos = hSp[i]; Condition = 100; Mental = MentalState.initial homePlayers[i]; MovementIntent = None; IntentLockExpiry = 0; Profile = Player.profile homePlayers[i]; CachedTarget = (hSp[i].X, hSp[i].Y); CachedExecution = 1.0 }) }
+    state.Away <- { TeamSimState.empty with Slots = Array.init awayPlayers.Length (fun i -> PlayerSlot.Active { Player = awayPlayers[i]; Pos = aSp[i]; Condition = 100; Mental = MentalState.initial awayPlayers[i]; MovementIntent = None; IntentLockExpiry = 0; Profile = Player.profile awayPlayers[i]; CachedTarget = (aSp[i].X, aSp[i].Y); CachedExecution = 1.0 }) }
     ctx, state
 
 // ============================================================================

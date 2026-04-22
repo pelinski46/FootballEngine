@@ -5,113 +5,6 @@ open FootballEngine.PhysicsContract
 open FootballEngine.Domain.TacticalInstructions
 open SimulationClock
 
-type DirectiveModifiers =
-    { Shape: float
-      Run: float
-      MarkMan: float
-      MarkZone: float
-      Press: float
-      Cover: float
-      Support: float
-      Flank: float
-      Compact: float
-      Spread: float
-      ThirdMan: float }
-
-module DirectiveModifiers =
-    let neutral =
-        { Shape = 1.0
-          Run = 1.0
-          MarkMan = 1.0
-          MarkZone = 1.0
-          Press = 1.0
-          Cover = 1.0
-          Support = 1.0
-          Flank = 1.0
-          Compact = 1.0
-          Spread = 1.0
-          ThirdMan = 1.0 }
-
-type DirectiveKind =
-    | Shape
-    | Run
-    | MarkMan
-    | MarkZone
-    | Press
-    | Cover
-    | Support
-    | Flank
-    | Compact
-    | Spread
-    | ThirdMan
-
-[<Struct>]
-type Directive =
-    { Kind: DirectiveKind
-      TargetX: float<meter>
-      TargetY: float<meter>
-      Weight: float
-      Urgency: float
-      ExpirySubTick: int
-      Source: string
-      Priority: int }
-
-module Directive =
-    // Priority levels: higher = more urgent
-    let emergencyPriority = 2  // Possession loss, immediate threats
-    let tacticalPriority = 1   // Marking, pressing decisions
-    let strategicPriority = 0  // Base shape, positioning
-    
-    let expired currentSubTick (d: Directive) = currentSubTick > d.ExpirySubTick
-
-    let create kind targetX targetY weight urgency expiry source priority =
-        { Kind = kind
-          TargetX = targetX
-          TargetY = targetY
-          Weight = weight
-          Urgency = urgency
-          ExpirySubTick = expiry
-          Source = source
-          Priority = priority }
-
-    let composeDirectives currentSubTick (directives: Directive[]) (modifiers: DirectiveModifiers) =
-        let mutable tw = 0.0
-        let mutable sx = 0.0<meter>
-        let mutable sy = 0.0<meter>
-        let mutable hasActive = false
-
-        let applyModifier kind weight =
-            match kind with
-            | Shape -> weight * modifiers.Shape
-            | Run -> weight * modifiers.Run
-            | MarkMan -> weight * modifiers.MarkMan
-            | MarkZone -> weight * modifiers.MarkZone
-            | Press -> weight * modifiers.Press
-            | Cover -> weight * modifiers.Cover
-            | Support -> weight * modifiers.Support
-            | Flank -> weight * modifiers.Flank
-            | Compact -> weight * modifiers.Compact
-            | Spread -> weight * modifiers.Spread
-            | ThirdMan -> weight * modifiers.ThirdMan
-
-        for i = 0 to directives.Length - 1 do
-            let d = directives[i]
-
-            if not (expired currentSubTick d) && d.Weight > 0.0 then
-                hasActive <- true
-                let w = applyModifier d.Kind d.Weight
-                tw <- tw + w
-                sx <- sx + d.TargetX * w
-                sy <- sy + d.TargetY * w
-
-        if not hasActive then 
-            printfn "DEBUG: Player lost directives (not hasActive). Defaulting to center."
-            (52.5<meter>, 34.0<meter>)
-        elif tw = 0.0 then 
-            printfn "DEBUG: Player total weight zero (tw=0.0). Defaulting to center."
-            (52.5<meter>, 34.0<meter>)
-        else (sx / tw, sy / tw)
-
 type RunType =
     | DeepRun
     | OverlapRun
@@ -296,13 +189,23 @@ type Spatial =
     member this.VelMagSq = this.Vx * this.Vx + this.Vy * this.Vy + this.Vz * this.Vz
     member this.VelMag = sqrt this.VelMagSq
 
+type MovementIntent =
+    | MaintainShape of target: Spatial
+    | MarkMan       of targetPlayerId: PlayerId * targetPos: Spatial
+    | PressBall     of ballPredPos: Spatial
+    | ExecuteRun    of assignment: RunAssignment
+    | CoverSpace    of target: Spatial
+    | SupportAttack of target: Spatial
+    | RecoverBall   of ballPredPos: Spatial
+
 [<Struct>]
 type ActiveSlot =
     { Player: Player
       Pos: Spatial
       Condition: int
       Mental: MentalState
-      Directives: Directive[]
+      MovementIntent: MovementIntent option
+      IntentLockExpiry: int
       Profile: BehavioralProfile
       CachedTarget: float<meter> * float<meter>
       CachedExecution: float }
@@ -373,7 +276,8 @@ type MatchContext =
       AwayBasePositions: Spatial[]
       HomeChemistry: ChemistryGraph
       AwayChemistry: ChemistryGraph
-      IsKnockoutMatch: bool }
+      IsKnockoutMatch: bool
+      Config: BalanceConfig }
 
 type TeamSimState =
     { Slots: PlayerSlot[]
@@ -410,6 +314,7 @@ type SimState() =
     member val SubTick = 0 with get, set
     member val HomeScore = 0 with get, set
     member val AwayScore = 0 with get, set
+    member val Config = BalanceConfig.defaultConfig with get, set
 
     member val Ball =
         { Position =
@@ -442,6 +347,7 @@ type SimState() =
 
     member val HomeAttackDir = LeftToRight with get, set
     member val Momentum = 0.0 with get, set
+    member val BallXSmooth = 52.5<meter> with get, set
 
     member this.PendingOffsideSnapshot = this.Ball.PendingOffsideSnapshot
 
@@ -449,6 +355,14 @@ type SimState() =
     member val AwayBasePositions = Array.empty<Spatial> with get, set
     member val Home = TeamSimState.empty with get, set
     member val Away = TeamSimState.empty with get, set
+
+type TeamPerspective =
+    { ClubSide  : ClubSide
+      ClubId    : ClubId
+      AttackDir : AttackDir
+      OwnSlots  : PlayerSlot[]
+      OppSlots  : PlayerSlot[]
+      Bonus     : HomeBonus }
 
 module SimStateOps =
 
@@ -844,3 +758,20 @@ module SimStateOps =
           PlayerId = playerId
           ClubId = clubId
           Type = t }
+
+    let buildTeamPerspective
+        (clubSide: ClubSide)
+        (ctx: MatchContext)
+        (state: SimState)
+        : TeamPerspective =
+        let clubId   = if clubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let dir      = attackDirFor clubSide state
+        let ownSlots = getSlots state clubSide
+        let oppSlots = getSlots state (ClubSide.flip clubSide)
+        let bonus    = HomeBonus.build clubSide state.Config.HomeAdvantage
+        { ClubSide  = clubSide
+          ClubId    = clubId
+          AttackDir = dir
+          OwnSlots  = ownSlots
+          OppSlots  = oppSlots
+          Bonus     = bonus }

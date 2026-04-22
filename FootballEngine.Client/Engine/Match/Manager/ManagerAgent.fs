@@ -19,13 +19,7 @@ module ManagerAgent =
         | d when d < 0 -> Losing
         | _ -> Drawing
 
-    let private maxSubs = 3
-
-    let private conditionThreshold =
-        function
-        | Losing -> 75
-        | Drawing -> 65
-        | Winning -> 55
+    let private maxSubs = 3 
 
     let private preferredPositions =
         function
@@ -104,12 +98,18 @@ module ManagerAgent =
         if subsUsed >= maxSubs then
             AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
         else
+            let threshold =
+                match sit with
+                | Losing -> ctx.Config.Manager.ConditionThresholdLosing
+                | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
+                | Winning -> ctx.Config.Manager.ConditionThresholdWinning
+
             let outgoingIdx =
                 slots
                 |> Array.mapi (fun i slot ->
                     match slot with
                     | PlayerSlot.Active s ->
-                        if s.Player.Position <> GK && s.Condition < conditionThreshold sit then
+                        if s.Player.Position <> GK && s.Condition < threshold then
                             Some(i, s.Condition)
                         else
                             None
@@ -185,6 +185,13 @@ module ManagerAgent =
         [ if getSubsUsed state HomeClub < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
               let homeSlots = state.Home.Slots
 
+              let homeSit = situation ctx.Home.Id ctx state
+              let homeThreshold =
+                  match homeSit with
+                  | Losing -> ctx.Config.Manager.ConditionThresholdLosing
+                  | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
+                  | Winning -> ctx.Config.Manager.ConditionThresholdWinning
+
               let outgoingIdx =
                   homeSlots
                   |> Array.mapi (fun i slot ->
@@ -192,7 +199,7 @@ module ManagerAgent =
                       | PlayerSlot.Active s ->
                           if
                               s.Player.Position <> GK
-                              && s.Condition < conditionThreshold (situation ctx.Home.Id ctx state)
+                              && s.Condition < homeThreshold
                           then
                               Some(i, s.Condition)
                           else
@@ -220,6 +227,13 @@ module ManagerAgent =
           if getSubsUsed state AwayClub < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
               let awaySlots = state.Away.Slots
 
+              let awaySit = situation ctx.Away.Id ctx state
+              let awayThreshold =
+                  match awaySit with
+                  | Losing -> ctx.Config.Manager.ConditionThresholdLosing
+                  | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
+                  | Winning -> ctx.Config.Manager.ConditionThresholdWinning
+
               let outgoingIdx =
                   awaySlots
                   |> Array.mapi (fun i slot ->
@@ -227,7 +241,7 @@ module ManagerAgent =
                       | PlayerSlot.Active s ->
                           if
                               s.Player.Position <> GK
-                              && s.Condition < conditionThreshold (situation ctx.Away.Id ctx state)
+                              && s.Condition < awayThreshold
                           then
                               Some(i, s.Condition)
                           else
@@ -262,7 +276,8 @@ module ManagerAgent =
         let elapsedSec = int (subTicksToSeconds clock subTick)
 
         let isSubMinute =
-            elapsedSec = 60 * 60 || elapsedSec = 75 * 60 || elapsedSec = 85 * 60
+            ctx.Config.Manager.SubWindowMinutes
+            |> Array.exists (fun m -> elapsedSec = m * 60)
 
         let homeSquad = ctx.HomePlayers |> List.ofArray
         let awaySquad = ctx.AwayPlayers |> List.ofArray
@@ -332,7 +347,8 @@ module ManagerAgent =
                               Pos = inheritedPos
                               Condition = incoming.Condition
                               Mental = MentalState.initial incoming
-                              Directives = Array.empty
+                              MovementIntent = None
+                              IntentLockExpiry = 0
                               Profile = Player.profile incoming
                               CachedTarget = (inheritedPos.X, inheritedPos.Y)
                               CachedExecution = 1.0 }
@@ -368,9 +384,8 @@ module ManagerAgent =
                 |> List.rev
 
             { Events = events
-              Continuation = EndChain // Periodic check, doesn't start a chain
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }
 
         | ManagerReactionTick trigger ->
             let actions = decide tick.SubTick ctx state (Some trigger) clock
@@ -385,12 +400,10 @@ module ManagerAgent =
                 |> List.rev
 
             { Events = events
-              Continuation = EndChain // Manager reaction doesn't control game state or chain
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }
 
         | _ ->
             { Events = []
-              Continuation = EndChain
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }

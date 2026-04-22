@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open SimStateOps
 
 module MatchSpatial =
 
@@ -90,8 +91,13 @@ module MatchSpatial =
         | Some bPos ->
             let isForward (sp: Spatial) =
                 match dir with
-                | LeftToRight -> sp.X > bPos.X
-                | RightToLeft -> sp.X < bPos.X
+                | LeftToRight -> sp.X > bPos.X + 5.0<meter>
+                | RightToLeft -> sp.X < bPos.X - 5.0<meter>
+
+            let isBackward (sp: Spatial) =
+                match dir with
+                | LeftToRight -> sp.X < bPos.X - 10.0<meter>
+                | RightToLeft -> sp.X > bPos.X + 10.0<meter>
 
             let passLaneClear (targetSp: Spatial) =
                 let mutable defendersNearLine = 0.0
@@ -133,11 +139,12 @@ module MatchSpatial =
                 | PlayerSlot.Active s when s.Player.Id <> attacker.Id ->
                     let sp = s.Pos
                     let dist = sp.DistTo2D bPos
-                    let forwardBonus = if isForward sp then 0.15 else 0.0
+                    let forwardBonus = if isForward sp then 0.35 else 0.0
+                    let backwardPenalty = if isBackward sp then -0.25 else 0.0
                     let laneBonus = if passLaneClear sp then 0.2 else 0.0
 
                     let score =
-                        (1.0 / (1.0 + (dist / 1.0<meter>) * 0.1)) + forwardBonus + laneBonus + visionWeight * 0.1
+                        (1.0 / (1.0 + (dist / 1.0<meter>) * 0.1)) + forwardBonus + backwardPenalty + laneBonus + visionWeight * 0.1
 
                     if score > bestScore then
                         bestScore <- score
@@ -149,24 +156,12 @@ module MatchSpatial =
             | Some p, Some sp -> Some(p, p.Id, sp.XY)
             | _ -> None
 
-    let isOffside (player: Player) (playerX: float<meter>) (state: SimState) (dir: AttackDir) =
+    let isOffside (player: Player) (playerX: float<meter>) (state: SimState) (clubSide: ClubSide) =
         if player.Position = GK then
             false
         else
-            let isAttHome =
-                state.Home.Slots
-                |> Array.exists (function
-                    | PlayerSlot.Active s -> s.Player.Id = player.Id
-                    | _ -> false)
-
-            let dir =
-                if isAttHome then state.HomeAttackDir
-                else
-                    match state.HomeAttackDir with
-                    | LeftToRight -> RightToLeft
-                    | RightToLeft -> LeftToRight
-
-            let defSlots = if isAttHome then state.Away.Slots else state.Home.Slots
+            let dir = attackDirFor clubSide state
+            let defSlots = getSlots state (ClubSide.flip clubSide)
 
             let mutable firstX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
             let mutable secondX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>

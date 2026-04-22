@@ -14,25 +14,22 @@ module SetPieceAgent =
             let events = SetPlayAction.resolveFreeKick tick.SubTick ctx state
 
             { Events = events
-              Continuation = Defer(BalanceConfig.freeKickDelay, DuelTick 0)
               Transition = Some LivePlay
-              SideEffects = [] }
+              Intent = FindNextDuel }
 
         | CornerTick(_club, _chainDepth) ->
             let events = SetPlayAction.resolveCorner tick.SubTick ctx state
 
             { Events = events
-              Continuation = Defer(BalanceConfig.cornerDelay, DuelTick 0)
               Transition = Some LivePlay
-              SideEffects = [] }
+              Intent = FindNextDuel }
 
         | ThrowInTick(team, _chainDepth) ->
             let events = SetPlayAction.resolveThrowIn tick.SubTick ctx state team
 
             { Events = events
-              Continuation = Defer(BalanceConfig.throwInDelay, DuelTick 0)
               Transition = Some LivePlay
-              SideEffects = [] }
+              Intent = FindNextDuel }
 
         | PenaltyTick(kicker, isHome) ->
             let kickerPlayer =
@@ -53,9 +50,8 @@ module SetPieceAgent =
             let events = SetPlayAction.resolvePenalty ctx state kickerPlayer kickClub 1 clock
 
             { Events = events
-              Continuation = Defer(BalanceConfig.foulDelay, DuelTick 0)
               Transition = Some LivePlay
-              SideEffects = [] }
+              Intent = FindNextDuel }
 
         | GoalKickTick ->
             let isHome =
@@ -66,6 +62,7 @@ module SetPieceAgent =
             let kickingClub = if isHome then HomeClub else AwayClub
             let kickingClubId = if isHome then ctx.Home.Id else ctx.Away.Id
             let slots = if isHome then state.Home.Slots else state.Away.Slots
+            let pc = ctx.Config.Pass
 
             let gkX =
                 if isHome then
@@ -88,45 +85,44 @@ module SetPieceAgent =
 
             match gkOpt with
             | Some gk ->
-                // Basic implementation: GK kicks to nearest teammate
                 let targetX, targetY =
                     let sideSlots = if isHome then state.Home.Slots else state.Away.Slots
 
                     match MatchSpatial.nearestActiveSlotExcluding sideSlots gk.Player.Id gk.Pos.X gk.Pos.Y with
                     | ValueSome s -> s.Pos.X, s.Pos.Y
-                    | ValueNone -> (if isHome then 30.0<meter> else 75.0<meter>), centerY
+                    | ValueNone -> (if isHome then ctx.Config.SetPiece.GoalKickFallbackDistHome else ctx.Config.SetPiece.GoalKickFallbackDistAway), centerY
 
                 state.Ball <-
                     { state.Ball with
                         LastTouchBy = Some gk.Player.Id
-                        Possession = InFlight(kickingClub, gk.Player.Id) } 
+                        Possession = InFlight(kickingClub, gk.Player.Id) }
 
                 let dx = targetX - gk.Pos.X
                 let dy = targetY - gk.Pos.Y
                 let dist = sqrt (dx * dx + dy * dy)
-                let speed = BalanceConfig.PassSpeed
+                let speed = pc.Speed
 
                 if dist > 0.1<meter> then
                     withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter / second> state
 
                 { Events = [ createEvent tick.SubTick gk.Player.Id kickingClubId MatchEventType.GoalKick ]
-                  Continuation = EndChain
                   Transition = Some LivePlay
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
             | None ->
                 { Events = []
-                  Continuation = EndChain
                   Transition = Some LivePlay
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
 
         | KickOffTick ->
             let centerX = PhysicsContract.HalfwayLineX
             let centerY = PhysicsContract.PitchWidth / 2.0
 
-            let isHomeKickOff = state.HomeAttackDir = LeftToRight
+            let kickOffSide = state.AttackingSide
+            let isHomeKickOff = kickOffSide = HomeClub
             let kickingClub = if isHomeKickOff then HomeClub else AwayClub
             let kickingSlots = if isHomeKickOff then state.Home.Slots else state.Away.Slots
             let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
+            let pc = ctx.Config.Pass
 
             state.Ball <-
                 { state.Ball with
@@ -172,21 +168,19 @@ module SetPieceAgent =
             match kickerOpt with
             | None ->
                 { Events = []
-                  Continuation = Defer(BalanceConfig.duelNextDelay, DuelTick 0)
                   Transition = Some LivePlay
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
             | Some kicker ->
                 let targetX, targetY =
                     match partnerOpt with
                     | Some partner -> partner.Pos.X, partner.Pos.Y
-                    | None -> centerX - 3.0<meter>, centerY + 2.0<meter>
+                    | None -> centerX + ctx.Config.SetPiece.KickOffPartnerOffsetX, centerY + ctx.Config.SetPiece.KickOffPartnerOffsetY
 
                 let partnerId =
                     partnerOpt
                     |> Option.map (fun p -> p.Player.Id)
                     |> Option.defaultValue kicker.Player.Id
 
-                // La pelota se mantiene en SetPiece tras el KickOffTick
                 state.Ball <-
                     { state.Ball with
                         LastTouchBy = Some kicker.Player.Id }
@@ -194,7 +188,7 @@ module SetPieceAgent =
                 let dx = targetX - centerX
                 let dy = targetY - centerY
                 let dist = sqrt (dx * dx + dy * dy)
-                let speed = BalanceConfig.PassSpeed
+                let speed = pc.Speed
 
                 if dist > 0.1<meter> then
                     withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter / second> state
@@ -204,12 +198,10 @@ module SetPieceAgent =
                         PlayerId = kicker.Player.Id
                         ClubId = kickingClubId
                         Type = MatchEventType.KickOff } ]
-                  Continuation = EndChain
                   Transition = Some LivePlay
-                  SideEffects = [] }
+                  Intent = FindNextDuel }
 
         | _ ->
             { Events = []
-              Continuation = EndChain // No continuation defined for this tick kind
               Transition = None
-              SideEffects = [] }
+              Intent = NoOp }

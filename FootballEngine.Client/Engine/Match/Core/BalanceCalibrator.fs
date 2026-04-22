@@ -1,5 +1,7 @@
 module BalanceCalibrator
 
+open FootballEngine
+
 type ActionThresholds = {
     Shot: float
     Pass: float
@@ -8,21 +10,21 @@ type ActionThresholds = {
     LongBall: float
 }
 
-let computeThresholds () =
+let computeThresholds (config: MatchVolumeConfig) =
     let total =
-        BalanceConfig.TargetShotsPerMatch
-        + BalanceConfig.TargetDribblesPerMatch
-        + BalanceConfig.TargetPassesPerMatch
-        + BalanceConfig.TargetCrossesPerMatch
-        + BalanceConfig.TargetLongBallsPerMatch
+        config.TargetShotsPerMatch
+        + config.TargetDribblesPerMatch
+        + config.TargetPassesPerMatch
+        + config.TargetCrossesPerMatch
+        + config.TargetLongBallsPerMatch
 
     let frac x = x / total
 
-    { Shot = frac BalanceConfig.TargetShotsPerMatch
-      Pass = frac BalanceConfig.TargetPassesPerMatch
-      Dribble = frac BalanceConfig.TargetDribblesPerMatch
-      Cross = frac BalanceConfig.TargetCrossesPerMatch
-      LongBall = frac BalanceConfig.TargetLongBallsPerMatch }
+    { Shot = frac config.TargetShotsPerMatch
+      Pass = frac config.TargetPassesPerMatch
+      Dribble = frac config.TargetDribblesPerMatch
+      Cross = frac config.TargetCrossesPerMatch
+      LongBall = frac config.TargetLongBallsPerMatch }
 
 let cumulative (t: ActionThresholds) =
     t.Shot,

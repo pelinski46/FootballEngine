@@ -14,10 +14,10 @@ module SimulationClock =
         let sps = 40
 
         { SubTicksPerSecond = sps
-          PhysicsRate = sps / 4
-          SteeringRate = sps * 4
-          CognitiveRate = sps * 5
-          AdaptiveRate = sps * 60 }
+          PhysicsRate = 1
+          SteeringRate = 2
+          CognitiveRate = 120
+          AdaptiveRate = 1200 }
 
     let dt (c: SimulationClock) : float<second> =
         float c.PhysicsRate / float c.SubTicksPerSecond * 1.0<second>
@@ -32,3 +32,19 @@ module SimulationClock =
     let halfTime (c: SimulationClock) = secondsToSubTicks c (45.0 * 60.0)
 
     let fullTime (c: SimulationClock) = secondsToSubTicks c (95.0 * 60.0)
+
+type TickDelay =
+    { MeanST: int
+      StdST: int
+      MinST: int
+      MaxST: int }
+
+module TickDelay =
+    let ofSeconds (clock: SimulationClock) mean std min max =
+        { MeanST = SimulationClock.secondsToSubTicks clock mean
+          StdST = SimulationClock.secondsToSubTicks clock std
+          MinST = SimulationClock.secondsToSubTicks clock min
+          MaxST = SimulationClock.secondsToSubTicks clock max }
+
+    let delayFrom (clock: SimulationClock) (d: TickDelay) : int =
+        Stats.normalInt (float d.MeanST) (float d.StdST) d.MinST d.MaxST

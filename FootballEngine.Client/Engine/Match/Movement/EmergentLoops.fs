@@ -43,15 +43,4 @@ module EmergentLoops =
             TempoLevel = max 0.1 (current.TempoLevel - fatigueEffect * 0.6)
             RiskAppetite = max 0.1 (current.RiskAppetite - fatigueEffect * 0.5) }
 
-    let toDirectiveModifiers (state: EmergentState) : DirectiveModifiers =
-        { Shape = 1.0
-          Run = state.TempoLevel
-          MarkMan = state.CompactnessLevel
-          MarkZone = state.CompactnessLevel
-          Press = state.PressingIntensity
-          Cover = state.CompactnessLevel
-          Support = state.RiskAppetite
-          Flank = state.WingPlayPreference
-          Compact = state.CompactnessLevel
-          Spread = 2.0 - state.CompactnessLevel
-          ThirdMan = state.RiskAppetite }
+

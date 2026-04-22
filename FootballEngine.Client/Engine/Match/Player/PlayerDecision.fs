@@ -8,15 +8,15 @@ type DecisionOutcome =
 
 module PlayerDecision =
 
-    let private canCross (profile: BehavioralProfile) =
-        abs (profile.LateralTendency - 0.5) > 0.3
+    let private canCross (profile: BehavioralProfile) (zone: PitchZone) =
+        abs (profile.LateralTendency - 0.5) > 0.3 && zone = AttackingZone
 
     let decide (ctx: AgentContext) (scores: ActionScores) : DecisionOutcome =
         let shootBlocked =
             scores.Shoot < 0.15 || ctx.Zone = DefensiveZone
 
         let crossBlocked =
-            not (canCross ctx.Profile)
+            not (canCross ctx.Profile ctx.Zone)
 
         let passBlocked =
             ctx.BestPassTarget.IsNone

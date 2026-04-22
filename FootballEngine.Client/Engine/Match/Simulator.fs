@@ -89,84 +89,27 @@ module MatchSimulator =
 
         dispatchAgent tick ctx state clock
 
-    let private resolveContinuation
-        (tick: ScheduledTick)
-        (cont: Continuation)
-        (transition: PlayState option)
-        (counter: int64)
+    let private runLoop
+        (ctx: MatchContext)
+        (state: SimState)
         (clock: SimulationClock)
-        (playState: PlayState)
-        (totalChainDepth: int)
-        =
-        if totalChainDepth >= BalanceConfig.MaxChainLength * 2 then
-            [], counter
-        else
-            match cont with
-            | SelfReschedule offset ->
-                [ { tick with
-                      SubTick = tick.SubTick + offset
-                      SequenceId = counter } ],
-                counter + 1L
-
-            | ChainTo(head, tail, delay) ->
-                let kinds = head :: tail
-
-                let ticks =
-                    kinds
-                    |> List.mapi (fun i k ->
-                        { SubTick = tick.SubTick + delay
-                          Priority = tick.Priority
-                          SequenceId = counter + int64 i
-                          Kind = k })
-
-                ticks, counter + int64 kinds.Length
-
-            | Defer(delay, kind) ->
-                let offset = BalanceConfig.TickDelay.delayFrom delay
-
-                [ { SubTick = tick.SubTick + offset
-                    Priority = TickPriority.Duel
-                    SequenceId = counter
-                    Kind = kind } ],
-                counter + 1L
-
-            | EndChain ->
-                let offset = BalanceConfig.TickDelay.delayFrom BalanceConfig.duelNextDelay
-
-                [ { SubTick = tick.SubTick + offset
-                    Priority = TickPriority.Duel
-                    SequenceId = counter
-                    Kind = DuelTick 0 } ],
-                counter + 1L
-
-            | StopPlay _ -> [], counter
-
-    let private isChainReset =
-        function
-        | DuelTick 0
-        | FreeKickTick _
-        | CornerTick _
-        | ThrowInTick _
-        | PenaltyTick _
-        | GoalKickTick
-        | KickOffTick
-        | ResumePlayTick
-        | HalfTimeTick
-        | InjuryTick _
-        | SubstitutionTick _
-        | ManagerReactionTick _ -> true
-        | _ -> false
-
-    let private isChainLink =
-        function
-        | DuelTick _
-        | DecisionTick _
-        | PlayerActionTick _ -> true
-        | _ -> false
-
-    let runLoopFast (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : SimState * MatchEvent list =
+        (takeSnapshot: SimState -> int -> unit)
+        : SimState * MatchEvent list =
         let scheduler = TickScheduler(fullTime clock)
         generateInitialTicks ctx clock |> List.iter scheduler.Insert
+
+        let firstDuelInterval =
+            Stats.normalInt
+                (float ctx.Config.Timing.DuelNextDelay.MeanST)
+                (float ctx.Config.Timing.DuelNextDelay.StdST)
+                ctx.Config.Timing.DuelNextDelay.MinST
+                ctx.Config.Timing.DuelNextDelay.MaxST
+
+        scheduler.Insert
+            { SubTick = firstDuelInterval
+              Priority = TickPriority.Duel
+              SequenceId = -1L
+              Kind = DuelTick 0 }
 
         let mutable initialState =
             { Context = ctx
@@ -176,27 +119,17 @@ module MatchSimulator =
               MatchEndScheduled = false
               SequenceCounter = scheduler.Count |> int64 }
 
-        let firstDuelInterval =
-            normalInt
-                (float BalanceConfig.duelNextDelay.MeanST)
-                (float BalanceConfig.duelNextDelay.StdST)
-                BalanceConfig.duelNextDelay.MinST
-                BalanceConfig.duelNextDelay.MaxST
-
-        scheduler.Insert
-            { SubTick = firstDuelInterval
-              Priority = TickPriority.Duel
-              SequenceId = -1L
-              Kind = DuelTick 0 }
-
+        let mutable seqCounter = initialState.SequenceCounter
+        let mutable pending = TickOrchestrator.empty
         let mutable running = true
-        let mutable totalChainDepth = 0
 
         while running do
             match scheduler.Dequeue() with
             | ValueNone -> running <- false
             | ValueSome tick ->
                 initialState.State.SubTick <- tick.SubTick
+
+                takeSnapshot initialState.State tick.SubTick
 
                 match tick.Kind with
                 | FullTimeTick ->
@@ -211,12 +144,6 @@ module MatchSimulator =
                         | _ -> true
 
                     if shouldProcess then
-
-                        if isChainReset tick.Kind then
-                            totalChainDepth <- 0
-                        elif isChainLink tick.Kind then
-                            totalChainDepth <- totalChainDepth + 1
-
                         let result = runTick tick initialState.Context initialState.State clock
 
                         match tick.Kind with
@@ -241,24 +168,30 @@ module MatchSimulator =
                                     dtPlayer
                                     clock.SteeringRate
                                     clock.CognitiveRate
+
+                            let nextPhysicsTick =
+                                { SubTick = tick.SubTick + clock.PhysicsRate
+                                  Priority = TickPriority.Physics
+                                  SequenceId = seqCounter
+                                  Kind = PhysicsTick }
+                            scheduler.Insert nextPhysicsTick
+                            seqCounter <- seqCounter + 1L
                         | _ -> ()
 
-                        let continuationTicks, counterAfterCont =
-                            resolveContinuation
+                        let newTicks, newCounter, newPending =
+                            TickOrchestrator.resolve
                                 tick
-                                result.Continuation
+                                result.Intent
                                 result.Transition
-                                initialState.SequenceCounter
+                                seqCounter
                                 clock
-                                initialState.PlayState
-                                totalChainDepth
+                                initialState.Context.Config
+                                initialState.State
+                                pending
 
-                        let sideEffectTicks, newCounter =
-                            result.SideEffects
-                            |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) counterAfterCont
-
-                        continuationTicks |> List.iter scheduler.Insert
-                        sideEffectTicks |> List.iter scheduler.Insert
+                        newTicks |> List.iter scheduler.Insert
+                        seqCounter <- newCounter
+                        pending <- newPending
 
                         match result.Transition with
                         | Some(Stopped _ | PlayState.SetPiece _) ->
@@ -271,137 +204,30 @@ module MatchSimulator =
 
                         initialState <-
                             { initialState with
-                                PlayState = result.Transition |> Option.defaultValue initialState.PlayState
-                                SequenceCounter = newCounter }
+                                PlayState = result.Transition |> Option.defaultValue initialState.PlayState }
 
                         result.Events |> List.iter initialState.Events.Add
 
         initialState.State, initialState.Events |> Seq.toList
 
+    let runLoopFast (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : SimState * MatchEvent list =
+        runLoop ctx state clock (fun _ _ -> ())
+
     let runLoopFull (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchReplay =
-        let scheduler = TickScheduler(fullTime clock)
-        generateInitialTicks ctx clock |> List.iter scheduler.Insert
         let snapshots = System.Collections.Generic.List<SimSnapshot>()
         let snapshotInterval = clock.SubTicksPerSecond
-
-        let mutable initialState =
-            { Context = ctx
-              State = state
-              Events = ResizeArray()
-              PlayState = LivePlay
-              MatchEndScheduled = false
-              SequenceCounter = scheduler.Count |> int64 }
-
-        let firstDuelInterval =
-            normalInt
-                (float BalanceConfig.duelNextDelay.MeanST)
-                (float BalanceConfig.duelNextDelay.StdST)
-                BalanceConfig.duelNextDelay.MinST
-                BalanceConfig.duelNextDelay.MaxST
-
-        scheduler.Insert
-            { SubTick = firstDuelInterval
-              Priority = TickPriority.Duel
-              SequenceId = -1L
-              Kind = DuelTick 0 }
-
         let mutable lastSnapshotAt = 0
-        let mutable running = true
-        let mutable totalChainDepth = 0
 
-        while running do
-            match scheduler.Dequeue() with
-            | ValueNone -> running <- false
-            | ValueSome tick ->
-                initialState.State.SubTick <- tick.SubTick
+        let takeSnapshot st subTick =
+            if subTick >= lastSnapshotAt + snapshotInterval then
+                snapshots.Add(SnapshotBuilder.take st)
+                lastSnapshotAt <- subTick + snapshotInterval
 
-                // Snapshot check ALWAYS runs
-                if tick.SubTick >= lastSnapshotAt + snapshotInterval then
-                    snapshots.Add(SnapshotBuilder.take initialState.State)
-                    lastSnapshotAt <- tick.SubTick + snapshotInterval
-
-                match tick.Kind with
-                | FullTimeTick ->
-                    initialState.State.SubTick <- tick.SubTick
-                    running <- false
-                | _ ->
-                    let shouldProcess =
-                        match initialState.PlayState, tick.Kind with
-                        | (Stopped _ | PlayState.SetPiece _), DuelTick _ -> false
-                        | (Stopped _ | PlayState.SetPiece _), DecisionTick _ -> false
-                        | (Stopped _ | PlayState.SetPiece _), PlayerActionTick _ -> false
-                        | _ -> true
-
-                    if shouldProcess then
-                        // Bug 12: Track total chain depth per subtick to prevent SideEffects accumulation
-                        if isChainReset tick.Kind then
-                            totalChainDepth <- 0
-                        elif isChainLink tick.Kind then
-                            totalChainDepth <- totalChainDepth + 1
-
-                        let result = runTick tick initialState.Context initialState.State clock
-
-                        match tick.Kind with
-                        | PhysicsTick ->
-                            if tick.SubTick % clock.SteeringRate = 0 then
-                                let dtPlayer = SimulationClock.dtPlayer clock
-
-                                MovementEngine.updateTeamSide
-                                    tick.SubTick
-                                    initialState.Context
-                                    initialState.State
-                                    HomeClub
-                                    dtPlayer
-                                    clock.SteeringRate
-                                    clock.CognitiveRate
-
-                                MovementEngine.updateTeamSide
-                                    tick.SubTick
-                                    initialState.Context
-                                    initialState.State
-                                    AwayClub
-                                    dtPlayer
-                                    clock.SteeringRate
-                                    clock.CognitiveRate
-                        | _ -> ()
-
-                        let continuationTicks, counterAfterCont =
-                            resolveContinuation
-                                tick
-                                result.Continuation
-                                result.Transition
-                                initialState.SequenceCounter
-                                clock
-                                initialState.PlayState
-                                totalChainDepth
-
-                        let sideEffectTicks, newCounter =
-                            result.SideEffects
-                            |> List.mapFold (fun seq t -> { t with SequenceId = seq }, seq + 1L) counterAfterCont
-
-                        continuationTicks |> List.iter scheduler.Insert
-                        sideEffectTicks |> List.iter scheduler.Insert
-
-                        // Bug 4: Cancel ticks on transition to stopped or set piece
-                        match result.Transition with
-                        | Some(Stopped _ | PlayState.SetPiece _) ->
-                            scheduler.CancelTicks (function
-                                | DuelTick _
-                                | DecisionTick _
-                                | PlayerActionTick _ -> true
-                                | _ -> false)
-                        | _ -> ()
-
-                        initialState <-
-                            { initialState with
-                                PlayState = result.Transition |> Option.defaultValue initialState.PlayState
-                                SequenceCounter = newCounter }
-
-                        result.Events |> List.iter initialState.Events.Add
+        let finalState, events = runLoop ctx state clock takeSnapshot
 
         { Context = ctx
-          Final = initialState.State
-          Events = initialState.Events |> Seq.toList
+          Final = finalState
+          Events = events
           Snapshots = snapshots.ToArray() }
 
     open FsToolkit.ErrorHandling
@@ -538,12 +364,14 @@ module MatchSimulator =
               AwayBasePositions = aPos
               HomeChemistry = ChemistryGraph.init hCount
               AwayChemistry = ChemistryGraph.init aCount
-              IsKnockoutMatch = isKnockout }
+              IsKnockoutMatch = isKnockout
+              Config = BalanceConfig.defaultConfig }
 
         let state = SimState()
         state.SubTick <- 0
         state.HomeScore <- 0
         state.AwayScore <- 0
+        state.Config <- BalanceConfig.defaultConfig
 
         state.Ball <-
             { defaultBall with
@@ -553,6 +381,7 @@ module MatchSimulator =
         state.HomeBasePositions <- ctx.HomeBasePositions
         state.AwayBasePositions <- ctx.AwayBasePositions
         state.HomeAttackDir <- LeftToRight
+        state.BallXSmooth <- 52.5<meter>
 
         state.Home <-
             { TeamSimState.empty with
@@ -566,7 +395,8 @@ module MatchSimulator =
                               Pos = hPos[i]
                               Condition = p.Condition
                               Mental = MentalState.initial p
-                              Directives = Array.empty
+                              MovementIntent = None
+                              IntentLockExpiry = 0
                               Profile = prof
                               CachedTarget = (hPos[i].X, hPos[i].Y)
                               CachedExecution = 1.0 })
@@ -585,7 +415,8 @@ module MatchSimulator =
                               Pos = aPos[i]
                               Condition = p.Condition
                               Mental = MentalState.initial p
-                              Directives = Array.empty
+                              MovementIntent = None
+                              IntentLockExpiry = 0
                               Profile = prof
                               CachedTarget = (aPos[i].X, aPos[i].Y)
                               CachedExecution = 1.0 })
