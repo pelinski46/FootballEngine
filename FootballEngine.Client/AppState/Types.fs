@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.World
+open ModEditorTypes
 
 module AppTypes =
 
@@ -18,6 +19,7 @@ module AppTypes =
         | Finances
         | Settings
         | Match
+        | ModEditor
 
     type SetupStep =
         | MainMenu
@@ -118,6 +120,7 @@ module AppTypes =
           PlayerSortBy: string
           Setup: SetupState
           Transfer: TransferState
+          ModEditor: ModEditorTypes.ModEditorState
           ActiveMatchReplay: MatchReplay option
           ActiveMatchSnapshot: int
           IsPlaying: bool

@@ -8,7 +8,6 @@ module MatchSpatial =
 
     let spatialXY (sp: Spatial) = sp.X, sp.Y
 
-
     let withBallVelocity (vx: float<meter/second>) (vy: float<meter/second>) (vz: float<meter/second>) (state: SimState) =
         state.Ball <- { state.Ball with Position = { state.Ball.Position with Vx = vx; Vy = vy; Vz = vz } }
 
@@ -32,163 +31,156 @@ module MatchSpatial =
             let dy = targetY - originY
             withBallVelocity (dx / dist * speed) (dy / dist * speed) vz state
 
-    let nearestActiveSlot (slots: PlayerSlot[]) (ballX: float<meter>) (ballY: float<meter>) : ActiveSlot voption =
-        let target = { X = ballX; Y = ballY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let mutable bestSlot = ValueNone
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
-
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s ->
-                let dSq = s.Pos.DistSqTo2D target
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestSlot <- ValueSome s
-            | _ -> ()
-
-        bestSlot
-
-    let nearestActiveSlotExcluding
-        (slots: PlayerSlot[])
-        (excludeId: PlayerId)
+    let nearestActiveSlotInFrameExcluding
+        (frame: TeamFrame)
+        (excludeIdx: int)
         (x: float<meter>)
         (y: float<meter>)
-        : ActiveSlot voption =
-        let target = { X = x; Y = y; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-        let mutable bestSlot = ValueNone
-        let mutable bestDistSq = PhysicsContract.MaxDistanceSq
+        : int voption =
+        let mutable bestIdx = ValueNone
+        let mutable bestDistSq = System.Single.MaxValue
+        let x32 = float32 x
+        let y32 = float32 y
+        for i = 0 to frame.SlotCount - 1 do
+            if i <> excludeIdx then
+                match frame.Occupancy[i] with
+                | OccupancyKind.Active _ ->
+                    let dx = frame.PosX[i] - x32
+                    let dy = frame.PosY[i] - y32
+                    let d = dx * dx + dy * dy
+                    if d < bestDistSq then
+                        bestDistSq <- d
+                        bestIdx <- ValueSome i
+                | _ -> ()
+        bestIdx
 
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s when s.Player.Id <> excludeId ->
-                let dSq = s.Pos.DistSqTo2D target
-                if dSq < bestDistSq then
-                    bestDistSq <- dSq
-                    bestSlot <- ValueSome s
-            | _ -> ()
+    let findBestPassTargetFrame
+        (meIdx: int)
+        (attFrame: TeamFrame)
+        (attRoster: PlayerRoster)
+        (defFrame: TeamFrame)
+        (dir: AttackDir)
+        : (int * Spatial) voption =
+        let bX = attFrame.PosX[meIdx]
+        let bY = attFrame.PosY[meIdx]
 
-        bestSlot
+        let isForward (px: float32) =
+            match dir with
+            | LeftToRight -> float px > float bX + 5.0
+            | RightToLeft -> float px < float bX - 5.0
 
-    let findBestPassTarget (attacker: Player) (state: SimState) (dir: AttackDir) =
-        let isHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = attacker.Id
-                | _ -> false)
+        let isBackward (px: float32) =
+            match dir with
+            | LeftToRight -> float px < float bX - 10.0
+            | RightToLeft -> float px > float bX + 10.0
 
-        let attSlots = if isHome then state.Home.Slots else state.Away.Slots
-        let defSlots = if isHome then state.Away.Slots else state.Home.Slots
+        let passLaneClear (targetIdx: int) =
+            let tx = attFrame.PosX[targetIdx]
+            let ty = attFrame.PosY[targetIdx]
+            let tdx = tx - bX
+            let tdy = ty - bY
+            let lenSq = tdx * tdx + tdy * tdy
+            let radiusSq = 9.0f
 
-        let mutable ballPos = None
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s when s.Player.Id = attacker.Id -> ballPos <- Some s.Pos
-            | _ -> ()
-
-        match ballPos with
-        | None -> None
-        | Some bPos ->
-            let isForward (sp: Spatial) =
-                match dir with
-                | LeftToRight -> sp.X > bPos.X + 5.0<meter>
-                | RightToLeft -> sp.X < bPos.X - 5.0<meter>
-
-            let isBackward (sp: Spatial) =
-                match dir with
-                | LeftToRight -> sp.X < bPos.X - 10.0<meter>
-                | RightToLeft -> sp.X > bPos.X + 10.0<meter>
-
-            let passLaneClear (targetSp: Spatial) =
-                let mutable defendersNearLine = 0.0
-
-                for i = 0 to defSlots.Length - 1 do
-                    match defSlots[i] with
-                    | PlayerSlot.Active s when s.Player.Position <> GK ->
-                        let dSp = s.Pos
-                        let dx = dSp.X - bPos.X
-                        let dy = dSp.Y - bPos.Y
-                        let tdx = targetSp.X - bPos.X
-                        let tdy = targetSp.Y - bPos.Y
-                        let lenSq = tdx * tdx + tdy * tdy
-
-                        if lenSq >= 0.01<meterSquared> then
-                            let t = (dx * tdx + dy * tdy) / lenSq
-
-                            if t >= 0.0 && t <= 1.0 then
-                                let projX = bPos.X + t * tdx
-                                let projY = bPos.Y + t * tdy
-                                let dxProj = dSp.X - projX
-                                let dyProj = dSp.Y - projY
-                                let distSq = dxProj * dxProj + dyProj * dyProj
-                                let dist: float<meter> = sqrt distSq
-
-                                if dist < 3.0<meter> then
-                                    defendersNearLine <- defendersNearLine + 1.0
+            if lenSq < 0.01f then true
+            else
+                let invLenSq = 1.0f / lenSq
+                let mutable blocked = false
+                let mutable i = 0
+                while not blocked && i < defFrame.SlotCount do
+                    match defFrame.Occupancy[i] with
+                    | OccupancyKind.Active _ ->
+                        let dpx = defFrame.PosX[i] - bX
+                        let dpy = defFrame.PosY[i] - bY
+                        let t = (dpx * tdx + dpy * tdy) * invLenSq
+                        if t >= 0.0f && t <= 1.0f then
+                            let crossSq = (dpx * tdy - dpy * tdx) * (dpx * tdy - dpy * tdx)
+                            if crossSq < radiusSq * lenSq then
+                                blocked <- true
                     | _ -> ()
+                    i <- i + 1
+                not blocked
 
-                defendersNearLine = 0.0
+        let visionWeight = float attRoster.Players[meIdx].Mental.Vision / 100.0
+        let mutable bestIdx = ValueNone
+        let mutable bestScore = System.Double.MinValue
 
-            let visionWeight = float attacker.Mental.Vision / 100.0
-            let mutable bestPlayer: Player option = None
-            let mutable bestSp: Spatial option = None
-            let mutable bestScore = System.Double.MinValue
-
-            for i = 0 to attSlots.Length - 1 do
-                match attSlots[i] with
-                | PlayerSlot.Active s when s.Player.Id <> attacker.Id ->
-                    let sp = s.Pos
-                    let dist = sp.DistTo2D bPos
-                    let forwardBonus = if isForward sp then 0.35 else 0.0
-                    let backwardPenalty = if isBackward sp then -0.25 else 0.0
-                    let laneBonus = if passLaneClear sp then 0.2 else 0.0
-
+        for i = 0 to attFrame.SlotCount - 1 do
+            if i <> meIdx then
+                match attFrame.Occupancy[i] with
+                | OccupancyKind.Active _ ->
+                    let px = attFrame.PosX[i]
+                    let py = attFrame.PosY[i]
+                    let dx = px - bX
+                    let dy = py - bY
+                    let dist = sqrt (dx * dx + dy * dy)
+                    let forwardBonus = if isForward px then 0.35 else 0.0
+                    let backwardPenalty = if isBackward px then -0.25 else 0.0
+                    let laneBonus = if passLaneClear i then 0.2 else 0.0
                     let score =
-                        (1.0 / (1.0 + (dist / 1.0<meter>) * 0.1)) + forwardBonus + backwardPenalty + laneBonus + visionWeight * 0.1
+                        (1.0 / (1.0 + float dist * 0.1)) + forwardBonus + backwardPenalty + laneBonus + visionWeight * 0.1
 
                     if score > bestScore then
                         bestScore <- score
-                        bestPlayer <- Some s.Player
-                        bestSp <- Some sp
+                        bestIdx <- ValueSome i
                 | _ -> ()
 
-            match bestPlayer, bestSp with
-            | Some p, Some sp -> Some(p, p.Id, sp.XY)
-            | _ -> None
+        match bestIdx with
+        | ValueSome idx ->
+            let sp = {
+                X = float attFrame.PosX[idx] * 1.0<meter>
+                Y = float attFrame.PosY[idx] * 1.0<meter>
+                Z = 0.0<meter>
+                Vx = 0.0<meter/second>
+                Vy = 0.0<meter/second>
+                Vz = 0.0<meter/second>
+            }
+            ValueSome (idx, sp)
+        | ValueNone -> ValueNone
 
-    let isOffside (player: Player) (playerX: float<meter>) (state: SimState) (clubSide: ClubSide) =
-        if player.Position = GK then
-            false
-        else
-            let dir = attackDirFor clubSide state
-            let defSlots = getSlots state (ClubSide.flip clubSide)
+    let secondLastDefenderXFrame (frame: TeamFrame) (dir: AttackDir) : float<meter> =
+        let mutable firstX = if dir = LeftToRight then -1.0f else 106.0f
+        let mutable secondX = if dir = LeftToRight then -1.0f else 106.0f
+        let mutable found = 0
 
-            let mutable firstX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
-            let mutable secondX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
-            let mutable found = 0
-
-            for i = 0 to defSlots.Length - 1 do
-                match defSlots[i] with
-                | PlayerSlot.Active s ->
-                    let x = s.Pos.X
-                    found <- found + 1
-
-                    if dir = LeftToRight then
-                        if x > firstX then
-                            secondX <- firstX
-                            firstX <- x
-                        elif x > secondX then
-                            secondX <- x
-                    else if x < firstX then
+        for i = 0 to frame.SlotCount - 1 do
+            match frame.Occupancy[i] with
+            | OccupancyKind.Active _ ->
+                let x = frame.PosX[i]
+                found <- found + 1
+                if dir = LeftToRight then
+                    if x > firstX then
+                        secondX <- firstX
+                        firstX <- x
+                    elif x > secondX then
+                        secondX <- x
+                else
+                    if x < firstX then
                         secondX <- firstX
                         firstX <- x
                     elif x < secondX then
                         secondX <- x
-                | _ -> ()
+            | _ -> ()
 
+        if found < 2 then 0.0<meter> else float secondX * 1.0<meter>
+
+    let isOffsideFrame
+        (idx: int)
+        (attFrame: TeamFrame)
+        (attRoster: PlayerRoster)
+        (defFrame: TeamFrame)
+        (state: SimState)
+        (clubSide: ClubSide)
+        : bool =
+        let player = attRoster.Players[idx]
+        if player.Position = GK then false
+        else
+            let dir = attackDirFor clubSide state
+            let playerX = float attFrame.PosX[idx] * 1.0<meter>
+            let secondX = secondLastDefenderXFrame defFrame dir
             let ballX = state.Ball.Position.X
             let offsideLine =
-                if found < 2 then
+                if defFrame.ActiveCount < 2 then
                     match dir with
                     | LeftToRight -> 106.0<meter>
                     | RightToLeft -> -1.0<meter>
@@ -203,61 +195,22 @@ module MatchSpatial =
                 | RightToLeft -> playerX >= 50.0<meter>
 
             not inOwnHalf && (match dir with
-                              | LeftToRight -> playerX > offsideLine + 0.1<meter>
-                              | RightToLeft -> playerX < offsideLine - 0.1<meter>)
+                               | LeftToRight -> playerX > offsideLine + 0.1<meter>
+                               | RightToLeft -> playerX < offsideLine - 0.1<meter>)
 
-    let private secondLastDefenderXSlots (slots: PlayerSlot[]) (dir: AttackDir) : float<meter> =
-        let mutable firstX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
-        let mutable secondX = if dir = LeftToRight then -1.0<meter> else 106.0<meter>
-        let mutable found = 0
-
-        for i = 0 to slots.Length - 1 do
-            match slots[i] with
-            | PlayerSlot.Active s ->
-                let x = s.Pos.X
-                found <- found + 1
-
-                if dir = LeftToRight then
-                    if x > firstX then
-                        secondX <- firstX
-                        firstX <- x
-                    elif x > secondX then
-                        secondX <- x
-                else if x < firstX then
-                    secondX <- firstX
-                    firstX <- x
-                elif x < secondX then
-                    secondX <- x
-            | _ -> ()
-
-        if found < 2 then 0.0<meter> else secondX
-
-    let snapshotAtPass
-        (passer: Player)
-        (receiver: Player)
+    let snapshotAtPassFrame
+        (passerIdx: int)
+        (receiverIdx: int)
+        (attFrame: TeamFrame)
+        (attRoster: PlayerRoster)
+        (defFrame: TeamFrame)
         (state: SimState)
         (dir: AttackDir)
         : OffsideSnapshot =
-        let isAttHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = passer.Id
-                | _ -> false)
-
-        let defSlots = if isAttHome then state.Away.Slots else state.Home.Slots
-        let attSlots = if isAttHome then state.Home.Slots else state.Away.Slots
-
-        let mutable receiverX = 50.0<meter>
-
-        for i = 0 to attSlots.Length - 1 do
-            match attSlots[i] with
-            | PlayerSlot.Active s when s.Player.Id = receiver.Id -> receiverX <- s.Pos.X
-            | _ -> ()
-
-        { PasserId = passer.Id
-          ReceiverId = receiver.Id
-          ReceiverXAtPass = receiverX
-          SecondLastDefenderX = secondLastDefenderXSlots defSlots dir
+        { PasserId = attRoster.Players[passerIdx].Id
+          ReceiverId = attRoster.Players[receiverIdx].Id
+          ReceiverXAtPass = float attFrame.PosX[receiverIdx] * 1.0<meter>
+          SecondLastDefenderX = secondLastDefenderXFrame defFrame dir
           BallXAtPass = state.Ball.Position.X
           Dir = dir }
 

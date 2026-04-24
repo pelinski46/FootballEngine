@@ -13,6 +13,7 @@ open FootballEngine.AppTypes
 open FootballEngine.Components
 open FootballEngine.Components.Header
 open FootballEngine.Components.Sidebar
+open FootballEngine.Pages
 open FootballEngine.Pages.Home
 open FootballEngine.Pages.Inbox
 open FootballEngine.Pages.Loading.LoadingPage
@@ -21,6 +22,7 @@ open FootballEngine.Pages.Squad
 open FootballEngine.Pages.Tactics
 open FootballEngine.Pages.Training
 open FootballEngine.Pages.Transfers
+
 open Material.Icons.Avalonia
 
 module Views =
@@ -67,6 +69,7 @@ module Views =
                                 | Transfers -> transfersView state dispatch
                                 | Finances -> failwith "todo"
                                 | Settings -> failwith "todo"
+                                | ModEditor -> ModEditor.view state dispatch
                                 | Match -> MatchDayView.view state dispatch ] ] ] ]
 
 type MainWindow() as this =
@@ -95,5 +98,17 @@ type App() =
 module Program =
     [<EntryPoint>]
     let main args =
+        // Load game data from JSON builtins + mods
+        let builtinsDir =
+            System.IO.Path.Combine(System.AppContext.BaseDirectory, "Data", "Builtins")
+
+        let modsDir = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Mods")
+
+        match Data.ModLoader.loadAll builtinsDir modsDir with
+        | Ok data -> Data.DataRegistry.setLoadedData data
+        | Error errors ->
+            for e in errors do
+                System.Diagnostics.Debug.WriteLine($"Mod error: {e}")
+
         Db.initTables () |> Async.AwaitTask |> Async.RunSynchronously
         AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().StartWithClassicDesktopLifetime(args)

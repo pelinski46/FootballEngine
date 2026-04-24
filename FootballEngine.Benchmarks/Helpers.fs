@@ -7,10 +7,10 @@ open FootballEngine.Lineup
 let loadGame () =
     match Db.loadGame().GetAwaiter().GetResult() with
     | None -> failwith "No saved game — run generateNewGame first."
-    | Some game -> game
+    | Some (game, clock) -> game, clock
 
 let loadClubs () =
-    let game = loadGame ()
+    let game, _clock = loadGame ()
 
     let readyGame =
         game.Clubs

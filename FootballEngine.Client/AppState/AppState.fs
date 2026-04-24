@@ -23,6 +23,7 @@ module AppState =
           PlayerSortBy = "position"
           Setup = initSetupState
           Transfer = initTransferState
+          ModEditor = ModEditorTypes.initModEditorState
           ActiveMatchReplay = None
           ActiveMatchSnapshot = 0
           IsPlaying = false
@@ -95,6 +96,10 @@ module AppState =
 
         match msg with
         | SetupMsg m -> UpdateSetup.handle m state
+
+        | ModEditorMsg m ->
+            let nextEditorState, cmd = UpdateModEditor.update m state.ModEditor
+            { state with ModEditor = nextEditorState }, Cmd.map ModEditorMsg cmd
 
         | SimMsg m ->
             let nextState, cmd = UpdateSim.handle m state

@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open SimStateOps
 
 module GoalDetector =
 
@@ -20,17 +21,14 @@ module GoalDetector =
     let scorer
         (scoringClub: ClubSide)
         (ball: BallPhysicsState)
+        (ctx: MatchContext)
         (state: SimState)
         : PlayerId option * bool =
         let lastTouchId = ball.LastTouchBy
 
         match lastTouchId with
         | Some pid ->
-            let touchIsHome =
-                state.Home.Slots
-                |> Array.exists (function
-                    | PlayerSlot.Active s -> s.Player.Id = pid
-                    | _ -> false)
+            let touchIsHome = playerOnSide ctx state HomeClub pid
 
             let isOwnGoal =
                 match scoringClub with

@@ -4,6 +4,7 @@ open Expecto
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.MatchSpatial
+open SimStateOps
 open Helpers
 
 let offsideTests =
@@ -21,12 +22,13 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              let gkSp = spatialAt 80.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 GK 10) gkSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): GK at x=80, defender GK at x=85 → Offside. GK should never be offside."
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: GK at x=80, defender GK at x=85 → Offside. GK should never be offside."
 
           testCase "player in own half is never offside"
           <| fun () ->
@@ -38,12 +40,13 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              let receiverSp = spatialAt 40.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 MC 10) receiverSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): player at x=40 (own half), defender at x=45 → Offside. Player in own half should never be offside."
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: player at x=40 (own half), defender at x=45 → Offside. Player in own half should never be offside."
 
           testCase "player level with second-last defender is not offside"
           <| fun () ->
@@ -55,12 +58,13 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              let receiverSp = spatialAt 75.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): receiver at x=75, defenders at [75, 70] → Offside. Player level with second-last defender should not be offside."
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: receiver at x=75, defenders at [75, 70] → Offside. Player level with second-last defender should not be offside."
 
           testCase "player ahead of second-last defender is offside"
           <| fun () ->
@@ -72,12 +76,13 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              let receiverSp = spatialAt 80.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): receiver at x=80, defenders at [75, 70] → NotOffside. Expected Offside."
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: receiver at x=80, defenders at [75, 70] → NotOffside. Expected Offside."
 
           testCase "RightToLeft direction mirrors LeftToRight"
           <| fun () ->
@@ -90,11 +95,12 @@ let offsideTests =
                   buildState home hpos away apos 52.5 34.0 (Owned(AwayClub, 1))
 
               s.HomeAttackDir <- RightToLeft
-              let receiverSp = spatialAt 25.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
                   $"isOffside(RightToLeft): receiver at x=25, defenders at [30, 35] → NotOffside. Expected Offside."
 
           testCase "only GK as defender: offside depends on ball position"
@@ -107,12 +113,13 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 70.0 34.0 (Owned(HomeClub, 1))
 
-              let receiverSp = spatialAt 90.0 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isTrue
-                  (isOffside (makePlayer 1 ST 10) receiverSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): receiver at x=90, only GK at x=85, ball at x=70 → NotOffside. Expected Offside."
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: receiver at x=90, only GK at x=85, ball at x=70 → NotOffside. Expected Offside."
 
           testCase "player exactly at halfway line is not offside"
           <| fun () ->
@@ -124,9 +131,10 @@ let offsideTests =
               let ctx, s =
                   buildState home hpos away apos 52.5 34.0 (Owned(HomeClub, 1))
 
-              let receiverSp = spatialAt 52.5 34.0
-              let actx = ActionContext.build s
+              let attFrame = getFrame s HomeClub
+              let attRoster = getRoster ctx HomeClub
+              let defFrame = getFrame s AwayClub
 
               Expect.isFalse
-                  (isOffside (makePlayer 1 MC 10) receiverSp.X s actx.Dir)
-                  $"isOffside(LeftToRight): player at x=52.5 (halfway line), defender at x=50 → Offside. Player at own half boundary should not be offside." ]
+                  (isOffsideFrame 0 attFrame attRoster defFrame s HomeClub)
+                  $"isOffside: player at x=52.5 (halfway line), defender at x=50 → Offside. Player at own half boundary should not be offside." ]

@@ -8,200 +8,129 @@ open FootballEngine.PhysicsContract
 
 module SetPieceAgent =
 
-    let agent tick ctx state (clock: SimulationClock) : AgentOutput =
+    let private defaultIntent : PlayerIntent =
+        { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+          Action = None
+          Context = NormalPlay
+          Urgency = 0.5
+          Confidence = 0.5 }
+
+    let agent tick ctx state (clock: SimulationClock) : AgentResult =
         match tick.Kind with
-        | FreeKickTick(_kickerId, _position, _chainDepth) ->
-            let events = SetPlayAction.resolveFreeKick tick.SubTick ctx state
+        | SetPieceTick(kind, clubSide) ->
+            let events =
+                match kind with
+                | SetPieceKind.FreeKick -> SetPlayAction.resolveFreeKick tick.SubTick ctx state
+                | SetPieceKind.Corner -> SetPlayAction.resolveCorner tick.SubTick ctx state
+                | SetPieceKind.ThrowIn -> SetPlayAction.resolveThrowIn tick.SubTick ctx state clubSide
+                | SetPieceKind.GoalKick ->
+                    let isHome = clubSide = HomeClub
+                    let kickingClub = if isHome then HomeClub else AwayClub
+                    let kickingClubId = if isHome then ctx.Home.Id else ctx.Away.Id
+                    let frame = SimStateOps.getFrame state kickingClub
+                    let roster = SimStateOps.getRoster ctx kickingClub
+                    let pc = ctx.Config.Pass
 
-            { Events = events
-              Transition = Some LivePlay
-              Intent = FindNextDuel }
+                    let gkX = if isHome then PhysicsContract.GoalAreaDepth else PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
+                    let centerY = PhysicsContract.PitchWidth / 2.0
 
-        | CornerTick(_club, _chainDepth) ->
-            let events = SetPlayAction.resolveCorner tick.SubTick ctx state
+                    state.Ball <- { state.Ball with Position = { defaultSpatial gkX centerY with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.GoalKick) }
 
-            { Events = events
-              Transition = Some LivePlay
-              Intent = FindNextDuel }
+                    let gkIdx =
+                        let mutable idx = -1
+                        for i = 0 to frame.SlotCount - 1 do
+                            match frame.Occupancy[i] with
+                            | OccupancyKind.Active _ when roster.Players[i].Position = GK -> idx <- i
+                            | _ -> ()
+                        idx
 
-        | ThrowInTick(team, _chainDepth) ->
-            let events = SetPlayAction.resolveThrowIn tick.SubTick ctx state team
+                    if gkIdx < 0 then []
+                    else
+                        let gk = roster.Players[gkIdx]
+                        let gkXf = float frame.PosX[gkIdx] * 1.0<meter>
+                        let gkYf = float frame.PosY[gkIdx] * 1.0<meter>
 
-            { Events = events
-              Transition = Some LivePlay
-              Intent = FindNextDuel }
+                        let targetX, targetY =
+                            match nearestActiveSlotInFrameExcluding frame gkIdx gkXf gkYf with
+                            | ValueSome tmIdx -> float frame.PosX[tmIdx] * 1.0<meter>, float frame.PosY[tmIdx] * 1.0<meter>
+                            | ValueNone -> (if isHome then ctx.Config.SetPiece.GoalKickFallbackDistHome else ctx.Config.SetPiece.GoalKickFallbackDistAway), centerY
 
-        | PenaltyTick(kicker, isHome) ->
-            let kickerPlayer =
-                let slots = getSlots state (if isHome then HomeClub else AwayClub)
+                        state.Ball <- { state.Ball with LastTouchBy = Some gk.Id; Possession = InFlight(kickingClub, gk.Id) }
 
-                slots
-                |> Array.tryPick (function
-                    | PlayerSlot.Active s when s.Player.Id = kicker -> Some s.Player
-                    | _ -> None)
-                |> Option.defaultWith (fun () ->
-                    state.Home.Slots
-                    |> Array.pick (function
-                        | PlayerSlot.Active s -> Some s.Player
-                        | _ -> None))
+                        let dx = targetX - gkXf
+                        let dy = targetY - gkYf
+                        let dist = sqrt (dx * dx + dy * dy)
+                        let speed = pc.Speed
+                        if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
 
-            let kickClub = if isHome then HomeClub else AwayClub
+                        [ createEvent tick.SubTick gk.Id kickingClubId MatchEventType.GoalKick ]
 
-            let events = SetPlayAction.resolvePenalty ctx state kickerPlayer kickClub 1 clock
+                | SetPieceKind.Penalty ->
+                    let frame = SimStateOps.getFrame state clubSide
+                    let roster = SimStateOps.getRoster ctx clubSide
+                    let kickerPlayer = roster.Players[0]
+                    let events = SetPlayAction.resolvePenalty ctx state kickerPlayer clubSide 1 clock
+                    events
 
-            { Events = events
-              Transition = Some LivePlay
-              Intent = FindNextDuel }
+                | SetPieceKind.KickOff -> []
 
-        | GoalKickTick ->
-            let isHome =
-                match state.Ball.Possession with
-                | Possession.SetPiece(side, _) -> side = HomeClub
-                | _ -> state.AttackingSide = HomeClub
-
-            let kickingClub = if isHome then HomeClub else AwayClub
-            let kickingClubId = if isHome then ctx.Home.Id else ctx.Away.Id
-            let slots = if isHome then state.Home.Slots else state.Away.Slots
-            let pc = ctx.Config.Pass
-
-            let gkX =
-                if isHome then
-                    PhysicsContract.GoalAreaDepth
-                else
-                    PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
-
-            let centerY = PhysicsContract.PitchWidth / 2.0
-
-            state.Ball <-
-                { state.Ball with
-                    Position = { defaultSpatial gkX centerY with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-                    Possession = Possession.SetPiece(kickingClub, SetPieceKind.GoalKick) }
-
-            let gkOpt =
-                slots
-                |> Array.tryPick (function
-                    | PlayerSlot.Active s when s.Player.Position = GK -> Some s
-                    | _ -> None)
-
-            match gkOpt with
-            | Some gk ->
-                let targetX, targetY =
-                    let sideSlots = if isHome then state.Home.Slots else state.Away.Slots
-
-                    match MatchSpatial.nearestActiveSlotExcluding sideSlots gk.Player.Id gk.Pos.X gk.Pos.Y with
-                    | ValueSome s -> s.Pos.X, s.Pos.Y
-                    | ValueNone -> (if isHome then ctx.Config.SetPiece.GoalKickFallbackDistHome else ctx.Config.SetPiece.GoalKickFallbackDistAway), centerY
-
-                state.Ball <-
-                    { state.Ball with
-                        LastTouchBy = Some gk.Player.Id
-                        Possession = InFlight(kickingClub, gk.Player.Id) }
-
-                let dx = targetX - gk.Pos.X
-                let dy = targetY - gk.Pos.Y
-                let dist = sqrt (dx * dx + dy * dy)
-                let speed = pc.Speed
-
-                if dist > 0.1<meter> then
-                    withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter / second> state
-
-                { Events = [ createEvent tick.SubTick gk.Player.Id kickingClubId MatchEventType.GoalKick ]
-                  Transition = Some LivePlay
-                  Intent = FindNextDuel }
-            | None ->
-                { Events = []
-                  Transition = Some LivePlay
-                  Intent = FindNextDuel }
+            { Intent = defaultIntent; NextTick = None; Events = events; Transition = Some LivePlay }
 
         | KickOffTick ->
             let centerX = PhysicsContract.HalfwayLineX
             let centerY = PhysicsContract.PitchWidth / 2.0
-
             let kickOffSide = state.AttackingSide
             let isHomeKickOff = kickOffSide = HomeClub
             let kickingClub = if isHomeKickOff then HomeClub else AwayClub
-            let kickingSlots = if isHomeKickOff then state.Home.Slots else state.Away.Slots
             let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
+            let frame = SimStateOps.getFrame state kickingClub
+            let roster = SimStateOps.getRoster ctx kickingClub
             let pc = ctx.Config.Pass
 
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { X = centerX
-                          Y = centerY
-                          Z = 0.0<meter>
-                          Vx = 0.0<meter/second>
-                          Vy = 0.0<meter/second>
-                          Vz = 0.0<meter/second> }
-                    Possession = Possession.SetPiece(kickingClub, SetPieceKind.KickOff) }
+            state.Ball <- { state.Ball with Position = { X = centerX; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.KickOff) }
 
-            let kickerOpt =
-                kickingSlots
-                |> Array.tryPick (function
-                    | PlayerSlot.Active s when s.Player.Position = ST -> Some s
-                    | _ -> None)
-                |> Option.orElse (
-                    kickingSlots
-                    |> Array.tryPick (function
-                        | PlayerSlot.Active s when s.Player.Position = AMC -> Some s
-                        | _ -> None)
-                )
-                |> Option.orElse (
-                    kickingSlots
-                    |> Array.tryPick (function
-                        | PlayerSlot.Active s when s.Player.Position <> GK -> Some s
-                        | _ -> None)
-                )
+            let kickerIdx =
+                let rec findPos pred i =
+                    if i >= frame.SlotCount then None
+                    else
+                        match frame.Occupancy[i] with
+                        | OccupancyKind.Active _ when pred roster.Players[i] -> Some i
+                        | _ -> findPos pred (i + 1)
+                findPos (fun p -> p.Position = ST) 0
+                |> Option.orElse (findPos (fun p -> p.Position = AMC) 0)
+                |> Option.orElse (findPos (fun p -> p.Position <> GK) 0)
 
-            let partnerOpt =
-                kickingSlots
-                |> Array.tryPick (function
-                    | PlayerSlot.Active s when
-                        (s.Player.Position = AMC || s.Player.Position = MC || s.Player.Position = ST)
-                        && (kickerOpt
-                            |> Option.map (fun k -> k.Player.Id <> s.Player.Id)
-                            |> Option.defaultValue true)
-                        ->
-                        Some s
-                    | _ -> None)
+            match kickerIdx with
+            | None -> { Intent = defaultIntent; NextTick = None; Events = []; Transition = Some LivePlay }
+            | Some kIdx ->
+                let kicker = roster.Players[kIdx]
 
-            match kickerOpt with
-            | None ->
-                { Events = []
-                  Transition = Some LivePlay
-                  Intent = FindNextDuel }
-            | Some kicker ->
+                let partnerIdx =
+                    let rec findPartner i =
+                        if i >= frame.SlotCount then None
+                        else
+                            match frame.Occupancy[i] with
+                            | OccupancyKind.Active _ when i <> kIdx ->
+                                let p = roster.Players[i]
+                                if p.Position = AMC || p.Position = MC || p.Position = ST then Some i else findPartner (i + 1)
+                            | _ -> findPartner (i + 1)
+                    findPartner 0
+
                 let targetX, targetY =
-                    match partnerOpt with
-                    | Some partner -> partner.Pos.X, partner.Pos.Y
+                    match partnerIdx with
+                    | Some pIdx -> float frame.PosX[pIdx] * 1.0<meter>, float frame.PosY[pIdx] * 1.0<meter>
                     | None -> centerX + ctx.Config.SetPiece.KickOffPartnerOffsetX, centerY + ctx.Config.SetPiece.KickOffPartnerOffsetY
 
-                let partnerId =
-                    partnerOpt
-                    |> Option.map (fun p -> p.Player.Id)
-                    |> Option.defaultValue kicker.Player.Id
+                let partnerId = partnerIdx |> Option.map (fun i -> roster.Players[i].Id) |> Option.defaultValue kicker.Id
 
-                state.Ball <-
-                    { state.Ball with
-                        LastTouchBy = Some kicker.Player.Id }
+                state.Ball <- { state.Ball with LastTouchBy = Some kicker.Id }
 
                 let dx = targetX - centerX
                 let dy = targetY - centerY
                 let dist = sqrt (dx * dx + dy * dy)
                 let speed = pc.Speed
+                if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
 
-                if dist > 0.1<meter> then
-                    withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter / second> state
+                { Intent = defaultIntent; NextTick = None; Events = [ { SubTick = tick.SubTick; PlayerId = kicker.Id; ClubId = kickingClubId; Type = MatchEventType.KickOff } ]; Transition = Some LivePlay }
 
-                { Events =
-                    [ { SubTick = tick.SubTick
-                        PlayerId = kicker.Player.Id
-                        ClubId = kickingClubId
-                        Type = MatchEventType.KickOff } ]
-                  Transition = Some LivePlay
-                  Intent = FindNextDuel }
-
-        | _ ->
-            { Events = []
-              Transition = None
-              Intent = NoOp }
+        | _ -> { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }

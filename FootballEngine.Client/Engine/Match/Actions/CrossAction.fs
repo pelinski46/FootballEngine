@@ -11,93 +11,82 @@ module CrossAction =
     let resolve (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         let actx = ActionContext.build ctx state
         let cc = ctx.Config.Cross
-        let attSlots = actx.Att.OwnSlots
-        let defSlots = actx.Def.OwnSlots
+        let attFrame = actx.Att.OwnFrame
+        let defFrame = actx.Def.OwnFrame
+        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
-        match MatchSpatial.nearestActiveSlot attSlots bX bY with
+        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> []
-        | ValueSome crosserSlot ->
-            let crosser = crosserSlot.Player
-            let crosserCond = crosserSlot.Condition
-            let crosserPos = crosserSlot.Pos
-            state.Ball <-
-                { state.Ball with
-                    Possession = InFlight (state.AttackingSide, crosser.Id) }
+        | ValueSome crosserIdx ->
+            let crosser = attRoster.Players[crosserIdx]
+            let crosserCond = int attFrame.Condition[crosserIdx]
+            let crosserPos = { X = float attFrame.PosX[crosserIdx] * 1.0<meter>; Y = float attFrame.PosY[crosserIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+            state.Ball <- { state.Ball with Possession = InFlight (state.AttackingSide, crosser.Id) }
 
             let attClubId = actx.Att.ClubId
             let condNorm = PhysicsContract.normaliseCondition crosserCond
 
             let crossMean =
                 cc.BaseMean
-                + PhysicsContract.normaliseAttr crosser.Technical.Crossing
-                  * cc.CrossingWeight
-                + PhysicsContract.normaliseAttr crosser.Technical.Passing
-                  * cc.PassingWeight
+                + PhysicsContract.normaliseAttr crosser.Technical.Crossing * cc.CrossingWeight
+                + PhysicsContract.normaliseAttr crosser.Technical.Passing * cc.PassingWeight
                 + actx.Att.Bonus.SetPlay
 
-            let successChance =
-                betaSample
-                    crossMean
-                    (cc.SuccessShapeAlpha
-                     + condNorm * cc.SuccessConditionMultiplier)
+            let successChance = betaSample crossMean (cc.SuccessShapeAlpha + condNorm * cc.SuccessConditionMultiplier)
 
             let defOutfield =
-                defSlots
-                |> Array.map (function
-                    | PlayerSlot.Active s when s.Player.Position <> GK -> Some(s.Player, s.Pos)
-                    | _ -> None)
-                |> Array.choose id
+                [| for i = 0 to defFrame.SlotCount - 1 do
+                     match defFrame.Occupancy[i] with
+                     | OccupancyKind.Active _ when defRoster.Players[i].Position <> GK ->
+                         let sp = { X = float defFrame.PosX[i] * 1.0<meter>; Y = float defFrame.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                         yield (defRoster.Players[i], sp)
+                     | _ -> () |]
 
             let targets =
-                attSlots
-                |> Array.map (function
-                    | PlayerSlot.Active s when s.Profile.AerialThreat > cc.AerialThreatThreshold || s.Profile.AttackingDepth > cc.AttackingDepthThreshold ->
-                        Some(s.Player, s.Pos)
-                    | _ -> None)
-                |> Array.choose id
-                |> Array.sortBy (fun (_, sp) ->
-                    let defDist =
-                        if defOutfield.Length = 0 then 999.0<meterSquared>
-                        else
-                            defOutfield
-                            |> Array.map (fun (_, dSp) ->
-                                let dx = dSp.X - sp.X
-                                let dy = dSp.Y - sp.Y
-                                dx * dx + dy * dy)
-                            |> Array.min
-
-                    -(defDist))
+                [| for i = 0 to attFrame.SlotCount - 1 do
+                     match attFrame.Occupancy[i] with
+                     | OccupancyKind.Active _ ->
+                         let profile = attRoster.Profiles[i]
+                         if profile.AerialThreat > cc.AerialThreatThreshold || profile.AttackingDepth > cc.AttackingDepthThreshold then
+                             let sp = { X = float attFrame.PosX[i] * 1.0<meter>; Y = float attFrame.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                             let defDist =
+                                 if defOutfield.Length = 0 then 999.0<meterSquared>
+                                 else
+                                     defOutfield
+                                     |> Array.map (fun (_, dSp) ->
+                                         let dx = dSp.X - sp.X
+                                         let dy = dSp.Y - sp.Y
+                                         dx * dx + dy * dy)
+                                     |> Array.min
+                             yield (attRoster.Players[i], sp, -defDist)
+                     | _ -> () |]
+                |> Array.sortBy (fun (_, _, d) -> d)
+                |> Array.map (fun (p, sp, _) -> p, sp)
 
             if targets.Length > 0 && bernoulli successChance then
                 let target, targetSp = targets[0]
 
-                let gk =
-                    defSlots
-                    |> Array.tryPick (function
-                        | PlayerSlot.Active s when s.Player.Position = GK -> Some s.Player
-                        | _ -> None)
+                let gkIdx =
+                    let mutable idx = -1
+                    for i = 0 to defFrame.SlotCount - 1 do
+                        match defFrame.Occupancy[i] with
+                        | OccupancyKind.Active _ when defRoster.Players[i].Position = GK -> idx <- i
+                        | _ -> ()
+                    idx
 
-                let gkSkill =
-                    gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue cc.GkSkillDefault
+                let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
+                let gkSkill = gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue cc.GkSkillDefault
 
-                let headerScore =
-                    PhysicsContract.normaliseAttr (min 20 (target.Physical.Strength + target.Technical.Heading))
-                    * physicalVariation crosserCond
-
+                let headerScore = PhysicsContract.normaliseAttr (min 20 (target.Physical.Strength + target.Technical.Heading)) * physicalVariation crosserCond
                 let gkScore = gkSkill / cc.GkSkillDivisor
+                let nearDefs = defOutfield |> Array.sumBy (fun (p, _) -> PhysicsContract.normaliseAttr p.Mental.Positioning) |> fun v -> v / float (max 1 defOutfield.Length)
 
-                let nearDefs =
-                    defOutfield
-                    |> Array.sumBy (fun (p, _) -> PhysicsContract.normaliseAttr p.Mental.Positioning)
-                    |> fun v -> v / float (max 1 defOutfield.Length)
-
-                let spin =
-                    { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>
-                      Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
+                let spin = { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>; Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
 
                 if logisticBernoulli (headerScore - gkScore - nearDefs) cc.HeaderLogisticSteepness then
-                    [ createEvent subTick crosser.Id attClubId (CrossAttempt true)
-                      createEvent subTick target.Id attClubId Goal ]
+                    let goalEvents = awardGoal actx.Att.ClubSide (Some target.Id) subTick ctx state
+                    (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
                 else
                     let blockPos =
                         defOutfield
@@ -107,37 +96,17 @@ module CrossAction =
                             dx * dx + dy * dy, (dSp.X, dSp.Y))
                         |> Array.minBy fst
                         |> snd
-
                     let bx, by = blockPos
-
                     ballTowards crosserPos.X crosserPos.Y bx by cc.Speed cc.Vz state
-
                     let defClub = ClubSide.flip actx.Att.ClubSide
-
-                    state.Ball <-
-                        { state.Ball with
-                            Possession = Contest(defClub)
-                            Spin = spin }
-
+                    state.Ball <- { state.Ball with Possession = Contest(defClub); Spin = spin }
                     clearOffsideSnapshot state
-
                     adjustMomentum actx.Att.AttackDir (-cc.FailMomentum) state
-
                     [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
             else
-                let targetX =
-                    if actx.Att.AttackDir = LeftToRight then
-                        PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
-                    else
-                        PhysicsContract.PenaltyAreaDepth
-
+                let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
                 let defClub = ClubSide.flip actx.Att.ClubSide
-
                 ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
-
-                state.Ball <-
-                    { state.Ball with
-                        Possession = Contest(defClub) }
+                state.Ball <- { state.Ball with Possession = Contest(defClub) }
                 clearOffsideSnapshot state
-
                 [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]

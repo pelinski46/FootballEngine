@@ -4,23 +4,26 @@ open System
 open FootballEngine.Domain
 open FootballEngine.SimulationClock
 
+type PlayerAction =
+    | Shoot
+    | Pass       of target: Player
+    | Dribble
+    | Cross
+    | LongBall
+    | Tackle     of opponent: Player
+    | FreeKick
+    | Corner
+    | ThrowIn    of side: ClubSide
+    | Penalty    of kicker: Player * side: ClubSide * kickNum: int
+
 module SchedulingTypes =
 
-    // -------------------------------------------------------------------------
-    // Priority — lower value = higher priority within the same SubTick
-    // -------------------------------------------------------------------------
-
     type TickPriority =
-        | Physics = 0 // ball + player positions — must run before any decision
-        | Referee = 1 // goal detection, offside, out-of-play
-        | Duel = 2 // contested ball actions
-        | SetPiece = 3
-        | Manager = 4
-        | MatchControl = 5 // halftime, fulltime, structure
-
-    // -------------------------------------------------------------------------
-    // Play state machine
-    // -------------------------------------------------------------------------
+        | Physics = 0
+        | Referee = 1
+        | SetPiece = 2
+        | Manager = 3
+        | MatchControl = 4
 
     type PlayState =
         | LivePlay
@@ -33,34 +36,20 @@ module SchedulingTypes =
         | BallOut
         | Injury
 
-
-
-    // -------------------------------------------------------------------------
-    // Tick kinds
-    // -------------------------------------------------------------------------
-
     type TickKind =
         | PhysicsTick
-        | DuelTick of chainDepth: int
-        | DecisionTick of depth: int * controllerId: PlayerId option
-        | PlayerActionTick of chainDepth: int * action: PlayerAction * attackerId: PlayerId option
-        | FreeKickTick of kicker: PlayerId * position: Spatial * chainDepth: int
-        | CornerTick of club: ClubSide * chainDepth: int
-        | PenaltyTick of kicker: PlayerId * isHome: bool
-        | ThrowInTick of club: ClubSide * chainDepth: int
-        | GoalKickTick
+        | CognitiveTick
+        | SetPieceTick of SetPieceKind * ClubSide
+        | ManagerTick of ClubId
         | KickOffTick
         | HalfTimeTick
         | FullTimeTick
-        | ExtraTimeTick of period: int
         | MatchEndTick
         | InjuryTick of player: PlayerId * severity: int
         | ResumePlayTick
         | SubstitutionTick of clubId: ClubId
         | ManagerReactionTick of trigger: ReactionTrigger
         | RefereeTick
-
-
 
     and ReactionTrigger =
         | RedCardTrigger of PlayerId
@@ -70,15 +59,17 @@ module SchedulingTypes =
         | FatigueAlert of clubId: ClubId * playerId: PlayerId * condition: int
         | MomentumSwing of clubId: ClubSide
 
-    // -------------------------------------------------------------------------
-    // ScheduledTick — the unit the scheduler operates on
-    // -------------------------------------------------------------------------
+    [<Struct>]
+    type PendingTick =
+        { SubTick: int
+          Priority: TickPriority
+          Kind: TickKind }
 
     [<Struct; CustomComparison; CustomEquality>]
     type ScheduledTick =
-        { SubTick: int // timeline position
+        { SubTick: int
           Priority: TickPriority
-          SequenceId: int64 // tiebreaker within same SubTick + Priority
+          SequenceId: int64
           Kind: TickKind }
 
         interface IComparable<ScheduledTick> with
@@ -108,32 +99,39 @@ module SchedulingTypes =
         override this.GetHashCode() =
             HashCode.Combine(this.SubTick, int this.Priority, this.SequenceId)
 
-    // -------------------------------------------------------------------------
-    // TickIntent — what an agent wants to happen next
-    // Agents declare intention; TickOrchestrator translates to ScheduledTick
-    // -------------------------------------------------------------------------
+    type OnBallIntent =
+        | Shoot
+        | Pass of target: PlayerId
+        | Dribble
+        | Cross
+        | LongBall of target: PlayerId
+        | Tackle of opponent: PlayerId
+
+    type IntentContext =
+        | NormalPlay
+        | BuildUpPhase
+        | PressingTrap
+
+    type PlayerIntent =
+        { Movement: MovementIntent
+          Action: OnBallIntent option
+          Context: IntentContext
+          Urgency: float
+          Confidence: float }
 
     type TickIntent =
         | NoOp
-        | FindNextDuel
-        | GiveDecisionTo of PlayerId
-        | ScheduleSetPiece of SetPieceKind * ClubSide
-        | ScheduleFreeKick of kicker: PlayerId * position: Spatial
         | ScheduleInjury of player: PlayerId * severity: int
-        | ScheduleSubstitution of clubId: ClubId
+        | ScheduleSubstitution of ClubId
         | StopPlay of StopReason
-        | ResumeAfter of delay: TickDelay * kind: TickKind
 
-    // -------------------------------------------------------------------------
-    // Agent contract — agents are pure: events + optional state transition
-    // -------------------------------------------------------------------------
+    type AgentResult =
+        { Intent: PlayerIntent
+          NextTick: PendingTick option
+          Events: MatchEvent list
+          Transition: PlayState option }
 
-    type AgentOutput =
-        { Events: MatchEvent list
-          Transition: PlayState option
-          Intent: TickIntent }
-
-    type TickResult = AgentOutput
+    type TickResult = AgentResult
 
     type Agent =
         ClubId
@@ -143,7 +141,7 @@ module SchedulingTypes =
             -> MatchContext
             -> SimState
             -> SimulationClock
-            -> AgentOutput
+            -> AgentResult
 
     type LoopState =
         { Context: MatchContext

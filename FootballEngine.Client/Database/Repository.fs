@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open System
 open System.IO
+open System.Text.Json
 open System.Threading.Tasks
 open FootballEngine.Domain
 open FootballEngine.World
@@ -33,7 +34,11 @@ module Db =
                           NextInboxId = state.NextInboxId
                           ClockDay = clock.Current.Day
                           ClockWeek = clock.Current.Week
-                          ClockMonth = clock.Current.Month }
+                          ClockMonth = clock.Current.Month
+                          ActiveModsJson =
+                              state.ActiveMods
+                              |> List.map (fun (id, v) -> $"{id}:{v}")
+                              |> String.concat "," }
                     )
                     |> ignore
 
@@ -226,6 +231,16 @@ module Db =
                               Season = meta.Season }
                           PendingEvents = [] }
 
+                    let activeMods: (string * string) list =
+                        if System.String.IsNullOrEmpty meta.ActiveModsJson then []
+                        else
+                            meta.ActiveModsJson.Split(',')
+                            |> Array.toList
+                            |> List.choose (fun s ->
+                                let parts = s.Split(':')
+                                if parts.Length = 2 then Some(parts[0], parts[1])
+                                else None)
+
                     return
                         Some(
                             { CurrentDate = meta.CurrentDate
@@ -236,6 +251,7 @@ module Db =
                               Staff = updatedStaff
                               Competitions = competitions
                               Countries = countries
+                              ActiveMods = activeMods
                               UserClubId = meta.UserClubId
                               UserStaffId = meta.UserStaffId
                               PrimaryCountry = meta.PrimaryCountry

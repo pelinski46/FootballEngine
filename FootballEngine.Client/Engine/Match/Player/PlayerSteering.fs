@@ -190,6 +190,54 @@ module PlayerSteering =
                       Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringCohesionTimeConstant
                       Fz = 0.0<meter/second^2> }
 
+        let separationSoA (agent: Spatial) (posX: float32[]) (posY: float32[]) (count: int) (myIdx: int) (minDist: float<meter>) : Force =
+            let mutable fx = 0.0
+            let mutable fy = 0.0
+            let agentX32 = float32 agent.X
+            let agentY32 = float32 agent.Y
+            let minDist32 = float32 minDist
+            let minDistSq32 = minDist32 * minDist32
+            for i = 0 to count - 1 do
+                if i <> myIdx then
+                    let dx = agentX32 - posX[i]
+                    let dy = agentY32 - posY[i]
+                    let dSq = dx * dx + dy * dy
+                    if dSq < minDistSq32 && dSq > 1e-6f then
+                        let dist = sqrt dSq
+                        let strength = (minDist32 - dist) / minDist32
+                        fx <- fx + (float dx / float dist) * float strength
+                        fy <- fy + (float dy / float dist) * float strength
+            { Fx = fx * PhysicsContract.PlayerAccelMax
+              Fy = fy * PhysicsContract.PlayerAccelMax
+              Fz = 0.0<meter/second^2> }
+
+        let cohesionSoA (agent: Spatial) (posX: float32[]) (posY: float32[]) (count: int) (myIdx: int) (maxSpeed: float<meter/second>) : Force =
+            let mutable cx = 0.0f
+            let mutable cy = 0.0f
+            let mutable count' = 0
+            for i = 0 to count - 1 do
+                if i <> myIdx then
+                    cx <- cx + posX[i]
+                    cy <- cy + posY[i]
+                    count' <- count' + 1
+            if count' = 0 then
+                Force.zero
+            else
+                let fc = float count'
+                let targetX = float cx * 1.0<meter> / fc
+                let targetY = float cy * 1.0<meter> / fc
+                let target = { X = targetX; Y = targetY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                let dist = agent.DistTo2D target
+                if dist < 0.01<meter> then
+                    Force.zero
+                else
+                    let speed = if dist > PhysicsContract.SteeringSlowRadius then maxSpeed else maxSpeed * (dist / PhysicsContract.SteeringSlowRadius)
+                    let desiredVx = ((targetX - agent.X) / dist) * speed
+                    let desiredVy = ((targetY - agent.Y) / dist) * speed
+                    { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringCohesionTimeConstant
+                      Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringCohesionTimeConstant
+                      Fz = 0.0<meter/second^2> }
+
     module PlayerPhysics =
 
         let playerMass (config: PhysicsConfig) (p: Player) : float =
@@ -270,6 +318,83 @@ module PlayerSteering =
                 if lateralAccelMag > turnLimit && lateralAccelMag > 0.0<meter/second^2> then
                     let scale = turnLimit / lateralAccelMag
 
+                    { Fx = totalForce.Fx * scale
+                      Fy = totalForce.Fy * scale
+                      Fz = totalForce.Fz }
+                else
+                    totalForce
+
+            let newVx = current.Vx + constrainedForce.Fx * dt
+            let newVy = current.Vy + constrainedForce.Fy * dt
+            let newVz = current.Vz + constrainedForce.Fz * dt
+
+            { current with
+                X = PhysicsContract.clamp (current.X + newVx * dt) 0.0<meter> PhysicsContract.PitchLength
+                Y = PhysicsContract.clamp (current.Y + newVy * dt) 0.0<meter> PhysicsContract.PitchWidth
+                Z = max 0.0<meter> (current.Z + newVz * dt)
+                Vx = newVx
+                Vy = newVy
+                Vz = newVz }
+
+        let steerSoA
+            (config: PhysicsConfig)
+            (p: Player)
+            (condition: int)
+            (current: Spatial)
+            (myIdx: int)
+            (posX: float32[])
+            (posY: float32[])
+            (count: int)
+            (tacticalTarget: float32 * float32)
+            (ballPos: Spatial)
+            (hasBall: bool)
+            (chasingBall: bool)
+            (dt: float<second>)
+            : Spatial =
+            let tx, ty = tacticalTarget
+            let targetX = float tx * 1.0<meter>
+            let targetY = float ty * 1.0<meter>
+            let target = StaticPosition(targetX, targetY, 0.0<meter>)
+            let ms = maxSpeed p condition
+
+            let arriveForce = Behaviours.arrive current target ms
+
+            let sepDist =
+                if chasingBall then
+                    config.BallContestSeparationRadius
+                else
+                    config.SeparationMinDistance
+
+            let sepForce =
+                Behaviours.separationSoA current posX posY count myIdx sepDist
+
+            let cohesionForce =
+                Behaviours.cohesionSoA current posX posY count myIdx ms
+                |> Force.scale config.CohesionWeight
+
+            let ballForce =
+                if hasBall then
+                    Behaviours.pursuit
+                        current
+                        (MovingPosition(ballPos.X, ballPos.Y, ballPos.Z, ballPos.Vx, ballPos.Vy, ballPos.Vz))
+                        ms
+                else
+                    Force.zero
+
+            let totalForce =
+                Force.add arriveForce (Force.add sepForce (Force.add cohesionForce ballForce))
+                |> Force.truncate config.PlayerMaxForce
+
+            let currentSpeed = current.VelMag
+
+            let lateralAccelMag =
+                sqrt (totalForce.Fx * totalForce.Fx + totalForce.Fy * totalForce.Fy)
+
+            let turnLimit = turnConstraintLimit config p currentSpeed
+
+            let constrainedForce =
+                if lateralAccelMag > turnLimit && lateralAccelMag > 0.0<meter/second^2> then
+                    let scale = turnLimit / lateralAccelMag
                     { Fx = totalForce.Fx * scale
                       Fy = totalForce.Fy * scale
                       Fz = totalForce.Fz }

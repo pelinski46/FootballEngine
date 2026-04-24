@@ -12,6 +12,7 @@ type GameState =
       Staff: Map<StaffId, Staff>
       Competitions: Map<CompetitionId, Competition>
       Countries: Map<CountryCode, Country>
+      ActiveMods: (string * string) list
       UserClubId: ClubId
       UserStaffId: StaffId
       PrimaryCountry: CountryCode

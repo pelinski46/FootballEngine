@@ -3,9 +3,12 @@ namespace FootballEngine
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
 open SimStateOps
+open MatchSpatial
 
+[<Struct>]
 type AgentContext =
-    { Me: Player
+    { MeIdx: int
+      Me: Player
       Profile: BehavioralProfile
       MyCondition: int
       MyPos: Spatial
@@ -14,9 +17,10 @@ type AgentContext =
       TeamHasBall: bool
       Phase: MatchPhase
       Zone: PitchZone
-      NearestTeammate: (Player * Spatial) option
-      NearestOpponent: (Player * Spatial) option
-      BestPassTarget: (Player * Spatial) option
+      NearestTeammateIdx: int option
+      NearestOpponentIdx: int option
+      BestPassTargetIdx: int option
+      BestPassTargetPos: Spatial option
       DistToGoal: float<meter>
       GoalDiff: int
       Minute: int
@@ -25,8 +29,10 @@ type AgentContext =
       Decision: DecisionConfig
       BuildUp: BuildUpConfig
       Dribble: DribbleConfig
+      TeamIntent: TeamIntent
       PreviousIntent: MovementIntent option
-      IntentLockExpiry: int }
+      IntentLockExpiry: int
+      VisibilityMask: VisibilityMask option }
 
 module AgentContext =
 
@@ -35,18 +41,19 @@ module AgentContext =
         (profile: BehavioralProfile)
         (meIdx: int)
         (team: TeamPerspective)
+        (teamIntent: TeamIntent)
         (previousIntent: MovementIntent option)
         (intentLockExpiry: int)
         (state: SimState)
         (clock: SimulationClock)
         (decision: DecisionConfig)
         (buildUp: BuildUpConfig)
+        (cFrame: CognitiveFrame option)
+        (visibilityMask: VisibilityMask option)
         : AgentContext =
         let ballState = state.Ball
         let bX = ballState.Position.X
-
         let dir = team.AttackDir
-
         let phase = phaseFromBallZone dir bX
         let zone = ofBallX bX dir
 
@@ -70,60 +77,96 @@ module AgentContext =
                 (getTactics state team.ClubSide)
                 (getInstructions state team.ClubSide)
 
-        let nearestTM, nearestOpp, bestPass, distToGoal, myPos =
-            let ownSlots = team.OwnSlots
-            let oppSlots = team.OppSlots
+        let myX32 = team.OwnFrame.PosX[meIdx]
+        let myY32 = team.OwnFrame.PosY[meIdx]
 
-            let myPos =
-                match ownSlots[meIdx] with
-                | PlayerSlot.Active s -> s.Pos
-                | _ -> defaultSpatial 50.0<meter> 34.0<meter>
+        let myPos = {
+            X = float myX32 * 1.0<meter>
+            Y = float myY32 * 1.0<meter>
+            Z = 0.0<meter>
+            Vx = 0.0<meter/second>
+            Vy = 0.0<meter/second>
+            Vz = 0.0<meter/second>
+        }
 
-            let mutable nearestTM: (Player * Spatial) option = None
-            let mutable nearestOpp: (Player * Spatial) option = None
-            let mutable minDistTM = PhysicsContract.MaxDistanceSq
-            let mutable minDistOpp = PhysicsContract.MaxDistanceSq
+        let nearestTMIdx, nearestOppIdx, bestPassTargetIdx, bestPassTargetPos =
+            match visibilityMask with
+            | Some mask ->
+                let oppIdx, _ = Perception.resolveNearestOpponentThroughMask myPos team.OppFrame mask
+                let passTarget = Perception.resolveBestPassTargetThroughMask meIdx team.OwnFrame team.OwnRoster team.OppFrame dir mask
+                let bpIdx, bpPos =
+                    match passTarget with
+                    | ValueSome (idx, sp) -> Some idx, Some sp
+                    | ValueNone -> None, None
+                None, oppIdx, bpIdx, bpPos
+            | None ->
+                match cFrame with
+                | Some cf ->
+                    let tmIdx =
+                        if cf.NearestTeammateIdx[meIdx] >= 0s then
+                            Some (int cf.NearestTeammateIdx[meIdx])
+                        else
+                            None
+                    let oppIdx =
+                        if cf.NearestOpponentIdx[meIdx] >= 0s then
+                            Some (int cf.NearestOpponentIdx[meIdx])
+                        else
+                            None
+                    let bpIdx =
+                        if cf.BestPassTargetIdx[meIdx] >= 0s then
+                            Some (int cf.BestPassTargetIdx[meIdx])
+                        else
+                            None
+                    tmIdx, oppIdx, bpIdx, cf.BestPassTargetPos[meIdx]
+                | None ->
+                    let mutable nTM: int option = None
+                    let mutable nOpp: int option = None
+                    let mutable minDistTM = System.Single.MaxValue
+                    let mutable minDistOpp = System.Single.MaxValue
 
-            for i = 0 to ownSlots.Length - 1 do
-                if i <> meIdx then
-                    match ownSlots[i] with
-                    | PlayerSlot.Active s ->
-                        let dx = s.Pos.X - myPos.X
-                        let dy = s.Pos.Y - myPos.Y
-                        let d = dx * dx + dy * dy
+                    for i = 0 to team.OwnFrame.SlotCount - 1 do
+                        if i <> meIdx then
+                            match team.OwnFrame.Occupancy[i] with
+                            | OccupancyKind.Active _ ->
+                                let dx = team.OwnFrame.PosX[i] - myX32
+                                let dy = team.OwnFrame.PosY[i] - myY32
+                                let d = dx * dx + dy * dy
+                                if d < minDistTM then
+                                    minDistTM <- d
+                                    nTM <- Some i
+                            | _ -> ()
 
-                        if d < minDistTM then
-                            minDistTM <- d
-                            nearestTM <- Some(s.Player, s.Pos)
-                    | _ -> ()
+                    for i = 0 to team.OppFrame.SlotCount - 1 do
+                        match team.OppFrame.Occupancy[i] with
+                        | OccupancyKind.Active _ ->
+                            let dx = team.OppFrame.PosX[i] - myX32
+                            let dy = team.OppFrame.PosY[i] - myY32
+                            let d = dx * dx + dy * dy
+                            if d < minDistOpp then
+                                minDistOpp <- d
+                                nOpp <- Some i
+                        | _ -> ()
 
-            for i = 0 to oppSlots.Length - 1 do
-                match oppSlots[i] with
-                | PlayerSlot.Active s ->
-                    let dx = s.Pos.X - myPos.X
-                    let dy = s.Pos.Y - myPos.Y
-                    let d = dx * dx + dy * dy
+                    let bestPassTarget =
+                        findBestPassTargetFrame meIdx team.OwnFrame team.OwnRoster team.OppFrame dir
 
-                    if d < minDistOpp then
-                        minDistOpp <- d
-                        nearestOpp <- Some(s.Player, s.Pos)
-                | _ -> ()
+                    let bpIdx, bpPos =
+                        match bestPassTarget with
+                        | ValueSome (idx, sp) -> Some idx, Some sp
+                        | ValueNone -> None, None
 
-            let goalX =
-                if dir = LeftToRight then
-                    PhysicsContract.PitchLength
-                else
-                    0.0<meter>
+                    nTM, nOpp, bpIdx, bpPos
 
-            let bestPass =
-                MatchSpatial.findBestPassTarget me state dir
-                |> Option.map (fun (p, _, (x, y)) -> p, SimStateOps.defaultSpatial x y)
+        let goalX =
+            if dir = LeftToRight then
+                PhysicsContract.PitchLength
+            else
+                0.0<meter>
 
-            let dist = abs (myPos.X - goalX)
+        let dist = abs (myPos.X - goalX)
 
-            nearestTM, nearestOpp, bestPass, dist, myPos
-
-        { Me = me
+        { MeIdx = meIdx
+          Me = me
           Profile = profile
           MyCondition = me.Condition
           MyPos = myPos
@@ -132,10 +175,11 @@ module AgentContext =
           TeamHasBall = teamHasBall
           Phase = phase
           Zone = zone
-          NearestTeammate = nearestTM
-          NearestOpponent = nearestOpp
-          BestPassTarget = bestPass
-          DistToGoal = distToGoal
+          NearestTeammateIdx = nearestTMIdx
+          NearestOpponentIdx = nearestOppIdx
+          BestPassTargetIdx = bestPassTargetIdx
+          BestPassTargetPos = bestPassTargetPos
+          DistToGoal = dist
           GoalDiff = gd
           Minute = int (SimulationClock.subTicksToSeconds clock state.SubTick / 60.0)
           Urgency = 1.0
@@ -143,5 +187,7 @@ module AgentContext =
           Decision = decision
           BuildUp = buildUp
           Dribble = state.Config.Dribble
+          TeamIntent = teamIntent
           PreviousIntent = previousIntent
-          IntentLockExpiry = intentLockExpiry }
+          IntentLockExpiry = intentLockExpiry
+          VisibilityMask = visibilityMask }

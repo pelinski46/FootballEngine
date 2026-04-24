@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.Stats
+open FootballEngine.PhysicsContract
 open SimStateOps
 open SchedulingTypes
 open SimulationClock
@@ -89,11 +90,11 @@ module ManagerAgent =
         (coach: Staff)
         (sit: Situation)
         : ManagerAction =
-        let subsUsed, sidelined, slots =
+        let subsUsed, sidelined, frame, roster =
             if clubId = ctx.Home.Id then
-                getSubsUsed state HomeClub, getSidelined state HomeClub, state.Home.Slots
+                getSubsUsed state HomeClub, getSidelined state HomeClub, state.Home.Frame, getRoster ctx HomeClub
             else
-                getSubsUsed state AwayClub, getSidelined state AwayClub, state.Away.Slots
+                getSubsUsed state AwayClub, getSidelined state AwayClub, state.Away.Frame, getRoster ctx AwayClub
 
         if subsUsed >= maxSubs then
             AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
@@ -104,24 +105,21 @@ module ManagerAgent =
                 | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
                 | Winning -> ctx.Config.Manager.ConditionThresholdWinning
 
-            let outgoingIdx =
-                slots
-                |> Array.mapi (fun i slot ->
-                    match slot with
-                    | PlayerSlot.Active s ->
-                        if s.Player.Position <> GK && s.Condition < threshold then
-                            Some(i, s.Condition)
-                        else
-                            None
-                    | Sidelined _ -> None)
-                |> Array.choose id
-                |> Array.sortBy snd
-                |> Array.tryHead
-                |> Option.map fst
+            let mutable outgoingIdx: int option = None
+            let mutable bestCond = 100
+            for i = 0 to frame.SlotCount - 1 do
+                match frame.Occupancy[i] with
+                | OccupancyKind.Active rosterIdx ->
+                    let p = roster.Players[rosterIdx]
+                    let cond = int frame.Condition[i]
+                    if p.Position <> GK && cond < threshold && cond < bestCond then
+                        bestCond <- cond
+                        outgoingIdx <- Some i
+                | _ -> ()
 
             match outgoingIdx with
             | Some outIdx ->
-                match pickIncoming squad coach (activePlayers slots) sidelined (preferredPositions sit) with
+                match pickIncoming squad coach (activePlayersFromFrame frame roster) sidelined (preferredPositions sit) with
                 | Some incoming -> MakeSubstitution(clubId, outIdx, incoming)
                 | None -> AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
             | None -> AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
@@ -152,12 +150,7 @@ module ManagerAgent =
 
     let private handleRedCard (playerId: PlayerId) (ctx: MatchContext) (state: SimState) : ManagerAction list =
         let clubId =
-            if
-                state.Home.Slots
-                |> Array.exists (function
-                    | PlayerSlot.Active s -> s.Player.Id = playerId
-                    | _ -> false)
-            then
+            if playerOnSide ctx state HomeClub playerId then
                 ctx.Home.Id
             else
                 ctx.Away.Id
@@ -183,7 +176,8 @@ module ManagerAgent =
         let awayCoachRating = float ctx.AwayCoach.CurrentSkill / 100.0
 
         [ if getSubsUsed state HomeClub < maxSubs && bernoulli (0.7 + homeCoachRating * 0.2) then
-              let homeSlots = state.Home.Slots
+              let homeFrame = state.Home.Frame
+              let homeRoster = getRoster ctx HomeClub
 
               let homeSit = situation ctx.Home.Id ctx state
               let homeThreshold =
@@ -192,31 +186,25 @@ module ManagerAgent =
                   | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
                   | Winning -> ctx.Config.Manager.ConditionThresholdWinning
 
-              let outgoingIdx =
-                  homeSlots
-                  |> Array.mapi (fun i slot ->
-                      match slot with
-                      | PlayerSlot.Active s ->
-                          if
-                              s.Player.Position <> GK
-                              && s.Condition < homeThreshold
-                          then
-                              Some(i, s.Condition)
-                          else
-                              None
-                      | Sidelined _ -> None)
-                  |> Array.choose id
-                  |> Array.sortBy snd
-                  |> Array.tryHead
-                  |> Option.map fst
+              let mutable homeOutIdx: int option = None
+              let mutable homeBestCond = 100
+              for i = 0 to homeFrame.SlotCount - 1 do
+                  match homeFrame.Occupancy[i] with
+                  | OccupancyKind.Active rosterIdx ->
+                      let p = homeRoster.Players[rosterIdx]
+                      let cond = int homeFrame.Condition[i]
+                      if p.Position <> GK && cond < homeThreshold && cond < homeBestCond then
+                          homeBestCond <- cond
+                          homeOutIdx <- Some i
+                  | _ -> ()
 
-              match outgoingIdx with
+              match homeOutIdx with
               | Some outIdx ->
                   match
                       pickIncoming
                           homeSquad
                           ctx.HomeCoach
-                          (activePlayers homeSlots)
+                          (activePlayersFromFrame homeFrame homeRoster)
                           (getSidelined state HomeClub)
                           (preferredPositions (situation ctx.Home.Id ctx state))
                   with
@@ -225,7 +213,8 @@ module ManagerAgent =
               | None -> yield ManagerIdle
 
           if getSubsUsed state AwayClub < maxSubs && bernoulli (0.7 + awayCoachRating * 0.2) then
-              let awaySlots = state.Away.Slots
+              let awayFrame = state.Away.Frame
+              let awayRoster = getRoster ctx AwayClub
 
               let awaySit = situation ctx.Away.Id ctx state
               let awayThreshold =
@@ -234,31 +223,25 @@ module ManagerAgent =
                   | Drawing -> ctx.Config.Manager.ConditionThresholdDrawing
                   | Winning -> ctx.Config.Manager.ConditionThresholdWinning
 
-              let outgoingIdx =
-                  awaySlots
-                  |> Array.mapi (fun i slot ->
-                      match slot with
-                      | PlayerSlot.Active s ->
-                          if
-                              s.Player.Position <> GK
-                              && s.Condition < awayThreshold
-                          then
-                              Some(i, s.Condition)
-                          else
-                              None
-                      | Sidelined _ -> None)
-                  |> Array.choose id
-                  |> Array.sortBy snd
-                  |> Array.tryHead
-                  |> Option.map fst
+              let mutable awayOutIdx: int option = None
+              let mutable awayBestCond = 100
+              for i = 0 to awayFrame.SlotCount - 1 do
+                  match awayFrame.Occupancy[i] with
+                  | OccupancyKind.Active rosterIdx ->
+                      let p = awayRoster.Players[rosterIdx]
+                      let cond = int awayFrame.Condition[i]
+                      if p.Position <> GK && cond < awayThreshold && cond < awayBestCond then
+                          awayBestCond <- cond
+                          awayOutIdx <- Some i
+                  | _ -> ()
 
-              match outgoingIdx with
+              match awayOutIdx with
               | Some outIdx ->
                   match
                       pickIncoming
                           awaySquad
                           ctx.AwayCoach
-                          (activePlayers awaySlots)
+                          (activePlayersFromFrame awayFrame awayRoster)
                           (getSidelined state AwayClub)
                           (preferredPositions (situation ctx.Away.Id ctx state))
                   with
@@ -335,41 +318,50 @@ module ManagerAgent =
             if team.SubsUsed >= maxSubs then
                 []
             else
-                match team.Slots[outIdx] with
-                | Sidelined _ -> []
-                | PlayerSlot.Active s ->
-                    let playerOut = s.Player
-                    let inheritedPos = s.Pos
+                let frame = team.Frame
+                let roster = getRoster ctx side
 
-                    let newSlot =
-                        PlayerSlot.Active
-                            { Player = incoming
-                              Pos = inheritedPos
-                              Condition = incoming.Condition
-                              Mental = MentalState.initial incoming
-                              MovementIntent = None
-                              IntentLockExpiry = 0
-                              Profile = Player.profile incoming
-                              CachedTarget = (inheritedPos.X, inheritedPos.Y)
-                              CachedExecution = 1.0 }
+                match frame.Occupancy[outIdx] with
+                | OccupancyKind.Active _ ->
+                    let playerOut =
+                        match tryGetPlayerFromFrame frame roster outIdx with
+                        | Some p -> p
+                        | None -> incoming
 
-                    let newSlots = Array.copy team.Slots
-                    newSlots[outIdx] <- newSlot
+                    let inheritedPos = {
+                        X = float frame.PosX[outIdx] * 1.0<meter>
+                        Y = float frame.PosY[outIdx] * 1.0<meter>
+                        Z = 0.0<meter>
+                        Vx = 0.0<meter/second>
+                        Vy = 0.0<meter/second>
+                        Vz = 0.0<meter/second>
+                    }
 
-                    updateTeam state side (fun t -> 
-                        { t with 
-                            Slots = newSlots
+                    FrameMutate.setPos frame outIdx inheritedPos.X inheritedPos.Y
+                    FrameMutate.setCondition frame outIdx incoming.Condition
+                    FrameMutate.setIntent frame outIdx IntentKind.Idle 0.0f 0.0f 0
+
+                    updateTeam state side (fun t ->
+                        { t with
                             SubsUsed = t.SubsUsed + 1
                             Sidelined = Map.add playerOut.Id SidelinedBySub t.Sidelined })
 
                     [ createEvent subTick playerOut.Id clubId SubstitutionOut
                       createEvent subTick incoming.Id clubId SubstitutionIn ]
+                | _ -> []
 
         | AdjustTactics(clubId, newTactics) ->
             setTacticsByClubId clubId ctx state newTactics
             []
 
-    let agent tick ctx state (clock: SimulationClock) : AgentOutput =
+    let private defaultIntent : PlayerIntent =
+        { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+          Action = None
+          Context = NormalPlay
+          Urgency = 0.0
+          Confidence = 0.5 }
+
+    let agent tick ctx state (clock: SimulationClock) : AgentResult =
         match tick.Kind with
         | SubstitutionTick _clubId ->
             let actions = decide tick.SubTick ctx state None clock
@@ -383,9 +375,7 @@ module ManagerAgent =
                     []
                 |> List.rev
 
-            { Events = events
-              Transition = None
-              Intent = NoOp }
+            { Intent = defaultIntent; NextTick = None; Events = events; Transition = None }
 
         | ManagerReactionTick trigger ->
             let actions = decide tick.SubTick ctx state (Some trigger) clock
@@ -399,11 +389,7 @@ module ManagerAgent =
                     []
                 |> List.rev
 
-            { Events = events
-              Transition = None
-              Intent = NoOp }
+            { Intent = defaultIntent; NextTick = None; Events = events; Transition = None }
 
         | _ ->
-            { Events = []
-              Transition = None
-              Intent = NoOp }
+            { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }

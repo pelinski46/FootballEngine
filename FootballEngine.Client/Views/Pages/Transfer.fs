@@ -265,28 +265,6 @@ module Transfers =
                           TextBlock.foreground valueColor
                           TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
 
-    let private statusBanner (color: string) (icon: Material.Icons.MaterialIconKind) (text: string) =
-        Border.create
-            [ Border.background (color + "18")
-              Border.borderBrush (color + "55")
-              Border.borderThickness 1.0
-              Border.cornerRadius 8.0
-              Border.padding (12.0, 10.0)
-              Border.margin (0.0, 0.0, 0.0, 12.0)
-              Border.child (
-                  StackPanel.create
-                      [ StackPanel.orientation Orientation.Horizontal
-                        StackPanel.spacing 8.0
-                        StackPanel.children
-                            [ Icons.iconMd icon color
-                              TextBlock.create
-                                  [ TextBlock.text text
-                                    TextBlock.fontSize 12.0
-                                    TextBlock.foreground color
-                                    TextBlock.verticalAlignment VerticalAlignment.Center
-                                    TextBlock.textWrapping TextWrapping.Wrap ] ] ]
-              ) ]
-
     let private negotiationPanel (p: Player) (buyer: Club) (neg: Negotiation) (dispatch: Msg -> unit) =
         let minFee = Player.playerValue p.CurrentSkill * 0.5m
         let maxFee = Player.playerValue p.CurrentSkill * 2.0m
@@ -305,26 +283,26 @@ module Transfers =
                             Border.create
                                 [ Border.height 1.0; Border.background Theme.Border; Border.margin (0.0, 4.0) ]
                             if not canAffordIt then
-                                statusBanner Theme.Danger IconName.warning "Insufficient budget — offer may fail"
-                            statusBanner Theme.Warning IconName.hourglass "Waiting for club response..."
+                                UI.statusBanner Theme.Danger IconName.warning "Insufficient budget — offer may fail"
+                            UI.statusBanner Theme.Warning IconName.hourglass "Waiting for club response..."
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
                                   Grid.children
-                                      [ UI.ghostButton "Withdraw" (fun _ -> dispatch (TransferMsg(WithdrawOffer neg.Id))) ] ] ] ]
+                                      [ UI.ghostButton "Withdraw" None (fun _ -> dispatch (TransferMsg(WithdrawOffer neg.Id))) ] ] ] ]
                 :> IView
 
             | NegotiationStage.RejectedByClub(_, reason) ->
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Danger IconName.error reason
+                          [ UI.statusBanner Theme.Danger IconName.error reason
                             infoRow "Market Value" (formatValue (Player.playerValue p.CurrentSkill)) Theme.TextSub
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
                                   Grid.children
-                                      [ UI.ghostButton "Give Up" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                      [ UI.ghostButton "Give Up" None (fun _ -> dispatch (TransferMsg ClearNegotiation))
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
@@ -339,14 +317,14 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Accent IconName.info $"Club counter-offered: {formatValue counter}"
+                          [ UI.statusBanner Theme.Accent IconName.info $"Club counter-offered: {formatValue counter}"
                             infoRow "Your Fee" (formatValue fee) Theme.TextSub
                             infoRow "Counter" (formatValue counter) Theme.AccentAlt
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
                                   Grid.children
-                                      [ UI.ghostButton "Reject" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                      [ UI.ghostButton "Reject" None (fun _ -> dispatch (TransferMsg ClearNegotiation))
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
@@ -363,7 +341,7 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Accent IconName.hourglass "Club accepted — waiting for player response..."
+                          [ UI.statusBanner Theme.Accent IconName.hourglass "Club accepted — waiting for player response..."
                             infoRow "Transfer Fee" (formatValue fee) Theme.Accent
                             infoRow "Salary" (formatSalary salary) Theme.TextSub
                             infoRow "Player's Current" (formatSalary currentSalary) Theme.TextMuted ] ]
@@ -373,14 +351,14 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Danger IconName.error reason
+                          [ UI.statusBanner Theme.Danger IconName.error reason
                             infoRow "Fee" (formatValue fee) Theme.TextSub
                             infoRow "Salary Offered" (formatSalary salary) Theme.Danger
                             Grid.create
                                 [ Grid.columnDefinitions "*, Auto"
                                   Grid.margin 8.0
                                   Grid.children
-                                      [ UI.ghostButton "Abandon" (fun _ -> dispatch (TransferMsg ClearNegotiation))
+                                      [ UI.ghostButton "Abandon" None (fun _ -> dispatch (TransferMsg ClearNegotiation))
                                         Border.create
                                             [ Grid.column 1
                                               Border.child (
@@ -394,7 +372,7 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Accent IconName.success "Transfer agreed — processing..."
+                          [ UI.statusBanner Theme.Accent IconName.success "Transfer agreed — processing..."
                             infoRow "Transfer Fee" (formatValue fee) Theme.Accent
                             infoRow "Salary" (formatSalary salary) Theme.TextSub
                             infoRow "Contract" $"{years} years" Theme.TextSub ] ]
@@ -404,7 +382,7 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Danger IconName.error $"Negotiation collapsed: {reason}"
+                          [ UI.statusBanner Theme.Danger IconName.error $"Negotiation collapsed: {reason}"
                             UI.primaryButton "Dismiss" (Some IconName.close) (fun _ ->
                                 dispatch (TransferMsg ClearNegotiation)) ] ]
                 :> IView
@@ -413,7 +391,7 @@ module Transfers =
                 StackPanel.create
                     [ StackPanel.spacing 12.0
                       StackPanel.children
-                          [ statusBanner Theme.Warning IconName.hourglass "Preparing negotiation..." ] ]
+                          [ UI.statusBanner Theme.Warning IconName.hourglass "Preparing negotiation..." ] ]
                 :> IView
 
         Border.create

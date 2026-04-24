@@ -9,177 +9,92 @@ open SimulationClock
 module TickOrchestrator =
 
     type PendingRequests =
-        { HasPendingDuel: bool
-          HasPendingDecision: bool
-          PendingDecisionPid: PlayerId option
-          LastDuelScheduledAt: int
-          LastDecisionScheduledAt: int }
+        { LastScheduledSubTick: int
+          LastScheduledKind: TickKind option }
 
     let empty =
-        { HasPendingDuel = false
-          HasPendingDecision = false
-          PendingDecisionPid = None
-          LastDuelScheduledAt = -9999
-          LastDecisionScheduledAt = -9999 }
+        { LastScheduledSubTick = -9999
+          LastScheduledKind = None }
 
-    let private scheduleDuel
-        (currentSubTick: int)
-        (counter: int64)
-        (clock: SimulationClock)
-        (config: BalanceConfig)
-        (pending: PendingRequests)
-        : ScheduledTick list * int64 * PendingRequests =
-        let delay = TickDelay.delayFrom clock config.Timing.DuelNextDelay
-        let ticks =
-            [ { SubTick = currentSubTick + delay
-                Priority = TickPriority.Duel
-                SequenceId = counter
-                Kind = DuelTick 0 } ]
-        ticks, counter + 1L,
-            { pending with
-                HasPendingDuel = true
-                LastDuelScheduledAt = currentSubTick + delay }
-
-    let private scheduleDecision
-        (pid: PlayerId)
-        (currentSubTick: int)
-        (counter: int64)
-        (clock: SimulationClock)
-        (config: BalanceConfig)
-        (pending: PendingRequests)
-        : ScheduledTick list * int64 * PendingRequests =
-        if pending.HasPendingDecision && pending.PendingDecisionPid = Some pid then
-            [], counter, pending
-        else
-            let delay = TickDelay.delayFrom clock config.Timing.DuelChainDelay
-            let ticks =
-                [ { SubTick = currentSubTick + delay
-                    Priority = TickPriority.Duel
-                    SequenceId = counter
-                    Kind = DecisionTick(0, Some pid) } ]
-            ticks, counter + 1L,
-                { pending with
-                    HasPendingDecision = true
-                    PendingDecisionPid = Some pid
-                    LastDecisionScheduledAt = currentSubTick + delay }
-
-    let private scheduleSetPieceTick
-        (kind: SetPieceKind)
-        (club: ClubSide)
-        (currentSubTick: int)
-        (counter: int64)
-        : ScheduledTick list * int64 =
-        let tickKind =
-            match kind with
-            | SetPieceKind.Corner -> CornerTick(club, 0)
-            | SetPieceKind.ThrowIn -> ThrowInTick(club, 0)
-            | SetPieceKind.GoalKick -> GoalKickTick
-            | SetPieceKind.KickOff -> KickOffTick
-            | SetPieceKind.FreeKick -> failwith "Use ScheduleFreeKick for free kicks"
-            | SetPieceKind.Penalty -> failwith "Penalties are handled separately"
-        let ticks =
-            [ { SubTick = currentSubTick + 1
-                Priority = TickPriority.SetPiece
-                SequenceId = counter
-                Kind = tickKind } ]
-        ticks, counter + 1L
+    let private isDuplicate (tick: ScheduledTick) (pending: PendingRequests) : bool =
+        pending.LastScheduledSubTick = tick.SubTick
+        && pending.LastScheduledKind = Some tick.Kind
 
     let resolve
         (tick: ScheduledTick)
         (intent: TickIntent)
+        (playerNextTick: ScheduledTick option)
         (transition: PlayState option)
         (counter: int64)
         (clock: SimulationClock)
         (config: BalanceConfig)
+        (ctx: MatchContext)
         (state: SimState)
         (pending: PendingRequests)
         : ScheduledTick list * int64 * PendingRequests =
 
-        let resetPending newPending =
-            { newPending with
-                HasPendingDuel = false
-                HasPendingDecision = false
-                PendingDecisionPid = None }
+        let resetPending () =
+            { LastScheduledSubTick = -9999; LastScheduledKind = None }
 
-        match intent with
-        | NoOp ->
-            [], counter, pending
+        let matchLevelTicks, newPending =
+            match intent with
+            | NoOp -> [], pending
 
-        | FindNextDuel ->
-            scheduleDuel tick.SubTick counter clock config (resetPending pending)
-
-        | GiveDecisionTo pid ->
-            scheduleDecision pid tick.SubTick counter clock config (resetPending pending)
-
-        | ScheduleSetPiece(kind, club) ->
-            let ticks, newCounter = scheduleSetPieceTick kind club tick.SubTick counter
-            ticks, newCounter, resetPending pending
-
-        | ScheduleFreeKick(kicker, position) ->
-            let ticks =
-                [ { SubTick = tick.SubTick + 1
-                    Priority = TickPriority.SetPiece
-                    SequenceId = counter
-                    Kind = FreeKickTick(kicker, position, 0) } ]
-            ticks, counter + 1L, resetPending pending
-
-        | ScheduleInjury(playerId, severity) ->
-            let ticks =
+            | ScheduleInjury(playerId, severity) ->
                 [ { SubTick = tick.SubTick + 1
                     Priority = TickPriority.Referee
                     SequenceId = counter
-                    Kind = InjuryTick(playerId, severity) } ]
-            ticks, counter + 1L, pending
+                    Kind = InjuryTick(playerId, severity) } ],
+                { pending with LastScheduledSubTick = tick.SubTick + 1; LastScheduledKind = Some(InjuryTick(playerId, severity)) }
 
-        | ScheduleSubstitution(clubId) ->
-            let ticks =
+            | ScheduleSubstitution(clubId) ->
                 [ { SubTick = tick.SubTick + 1
                     Priority = TickPriority.Manager
                     SequenceId = counter
-                    Kind = SubstitutionTick clubId } ]
-            ticks, counter + 1L, pending
+                    Kind = SubstitutionTick clubId } ],
+                { pending with LastScheduledSubTick = tick.SubTick + 1; LastScheduledKind = Some(SubstitutionTick clubId) }
 
-        | StopPlay reason ->
-            match reason with
-            | Goal ->
-                let ticks =
+            | StopPlay reason ->
+                match reason with
+                | Goal ->
                     [ { SubTick = tick.SubTick + TickDelay.delayFrom clock config.Timing.GoalDelay
                         Priority = TickPriority.MatchControl
                         SequenceId = counter
-                        Kind = KickOffTick } ]
-                ticks, counter + 1L, resetPending pending
-            | Foul ->
-                let bx, by = state.Ball.Position.X, state.Ball.Position.Y
-                let attSlots = getSlots state state.AttackingSide
-                match nearestActiveSlot attSlots bx by with
-                | ValueSome s ->
-                    let foulPos = defaultSpatial bx by
-                    let ticks =
-                        [ { SubTick = tick.SubTick + TickDelay.delayFrom clock config.Timing.FoulDelay
-                            Priority = TickPriority.SetPiece
-                            SequenceId = counter
-                            Kind = FreeKickTick(s.Player.Id, foulPos, 0) } ]
-                    ticks, counter + 1L, resetPending pending
-                | ValueNone ->
-                    scheduleDuel tick.SubTick counter clock config (resetPending pending)
-            | BallOut ->
-                scheduleDuel tick.SubTick counter clock config (resetPending pending)
-            | Injury ->
-                let ticks =
+                        Kind = KickOffTick } ],
+                    resetPending ()
+
+                | Foul ->
+                    let bx, by = state.Ball.Position.X, state.Ball.Position.Y
+                    let attFrame = getFrame state state.AttackingSide
+                    match nearestActiveSlotInFrame attFrame bx by with
+                    | ValueSome idx ->
+                        let attRoster = getRoster ctx state.AttackingSide
+                        match tryGetPlayerFromFrame attFrame attRoster idx with
+                        | Some player ->
+                            let foulPos = defaultSpatial bx by
+                            [ { SubTick = tick.SubTick + TickDelay.delayFrom clock config.Timing.FoulDelay
+                                Priority = TickPriority.SetPiece
+                                SequenceId = counter
+                                Kind = SetPieceTick(SetPieceKind.FreeKick, state.AttackingSide) } ],
+                            resetPending ()
+                        | None -> [], resetPending ()
+                    | ValueNone -> [], resetPending ()
+
+                | BallOut ->
+                    [], resetPending ()
+
+                | Injury ->
                     [ { SubTick = tick.SubTick + TickDelay.delayFrom clock config.Timing.InjuryDelay
                         Priority = TickPriority.MatchControl
                         SequenceId = counter
-                        Kind = ResumePlayTick } ]
-                ticks, counter + 1L, resetPending pending
+                        Kind = ResumePlayTick } ],
+                    resetPending ()
 
-        | ResumeAfter(delay, kind) ->
-            let ticks =
-                [ { SubTick = tick.SubTick + TickDelay.delayFrom clock delay
-                    Priority =
-                        match kind with
-                        | KickOffTick -> TickPriority.MatchControl
-                        | ResumePlayTick -> TickPriority.MatchControl
-                        | _ -> TickPriority.SetPiece
-                    SequenceId = counter
-                    Kind = kind } ]
-            ticks, counter + 1L, resetPending pending
+        let allTicks =
+            match playerNextTick with
+            | Some nt when not (isDuplicate nt newPending) -> nt :: matchLevelTicks
+            | _ -> matchLevelTicks
+
+        let newCounter = counter + int64 allTicks.Length
+
+        allTicks, newCounter, newPending

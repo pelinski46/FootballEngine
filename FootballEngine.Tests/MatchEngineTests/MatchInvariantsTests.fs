@@ -151,31 +151,31 @@ let matchInvariantsTests =
               for seed, result in matches do
                   match result with
                   | Ok(_, _, _, final) ->
-                      for slot in final.Home.Slots do
-                          match slot with
-                          | PlayerSlot.Active s ->
+                      for i = 0 to final.Home.Frame.SlotCount - 1 do
+                          match final.Home.Frame.Occupancy[i] with
+                          | OccupancyKind.Active _ ->
+                              let cond = int final.Home.Frame.Condition[i]
                               Expect.isGreaterThanOrEqual
-                                  s.Condition
+                                  cond
                                   0
-                                  $"match seed {seed}: Home player {s.Player.Name} condition = {s.Condition}, expected ≥ 0"
-
+                                  $"match seed {seed}: Home player {i} condition = {cond}, expected ≥ 0"
                               Expect.isLessThanOrEqual
-                                  s.Condition
+                                  cond
                                   100
-                                  $"match seed {seed}: Home player {s.Player.Name} condition = {s.Condition}, expected ≤ 100"
+                                  $"match seed {seed}: Home player {i} condition = {cond}, expected ≤ 100"
                           | _ -> ()
 
-                      for slot in final.Away.Slots do
-                          match slot with
-                          | PlayerSlot.Active s ->
+                      for i = 0 to final.Away.Frame.SlotCount - 1 do
+                          match final.Away.Frame.Occupancy[i] with
+                          | OccupancyKind.Active _ ->
+                              let cond = int final.Away.Frame.Condition[i]
                               Expect.isGreaterThanOrEqual
-                                  s.Condition
+                                  cond
                                   0
-                                  $"match seed {seed}: Away player {s.Player.Name} condition = {s.Condition}, expected ≥ 0"
-
+                                  $"match seed {seed}: Away player {i} condition = {cond}, expected ≥ 0"
                               Expect.isLessThanOrEqual
-                                  s.Condition
+                                  cond
                                   100
-                                  $"match seed {seed}: Away player {s.Player.Name} condition = {s.Condition}, expected ≤ 100"
+                                  $"match seed {seed}: Away player {i} condition = {cond}, expected ≤ 100"
                           | _ -> ()
                   | Error e -> failtestf $"match seed {seed}: simulation error: %A{e}" ]

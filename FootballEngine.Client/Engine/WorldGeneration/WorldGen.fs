@@ -162,17 +162,14 @@ module WorldGen =
         if leagueClubIds.IsEmpty then
             acc
         else
-            let cupName =
-                match countryData.Country.Code with
-                | "ARG" -> "Copa Argentina"
-                | "ENG" -> "FA Cup"
-                | "ESP" -> "Copa del Rey"
-                | "BRA" -> "Copa do Brasil"
-                | code -> $"Cup {code}"
-
             (acc, countryData.Cups |> List.indexed)
             ||> List.fold (fun acc (cupIdx, cupFormat) ->
                 let compId = nextId counters
+
+                let cupName =
+                    match countryData.CupNames |> List.tryItem cupIdx with
+                    | Some name -> name
+                    | None -> $"Cup {countryData.Country.Code}"
 
                 let fixtures, nextMatchId =
                     FixtureGen.forCupFormat
@@ -305,11 +302,7 @@ module WorldGen =
                 (w, allCountryData)
                 ||> List.fold (fun acc cd -> generateNationalCups year cd counters acc)
 
-        let intlComps =
-            [ "Copa Libertadores", International.CONMEBOL.libertadores
-              "Copa Sudamericana", International.CONMEBOL.sudamericana
-              "UEFA Champions League", International.UEFA.championsLeague
-              "UEFA Europa League", International.UEFA.europaLeague ]
+        let intlComps = DataRegistry.internationalComps
 
         let world =
             (world, intlComps)
@@ -332,6 +325,9 @@ module WorldGen =
         let profileCache =
             world.Players |> Map.map (fun _ p -> Player.profile p)
 
+        let activeMods =
+            DataRegistry.activeMods |> List.map (fun m -> (m.Id :> string), m.Version)
+
         { CurrentDate = DateTime(year, 7, 1)
           Season = year
           TrainingWeeksApplied = 0
@@ -340,6 +336,7 @@ module WorldGen =
           Staff = world.Staff |> Map.add userStaffId userManager
           Competitions = world.Competitions
           Countries = DataRegistry.countries
+          ActiveMods = activeMods
           UserClubId = userClubId
           UserStaffId = userStaffId
           PrimaryCountry = primaryCountry

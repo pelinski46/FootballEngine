@@ -336,6 +336,21 @@ type DecisionConfig = {
     DirectnessWeight: float
 }
 
+type PerceptionConfig = {
+    VisionRadiusBase: float<meter>
+    VisionRadiusMax: float<meter>
+    VisionConeAngle: float
+    PeripheralMultiplier: float
+    MinimumAwarenessFloor: float<meter>
+    AnticipationBonusRadius: float<meter>
+    GoalkeeperConeAngle: float
+    CommunicationRange: float<meter>
+    SetPieceSimplifiedRadius: float<meter>
+    BlindPassVisionThreshold: int
+    BlindPassComposureThreshold: int
+    BlindPassSuccessPenalty: float
+}
+
 type BalanceConfig = {
     Duel: DuelConfig
     Shot: ShotConfig
@@ -351,6 +366,7 @@ type BalanceConfig = {
     Manager: ManagerConfig
     BuildUp: BuildUpConfig
     Decision: DecisionConfig
+    Perception: PerceptionConfig
 }
 
 // ============================================================================
@@ -658,7 +674,7 @@ module BalanceConfig =
             ShootDistPenaltyMax = 0.5
             PassPassingWeight = 0.40
             PassVisionWeight = 0.30
-            PassTargetBonus = 0.30
+            PassTargetBonus = 0.10
             PassAttackPhasePenalty = -0.03
             DribbleZoneBonusAttacking = 0.1
             DribbleZoneBonusMidfield = 0.05
@@ -676,5 +692,19 @@ module BalanceConfig =
             LongBallAttackPhaseBonus = 0.05
             CreativityWeight = 0.10
             DirectnessWeight = 0.06
+        }
+        Perception = {
+            VisionRadiusBase = 20.0<meter>
+            VisionRadiusMax = 45.0<meter>
+            VisionConeAngle = 2.094  // 120 degrees in radians
+            PeripheralMultiplier = 0.4
+            MinimumAwarenessFloor = 20.0<meter>
+            AnticipationBonusRadius = 5.0<meter>
+            GoalkeeperConeAngle = 3.1416  // 180 degrees
+            CommunicationRange = 15.0<meter>
+            SetPieceSimplifiedRadius = 30.0<meter>
+            BlindPassVisionThreshold = 15
+            BlindPassComposureThreshold = 14
+            BlindPassSuccessPenalty = 0.30
         }
     }

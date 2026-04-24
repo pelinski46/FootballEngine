@@ -45,7 +45,10 @@ module Navigation =
             Icon = ClubIcon.finances }
           { Page = Settings
             Label = "Settings"
-            Icon = IconName.settings } ]
+            Icon = IconName.settings }
+          { Page = ModEditor
+            Label = "Mod Editor"
+            Icon = IconName.fileDocumentEdit } ]
 
 module Sidebar =
     let private navButton (item: Navigation.NavItem) (isActive: bool) (badgeCount: int option) dispatch =

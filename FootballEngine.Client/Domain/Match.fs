@@ -33,6 +33,7 @@ type MatchEventType =
     | CrossAttempt of isSuccessful: bool
     | LongBall of isSuccessful: bool
     | ShotBlocked
+    | ShotOnTarget
     | ShotOffTarget
     | Save
     | FoulCommitted

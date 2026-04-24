@@ -68,8 +68,8 @@ let stateInvariantTests =
                       let output = SetPieceAgent.agent tick ctx s clock
                       events <- events @ output.Events
 
-                       match output.Intent with
-                       | NoOp ->
+                      match output.Intent with
+                      | NoOp ->
                           scheduler.Insert
                               { SubTick = tick.SubTick + 1000
                                 Priority = TickPriority.Duel
@@ -111,7 +111,6 @@ let stateInvariantTests =
 
               let clock = SimulationClock.defaultClock
 
-              // Llamar ShotAction.resolve directamente con el mismo setup
               let events = ShotAction.resolve 0 ctx s clock
 
               Expect.isGreaterThan events.Length 0 (sprintf "ShotAction.resolve no generó eventos. Eventos: %A" events)
@@ -132,12 +131,12 @@ let stateInvariantTests =
               | Possession.Owned(HomeClub, 1) ->
                   Expect.isGreaterThan output.Events.Length 0 "BallAgent cambió posesión pero no generó eventos."
               | _ ->
-                   Expect.isTrue
-                       (output.Intent <> NoOp)
-                       (sprintf
-                           "BallAgent no cambió posesión y no generó intent. Posesión: %A. Eventos: %A"
-                           s.Ball.Possession
-                           output.Events)
+                  Expect.isTrue
+                      (output.Intent <> NoOp)
+                      (sprintf
+                          "BallAgent no cambió posesión y no generó intent. Posesión: %A. Eventos: %A"
+                          s.Ball.Possession
+                          output.Events)
 
           testCase "Un SetPiece nunca debe persistir por más de 5 ticks físicos"
           <| fun () ->
@@ -157,11 +156,9 @@ let stateInvariantTests =
               let clock = SimulationClock.defaultClock
               let tick = mkPhysicsTick 0
 
-              // Simulamos 6 ticks consecutivos
               for i in 1..6 do
                   BallAgent.agent tick ctx s clock |> ignore
 
-              // Si después de 6 ticks sigue en SetPiece, la lógica de transición está rota
               match s.Ball.Possession with
               | Possession.SetPiece _ ->
                   Tests.failtest "El motor está bloqueado: SetPiece persiste tras 6 ticks físicos."
@@ -227,9 +224,9 @@ let stateInvariantTests =
               let tick = mkPhysicsTick 0
               let output = BallAgent.agent tick ctx s clock
 
-               Expect.isTrue
-                   (output.Intent <> NoOp)
-                   "El motor se detuvo abruptamente (NoOp sin transición)."
+              Expect.isTrue
+                  (output.Intent <> NoOp)
+                  "El motor se detuvo abruptamente (NoOp sin transición)."
 
           testCase "Los jugadores deben cambiar de posición tras varios ticks (Steering activo)"
           <| fun () ->
@@ -243,17 +240,21 @@ let stateInvariantTests =
               let tick = mkPhysicsTick 0
 
               let initialPos =
-                  s.Home.Slots[0]
-                  |> function
-                      | PlayerSlot.Active s -> s.Pos
-                      | _ -> failwith "No active slot"
+                  { X = float s.Home.Frame.PosX[0] * 1.0<meter>
+                    Y = float s.Home.Frame.PosY[0] * 1.0<meter>
+                    Z = 0.0<meter>
+                    Vx = 0.0<meter/second>
+                    Vy = 0.0<meter/second>
+                    Vz = 0.0<meter/second> }
 
-              MovementEngine.updatePhysics 0 s HomeClub 0.1<second>
+              MovementEngine.updatePhysics ctx s HomeClub 0.1<second>
 
               let newPos =
-                  s.Home.Slots[0]
-                  |> function
-                      | PlayerSlot.Active s -> s.Pos
-                      | _ -> failwith "No active slot"
+                  { X = float s.Home.Frame.PosX[0] * 1.0<meter>
+                    Y = float s.Home.Frame.PosY[0] * 1.0<meter>
+                    Z = 0.0<meter>
+                    Vx = 0.0<meter/second>
+                    Vy = 0.0<meter/second>
+                    Vz = 0.0<meter/second> }
 
               Expect.isTrue (initialPos <> newPos) "Los jugadores no se mueven: SteeringPipeline inactivo." ]

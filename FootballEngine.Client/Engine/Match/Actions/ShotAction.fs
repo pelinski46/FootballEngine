@@ -11,10 +11,7 @@ module ShotAction =
 
     let private finishingBonusForPosition (cfg: ShotConfig) =
         function
-        | ST
-        | AMC
-        | AML
-        | AMR -> cfg.FinishingBonusAM
+        | ST | AMC | AML | AMR -> cfg.FinishingBonusAM
         | MC -> cfg.FinishingBonusMC
         | _ -> cfg.FinishingBonusOther
 
@@ -41,41 +38,34 @@ module ShotAction =
         let actx = ActionContext.build ctx state
         let sc = ctx.Config.Shot
         let attClubId = actx.Att.ClubId
-        let attSlots = actx.Att.OwnSlots
-        let defSlots = actx.Def.OwnSlots
+        let attFrame = actx.Att.OwnFrame
+        let defFrame = actx.Def.OwnFrame
+        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
 
         let bX = state.Ball.Position.X
         let bY = state.Ball.Position.Y
 
         let inChance = actx.Zone = AttackingZone || actx.Zone = MidfieldZone
 
-        match MatchSpatial.nearestActiveSlot attSlots bX bY with
+        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> []
-        | ValueSome shooterSlot ->
-            let shooter = shooterSlot.Player
+        | ValueSome shooterIdx ->
+            let shooter = attRoster.Players[shooterIdx]
+            let shooterCond = int attFrame.Condition[shooterIdx]
+            let shooterProfile = attRoster.Profiles[shooterIdx]
 
             if not inChance then
                 [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
             else
-
-                let shooter, shooterCond, shooterProfile =
-                    shooterSlot.Player, shooterSlot.Condition, shooterSlot.Profile
-
-                let defPlayers = playersArray defSlots
-
                 let quality =
                     let distToGoal = PhysicsContract.distToGoal bX actx.Att.AttackDir
-
-                    let distNorm =
-                        PhysicsContract.clamp (distToGoal / sc.NormalisationDistance) 0.0 1.0
-
+                    let distNorm = PhysicsContract.clamp (distToGoal / sc.NormalisationDistance) 0.0 1.0
                     let positionBonus =
                         shooterProfile.Directness * sc.PositionDirectnessWeight
                         + shooterProfile.AttackingDepth * sc.PositionDepthWeight
                         + shooterProfile.CreativityWeight * sc.PositionCreativityWeight
-
                     (1.0 - distNorm) * sc.DistNormWeight + positionBonus * sc.PositionBonusWeight
-
 
                 if quality < sc.QualityGate then
                     [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
@@ -122,7 +112,15 @@ module ShotAction =
                             * 1.0<radianPerSecond>
                           Side = 0.0<radianPerSecond> }
 
-                    let gk = defPlayers |> Array.tryFind (fun p -> p.Position = GK)
+                    let gkIdx =
+                        let mutable idx = -1
+                        for i = 0 to defFrame.SlotCount - 1 do
+                            match defFrame.Occupancy[i] with
+                            | OccupancyKind.Active _ when defRoster.Players[i].Position = GK -> idx <- i
+                            | _ -> ()
+                        idx
+
+                    let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
 
                     let onTarget =
                         bernoulli (
@@ -133,9 +131,10 @@ module ShotAction =
                     let gkSaves =
                         match gk with
                         | Some g ->
+                            let gkCond = if gkIdx >= 0 then int defFrame.Condition[gkIdx] else 50
                             let savePower =
-                                effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale sc.GkReflexesStatMult
-                                + effectiveStat g.Goalkeeping.OneOnOne g.Condition g.Morale sc.GkOneOnOneStatMult
+                                effectiveStat g.Goalkeeping.Reflexes gkCond g.Morale sc.GkReflexesStatMult
+                                + effectiveStat g.Goalkeeping.OneOnOne gkCond g.Morale sc.GkOneOnOneStatMult
 
                             let adjustedSave = savePower
                             onTarget && bernoulli (adjustedSave / (adjustedSave + finishing + sc.SaveDenominatorOffset))
@@ -166,4 +165,4 @@ module ShotAction =
                         [ createEvent subTick shooter.Id attClubId ShotBlocked
                           createEvent subTick g.Id gkClubId Save ]
                     | _ when not onTarget -> [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
-                    | _ -> [ createEvent subTick shooter.Id attClubId Goal ]
+                    | _ -> [ createEvent subTick shooter.Id attClubId ShotOnTarget ]

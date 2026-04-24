@@ -17,4 +17,5 @@ type CountryData =
       LeagueNames: string list
       LeagueRules: LeagueRules list
       Clubs: ClubEntry list
-      Cups: CupFormat list }
+      Cups: CupFormat list
+      CupNames: string list }

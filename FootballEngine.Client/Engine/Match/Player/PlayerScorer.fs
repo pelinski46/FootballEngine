@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.PhysicsContract
 
 [<Struct>]
 type ActionScores =
@@ -34,7 +35,7 @@ module PlayerScorer =
         let d = ctx.Decision
         let passing = normStat me.Technical.Passing * d.PassPassingWeight
         let vision = normStat me.Mental.Vision * d.PassVisionWeight
-        let targetBonus = if ctx.BestPassTarget.IsSome then d.PassTargetBonus else 0.0
+        let targetBonus = if ctx.BestPassTargetIdx.IsSome then d.PassTargetBonus else 0.0
 
         let phaseMod =
             match ctx.Phase with
@@ -91,10 +92,12 @@ module PlayerScorer =
         let vision = normStat me.Mental.Vision * d.LongBallVisionWeight
 
         let pressureMod =
-            match ctx.NearestOpponent with
-            | Some(_, oppPos) ->
-                let dx = ctx.MyPos.X - oppPos.X
-                let dy = ctx.MyPos.Y - oppPos.Y
+            match ctx.NearestOpponentIdx with
+            | Some oppIdx ->
+                let oppX = float ctx.Team.OppFrame.PosX[oppIdx] * 1.0<meter>
+                let oppY = float ctx.Team.OppFrame.PosY[oppIdx] * 1.0<meter>
+                let dx = ctx.MyPos.X - oppX
+                let dy = ctx.MyPos.Y - oppY
                 let dist = sqrt (dx * dx + dy * dy)
                 PhysicsContract.clampFloat (float dist / d.LongBallPressDistBase) d.LongBallPressMin d.LongBallPressMax
             | None -> d.LongBallPressNoOpponent

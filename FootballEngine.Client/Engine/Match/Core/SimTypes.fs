@@ -67,6 +67,36 @@ module RunAssignment =
                 let bx, by = pts[i + 1]
                 (ax + (bx - ax) * frac, ay + (by - ay) * frac)
 
+    let create
+        (runType: RunType)
+        (startX: float<meter>)
+        (startY: float<meter>)
+        (targetX: float<meter>)
+        (targetY: float<meter>)
+        (playerId: PlayerId)
+        (currentSubTick: int)
+        (durationSubTicks: int)
+        : RunAssignment =
+        let trajectory =
+            match runType with
+            | CheckToBall ->
+                Waypoints [|
+                    startX, startY
+                    (startX + targetX) / 2.0, (startY + targetY) / 2.0
+                    targetX, targetY
+                |]
+            | _ ->
+                Linear(startX, startY, targetX, targetY)
+
+        { PlayerId = playerId
+          RunType = runType
+          Trigger = TeammateHasBall
+          Trajectory = trajectory
+          StartSubTick = currentSubTick
+          DurationSubTicks = durationSubTicks
+          Intensity = 0.8
+          Priority = 1 }
+
 [<Struct>]
 type MentalState =
     { ComposureLevel: float
@@ -198,21 +228,111 @@ type MovementIntent =
     | SupportAttack of target: Spatial
     | RecoverBall   of ballPredPos: Spatial
 
-[<Struct>]
-type ActiveSlot =
-    { Player: Player
-      Pos: Spatial
-      Condition: int
-      Mental: MentalState
-      MovementIntent: MovementIntent option
-      IntentLockExpiry: int
-      Profile: BehavioralProfile
-      CachedTarget: float<meter> * float<meter>
-      CachedExecution: float }
+// ============================================================
+// FASE 1: Phantom types para índices de slot
+// ============================================================
 
-type PlayerSlot =
-    | Active of ActiveSlot
-    | Sidelined of Player * PlayerOut
+type HomeSlotIndex = HomeSlotIndex of int
+type AwaySlotIndex = AwaySlotIndex of int
+
+module SlotIndex =
+    let home i = HomeSlotIndex i
+    let away i = AwaySlotIndex i
+    let unboxHome (HomeSlotIndex i) = i
+    let unboxAway (AwaySlotIndex i) = i
+
+// ============================================================
+// FASE 1: OccupancyKind — reemplaza PlayerSlot en el hot path
+// ============================================================
+
+type OccupancyKind =
+    | Active of int
+    | Sidelined of PlayerOut
+
+// ============================================================
+// FASE 1: IntentKind — enum compacto para physics loop (40Hz)
+// ============================================================
+
+type IntentKind =
+    | Idle = 0uy
+    | MaintainShape = 1uy
+    | MarkMan = 2uy
+    | PressBall = 3uy
+    | ExecuteRun = 4uy
+    | CoverSpace = 5uy
+    | SupportAttack = 6uy
+    | RecoverBall = 7uy
+
+// ============================================================
+// FASE 1: TeamFrame — datos mutables por tick (SoA layout)
+// ============================================================
+
+[<Struct>]
+type TeamFrame = {
+    Occupancy: OccupancyKind[]
+    PosX: float32[]
+    PosY: float32[]
+    VelX: float32[]
+    VelY: float32[]
+    Condition: byte[]
+    IntentKind: IntentKind[]
+    IntentTargetX: float32[]
+    IntentTargetY: float32[]
+    IntentTargetPid: int[]
+    CachedTargetX: float32[]
+    CachedTargetY: float32[]
+    CachedExecution: float32[]
+    ComposureLevel: float32[]
+    ConfidenceLevel: float32[]
+    AggressionLevel: float32[]
+    LastCognitiveSubTick: int
+    LastShapeSubTick: int
+    LastMarkingSubTick: int
+    LastAdaptiveSubTick: int
+    ActiveCount: int
+    SlotCount: int
+}
+
+// ============================================================
+// FASE 1: PlayerRoster — datos inmutables del equipo
+// ============================================================
+
+type PlayerRoster = {
+    Players: Player[]
+    Profiles: BehavioralProfile[]
+    SlotCount: int
+}
+
+module PlayerRoster =
+    let build (players: Player[]) : PlayerRoster =
+        let profiles = players |> Array.map Player.profile
+        { Players = players; Profiles = profiles; SlotCount = players.Length }
+
+module TeamFrame =
+    let init (roster: PlayerRoster) (basePositions: Spatial[]) : TeamFrame =
+        let n = roster.SlotCount
+        { Occupancy = Array.init n (fun i -> OccupancyKind.Active i)
+          PosX = Array.init n (fun i -> float32 basePositions[i].X)
+          PosY = Array.init n (fun i -> float32 basePositions[i].Y)
+          VelX = Array.zeroCreate n
+          VelY = Array.zeroCreate n
+          Condition = Array.init n (fun i -> byte roster.Players[i].Condition)
+          IntentKind = Array.create n IntentKind.Idle
+          IntentTargetX = Array.zeroCreate n
+          IntentTargetY = Array.zeroCreate n
+          IntentTargetPid = Array.zeroCreate n
+          CachedTargetX = Array.init n (fun i -> float32 basePositions[i].X)
+          CachedTargetY = Array.init n (fun i -> float32 basePositions[i].Y)
+          CachedExecution = Array.create n 1.0f
+          ComposureLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ComposureLevel)
+          ConfidenceLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ConfidenceLevel)
+          AggressionLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).AggressionLevel)
+          LastCognitiveSubTick = 0
+          LastShapeSubTick = 0
+          LastMarkingSubTick = 0
+          LastAdaptiveSubTick = 0
+          ActiveCount = n
+          SlotCount = n }
 
 
 
@@ -277,10 +397,31 @@ type MatchContext =
       HomeChemistry: ChemistryGraph
       AwayChemistry: ChemistryGraph
       IsKnockoutMatch: bool
-      Config: BalanceConfig }
+      Config: BalanceConfig
+      HomeRoster: PlayerRoster
+      AwayRoster: PlayerRoster }
+
+type MatchStats = {
+    PassAttempts: int
+    PassSuccesses: int
+    PressAttempts: int
+    PressSuccesses: int
+    FlankAttempts: int
+    FlankSuccesses: int
+}
+
+module MatchStats =
+    let empty = {
+        PassAttempts = 0
+        PassSuccesses = 0
+        PressAttempts = 0
+        PressSuccesses = 0
+        FlankAttempts = 0
+        FlankSuccesses = 0
+    }
 
 type TeamSimState =
-    { Slots: PlayerSlot[]
+    { Frame: TeamFrame
       Sidelined: Map<PlayerId, PlayerOut>
       Yellows: Map<PlayerId, int>
       SubsUsed: int
@@ -289,6 +430,7 @@ type TeamSimState =
       ActiveRuns: RunAssignment list
       EmergentState: EmergentState
       AdaptiveState: AdaptiveState
+      MatchStats: MatchStats
       LastCognitiveSubTick: int
       LastShapeSubTick: int
       LastMarkingSubTick: int
@@ -296,7 +438,30 @@ type TeamSimState =
 
 module TeamSimState =
     let empty =
-        { Slots = Array.empty<PlayerSlot>
+        { Frame = {
+            Occupancy = Array.empty<OccupancyKind>
+            PosX = Array.empty<float32>
+            PosY = Array.empty<float32>
+            VelX = Array.empty<float32>
+            VelY = Array.empty<float32>
+            Condition = Array.empty<byte>
+            IntentKind = Array.empty<IntentKind>
+            IntentTargetX = Array.empty<float32>
+            IntentTargetY = Array.empty<float32>
+            IntentTargetPid = Array.empty<int>
+            CachedTargetX = Array.empty<float32>
+            CachedTargetY = Array.empty<float32>
+            CachedExecution = Array.empty<float32>
+            ComposureLevel = Array.empty<float32>
+            ConfidenceLevel = Array.empty<float32>
+            AggressionLevel = Array.empty<float32>
+            LastCognitiveSubTick = 0
+            LastShapeSubTick = 0
+            LastMarkingSubTick = 0
+            LastAdaptiveSubTick = 0
+            ActiveCount = 0
+            SlotCount = 0
+          }
           Sidelined = Map.empty<PlayerId, PlayerOut>
           Yellows = Map.empty<PlayerId, int>
           SubsUsed = 0
@@ -305,10 +470,115 @@ module TeamSimState =
           ActiveRuns = []
           EmergentState = EmergentState.initial
           AdaptiveState = AdaptiveTactics.initial
+          MatchStats = MatchStats.empty
           LastCognitiveSubTick = 0
           LastShapeSubTick = 0
           LastMarkingSubTick = 0
           LastAdaptiveSubTick = 0 }
+
+[<Struct>]
+type CognitiveFrame = {
+    NearestTeammateIdx: int16[]
+    NearestTeammateDistSq: float32[]
+    NearestOpponentIdx: int16[]
+    NearestOpponentDistSq: float32[]
+    BestPassTargetIdx: int16[]
+    BestPassTargetPos: Spatial option[]
+    BallX: float32
+    BallY: float32
+    BallZone: PitchZone
+    Phase: MatchPhase
+    PressureOnPlayer: float32[]
+    SlotCount: int
+}
+
+type BuildUpSide =
+    | LeftFlank
+    | RightFlank
+    | Central
+    | Balanced
+
+[<Struct>]
+type TeamIntent = {
+    BuildUpSide: BuildUpSide
+    PressTrigger: bool
+    PressTriggerZone: PitchZone option
+    TargetRunner: PlayerId option
+    RunType: RunType option
+    RunTarget: Spatial option
+    SupportPositions: Spatial[]
+    DesiredWidth: float
+    Tempo: float
+}
+
+module CognitiveFrameDefaults =
+    let empty = {
+        NearestTeammateIdx = Array.empty
+        NearestTeammateDistSq = Array.empty
+        NearestOpponentIdx = Array.empty
+        NearestOpponentDistSq = Array.empty
+        BestPassTargetIdx = Array.empty
+        BestPassTargetPos = Array.empty
+        BallX = 0.0f
+        BallY = 0.0f
+        BallZone = MidfieldZone
+        Phase = BuildUp
+        PressureOnPlayer = Array.empty
+        SlotCount = 0
+    }
+
+[<Struct>]
+type CognitiveFrameBuffers = {
+    NearestTeammateIdx: int16[]
+    NearestTeammateDistSq: float32[]
+    NearestOpponentIdx: int16[]
+    NearestOpponentDistSq: float32[]
+    BestPassTargetIdx: int16[]
+    BestPassTargetPos: Spatial option[]
+    PressureOnPlayer: float32[]
+}
+
+module CognitiveFrameBuffers =
+    let create n = {
+        NearestTeammateIdx = Array.zeroCreate<int16> n
+        NearestTeammateDistSq = Array.create<float32> n System.Single.MaxValue
+        NearestOpponentIdx = Array.zeroCreate<int16> n
+        NearestOpponentDistSq = Array.create<float32> n System.Single.MaxValue
+        BestPassTargetIdx = Array.create<int16> n -1s
+        BestPassTargetPos = Array.create<Spatial option> n None
+        PressureOnPlayer = Array.create<float32> n System.Single.MaxValue
+    }
+
+[<Struct>]
+type VisibilityMask = {
+    CanSeeTeammates: bool[]
+    CanSeeOpponents: bool[]
+    CanSeeBall: bool
+    VisibleTeammateCount: int
+    VisibleOpponentCount: int
+}
+
+module VisibilityMask =
+    let empty ownCount oppCount = {
+        CanSeeTeammates = Array.create ownCount true
+        CanSeeOpponents = Array.create oppCount true
+        CanSeeBall = true
+        VisibleTeammateCount = ownCount
+        VisibleOpponentCount = oppCount
+    }
+
+module TeamIntentDefaults =
+    let empty = {
+        BuildUpSide = Balanced
+        PressTrigger = false
+        PressTriggerZone = None
+        TargetRunner = None
+        RunType = None
+        RunTarget = None
+        SupportPositions = Array.empty
+        DesiredWidth = 0.5
+        Tempo = 0.5
+    }
 
 type SimState() =
     member val SubTick = 0 with get, set
@@ -356,13 +626,38 @@ type SimState() =
     member val Home = TeamSimState.empty with get, set
     member val Away = TeamSimState.empty with get, set
 
+    member val HomeCognitiveFrame = CognitiveFrameDefaults.empty with get, set
+    member val AwayCognitiveFrame = CognitiveFrameDefaults.empty with get, set
+    member val HomeTeamIntent = TeamIntentDefaults.empty with get, set
+    member val AwayTeamIntent = TeamIntentDefaults.empty with get, set
+
+    member val HomeCFrameBuffers: CognitiveFrameBuffers option = None with get, set
+    member val AwayCFrameBuffers: CognitiveFrameBuffers option = None with get, set
+
+[<Struct>]
 type TeamPerspective =
     { ClubSide  : ClubSide
       ClubId    : ClubId
       AttackDir : AttackDir
-      OwnSlots  : PlayerSlot[]
-      OppSlots  : PlayerSlot[]
+      OwnFrame  : TeamFrame
+      OppFrame  : TeamFrame
+      OwnRoster : PlayerRoster
+      OppRoster : PlayerRoster
       Bonus     : HomeBonus }
+
+type AgentContextParams = {
+    MeIdx: int
+    Roster: PlayerRoster
+    OwnFrame: TeamFrame
+    OppFrame: TeamFrame
+    State: SimState
+    Ctx: MatchContext
+    Clock: SimulationClock
+    Decision: DecisionConfig
+    BuildUp: BuildUpConfig
+    PreviousIntent: MovementIntent option
+    IntentLockExpiry: int
+}
 
 module SimStateOps =
 
@@ -451,6 +746,33 @@ module SimStateOps =
     let getTeamByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         if clubId = ctx.Home.Id then state.Home else state.Away
 
+    let getRoster (ctx: MatchContext) (side: ClubSide) : PlayerRoster =
+        if side = HomeClub then ctx.HomeRoster else ctx.AwayRoster
+
+    let findIdxByPid (pid: PlayerId) (frame: TeamFrame) (roster: PlayerRoster) : int voption =
+        let mutable bestIdx = ValueNone
+        for i = 0 to frame.SlotCount - 1 do
+            match frame.Occupancy[i] with
+            | Active rosterIdx when roster.Players[rosterIdx].Id = pid ->
+                bestIdx <- ValueSome i
+            | _ -> ()
+        bestIdx
+
+    let tryGetPlayerFromFrame (frame: TeamFrame) (roster: PlayerRoster) (idx: int) : Player option =
+        match frame.Occupancy[idx] with
+        | Active rosterIdx -> Some roster.Players[rosterIdx]
+        | _ -> None
+
+    let tryFindPlayerByPidInFrame (frame: TeamFrame) (roster: PlayerRoster) (pid: PlayerId) : Player option =
+        match findIdxByPid pid frame roster with
+        | ValueSome idx -> tryGetPlayerFromFrame frame roster idx
+        | ValueNone -> None
+
+    let playerOnSide (ctx: MatchContext) (state: SimState) (side: ClubSide) (pid: PlayerId) : bool =
+        let frame = (getTeam state side).Frame
+        let roster = getRoster ctx side
+        findIdxByPid pid frame roster |> ValueOption.isSome
+
     let updateTeamByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (f: TeamSimState -> TeamSimState) =
         if clubId = ctx.Home.Id then
             state.Home <- f state.Home
@@ -468,11 +790,6 @@ module SimStateOps =
             state.Home <- f state.Home
         else
             state.Away <- f state.Away
-
-    let getSlots (state: SimState) (side: ClubSide) = (getTeam state side).Slots
-
-    let setSlots (state: SimState) (side: ClubSide) (slots: PlayerSlot[]) =
-        updateTeam state side (fun t -> { t with Slots = slots })
 
     let getSidelined (state: SimState) (side: ClubSide) = (getTeam state side).Sidelined
 
@@ -526,6 +843,17 @@ module SimStateOps =
     let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) =
         updateTeam state side (fun t -> { t with AdaptiveState = s })
 
+    let getMatchStats (state: SimState) (side: ClubSide) = (getTeam state side).MatchStats
+
+    let setMatchStats (state: SimState) (side: ClubSide) (s: MatchStats) =
+        updateTeam state side (fun t -> { t with MatchStats = s })
+
+    let updateMatchStats (state: SimState) (side: ClubSide) (f: MatchStats -> MatchStats) =
+        updateTeam state side (fun t -> { t with MatchStats = f t.MatchStats })
+
+    let resetAdaptiveStats (state: SimState) (side: ClubSide) =
+        updateTeam state side (fun t -> { t with MatchStats = MatchStats.empty })
+
     let getLastCognitiveSubTick (state: SimState) (side: ClubSide) =
         (getTeam state side).LastCognitiveSubTick
 
@@ -538,12 +866,9 @@ module SimStateOps =
         updateTeam state side (fun ts -> { ts with LastShapeSubTick = t })
 
     let setCachedTarget (state: SimState) (side: ClubSide) (idx: int) (x: float<meter>) (y: float<meter>) =
-        updateTeam state side (fun t -> 
-            let slots = Array.copy t.Slots
-            match slots[idx] with
-            | Active s -> slots[idx] <- Active { s with CachedTarget = (x, y) }
-            | _ -> ()
-            { t with Slots = slots })
+        let frame = (getTeam state side).Frame
+        frame.CachedTargetX[idx] <- float32 x
+        frame.CachedTargetY[idx] <- float32 y
 
     let getLastMarkingSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastMarkingSubTick
 
@@ -555,9 +880,6 @@ module SimStateOps =
 
     let setLastAdaptiveSubTick (state: SimState) (side: ClubSide) (t: int) =
         updateTeam state side (fun ts -> { ts with LastAdaptiveSubTick = t })
-
-    let getSlotsByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
-        (getTeamByClubId clubId ctx state).Slots
 
     let getTacticsByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         (getTeamByClubId clubId ctx state).Tactics
@@ -580,11 +902,11 @@ module SimStateOps =
     let setSubsUsedByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (n: int) =
         updateTeamByClubId clubId ctx state (fun ts -> { ts with SubsUsed = n })
 
-    let activePlayers (slots: PlayerSlot[]) =
-        slots
-        |> Array.choose (function
-            | Active s -> Some s.Player
-            | Sidelined _ -> None)
+    let activePlayersFromFrame (frame: TeamFrame) (roster: PlayerRoster) : Player[] =
+        Array.init frame.SlotCount (fun i ->
+            match frame.Occupancy[i] with
+            | Active rosterIdx -> roster.Players[rosterIdx]
+            | _ -> roster.Players[0])
 
     let defaultBall =
         { Position = kickOffSpatial
@@ -710,45 +1032,29 @@ module SimStateOps =
         let dir = attackDirFor state.AttackingSide state
         phaseFromBallZone dir state.Ball.Position.X
 
-    let clubSideOf (state: SimState) (pid: PlayerId) : ClubSide option =
-        let foundHome =
-            state.Home.Slots
-            |> Array.exists (function
-                | PlayerSlot.Active s -> s.Player.Id = pid
-                | _ -> false)
-
-        if foundHome then
-            Some HomeClub
+    let clubSideOf (ctx: MatchContext) (state: SimState) (pid: PlayerId) : ClubSide option =
+        let homeFrame = state.Home.Frame
+        let homeRoster = getRoster ctx HomeClub
+        let mutable found = false
+        for i = 0 to homeFrame.SlotCount - 1 do
+            match homeFrame.Occupancy[i] with
+            | Active rosterIdx when homeRoster.Players[rosterIdx].Id = pid -> found <- true
+            | _ -> ()
+        if found then Some HomeClub
         else
-            let foundAway =
-                state.Away.Slots
-                |> Array.exists (function
-                    | PlayerSlot.Active s -> s.Player.Id = pid
-                    | _ -> false)
+            let awayFrame = state.Away.Frame
+            let awayRoster = getRoster ctx AwayClub
+            for i = 0 to awayFrame.SlotCount - 1 do
+                match awayFrame.Occupancy[i] with
+                | Active rosterIdx when awayRoster.Players[rosterIdx].Id = pid -> found <- true
+                | _ -> ()
+            if found then Some AwayClub else None
 
-            if foundAway then Some AwayClub else None
-
-    let findActivePlayer (state: SimState) (pid: PlayerId) : Player option =
-        let slots =
-            match clubSideOf state pid with
-            | Some HomeClub -> state.Home.Slots
-            | Some AwayClub -> state.Away.Slots
-            | None -> [||]
-        
-        slots |> Array.tryPick (function
-            | PlayerSlot.Active s when s.Player.Id = pid -> Some s.Player
-            | _ -> None)
-
-    let conditionsArray (slots: PlayerSlot[]) : int[] =
-        Array.init slots.Length (fun i ->
-            match slots[i] with
-            | PlayerSlot.Active s -> s.Condition
-            | _ -> 0)
-
-    let playersArray (slots: PlayerSlot[]) : Player[] =
-        slots |> Array.choose (function
-            | PlayerSlot.Active s -> Some s.Player
-            | _ -> None)
+    let findActivePlayer (ctx: MatchContext) (state: SimState) (pid: PlayerId) : Player option =
+        match clubSideOf ctx state pid with
+        | Some HomeClub -> tryFindPlayerByPidInFrame state.Home.Frame (getRoster ctx HomeClub) pid
+        | Some AwayClub -> tryFindPlayerByPidInFrame state.Away.Frame (getRoster ctx AwayClub) pid
+        | None -> None
 
     let activeRunsFilter currentSubTick (runs: RunAssignment list) =
         runs |> List.filter (RunAssignment.isActive currentSubTick)
@@ -766,12 +1072,50 @@ module SimStateOps =
         : TeamPerspective =
         let clubId   = if clubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
         let dir      = attackDirFor clubSide state
-        let ownSlots = getSlots state clubSide
-        let oppSlots = getSlots state (ClubSide.flip clubSide)
         let bonus    = HomeBonus.build clubSide state.Config.HomeAdvantage
+        let ownFrame = (getTeam state clubSide).Frame
+        let oppFrame = (getTeam state (ClubSide.flip clubSide)).Frame
+        let ownRoster = getRoster ctx clubSide
+        let oppRoster = getRoster ctx (ClubSide.flip clubSide)
         { ClubSide  = clubSide
           ClubId    = clubId
           AttackDir = dir
-          OwnSlots  = ownSlots
-          OppSlots  = oppSlots
+          OwnFrame  = ownFrame
+          OppFrame  = oppFrame
+          OwnRoster = ownRoster
+          OppRoster = oppRoster
           Bonus     = bonus }
+
+    let getFrame (state: SimState) (side: ClubSide) : TeamFrame =
+        (getTeam state side).Frame
+
+    let nearestActiveSlotInFrame (frame: TeamFrame) (x: float<meter>) (y: float<meter>) : int voption =
+        let mutable bestIdx = ValueNone
+        let mutable bestDistSq = System.Single.MaxValue
+        let x32 = float32 x
+        let y32 = float32 y
+        for i = 0 to frame.SlotCount - 1 do
+            match frame.Occupancy[i] with
+            | Active _ ->
+                let dx = frame.PosX[i] - x32
+                let dy = frame.PosY[i] - y32
+                let d = dx * dx + dy * dy
+                if d < bestDistSq then
+                    bestDistSq <- d
+                    bestIdx <- ValueSome i
+            | _ -> ()
+        bestIdx
+
+    let getCognitiveFrame (state: SimState) (side: ClubSide) : CognitiveFrame option =
+        let cf = if side = HomeClub then state.HomeCognitiveFrame else state.AwayCognitiveFrame
+        if cf.SlotCount > 0 then Some cf else None
+
+    let setCognitiveFrame (state: SimState) (side: ClubSide) (cf: CognitiveFrame) =
+        if side = HomeClub then state.HomeCognitiveFrame <- cf else state.AwayCognitiveFrame <- cf
+
+    let getTeamIntent (state: SimState) (side: ClubSide) : TeamIntent option =
+        let ti = if side = HomeClub then state.HomeTeamIntent else state.AwayTeamIntent
+        if ti.SupportPositions.Length > 0 then Some ti else None
+
+    let setTeamIntent (state: SimState) (side: ClubSide) (ti: TeamIntent) =
+        if side = HomeClub then state.HomeTeamIntent <- ti else state.AwayTeamIntent <- ti

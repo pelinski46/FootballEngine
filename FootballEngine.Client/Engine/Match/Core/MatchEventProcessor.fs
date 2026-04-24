@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open SchedulingTypes
+open FootballEngine.PhysicsContract
 
 module MatchEventProcessor =
 
@@ -31,55 +32,26 @@ module MatchEventProcessor =
                 | MatchEventType.Corner -> Some(SetPiece SetPieceKind.Corner)
                 | _ -> None)
 
-    let private intentFromEvents
-        (events: MatchEvent list)
-        (possessionChanged: bool)
-        (playerHasBall: bool)
-        (tc: TimingConfig)
-        (state: SimState)
-        : TickIntent =
-
-        let hasGoal =
-            events |> List.exists (fun e -> e.Type = MatchEventType.Goal || e.Type = MatchEventType.OwnGoal)
-
-        let hasFoul =
-            events |> List.exists (fun e -> e.Type = MatchEventType.FoulCommitted)
-
-        let chainBreaks =
-            events
-            |> List.exists (fun e ->
-                match e.Type with
-                | MatchEventType.PassDeflected _
-                | MatchEventType.PassMisplaced _ -> true
-                | _ -> false)
-            || possessionChanged
-            || not playerHasBall
-
-        if hasGoal then
-            StopPlay Goal
-        elif hasFoul then
-            StopPlay Foul
-        elif chainBreaks then
-            match state.Ball.Possession with
-            | Owned(_, pid) -> GiveDecisionTo pid
-            | _ -> FindNextDuel
-        else
-            FindNextDuel
+    let private defaultPlayerIntent : PlayerIntent =
+        { Movement = MovementIntent.RecoverBall { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+          Action = None
+          Context = NormalPlay
+          Urgency = 0.5
+          Confidence = 0.5 }
 
     let processEventsAndSpawnTicks
         (subTick: int)
-        (depth: int)
+        (_depth: int)
         (allEvents: MatchEvent list)
         (playerHasBall: bool)
-        (attId: PlayerId option)
+        (_attId: PlayerId option)
         (prevAttackingClub: ClubSide)
         (ctx: MatchContext)
         (state: SimState)
-        (clock: SimulationClock)
-        : AgentOutput =
+        (_clock: SimulationClock)
+        : AgentResult =
 
         let tc = ctx.Config.Timing
-        let mv = ctx.Config.MatchVolume
 
         let possessionChanged = state.AttackingSide <> prevAttackingClub
 
@@ -96,57 +68,13 @@ module MatchEventProcessor =
 
         if hasTerminating || chainBreaks then
             let transition = transitionFromEvents allEvents
-            let intent = intentFromEvents allEvents possessionChanged playerHasBall tc state
 
-            { Events = allEvents
-              Transition = transition
-              Intent = intent }
-        elif depth < mv.MaxChainLength - 1 then
-            let currentAttSide = state.AttackingSide
-            let attSlots2 = SimStateOps.getSlots state currentAttSide
-
-            if attSlots2.Length = 0 then
-                { Events = allEvents
-                  Transition = None
-                  Intent = FindNextDuel }
-            else
-                let bx', by' = state.Ball.Position.X, state.Ball.Position.Y
-
-                match MatchSpatial.nearestActiveSlot attSlots2 bx' by' with
-                | ValueSome s ->
-                    let team = SimStateOps.buildTeamPerspective state.AttackingSide ctx state
-
-                    let actx =
-                        AgentContext.build
-                            s.Player
-                            s.Profile
-                            0
-                            team
-                            s.MovementIntent
-                            s.IntentLockExpiry
-                            state
-                            clock
-                            state.Config.Decision
-                            state.Config.BuildUp
-
-                    let scores = PlayerScorer.computeAll actx
-
-                    let intent =
-                        match PlayerDecision.decide actx scores with
-                        | BallContested -> FindNextDuel
-                        | PlayerActing act ->
-                            let _ = act
-                            FindNextDuel
-
-                    { Events = allEvents
-                      Transition = None
-                      Intent = intent }
-                | ValueNone ->
-                    { Events = allEvents
-                      Transition = None
-                      Intent = FindNextDuel }
-
+            { Intent = defaultPlayerIntent
+              NextTick = None
+              Events = allEvents
+              Transition = transition }
         else
-            { Events = allEvents
-              Transition = None
-              Intent = FindNextDuel }
+            { Intent = defaultPlayerIntent
+              NextTick = None
+              Events = allEvents
+              Transition = None }

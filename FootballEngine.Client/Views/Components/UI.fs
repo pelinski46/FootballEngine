@@ -14,6 +14,27 @@ open FootballEngine.Icons
 
 module UI =
 
+    let statusBanner (color: string) (icon: Material.Icons.MaterialIconKind) (text: string) =
+        Border.create
+            [ Border.background (color + "18")
+              Border.borderBrush color
+              Border.borderThickness 1.0
+              Border.cornerRadius 8.0
+              Border.padding 15.0
+              Border.child (
+                  StackPanel.create
+                      [ StackPanel.orientation Orientation.Horizontal
+                        StackPanel.spacing 12.0
+                        StackPanel.children
+                            [ Icons.iconSm icon color
+                              TextBlock.create
+                                  [ TextBlock.text text
+                                    TextBlock.foreground Theme.TextMain
+                                    TextBlock.fontSize 12.0
+                                    TextBlock.fontWeight FontWeight.Medium
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+              ) ]
+
     let primaryButton (label: string) (icon: Material.Icons.MaterialIconKind option) onClick =
         Button.create
             [ Button.background Theme.Accent
@@ -38,7 +59,7 @@ module UI =
                                     TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
               ) ]
 
-    let ghostButton (label: string) onClick =
+    let ghostButton (label: string) (icon: Material.Icons.MaterialIconKind option) onClick =
         Button.create
             [ Button.background "Transparent"
               Button.foreground Theme.TextMuted
@@ -48,7 +69,19 @@ module UI =
               Button.cornerRadius 8.0
               Button.cursor Avalonia.Input.Cursor.Default
               Button.onClick onClick
-              Button.content label ]
+              Button.content (
+                  StackPanel.create
+                      [ StackPanel.orientation Orientation.Horizontal
+                        StackPanel.spacing 6.0
+                        StackPanel.children
+                            [ match icon with
+                              | Some k -> Icons.iconSm k Theme.TextMuted
+                              | None -> ()
+                              TextBlock.create
+                                  [ TextBlock.text label
+                                    TextBlock.foreground Theme.TextMuted
+                                    TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
+              ) ]
 
     let iconToggleButton (label: string) (iconKind: Material.Icons.MaterialIconKind) (isActive: bool) onClick =
         Button.create

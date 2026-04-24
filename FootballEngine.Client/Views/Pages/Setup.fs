@@ -80,7 +80,7 @@ module Setup =
                 [ DockPanel.margin (0.0, 8.0, 0.0, 0.0)
                   DockPanel.children
                       [ match backStep with
-                        | Some step -> UI.ghostButton "← Back" (fun _ -> dispatch (SetupMsg(GoToStep step)))
+                        | Some step -> UI.ghostButton "← Back" None (fun _ -> dispatch (SetupMsg(GoToStep step)))
                         | None -> ()
                         match nextView with
                         | Some v -> Border.create [ DockPanel.dock Dock.Right; Border.child v ]
@@ -127,18 +127,21 @@ module Setup =
                             StackPanel.create
                                 [ StackPanel.spacing 8.0
                                   StackPanel.children
-                                      [ for code, name, flag in
-                                            [ "ARG", "Argentina", "🇦🇷"
-                                              "BRA", "Brazil", "🇧🇷"
-                                              "ENG", "England", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"
-                                              "ESP", "Spain", "🇪🇸" ] do
-                                            UI.countrySelectionCard
-                                                name
-                                                flag
-                                                (state.Setup.SelectedCountry = Some code)
-                                                (state.Setup.SecondaryCountries |> List.contains code)
-                                                (fun _ -> dispatch (SetupMsg(SelectPrimaryCountry code)))
-                                                (fun _ -> dispatch (SetupMsg(ToggleSecondaryCountry code))) ] ]
+                                       [ let flagForCode (code: string) =
+                                             match code with
+                                             | "ARG" -> "🇦🇷" | "BRA" -> "🇧🇷" | "ENG" -> "🏴"
+                                             | "ESP" -> "🇪🇸" | _ -> "🌍"
+                                         for cd in Data.DataRegistry.allCountries |> List.sortBy _.Country.Name do
+                                             let code = cd.Country.Code
+                                             let name = cd.Country.Name
+                                             let flag = flagForCode code
+                                             UI.countrySelectionCard
+                                                 name
+                                                 flag
+                                                 (state.Setup.SelectedCountry = Some code)
+                                                 (state.Setup.SecondaryCountries |> List.contains code)
+                                                 (fun _ -> dispatch (SetupMsg(SelectPrimaryCountry code)))
+                                                 (fun _ -> dispatch (SetupMsg(ToggleSecondaryCountry code))) ] ]
 
                             navRow
                                 (Some MainMenu)

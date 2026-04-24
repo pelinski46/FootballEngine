@@ -15,7 +15,9 @@ module ShapeEngine =
         (phase: MatchPhase)
         (ballX: float<meter>)
         (tacticsCfg: TacticsConfig)
-        : (float<meter> * float<meter>)[] =
+        (targetX: float32[])
+        (targetY: float32[])
+        : unit =
 
         let forwardDir = forwardX dir
 
@@ -28,7 +30,6 @@ module ShapeEngine =
             | Attack -> (3.0<meter> + pressMod * 2.0<meter>) * forwardDir
 
         let n = basePositions.Length
-        let result = Array.zeroCreate<(float<meter> * float<meter>)> n
 
         let tacticalPush = tacticsCfg.ForwardPush * 0.5<meter> * forwardDir
         let defensiveDrop = tacticsCfg.DefensiveDrop * 0.5<meter> * forwardDir
@@ -51,6 +52,5 @@ module ShapeEngine =
             let finalX = PhysicsContract.clamp x 2.0<meter> 98.0<meter>
             let finalY = PhysicsContract.clamp y 2.0<meter> 98.0<meter>
 
-            result[i] <- (finalX, finalY)
-
-        result
+            targetX[i] <- float32 finalX
+            targetY[i] <- float32 finalY

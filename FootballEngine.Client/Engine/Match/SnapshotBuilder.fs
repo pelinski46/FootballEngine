@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open SimStateOps
 
 type SimSnapshot =
     { SubTick: int
@@ -32,18 +33,27 @@ type MatchReplay =
 
 module SnapshotBuilder =
 
+    let private positionsFromFrame (frame: TeamFrame) : Spatial[] =
+        Array.init frame.SlotCount (fun i ->
+            match frame.Occupancy[i] with
+            | OccupancyKind.Active _ ->
+                { X = float frame.PosX[i] * 1.0<meter>
+                  Y = float frame.PosY[i] * 1.0<meter>
+                  Z = 0.0<meter>
+                  Vx = 0.0<meter/second>
+                  Vy = 0.0<meter/second>
+                  Vz = 0.0<meter/second> }
+            | _ -> SimStateOps.kickOffSpatial)
+
+    let private conditionsFromFrame (frame: TeamFrame) : int[] =
+        Array.init frame.SlotCount (fun i -> int frame.Condition[i])
+
     /// Takes a snapshot of the current sim state.
     /// Only called from runLoopFull — never from runLoopFast.
     let take (state: SimState) : SimSnapshot =
         { SubTick = state.SubTick
-          HomePositions =
-            state.Home.Slots |> Array.map (function
-                | PlayerSlot.Active s -> s.Pos
-                | Sidelined _ -> SimStateOps.kickOffSpatial)
-          AwayPositions =
-            state.Away.Slots |> Array.map (function
-                | PlayerSlot.Active s -> s.Pos
-                | Sidelined _ -> SimStateOps.kickOffSpatial)
+          HomePositions = positionsFromFrame state.Home.Frame
+          AwayPositions = positionsFromFrame state.Away.Frame
           BallX = state.Ball.Position.X
           BallY = state.Ball.Position.Y
           BallVx = state.Ball.Position.Vx
@@ -55,14 +65,8 @@ module SnapshotBuilder =
           Possession = state.Ball.Possession
           HomeScore = state.HomeScore
           AwayScore = state.AwayScore
-          HomeConditions =
-            state.Home.Slots |> Array.map (function
-                | PlayerSlot.Active s -> s.Condition
-                | Sidelined _ -> 0)
-          AwayConditions =
-            state.Away.Slots |> Array.map (function
-                | PlayerSlot.Active s -> s.Condition
-                | Sidelined _ -> 0)
+          HomeConditions = conditionsFromFrame state.Home.Frame
+          AwayConditions = conditionsFromFrame state.Away.Frame
           HomeSidelined = state.Home.Sidelined
           AwaySidelined = state.Away.Sidelined
           Momentum = state.Momentum }

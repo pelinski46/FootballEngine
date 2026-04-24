@@ -210,7 +210,8 @@ type GameSaveMeta =
       NextInboxId: int
       ClockDay: int
       ClockWeek: int
-      ClockMonth: int }
+      ClockMonth: int
+      ActiveModsJson: string }
 
 [<CLIMutable>]
 type InboxMessageEntity =

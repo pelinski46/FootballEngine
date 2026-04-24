@@ -1,5 +1,6 @@
 namespace FootballEngine
 
+open FootballEngine.Data
 open FootballEngine.Domain
 
 open AppTypes
@@ -53,12 +54,33 @@ module AppMsgs =
         | MarkAsRead of messageId: int
         | MarkActionTaken of messageId: int
 
+    type ModEditorMsg =
+        | SetTab of ModEditorTypes.ModEditorTab
+        | SetSubTab of ModEditorTypes.ModEditorSubTab
+        | UpdateManifest of (ModManifestDto -> ModManifestDto)
+        | SelectCountry of string option
+        | AddCountry of CountryDataDto
+        | UpdateCountry of string * (CountryDataDto -> CountryDataDto)
+        | RemoveCountry of string
+        | AddCup of string * CupEntryDto
+        | UpdateCup of string * int * (CupEntryDto -> CupEntryDto)
+        | RemoveCup of string * int
+        | AddInternationalComp of InternationalCompDto
+        | UpdateInternationalComp of int * (InternationalCompDto -> InternationalCompDto)
+        | RemoveInternationalComp of int
+        | UndoMod
+        | RedoMod
+        | Export
+        | Validate
+        | SearchMod of string
+
     type Msg =
         | SetupMsg of SetupMsg
         | SimMsg of SimMsg
         | TransferMsg of TransferMsg
         | NotificationMsg of NotificationMsg
         | InboxMsg of InboxMsg
+        | ModEditorMsg of ModEditorMsg
         | GameLoaded of (GameState * WorldClock) option
         | ChangePage of Page
         | SelectPlayer of PlayerId

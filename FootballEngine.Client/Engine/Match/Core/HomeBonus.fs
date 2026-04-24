@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 
+[<Struct>]
 type HomeBonus = {
     AttackDuel   : float
     DefendDuel   : float
