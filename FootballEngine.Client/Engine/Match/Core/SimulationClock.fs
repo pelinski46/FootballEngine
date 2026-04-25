@@ -7,6 +7,7 @@ type SimulationClock =
       PhysicsRate: int
       SteeringRate: int
       CognitiveRate: int
+      ActionRate: int
       AdaptiveRate: int }
 
 module SimulationClock =
@@ -17,6 +18,7 @@ module SimulationClock =
           PhysicsRate = 1
           SteeringRate = 2
           CognitiveRate = 120
+          ActionRate = 8
           AdaptiveRate = 1200 }
 
     let dt (c: SimulationClock) : float<second> =

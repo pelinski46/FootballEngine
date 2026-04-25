@@ -261,7 +261,8 @@ module Db =
                               NextNegotiationId = 1
                               ProfileCache =
                                   players
-                                  |> Map.map (fun _ p -> Player.profile p) },
+                                  |> Map.map (fun _ p -> Player.profile p)
+                              PlayerExperiences = Map.empty },
                             restoredClock
                         )
         }

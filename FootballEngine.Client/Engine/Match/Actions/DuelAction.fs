@@ -1,12 +1,12 @@
 namespace FootballEngine
 
 open System
-open FootballEngine.ActionMath
 open FootballEngine.Domain
 open FootballEngine.Stats
 open SimStateOps
 open MatchSpatial
 open FootballEngine.PhysicsContract
+open FootballEngine.MatchMemory
 
 
 module DuelAction =
@@ -14,6 +14,7 @@ module DuelAction =
     let private fatigueMultiplier (config: DuelConfig) (condition: int) : float =
         let norm = PhysicsContract.normaliseCondition condition
         let threshold = PhysicsContract.normaliseCondition config.FatigueThreshold
+
         if norm < threshold then
             let deficit = threshold - norm
             exp (-deficit * config.FatigueDecay / PhysicsContract.normaliseCondition 1)
@@ -33,7 +34,9 @@ module DuelAction =
         let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
         let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
 
-        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY, SimStateOps.nearestActiveSlotInFrame defFrame bX bY with
+        match
+            SimStateOps.nearestActiveSlotInFrame attFrame bX bY, SimStateOps.nearestActiveSlotInFrame defFrame bX bY
+        with
         | ValueSome attIdx, ValueSome defIdx ->
             let attP = attRoster.Players[attIdx]
             let defP = defRoster.Players[defIdx]
@@ -42,24 +45,20 @@ module DuelAction =
 
             let cfg = ctx.Config.Duel
 
-            let attFeatures : (float * float) list =
-                [ (PhysicsContract.normaliseAttr attP.Technical.Dribbling, cfg.AttackerDribblingWeight)
-                  (PhysicsContract.normaliseAttr attP.Physical.Agility, cfg.AttackerAgilityWeight)
-                  (PhysicsContract.normaliseAttr attP.Physical.Balance, cfg.AttackerBalanceWeight) ]
+            let attScore =
+                ActionMath.evalPerformance PerformanceDefaults.duelPerformanceConfig attP.Technical.Dribbling attCond 0
 
-            let defFeatures : (float * float) list =
-                [ (PhysicsContract.normaliseAttr defP.Technical.Tackling, cfg.DefenderTacklingWeight)
-                  (PhysicsContract.normaliseAttr defP.Physical.Strength, cfg.DefenderStrengthWeight)
-                  (PhysicsContract.normaliseAttr defP.Physical.Agility, cfg.DefenderPositionWeight) ]
-            
-            let attScore = ActionMath.evalWeighted attFeatures attCond 0.05
-            let defScore = ActionMath.evalWeighted defFeatures defCond 0.05
+            let defScore =
+                ActionMath.evalPerformance PerformanceDefaults.duelPerformanceConfig defP.Technical.Tackling defCond 0
 
             let aggressionNorm = float defFrame.AggressionLevel[defIdx]
             let foulChance = 0.06 + aggressionNorm * 0.10
 
             if bernoulli foulChance then
-                state.Ball <- { state.Ball with Possession = Contest(actx.Def.ClubSide) }
+                state.Ball <-
+                    { state.Ball with
+                        Possession = Contest(actx.Def.ClubSide) }
+
                 adjustMomentum actx.Att.AttackDir (-ctx.Config.Tackle.FoulMomentum) state
                 [ createEvent subTick defP.Id defClubId FoulCommitted ]
             else
@@ -70,9 +69,8 @@ module DuelAction =
                 let dX = float defFrame.PosX[defIdx] * 1.0<meter>
                 let dY = float defFrame.PosY[defIdx] * 1.0<meter>
 
-                if logisticBernoulli diff cfg.WinProbabilityBase then
-                    let nx, ny =
-                        PitchMath.jitter bX bY aX aY 0.5 cfg.JitterWin cfg.JitterWin
+                if logisticBernoulli diff cfg.DuelSteepness then
+                    let nx, ny = PitchMath.jitter bX bY aX aY 0.5 cfg.JitterWin cfg.JitterWin
 
                     state.Ball <-
                         { state.Ball with
@@ -83,10 +81,11 @@ module DuelAction =
                             Possession = Owned(actx.Att.ClubSide, attP.Id) }
 
                     state.Momentum <- Math.Clamp(state.Momentum + cfg.MomentumBonus, -10.0, 10.0)
+                    MatchMemory.recordDuel actx.Att.ClubSide attIdx defIdx Won state.MatchMemory
+                    MatchMemory.recordSuccess actx.Att.ClubSide attIdx state.MatchMemory
                     [ createEvent subTick attP.Id attClubId DribbleSuccess ]
-                elif logisticBernoulli (-diff) cfg.RecoverProbabilityBase then
-                    let nx, ny =
-                        PitchMath.jitter bX bY dX dY 0.5 cfg.JitterRecover cfg.JitterRecover
+                elif logisticBernoulli (-diff) cfg.DuelSteepness then
+                    let nx, ny = PitchMath.jitter bX bY dX dY 0.5 cfg.JitterRecover cfg.JitterRecover
 
                     loosePossession state
 
@@ -98,10 +97,10 @@ module DuelAction =
                                     Y = ny } }
 
                     state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
+                    MatchMemory.recordDuel actx.Att.ClubSide attIdx defIdx Lost state.MatchMemory
                     [ createEvent subTick attP.Id attClubId DribbleFail ]
                 else
-                    let nx, ny =
-                        PitchMath.jitter bX bY bX bY 0.0 cfg.JitterKeep cfg.JitterKeep
+                    let nx, ny = PitchMath.jitter bX bY bX bY 0.0 cfg.JitterKeep cfg.JitterKeep
 
                     withBallVelocity
                         ((nx - bX) / 1.0<meter> * cfg.SpeedKeep)
@@ -121,9 +120,19 @@ module DuelAction =
 
         let defClubId =
             match SimStateOps.findIdxByPid defender.Id defFrame defRoster with
-            | ValueSome _ -> defRoster.Players |> Array.tryFind (fun p -> p.Id = defender.Id) |> Option.map (fun _ -> defRoster) |> Option.map (fun _ -> actx.Def.ClubId) |> Option.defaultValue ctx.Away.Id
+            | ValueSome _ ->
+                defRoster.Players
+                |> Array.tryFind (fun p -> p.Id = defender.Id)
+                |> Option.map (fun _ -> defRoster)
+                |> Option.map (fun _ -> actx.Def.ClubId)
+                |> Option.defaultValue ctx.Away.Id
             | ValueNone ->
-                match SimStateOps.findIdxByPid defender.Id (SimStateOps.getFrame state HomeClub) (SimStateOps.getRoster ctx HomeClub) with
+                match
+                    SimStateOps.findIdxByPid
+                        defender.Id
+                        (SimStateOps.getFrame state HomeClub)
+                        (SimStateOps.getRoster ctx HomeClub)
+                with
                 | ValueSome _ -> ctx.Home.Id
                 | ValueNone -> ctx.Away.Id
 
@@ -132,19 +141,17 @@ module DuelAction =
             | ValueSome i -> i
             | ValueNone -> -1
 
-        if defIdx < 0 then []
+        if defIdx < 0 then
+            []
         else
             let condNorm = PhysicsContract.normaliseCondition (int defFrame.Condition[defIdx])
 
             let tCfg = ctx.Config.Tackle
             let dCfg = ctx.Config.Duel
 
-            let defFeatures : (float * float) list =
-                [ (PhysicsContract.normaliseAttr defender.Technical.Tackling, tCfg.TechnicalWeight)
-                  (PhysicsContract.normaliseAttr defender.Mental.Positioning, tCfg.PositioningWeight)
-                  (PhysicsContract.normaliseAttr defender.Physical.Strength, tCfg.StrengthWeight) ]
-
-            let defScore = ActionMath.evalWeighted defFeatures (int defFrame.Condition[defIdx]) 0.05 + actx.Def.Bonus.Tackle
+            let defScore =
+                ActionMath.evalPerformance PerformanceDefaults.duelPerformanceConfig (PhysicsContract.normaliseAttr defender.Technical.Tackling) (int defFrame.Condition[defIdx]) 0
+                + actx.Def.Bonus.Tackle
 
             let bPos = state.Ball.Position
 
@@ -157,10 +164,12 @@ module DuelAction =
                 match attFrame.Occupancy[i] with
                 | OccupancyKind.Active _ ->
                     let player = attRoster.Players[i]
+
                     if player.Position <> GK then
                         let dx = attFrame.PosX[i] - bX32
                         let dy = attFrame.PosY[i] - bY32
                         let dSq = dx * dx + dy * dy
+
                         if dSq < bestDistSq then
                             bestDistSq <- dSq
                             bestIdx <- ValueSome i
@@ -170,13 +179,9 @@ module DuelAction =
                 match bestIdx with
                 | ValueSome idx -> attRoster.Players[idx]
                 | ValueNone ->
-                    attRoster.Players |> Array.tryFind (fun p -> p.Position <> GK)
+                    attRoster.Players
+                    |> Array.tryFind (fun p -> p.Position <> GK)
                     |> Option.defaultValue (failwith "No active players found in attacker team")
-
-            let attFeatures : (float * float) list =
-                [ (PhysicsContract.normaliseAttr attacker.Technical.Dribbling, dCfg.AttackerDribblingWeight)
-                  (PhysicsContract.normaliseAttr attacker.Physical.Agility, dCfg.AttackerAgilityWeight)
-                  (PhysicsContract.normaliseAttr attacker.Physical.Balance, dCfg.AttackerBalanceWeight) ]
 
             let attIdx =
                 match SimStateOps.findIdxByPid attacker.Id attFrame attRoster with
@@ -184,18 +189,17 @@ module DuelAction =
                 | ValueNone -> 0
 
             let attCond = int attFrame.Condition[attIdx]
-            let attScore = ActionMath.evalWeighted attFeatures attCond 0.05
+            let attScore = ActionMath.evalPerformance PerformanceDefaults.duelPerformanceConfig (PhysicsContract.normaliseAttr attacker.Technical.Dribbling) attCond 0
 
             let physVar = physicalVariation (int defFrame.Condition[defIdx])
             let duelScore = (defScore - attScore) * condNorm * physVar
 
-            if logisticBernoulli duelScore 1.5 then
+            if logisticBernoulli duelScore ctx.Config.Tackle.TackleSteepness then
                 let aggressionNorm = PhysicsContract.normaliseAttr defender.Mental.Aggression
                 let positioningNorm = PhysicsContract.normaliseAttr defender.Mental.Positioning
 
                 let baseFoulRate =
-                    ctx.Config.SetPiece.FoulBaseRate
-                    + aggressionNorm * tCfg.AggressionWeight
+                    ctx.Config.SetPiece.FoulBaseRate + aggressionNorm * tCfg.AggressionWeight
                     - positioningNorm * tCfg.PositioningReduction
                     |> abs
 
@@ -203,7 +207,10 @@ module DuelAction =
                 let foulChance = betaSample adjustedFoulRate tCfg.FoulShapeBeta
 
                 if bernoulli foulChance then
-                    state.Ball <- { state.Ball with Possession = SetPiece(actx.Att.ClubSide, SetPieceKind.FreeKick) }
+                    state.Ball <-
+                        { state.Ball with
+                            Possession = SetPiece(actx.Att.ClubSide, SetPieceKind.FreeKick) }
+
                     adjustMomentum actx.Att.AttackDir (-tCfg.FoulMomentum) state
                     [ createEvent subTick defender.Id defClubId FoulCommitted ]
                 else

@@ -24,7 +24,7 @@ module CognitiveFrameModule =
                 Array.fill buf.NearestOpponentIdx 0 buf.NearestOpponentIdx.Length 0s
                 Array.fill buf.NearestOpponentDistSq 0 buf.NearestOpponentDistSq.Length System.Single.MaxValue
                 Array.fill buf.BestPassTargetIdx 0 buf.BestPassTargetIdx.Length -1s
-                Array.fill buf.BestPassTargetPos 0 buf.BestPassTargetPos.Length None
+                Array.fill buf.BestPassTargetPos 0 buf.BestPassTargetPos.Length ValueNone
                 Array.fill buf.PressureOnPlayer 0 buf.PressureOnPlayer.Length System.Single.MaxValue
                 buf
             | _ ->
@@ -89,7 +89,7 @@ module CognitiveFrameModule =
                 match bestPass with
                 | ValueSome (idx, sp) ->
                     bestPassIdx[i] <- int16 idx
-                    bestPassPos[i] <- Some sp
+                    bestPassPos[i] <- ValueSome sp
                 | ValueNone -> ()
 
             | _ -> ()

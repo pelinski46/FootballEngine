@@ -78,31 +78,48 @@ module CrossAction =
                 let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
                 let gkSkill = gk |> Option.map (fun g -> float g.CurrentSkill) |> Option.defaultValue cc.GkSkillDefault
 
-                let headerScore = PhysicsContract.normaliseAttr (min 20 (target.Physical.Strength + target.Technical.Heading)) * physicalVariation crosserCond
-                let gkScore = gkSkill / cc.GkSkillDivisor
-                let nearDefs = defOutfield |> Array.sumBy (fun (p, _) -> PhysicsContract.normaliseAttr p.Mental.Positioning) |> fun v -> v / float (max 1 defOutfield.Length)
-
-                let spin = { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>; Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
-
-                if logisticBernoulli (headerScore - gkScore - nearDefs) cc.HeaderLogisticSteepness then
-                    let goalEvents = awardGoal actx.Att.ClubSide (Some target.Id) subTick ctx state
-                    (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
-                else
-                    let blockPos =
-                        defOutfield
-                        |> Array.map (fun (_, dSp) ->
-                            let dx = dSp.X - targetSp.X
-                            let dy = dSp.Y - targetSp.Y
-                            dx * dx + dy * dy, (dSp.X, dSp.Y))
-                        |> Array.minBy fst
-                        |> snd
-                    let bx, by = blockPos
-                    ballTowards crosserPos.X crosserPos.Y bx by cc.Speed cc.Vz state
+                // Stage 1: Cross Quality
+                let crossQuality = betaSample successChance (cc.SuccessShapeAlpha + condNorm * cc.SuccessConditionMultiplier)
+                if not (bernoulli crossQuality) then
+                    let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
                     let defClub = ClubSide.flip actx.Att.ClubSide
-                    state.Ball <- { state.Ball with Possession = Contest(defClub); Spin = spin }
+                    ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
+                    state.Ball <- { state.Ball with Possession = Contest(defClub) }
                     clearOffsideSnapshot state
-                    adjustMomentum actx.Att.AttackDir (-cc.FailMomentum) state
-                    [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
+                    [ createEvent subTick crosser.Id attClubId (CrossAttempt false) ]
+                else
+                    let headerScore = PhysicsContract.normaliseAttr (min 20 (target.Physical.Strength + target.Technical.Heading)) * physicalVariation crosserCond
+                    let gkScore = gkSkill / cc.GkSkillDivisor
+                    let nearDefs = defOutfield |> Array.sumBy (fun (p, _) -> PhysicsContract.normaliseAttr p.Mental.Positioning) |> fun v -> v / float (max 1 defOutfield.Length)
+                    let spin = { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>; Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
+
+                    // Stages 2, 3, 4
+                    let headerDuel = headerScore - gkScore - nearDefs
+                    let headerAccuracy = cc.HeaderAccuracyBase + PhysicsContract.normaliseAttr target.Technical.Heading * cc.HeaderAccuracySkillMult
+                    let saveProb = cc.GkSaveBase + PhysicsContract.normaliseAttr (gk |> Option.map (fun g -> g.Goalkeeping.Reflexes) |> Option.defaultValue 10) * cc.GkReflexesMult
+
+                    if logisticBernoulli headerDuel cc.HeaderDuelSteepness && bernoulli headerAccuracy then
+                        if bernoulli saveProb then
+                            (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: [createEvent subTick (gk |> Option.map (fun g -> g.Id) |> Option.defaultValue 0) actx.Def.ClubId Save]
+                        else
+                            let goalEvents = awardGoal actx.Att.ClubSide (Some target.Id) subTick ctx state
+                            (createEvent subTick crosser.Id attClubId (CrossAttempt true)) :: goalEvents
+                    else
+                        let blockPos =
+                            defOutfield
+                            |> Array.map (fun (_, dSp) ->
+                                let dx = dSp.X - targetSp.X
+                                let dy = dSp.Y - targetSp.Y
+                                dx * dx + dy * dy, (dSp.X, dSp.Y))
+                            |> Array.minBy fst
+                            |> snd
+                        let bx, by = blockPos
+                        ballTowards crosserPos.X crosserPos.Y bx by cc.Speed cc.Vz state
+                        let defClub = ClubSide.flip actx.Att.ClubSide
+                        state.Ball <- { state.Ball with Possession = Contest(defClub); Spin = spin }
+                        clearOffsideSnapshot state
+                        adjustMomentum actx.Att.AttackDir (-cc.FailMomentum) state
+                        [ createEvent subTick crosser.Id attClubId (CrossAttempt true) ]
             else
                 let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
                 let defClub = ClubSide.flip actx.Att.ClubSide

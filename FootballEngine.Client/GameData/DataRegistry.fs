@@ -12,7 +12,7 @@ module DataRegistry =
     let mutable private _mods: ModManifest list = []
     let mutable private _loadErrors: ModError list = []
 
-    let internal setLoadedData (data: LoadedData) =
+    let setLoadedData (data: LoadedData) =
         _countries <- data.Countries
         _intlComps <- data.InternationalComps
         _mods <- data.ActiveMods

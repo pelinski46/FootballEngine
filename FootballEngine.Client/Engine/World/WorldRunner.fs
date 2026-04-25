@@ -1,5 +1,6 @@
 namespace FootballEngine.World
 
+open BalanceCalibrator
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.MatchSimulator
@@ -133,7 +134,9 @@ module WorldRunner =
                                             Events = [] }
                                       HomeScore = h
                                       AwayScore = a
-                                      InjuredPlayers = injured }
+                                      InjuredPlayers = injured
+                                      HomePlayerStats = [||]
+                                      AwayPlayerStats = [||] }
                                     :: outs,
                                     errs
                                 | Error e -> outs, string e :: errs)
@@ -213,9 +216,23 @@ module WorldRunner =
                             Events = replay.Events }
                       HomeScore = h
                       AwayScore = a
-                      InjuredPlayers = injured }
+                      InjuredPlayers = injured
+                      HomePlayerStats = [||]
+                      AwayPlayerStats = [||] }
 
                 let finalGs = applyOutcomes (fixtureToCompMap gsReady) [| outcome |] gsReady
+
+                let metrics =
+                    MatchMetrics.extract replay.Events fixture.HomeClubId fixture.AwayClubId
+
+                ignore (
+                    BalanceCalibrator.calibrateOnce
+                        (BalanceCalibrator.getConfig ())
+                        metrics
+                        CalibrationTargets.targetsDefault
+                        0.1
+                )
+
                 let clock1 = WorldClockOps.advance clock
 
                 Ok

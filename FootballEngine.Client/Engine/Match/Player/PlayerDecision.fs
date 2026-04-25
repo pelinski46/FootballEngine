@@ -10,20 +10,22 @@ module PlayerDecision =
 
     let decide (ctx: AgentContext) (scores: ActionScores) : OnBallIntent option =
         let shootBlocked =
-            scores.Shoot < 0.15 || ctx.Zone = DefensiveZone
+            scores.Shoot < 0.15<decisionScore> || ctx.Zone = DefensiveZone
 
         let crossBlocked =
             not (canCross ctx.Profile ctx.Zone)
 
         let passBlocked =
-            ctx.BestPassTargetIdx.IsNone || scores.Pass < 0.2
+            match ctx.BestPassTargetIdx with
+            | ValueNone -> true
+            | ValueSome _ -> scores.Pass < 0.2<decisionScore>
 
         let dribbleBlocked =
             ctx.Zone = DefensiveZone && ctx.Profile.Directness < 0.2
 
         let passMod = if ctx.Phase = BuildUp then 1.0 + ctx.Profile.CreativityWeight * 0.15 else 1.0
 
-        let mutable bestScore = -1.0
+        let mutable bestScore = -1.0<decisionScore>
         let mutable bestIntent: OnBallIntent option = None
 
         if not shootBlocked then
@@ -32,7 +34,7 @@ module PlayerDecision =
 
         if not passBlocked then
             let s = scores.Pass * passMod
-            let targetPid = ctx.Team.OwnRoster.Players[ctx.BestPassTargetIdx.Value].Id
+            let targetPid = match ctx.BestPassTargetIdx with ValueSome idx -> ctx.Team.OwnRoster.Players[idx].Id | ValueNone -> failwith "unreachable"
             if s > bestScore then bestScore <- s; bestIntent <- Some (OnBallIntent.Pass targetPid)
 
         if not dribbleBlocked then
@@ -44,10 +46,10 @@ module PlayerDecision =
             if s > bestScore then bestScore <- s; bestIntent <- Some OnBallIntent.Cross
 
         match ctx.BestPassTargetIdx with
-        | Some idx ->
+        | ValueSome idx ->
             let s = scores.LongBall * (1.0 + ctx.Urgency * 0.15)
             let targetPid = ctx.Team.OwnRoster.Players[idx].Id
             if s > bestScore then bestScore <- s; bestIntent <- Some (OnBallIntent.LongBall targetPid)
-        | None -> ()
+        | ValueNone -> ()
 
         bestIntent

@@ -25,13 +25,8 @@ let stateInvariantTests =
                   Expect.isGreaterThan
                       events.Length
                       0
-                      (sprintf
-                          "No hay eventos en la simulación. Puntaje final: %d-%d. Estado final de posesión: %A. Eventos: %A"
-                          homeScore
-                          awayScore
-                          finalState.Ball.Possession
-                          events)
-              | Error e -> Tests.failtestf "Error en simulación: %A" e
+                      $"No hay eventos en la simulación. Puntaje final: %d{homeScore}-%d{awayScore}. Estado final de posesión: %A{finalState.Ball.Possession}. Eventos: %A{events}"
+              | Error e -> Tests.failtestf $"Error en simulación: %A{e}"
 
           testCase "Diagnóstico: Después de KickOff, se genera al menos un DuelTick"
           <| fun () ->
@@ -79,7 +74,7 @@ let stateInvariantTests =
                   | ValueNone -> ()
 
               Expect.isGreaterThan ticksProcessed 1 "Solo se procesó el KickOff, no se generaron ticks siguientes."
-              Expect.isGreaterThan events.Length 0 (sprintf "No hay eventos después de KickOff. Eventos: %A" events)
+              Expect.isGreaterThan events.Length 0 $"No hay eventos después de KickOff. Eventos: %A{events}"
 
           testCase "Diagnóstico: PlayerAgent genera eventos en DuelTick"
           <| fun () ->
@@ -99,7 +94,7 @@ let stateInvariantTests =
 
               let output = PlayerAgent.agent tick ctx s clock
 
-              Tests.failtestf "output.Events = %A" output.Events
+              Tests.failtestf $"output.Events = %A{output.Events}"
 
           testCase "Diagnóstico: ShotAction.resolve genera eventos directamente"
           <| fun () ->
@@ -113,7 +108,7 @@ let stateInvariantTests =
 
               let events = ShotAction.resolve 0 ctx s clock
 
-              Expect.isGreaterThan events.Length 0 (sprintf "ShotAction.resolve no generó eventos. Eventos: %A" events)
+              Expect.isGreaterThan events.Length 0 $"ShotAction.resolve no generó eventos. Eventos: %A{events}"
 
           testCase "Diagnóstico: BallAgent maneja posesión correctamente"
           <| fun () ->
@@ -133,10 +128,7 @@ let stateInvariantTests =
               | _ ->
                   Expect.isTrue
                       (output.Intent <> NoOp)
-                      (sprintf
-                          "BallAgent no cambió posesión y no generó intent. Posesión: %A. Eventos: %A"
-                          s.Ball.Possession
-                          output.Events)
+                      $"BallAgent no cambió posesión y no generó intent. Posesión: %A{s.Ball.Possession}. Eventos: %A{output.Events}"
 
           testCase "Un SetPiece nunca debe persistir por más de 5 ticks físicos"
           <| fun () ->
@@ -191,7 +183,7 @@ let stateInvariantTests =
 
               let hasShot = List.exists isShot output.Events
               let eventTypes = List.map (fun (e: MatchEvent) -> e.Type) output.Events
-              Expect.isTrue hasShot (sprintf "IA muy conservadora: El delantero no disparó. Eventos: %A" eventTypes)
+              Expect.isTrue hasShot $"IA muy conservadora: El delantero no disparó. Eventos: %A{eventTypes}"
 
           testCase "Jugador debe recuperar posesión si está cerca (Sticky Ball)"
           <| fun () ->
@@ -209,8 +201,7 @@ let stateInvariantTests =
               | Possession.Owned(HomeClub, 1) -> ()
               | _ ->
                   Tests.failtestf
-                      "Sticky Ball falló: El jugador a 0.5m no tomó la posesión. Estado: %A"
-                      s.Ball.Possession
+                      $"Sticky Ball falló: El jugador a 0.5m no tomó la posesión. Estado: %A{s.Ball.Possession}"
 
           testCase "El motor debe manejar la falta de eventos en un tick físico"
           <| fun () ->
@@ -224,9 +215,7 @@ let stateInvariantTests =
               let tick = mkPhysicsTick 0
               let output = BallAgent.agent tick ctx s clock
 
-              Expect.isTrue
-                  (output.Intent <> NoOp)
-                  "El motor se detuvo abruptamente (NoOp sin transición)."
+              Expect.isTrue (output.Intent <> NoOp) "El motor se detuvo abruptamente (NoOp sin transición)."
 
           testCase "Los jugadores deben cambiar de posición tras varios ticks (Steering activo)"
           <| fun () ->
@@ -243,9 +232,9 @@ let stateInvariantTests =
                   { X = float s.Home.Frame.PosX[0] * 1.0<meter>
                     Y = float s.Home.Frame.PosY[0] * 1.0<meter>
                     Z = 0.0<meter>
-                    Vx = 0.0<meter/second>
-                    Vy = 0.0<meter/second>
-                    Vz = 0.0<meter/second> }
+                    Vx = 0.0<meter / second>
+                    Vy = 0.0<meter / second>
+                    Vz = 0.0<meter / second> }
 
               MovementEngine.updatePhysics ctx s HomeClub 0.1<second>
 
@@ -253,8 +242,8 @@ let stateInvariantTests =
                   { X = float s.Home.Frame.PosX[0] * 1.0<meter>
                     Y = float s.Home.Frame.PosY[0] * 1.0<meter>
                     Z = 0.0<meter>
-                    Vx = 0.0<meter/second>
-                    Vy = 0.0<meter/second>
-                    Vz = 0.0<meter/second> }
+                    Vx = 0.0<meter / second>
+                    Vy = 0.0<meter / second>
+                    Vz = 0.0<meter / second> }
 
               Expect.isTrue (initialPos <> newPos) "Los jugadores no se mueven: SteeringPipeline inactivo." ]

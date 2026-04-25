@@ -341,10 +341,9 @@ module ManagerAgent =
                     FrameMutate.setCondition frame outIdx incoming.Condition
                     FrameMutate.setIntent frame outIdx IntentKind.Idle 0.0f 0.0f 0
 
-                    updateTeam state side (fun t ->
-                        { t with
-                            SubsUsed = t.SubsUsed + 1
-                            Sidelined = Map.add playerOut.Id SidelinedBySub t.Sidelined })
+                    let team = SimStateOps.getTeam state side
+                    team.SubsUsed <- team.SubsUsed + 1
+                    team.Sidelined <- Map.add playerOut.Id SidelinedBySub team.Sidelined
 
                     [ createEvent subTick playerOut.Id clubId SubstitutionOut
                       createEvent subTick incoming.Id clubId SubstitutionIn ]

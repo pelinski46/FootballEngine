@@ -20,7 +20,8 @@ type GameState =
       NextInboxId: int
       PendingNegotiations: Map<int, Negotiation>
       NextNegotiationId: int
-      ProfileCache: Map<PlayerId, BehavioralProfile> }
+      ProfileCache: Map<PlayerId, BehavioralProfile>
+      PlayerExperiences: Map<PlayerId, PlayerExperience> }
 
 module GameState =
 

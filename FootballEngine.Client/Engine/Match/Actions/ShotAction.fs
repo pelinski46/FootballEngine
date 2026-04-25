@@ -94,7 +94,7 @@ module ShotAction =
                             sc.FinishingMax
                         )
 
-                    let speed = PhysicsContract.shotSpeed shooter.Technical.Finishing
+                    let speed = ActionMath.shotSpeed shooter.Technical.Finishing
                     let angleSpread = sc.AngleSpreadBase * (1.0 - finishingNorm)
                     let angle = normalSample 0.0 angleSpread
                     let speedMag = float speed
@@ -123,21 +123,21 @@ module ShotAction =
                     let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
 
                     let onTarget =
-                        bernoulli (
-                            sc.OnTargetBase
-                            + finishingNorm * sc.OnTargetMultiplier
-                        )
+                        let distToGoal = PhysicsContract.distToGoal bX actx.Att.AttackDir
+                        let distPenalty = sc.OnTargetDistMaxPenalty * (1.0 - Math.Exp(-float distToGoal / sc.OnTargetDistDecayRate))
+                        let onTargetProb = sc.OnTargetBase + finishingNorm * sc.OnTargetMultiplier - distPenalty
+                        bernoulli (Math.Clamp(onTargetProb, 0.05, 0.95))
 
                     let gkSaves =
                         match gk with
                         | Some g ->
                             let gkCond = if gkIdx >= 0 then int defFrame.Condition[gkIdx] else 50
                             let savePower =
-                                effectiveStat g.Goalkeeping.Reflexes gkCond g.Morale sc.GkReflexesStatMult
-                                + effectiveStat g.Goalkeeping.OneOnOne gkCond g.Morale sc.GkOneOnOneStatMult
+                                ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.Reflexes) gkCond g.Morale * sc.GkReflexesStatMult
+                                + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.OneOnOne) gkCond g.Morale * sc.GkOneOnOneStatMult
 
                             let adjustedSave = savePower
-                            onTarget && bernoulli (adjustedSave / (adjustedSave + finishing + sc.SaveDenominatorOffset))
+                            onTarget && ActionMath.engineBernoulli (Probability.from (adjustedSave / (adjustedSave + finishing + sc.SaveDenominatorOffset)))
                         | None -> false
 
                     state.Ball <-

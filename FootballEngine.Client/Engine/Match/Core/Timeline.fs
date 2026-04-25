@@ -2,152 +2,150 @@ namespace FootballEngine
 
 open SchedulingTypes
 
-type TickBucket = {
-    mutable Count: int
-    mutable Capacity: int
-    mutable Kinds: TickKind[]
-    mutable Priorities: TickPriority[]
-    mutable SequenceIds: int64[]
-}
+type Timeline(maxSubTick: int) =
+    let mutable size = 0
+    let mutable capacity = 64
+    let mutable kinds: TickKind[] = Array.zeroCreate capacity
+    let mutable priorities: TickPriority[] = Array.zeroCreate capacity
+    let mutable sequenceIds: int64[] = Array.zeroCreate capacity
+    let mutable currentSubTick = 0
+    let cancelled = System.Collections.Generic.HashSet<int64>()
 
-module TickBucket =
-    let create initialCapacity = {
-        Count = 0
-        Capacity = initialCapacity
-        Kinds = Array.zeroCreate initialCapacity
-        Priorities = Array.zeroCreate initialCapacity
-        SequenceIds = Array.zeroCreate initialCapacity
-    }
+    let swap (i: int) (j: int) =
+        let tk = kinds[i]
+        let tp = priorities[i]
+        let ts = sequenceIds[i]
+        kinds[i] <- kinds[j]
+        priorities[i] <- priorities[j]
+        sequenceIds[i] <- sequenceIds[j]
+        kinds[j] <- tk
+        priorities[j] <- tp
+        sequenceIds[j] <- ts
 
-    let private ensureCapacity (b: TickBucket) minCapacity =
-        if b.Capacity < minCapacity then
-            let newCap = max minCapacity (b.Capacity * 2)
+    let isLess (i: int) (j: int) =
+        let pi = priorities[i]
+        let pj = priorities[j]
+        pi < pj || (pi = pj && sequenceIds[i] < sequenceIds[j])
+
+    let bubbleUp (i: int) =
+        let mutable idx = i
+        let mutable running = true
+
+        while idx > 0 && running do
+            let parent = (idx - 1) >>> 1
+
+            if isLess idx parent then
+                swap idx parent
+                idx <- parent
+            else
+                running <- false
+
+    let bubbleDown (i: int) =
+        let mutable idx = i
+        let mutable running = true
+
+        while running do
+            let left = idx * 2 + 1
+            let right = idx * 2 + 2
+            let mutable smallest = idx
+
+            if left < size && isLess left smallest then
+                smallest <- left
+
+            if right < size && isLess right smallest then
+                smallest <- right
+
+            if smallest <> idx then
+                swap idx smallest
+                idx <- smallest
+            else
+                running <- false
+
+    let ensureCapacity () =
+        if size >= capacity then
+            let newCap = capacity * 2
             let newKinds = Array.zeroCreate newCap
             let newPriorities = Array.zeroCreate newCap
             let newSeqIds = Array.zeroCreate newCap
-            Array.blit b.Kinds 0 newKinds 0 b.Count
-            Array.blit b.Priorities 0 newPriorities 0 b.Count
-            Array.blit b.SequenceIds 0 newSeqIds 0 b.Count
-            b.Kinds <- newKinds
-            b.Priorities <- newPriorities
-            b.SequenceIds <- newSeqIds
-            b.Capacity <- newCap
+            Array.blit kinds 0 newKinds 0 size
+            Array.blit priorities 0 newPriorities 0 size
+            Array.blit sequenceIds 0 newSeqIds 0 size
+            kinds <- newKinds
+            priorities <- newPriorities
+            sequenceIds <- newSeqIds
+            capacity <- newCap
 
-    let add (b: TickBucket) kind priority seqId =
-        ensureCapacity b (b.Count + 1)
-        b.Kinds[b.Count] <- kind
-        b.Priorities[b.Count] <- priority
-        b.SequenceIds[b.Count] <- seqId
-        b.Count <- b.Count + 1
+    let removeRoot () =
+        size <- size - 1
 
-    let sort (b: TickBucket) =
-        for i = 1 to b.Count - 1 do
-            let k = b.Kinds[i]
-            let p = b.Priorities[i]
-            let s = b.SequenceIds[i]
-            let mutable j = i - 1
-            while j >= 0 && (b.Priorities[j] > p || (b.Priorities[j] = p && b.SequenceIds[j] > s)) do
-                b.Kinds[j + 1] <- b.Kinds[j]
-                b.Priorities[j + 1] <- b.Priorities[j]
-                b.SequenceIds[j + 1] <- b.SequenceIds[j]
-                j <- j - 1
-            b.Kinds[j + 1] <- k
-            b.Priorities[j + 1] <- p
-            b.SequenceIds[j + 1] <- s
-
-    let clear (b: TickBucket) = b.Count <- 0
-
-type Timeline(maxSubTick: int) =
-    let buckets = Array.init (maxSubTick + 1) (fun _ -> TickBucket.create 4)
-    let cancelled = System.Collections.BitArray(10_000_000)
-    let mutable cancelledCount = 0
-    let mutable currentSubTick = 0
+        if size > 0 then
+            kinds[0] <- kinds[size]
+            priorities[0] <- priorities[size]
+            sequenceIds[0] <- sequenceIds[size]
+            bubbleDown 0
 
     member _.Insert(subTick: int, kind: TickKind, priority: TickPriority, seqId: int64) =
         if subTick >= 0 && subTick <= maxSubTick then
-            TickBucket.add buckets[subTick] kind priority seqId
+            ensureCapacity ()
+            kinds[size] <- kind
+            priorities[size] <- priority
+            sequenceIds[size] <- seqId + (int64 subTick <<< 32)
+            bubbleUp size
+            size <- size + 1
 
     member _.Dequeue() : (TickKind * TickPriority * int64) voption =
-        if currentSubTick > maxSubTick then
-            ValueNone
-        else
-            let bucket = buckets[currentSubTick]
-            if bucket.Count = 0 then
-                currentSubTick <- currentSubTick + 1
-                ValueNone
+        let mutable result = ValueNone
+        let mutable found = false
+
+        while size > 0 && not found do
+            let seqId = sequenceIds[0]
+
+            if cancelled.Remove(seqId) then
+                removeRoot ()
             else
-                TickBucket.sort bucket
-                let mutable result: (TickKind * TickPriority * int64) voption = ValueNone
-                let mutable found = false
-                for i = 0 to bucket.Count - 1 do
-                    if not found then
-                        let seqId = bucket.SequenceIds[i]
-                        let idx = int seqId
-                        if idx >= 0 && idx < cancelled.Length && cancelled.Get(idx) then
-                            cancelled.Set(idx, false)
-                            cancelledCount <- cancelledCount - 1
-                        else
-                            result <- ValueSome(bucket.Kinds[i], bucket.Priorities[i], seqId)
-                            found <- true
-                if not found then
-                    result <- ValueNone
-                currentSubTick <- currentSubTick + 1
-                result
+                result <- ValueSome(kinds[0], priorities[0], seqId)
+                found <- true
+                removeRoot ()
+
+        result
+
+    member _.CancelTick(sequenceId: int64) = cancelled.Add(sequenceId) |> ignore
 
     member _.CancelTicks(predicate: TickKind -> bool) =
-        for subTick = currentSubTick to maxSubTick do
-            let bucket = buckets[subTick]
-            for i = 0 to bucket.Count - 1 do
-                if predicate bucket.Kinds[i] then
-                    let idx = int bucket.SequenceIds[i]
-                    if idx >= 0 && idx < cancelled.Length && not (cancelled.Get(idx)) then
-                        cancelled.Set(idx, true)
-                        cancelledCount <- cancelledCount + 1
+        for i in 0 .. size - 1 do
+            if predicate kinds[i] then
+                cancelled.Add(sequenceIds[i]) |> ignore
 
-    member _.CancelTick(sequenceId: int64) =
-        let idx = int sequenceId
-        if idx >= 0 && idx < cancelled.Length && not (cancelled.Get(idx)) then
-            cancelled.Set(idx, true)
-            cancelledCount <- cancelledCount + 1
+    member _.PurgeAfter(subTick: int) =
+        let threshold = int64 subTick <<< 32
 
-    member _.PurgeAfter(subTick: int) : unit =
-        for st = subTick + 1 to maxSubTick do
-            let bucket = buckets[st]
-            for i = 0 to bucket.Count - 1 do
-                let idx = int bucket.SequenceIds[i]
-                if idx >= 0 && idx < cancelled.Length && not (cancelled.Get(idx)) then
-                    cancelled.Set(idx, true)
-                    cancelledCount <- cancelledCount + 1
+        for i in 0 .. size - 1 do
+            if sequenceIds[i] >= threshold then
+                cancelled.Add(sequenceIds[i]) |> ignore
 
-    member _.Advance() =
-        if currentSubTick <= maxSubTick then
-            currentSubTick <- currentSubTick + 1
+    member _.Advance() = currentSubTick <- currentSubTick + 1
 
-    member _.DequeueAllAtCurrent() : (TickKind * TickPriority * int64) list =
-        if currentSubTick > maxSubTick then []
-        else
-            let bucket = buckets[currentSubTick]
-            if bucket.Count = 0 then []
-            else
-                TickBucket.sort bucket
-                let results = ResizeArray()
-                for i = 0 to bucket.Count - 1 do
-                    let seqId = bucket.SequenceIds[i]
-                    let idx = int seqId
-                    if idx >= 0 && idx < cancelled.Length && cancelled.Get(idx) then
-                        cancelled.Set(idx, false)
-                        cancelledCount <- cancelledCount - 1
-                    else
-                        results.Add(bucket.Kinds[i], bucket.Priorities[i], seqId)
-                bucket.Count <- 0
-                results |> Seq.toList
+    member this.DequeueAllInto(buffer: ResizeArray<TickKind * TickPriority * int64>) =
+        buffer.Clear()
+        let mutable running = true
+
+        while running do
+            match this.Dequeue() with
+            | ValueSome tick -> buffer.Add(tick)
+            | ValueNone -> running <- false
+
+    member this.DequeueAll() : (TickKind * TickPriority * int64) list =
+        let results = ResizeArray()
+        let mutable running = true
+
+        while running do
+            match this.Dequeue() with
+            | ValueSome tick -> results.Add(tick)
+            | ValueNone -> running <- false
+
+        results |> Seq.toList
 
     member _.CurrentSubTick = currentSubTick
     member _.MaxSubTick = maxSubTick
-    member _.IsEmpty: bool =
-        let mutable empty = true
-        let mutable st = currentSubTick
-        while empty && st <= maxSubTick do
-            if buckets[st].Count > 0 then empty <- false
-            st <- st + 1
-        empty && cancelledCount = 0
+    member _.IsEmpty = size = 0
+    member _.Count = size

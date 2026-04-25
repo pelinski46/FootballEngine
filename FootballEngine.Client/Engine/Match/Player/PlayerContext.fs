@@ -17,10 +17,10 @@ type AgentContext =
       TeamHasBall: bool
       Phase: MatchPhase
       Zone: PitchZone
-      NearestTeammateIdx: int option
-      NearestOpponentIdx: int option
-      BestPassTargetIdx: int option
-      BestPassTargetPos: Spatial option
+      NearestTeammateIdx: int voption
+      NearestOpponentIdx: int voption
+      BestPassTargetIdx: int voption
+      BestPassTargetPos: Spatial voption
       DistToGoal: float<meter>
       GoalDiff: int
       Minute: int
@@ -30,9 +30,9 @@ type AgentContext =
       BuildUp: BuildUpConfig
       Dribble: DribbleConfig
       TeamIntent: TeamIntent
-      PreviousIntent: MovementIntent option
+      PreviousIntent: MovementIntent voption
       IntentLockExpiry: int
-      VisibilityMask: VisibilityMask option }
+      VisibilityMask: VisibilityMask voption }
 
 module AgentContext =
 
@@ -42,14 +42,14 @@ module AgentContext =
         (meIdx: int)
         (team: TeamPerspective)
         (teamIntent: TeamIntent)
-        (previousIntent: MovementIntent option)
+        (previousIntent: MovementIntent voption)
         (intentLockExpiry: int)
         (state: SimState)
         (clock: SimulationClock)
         (decision: DecisionConfig)
         (buildUp: BuildUpConfig)
         (cFrame: CognitiveFrame option)
-        (visibilityMask: VisibilityMask option)
+        (visibilityMask: VisibilityMask voption)
         : AgentContext =
         let ballState = state.Ball
         let bX = ballState.Position.X
@@ -91,36 +91,36 @@ module AgentContext =
 
         let nearestTMIdx, nearestOppIdx, bestPassTargetIdx, bestPassTargetPos =
             match visibilityMask with
-            | Some mask ->
+            | ValueSome mask ->
                 let oppIdx, _ = Perception.resolveNearestOpponentThroughMask myPos team.OppFrame mask
                 let passTarget = Perception.resolveBestPassTargetThroughMask meIdx team.OwnFrame team.OwnRoster team.OppFrame dir mask
                 let bpIdx, bpPos =
                     match passTarget with
-                    | ValueSome (idx, sp) -> Some idx, Some sp
-                    | ValueNone -> None, None
-                None, oppIdx, bpIdx, bpPos
-            | None ->
+                    | ValueSome (idx, sp) -> ValueSome idx, ValueSome sp
+                    | ValueNone -> ValueNone, ValueNone
+                ValueNone, oppIdx, bpIdx, bpPos
+            | ValueNone ->
                 match cFrame with
                 | Some cf ->
                     let tmIdx =
                         if cf.NearestTeammateIdx[meIdx] >= 0s then
-                            Some (int cf.NearestTeammateIdx[meIdx])
+                            ValueSome (int cf.NearestTeammateIdx[meIdx])
                         else
-                            None
+                            ValueNone
                     let oppIdx =
                         if cf.NearestOpponentIdx[meIdx] >= 0s then
-                            Some (int cf.NearestOpponentIdx[meIdx])
+                            ValueSome (int cf.NearestOpponentIdx[meIdx])
                         else
-                            None
+                            ValueNone
                     let bpIdx =
                         if cf.BestPassTargetIdx[meIdx] >= 0s then
-                            Some (int cf.BestPassTargetIdx[meIdx])
+                            ValueSome (int cf.BestPassTargetIdx[meIdx])
                         else
-                            None
+                            ValueNone
                     tmIdx, oppIdx, bpIdx, cf.BestPassTargetPos[meIdx]
                 | None ->
-                    let mutable nTM: int option = None
-                    let mutable nOpp: int option = None
+                    let mutable nTM: int voption = ValueNone
+                    let mutable nOpp: int voption = ValueNone
                     let mutable minDistTM = System.Single.MaxValue
                     let mutable minDistOpp = System.Single.MaxValue
 
@@ -133,7 +133,7 @@ module AgentContext =
                                 let d = dx * dx + dy * dy
                                 if d < minDistTM then
                                     minDistTM <- d
-                                    nTM <- Some i
+                                    nTM <- ValueSome i
                             | _ -> ()
 
                     for i = 0 to team.OppFrame.SlotCount - 1 do
@@ -144,7 +144,7 @@ module AgentContext =
                             let d = dx * dx + dy * dy
                             if d < minDistOpp then
                                 minDistOpp <- d
-                                nOpp <- Some i
+                                nOpp <- ValueSome i
                         | _ -> ()
 
                     let bestPassTarget =
@@ -152,8 +152,8 @@ module AgentContext =
 
                     let bpIdx, bpPos =
                         match bestPassTarget with
-                        | ValueSome (idx, sp) -> Some idx, Some sp
-                        | ValueNone -> None, None
+                        | ValueSome (idx, sp) -> ValueSome idx, ValueSome sp
+                        | ValueNone -> ValueNone, ValueNone
 
                     nTM, nOpp, bpIdx, bpPos
 
@@ -190,4 +190,5 @@ module AgentContext =
           TeamIntent = teamIntent
           PreviousIntent = previousIntent
           IntentLockExpiry = intentLockExpiry
-          VisibilityMask = visibilityMask }
+          VisibilityMask = visibilityMask
+}

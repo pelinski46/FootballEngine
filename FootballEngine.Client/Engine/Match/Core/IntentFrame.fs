@@ -17,7 +17,7 @@ module IntentFrame =
         | SupportAttack sp -> (IntentKind.SupportAttack, float32 sp.X, float32 sp.Y, 0)
         | RecoverBall pos -> (IntentKind.RecoverBall, float32 pos.X, float32 pos.Y, 0)
 
-    let toMovementIntent (kind: IntentKind) (tx: float32) (ty: float32) (tpid: int) (fallback: Spatial) : MovementIntent option =
+    let toMovementIntent (kind: IntentKind) (tx: float32) (ty: float32) (tpid: int) (fallback: Spatial) : MovementIntent =
         let sp = {
             X = float tx * 1.0<meter>
             Y = float ty * 1.0<meter>
@@ -27,12 +27,12 @@ module IntentFrame =
             Vz = 0.0<meter/second>
         }
         match kind with
-        | IntentKind.MaintainShape -> Some (MaintainShape sp)
-        | IntentKind.MarkMan -> Some (MarkMan (tpid, sp))
-        | IntentKind.PressBall -> Some (PressBall sp)
-        | IntentKind.ExecuteRun -> None
-        | IntentKind.CoverSpace -> Some (CoverSpace sp)
-        | IntentKind.SupportAttack -> Some (SupportAttack sp)
-        | IntentKind.RecoverBall -> Some (RecoverBall sp)
-        | IntentKind.Idle
-        | _ -> Some (MaintainShape fallback)
+        | IntentKind.MaintainShape -> MaintainShape sp
+        | IntentKind.MarkMan -> MarkMan (tpid, sp)
+        | IntentKind.PressBall -> PressBall sp
+        | IntentKind.ExecuteRun -> MaintainShape fallback
+        | IntentKind.CoverSpace -> CoverSpace sp
+        | IntentKind.SupportAttack -> SupportAttack sp
+        | IntentKind.RecoverBall -> RecoverBall sp
+        | IntentKind.Idle -> MaintainShape fallback
+        | _ -> MaintainShape fallback

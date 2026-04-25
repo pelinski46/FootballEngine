@@ -344,4 +344,5 @@ module WorldGen =
           NextInboxId = 1
           PendingNegotiations = Map.empty
           NextNegotiationId = 1
-          ProfileCache = profileCache }
+          ProfileCache = profileCache
+          PlayerExperiences = Map.empty }

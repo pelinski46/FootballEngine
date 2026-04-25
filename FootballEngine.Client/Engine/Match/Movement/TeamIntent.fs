@@ -103,6 +103,7 @@ module TeamIntentModule =
         (phase: MatchPhase)
         (tactics: TacticsConfig)
         (desiredWidth: float)
+        (basePositions: Spatial[])
         : Spatial[] =
         let frame = team.OwnFrame
         let n = frame.SlotCount
@@ -120,8 +121,8 @@ module TeamIntentModule =
         for i = 0 to n - 1 do
             match frame.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let px = float frame.PosX[i] * 1.0<meter>
-                let py = float frame.PosY[i] * 1.0<meter>
+                let px = basePositions[i].X
+                let py = basePositions[i].Y
 
                 let isCarrier =
                     match ballCarrierId with
@@ -233,7 +234,8 @@ module TeamIntentModule =
         let desiredWidth = computeDesiredWidth tactics emergent
         let tempo = computeTempo emergent tactics
         let pressTrigger, pressZone = computePressTrigger team ballPos state.Ball.Possession emergent
-        let supportPositions = computeSupportPositions team ballPos state.Ball.Possession phase tactics desiredWidth
+        let basePositions = SimStateOps.getBasePositions state clubSide
+        let supportPositions = computeSupportPositions team ballPos state.Ball.Possession phase tactics desiredWidth basePositions
         let runnerId, runType, runTarget = pickRunner team ballPos state.Ball.Possession emergent
 
         { BuildUpSide = buildUpSide

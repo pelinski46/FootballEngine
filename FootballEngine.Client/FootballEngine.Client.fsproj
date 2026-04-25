@@ -11,10 +11,12 @@
         <Compile Include="Domain\Country.fs"/>
         <Compile Include="Domain\Training.fs"/>
         <Compile Include="Domain\Player.fs"/>
+        <Compile Include="Domain\PlayerExperience.fs"/>
         <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Lineup.fs"/>
         <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
+        <Compile Include="Domain\MatchMetrics.fs"/>
         <Compile Include="Domain\Competition.fs"/>
         <Compile Include="Domain\Negotiation.fs"/>
         <Compile Include="Domain\Inbox.fs"/>
@@ -35,9 +37,12 @@
         <Compile Include="Engine\Stats.fs"/>
 
         <Compile Include="Engine\Match\Core\PhysicsContract.fs"/>
-        <Compile Include="Engine\Match\Core\ActionMath.fs"/>
+        <Compile Include="Engine\Match\Core\Probability.fs"/>
         <Compile Include="Engine\Match\Core\SimulationClock.fs"/>
         <Compile Include="Engine\Match\Core\BalanceConfig.fs"/>
+        <Compile Include="Engine\Match\Core\ConfigValidation.fs"/>
+        <Compile Include="Engine\Match\Core\MatchMemory.fs"/>
+        <Compile Include="Engine\Match\Core\ActionMath.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
         <Compile Include="Engine\Match\Core\SimTypes.fs"/>
         <Compile Include="Engine\Match\Core\FrameMutate.fs"/>
@@ -54,7 +59,6 @@
         <Compile Include="Engine\Match\Core\CognitiveFrame.fs"/>
         <Compile Include="Engine\Match\Core\Perception.fs"/>
         <Compile Include="Engine\Match\Core\EventQueue.fs"/>
-        <Compile Include="Engine\Match\Core\TickScheduler.fs"/>
         <Compile Include="Engine\Match\Core\TickOrchestrator.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAction.fs"/>
         <Compile Include="Engine\Match\Player\PlayerSteering.fs"/>

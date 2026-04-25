@@ -5,8 +5,45 @@ open FootballEngine.Domain
 open FootballEngine.Stats
 open FootballEngine.World
 open FootballEngine.MatchSimulator
+open FootballEngine.Domain
 
 module MatchOutcome =
+
+    type PlayerMatchStats =
+        { PlayerId: PlayerId
+          GoalsScored: int
+          AssistsGiven: int
+          MinutesPlayed: int }
+
+    type FixtureOutcome =
+        { FixtureId: MatchId
+          Fixture: MatchFixture
+          HomeScore: int
+          AwayScore: int
+          InjuredPlayers: Set<PlayerId>
+          HomePlayerStats: PlayerMatchStats[]
+          AwayPlayerStats: PlayerMatchStats[] }
+
+    let extractPlayerStatsFromEvents (events: MatchEvent list) =
+        let goals = System.Collections.Generic.Dictionary<PlayerId, int>()
+        let assists = System.Collections.Generic.Dictionary<PlayerId, int>()
+
+        for e in events do
+            match e.Type with
+            | MatchEventType.Goal ->
+                goals[e.PlayerId] <- match goals.TryGetValue(e.PlayerId) with true, v -> v + 1 | _ -> 1
+            | MatchEventType.Assist ->
+                let scorer = e.PlayerId
+                assists[scorer] <- match assists.TryGetValue(scorer) with true, v -> v + 1 | _ -> 1
+            | _ -> ()
+
+        goals.Keys
+        |> Seq.map (fun pid ->
+            { PlayerId = pid
+              GoalsScored = match goals.TryGetValue(pid) with true, v -> v | _ -> 0
+              AssistsGiven = match assists.TryGetValue(pid) with true, v -> v | _ -> 0
+              MinutesPlayed = 90 })
+        |> Array.ofSeq
 
     let private emptyStanding (clubId: ClubId) =
         { ClubId = clubId
@@ -82,12 +119,54 @@ module MatchOutcome =
         |> List.collect (fun (compId, comp) -> comp.Fixtures |> Map.toList |> List.map (fun (fid, _) -> fid, compId))
         |> Map.ofList
 
-    type FixtureOutcome =
-        { FixtureId: MatchId
-          Fixture: MatchFixture
-          HomeScore: int
-          AwayScore: int
-          InjuredPlayers: Set<PlayerId> }
+    let private isHighPressureMatch (events: MatchEvent list) : bool =
+        let hasGoal = events |> List.exists (fun e -> match e.Type with MatchEventType.Goal -> true | _ -> false)
+        let hasRedCard = events |> List.exists (fun e -> match e.Type with MatchEventType.RedCard -> true | _ -> false)
+        hasGoal || hasRedCard
+
+    let private updatePlayerExperiences (gs: GameState) (outcome: FixtureOutcome) : GameState =
+        let fixture = outcome.Fixture
+        let won = outcome.HomeScore > outcome.AwayScore
+        let drew = outcome.HomeScore = outcome.AwayScore
+        let wasHighPressure = isHighPressureMatch fixture.Events
+
+        let homeStatsMap =
+            outcome.HomePlayerStats
+            |> Array.map (fun st -> st.PlayerId, st)
+            |> Map.ofArray
+        let awayStatsMap =
+            outcome.AwayPlayerStats
+            |> Array.map (fun st -> st.PlayerId, st)
+            |> Map.ofArray
+
+        let processSide (clubId: ClubId) (rivalId: ClubId) (gs: GameState) : GameState =
+            let club = gs.Clubs[clubId]
+            let mutable acc = gs
+            for playerId in club.PlayerIds do
+                let goals =
+                    homeStatsMap |> Map.tryFind playerId |> Option.map _.GoalsScored |> Option.defaultValue 0
+                let assists =
+                    homeStatsMap |> Map.tryFind playerId |> Option.map _.AssistsGiven |> Option.defaultValue 0
+
+                let exp =
+                    match acc.PlayerExperiences |> Map.tryFind playerId with
+                    | Some e -> e
+                    | None -> PlayerExperience.empty
+
+                let newExp =
+                    PlayerExperience.recordMatch
+                        goals
+                        assists
+                        wasHighPressure
+                        rivalId
+                        won
+                        drew
+                        exp
+                acc <- { acc with PlayerExperiences = acc.PlayerExperiences |> Map.add playerId newExp }
+            acc
+
+        let gs1 = processSide fixture.HomeClubId fixture.AwayClubId gs
+        processSide fixture.AwayClubId fixture.HomeClubId gs1
 
     let private injurySeverityWeights =
         [ 0.30, Minor; 0.40, Moderate; 0.20, Major; 0.10, Severe ]
@@ -206,7 +285,9 @@ module MatchPhase =
                                 Events = [] }
                           HomeScore = h
                           AwayScore = a
-                          InjuredPlayers = injured }
+                          InjuredPlayers = injured
+                          HomePlayerStats = [||]
+                          AwayPlayerStats = [||] }
                 | Error _ -> None)
 
         applyOutcomes (fixtureToCompMap gsReady) outcomes gsReady

@@ -4,6 +4,7 @@ open System
 open FootballEngine.Domain
 open FootballEngine.Stats
 open FootballEngine.PhysicsContract
+open FootballEngine.ActionMath
 open SimStateOps
 
 module PlayerSteering =
@@ -260,7 +261,7 @@ module PlayerSteering =
             * PhysicsContract.PlayerAccelMax
 
         let maxSpeed (p: Player) (condition: int) : float<meter/second> =
-            PhysicsContract.playerMaxSpeed p.Physical.Pace condition
+            ActionMath.playerMaxSpeed p.Physical.Pace condition
 
         let steer
             (config: PhysicsConfig)

@@ -4,6 +4,9 @@ open FootballEngine.Domain
 
 module PhysicsContract =
 
+    // ============================================================
+    // UNIT OF MEASURE DEFINITIONS — Must precede all literals
+    // ============================================================
     [<Measure>]
     type meter
 
@@ -19,6 +22,21 @@ module PhysicsContract =
     [<Measure>]
     type meterSquared = meter * meter
 
+    [<Measure>]
+    type radian
+
+    [<Measure>]
+    type radianPerSecond = radian / second
+
+    [<Measure>]
+    type kilogram
+
+    [<Measure>]
+    type newton = kilogram * meter / second^2
+
+    // ============================================================
+    // WORLD CONSTANTS — Never calibrate these
+    // ============================================================
     [<Literal>]
     let PitchLength = 105.0<meter>
 
@@ -55,12 +73,19 @@ module PhysicsContract =
     [<Literal>]
     let GoalAreaDepth = 5.5<meter>
 
+    // ============================================================
+    // PLAYER PHYSICAL CONSTANTS — Calibratable via MovementPhysics
+    // ============================================================
+    [<Literal>]
     let AttrMax = 20.0
+
+    let inline normaliseAttr (v: int) : float =
+        float v / AttrMax
+
+    let inline toScalar (v: float<'u>) : float = float v
 
     [<Literal>]
     let ConditionMax = 100.0
-
-    let inline normaliseAttr (v: int) : float = float v / AttrMax
 
     let inline normaliseCondition (v: int) : float = float v / ConditionMax
 
@@ -70,21 +95,11 @@ module PhysicsContract =
     [<Literal>]
     let PlayerSpeedMin = 1.2<meter / second>
 
-    let playerMaxSpeed (pace: int) (condition: int) : float<meter / second> =
-        let paceNorm = normaliseAttr pace
-        let condFactor = sqrt (normaliseCondition condition)
-        (PlayerSpeedMin + (PlayerSpeedMax - PlayerSpeedMin) * paceNorm) * condFactor
-
     [<Literal>]
     let PlayerAccelMax = 6.5<meter / second^2>
 
     [<Literal>]
     let PlayerAccelMin = 2.0<meter / second^2>
-
-    let playerAccel (acceleration: int) (condition: int) : float<meter / second^2> =
-        let aNorm = normaliseAttr acceleration
-        let condFactor = normaliseCondition condition
-        (PlayerAccelMin + (PlayerAccelMax - PlayerAccelMin) * aNorm) * condFactor
 
     [<Literal>]
     let PlayerSeparationRadius = 2.5<meter>
@@ -107,6 +122,12 @@ module PhysicsContract =
     [<Literal>]
     let TurnConstraintAgilityCoeff = 0.018
 
+    [<Literal>]
+    let PlayerMassBase = 70.0<kilogram>
+
+    // ============================================================
+    // PHYSICS CONSTANTS — Ball and world simulation
+    // ============================================================
     [<Literal>]
     let Gravity = -9.80665<meter / second^2>
 
@@ -140,18 +161,6 @@ module PhysicsContract =
     [<Literal>]
     let LongBallVz = 5.0<meter / second>
 
-    /// Clamp function that works with units of measure
-    let inline clamp (value: float<'u>) (min: float<'u>) (max: float<'u>) : float<'u> =
-        if value < min then min
-        elif value > max then max
-        else value
-
-    /// Clamp function for plain floats (dimensionless values)
-    let inline clampFloat (value: float) (min: float) (max: float) : float =
-        if value < min then min
-        elif value > max then max
-        else value
-
     [<Literal>]
     let CrossSpeed = 20.0<meter / second>
 
@@ -164,10 +173,22 @@ module PhysicsContract =
     [<Literal>]
     let ShotSpeedMin = 14.0<meter / second>
 
-    let shotSpeed (finishing: int) : float<meter / second> =
-        let fNorm = normaliseAttr finishing
-        ShotSpeedMin + (ShotSpeedMax - ShotSpeedMin) * fNorm
+    // ============================================================
+    // MATH HELPERS — Pure functions, no side effects
+    // ============================================================
+    let inline clamp (value: float<'u>) (min: float<'u>) (max: float<'u>) : float<'u> =
+        if value < min then min
+        elif value > max then max
+        else value
 
+    let inline clampFloat (value: float) (min: float) (max: float) : float =
+        if value < min then min
+        elif value > max then max
+        else value
+
+    // ============================================================
+    // SPATIAL HELPERS — Pitch geometry
+    // ============================================================
     [<Literal>]
     let AttackingThirdThreshold = 35.0<meter>
 
@@ -179,49 +200,6 @@ module PhysicsContract =
 
     [<Literal>]
     let MaxDistanceSq = 1000000.0<meterSquared>
-
-    [<Measure>]
-    type radian
-
-    [<Measure>]
-    type radianPerSecond = radian / second
-
-    [<Measure>]
-    type kilogram
-
-    [<Measure>]
-    type newton = kilogram * meter / second^2
-
-    [<Literal>]
-    let PlayerMassBase = 70.0<kilogram>
-
-    // Time constants for steering behaviors (used to convert speed differences into accelerations)
-    [<Literal>]
-    let SteeringSeekTimeConstant = 0.5<second>
-
-    [<Literal>]
-    let SteeringArriveTimeConstant = 0.3<second>
-
-    [<Literal>]
-    let SteeringFleeTimeConstant = 0.5<second>
-
-    [<Literal>]
-    let SteeringSeparationTimeConstant = 0.2<second>
-
-    [<Literal>]
-    let SteeringAlignmentTimeConstant = 1.0<second>
-
-    [<Literal>]
-    let SteeringCohesionTimeConstant = 0.5<second>
-
-    // Grass friction coefficients (dimensionless)
-    [<Literal>]
-    let PlayerGrassFrictionRunning = 0.85
-
-    [<Literal>]
-    let PlayerGrassFrictionDribbling = 0.75
-
-    // --- Spatial Helpers ---
 
     let distToGoal (x: float<meter>) (dir: AttackDir) : float<meter> =
         match dir with
@@ -246,3 +224,31 @@ module PhysicsContract =
     let momentumSign (dir: AttackDir) : float = forwardX dir
 
     let momentumDelta (dir: AttackDir) (delta: float) : float = momentumSign dir * delta
+
+    // ============================================================
+    // STEERING CONSTANTS — Time constants for steering behaviors
+    // ============================================================
+    [<Literal>]
+    let SteeringSeekTimeConstant = 0.5<second>
+
+    [<Literal>]
+    let SteeringArriveTimeConstant = 0.3<second>
+
+    [<Literal>]
+    let SteeringFleeTimeConstant = 0.5<second>
+
+    [<Literal>]
+    let SteeringSeparationTimeConstant = 0.2<second>
+
+    [<Literal>]
+    let SteeringAlignmentTimeConstant = 1.0<second>
+
+    [<Literal>]
+    let SteeringCohesionTimeConstant = 0.5<second>
+
+    // Grass friction coefficients (dimensionless)
+    [<Literal>]
+    let PlayerGrassFrictionRunning = 0.85
+
+    [<Literal>]
+    let PlayerGrassFrictionDribbling = 0.75

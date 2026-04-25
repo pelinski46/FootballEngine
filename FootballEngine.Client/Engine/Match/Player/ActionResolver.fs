@@ -66,11 +66,11 @@ module ActionResolver =
         let actx =
             AgentContext.build
                 controller profile meIdx team teamIntent
-                None 0 state clock state.Config.Decision state.Config.BuildUp
+                ValueNone 0 state clock state.Config.Decision state.Config.BuildUp
                 None
-                None
+                ValueNone
 
-        let scores = PlayerScorer.computeAll actx
+        let scores = PlayerScorer.computeAll actx state.MatchMemory
         PlayerDecision.decide actx scores
 
     let private resolveIntent

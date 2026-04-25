@@ -6,6 +6,7 @@ open FootballEngine.Stats
 open SimStateOps
 open MatchSpatial
 open FootballEngine.PhysicsContract
+open FootballEngine.MatchMemory
 
 module PassAction =
 
@@ -87,14 +88,22 @@ module PassAction =
                 let condNorm = PhysicsContract.normaliseCondition passerCond
                 let passerVisionNorm = PhysicsContract.normaliseAttr passer.Mental.Vision
 
+                let passDist = float (passerSp.DistTo2D targetSp)
+
+                let distPenalty =
+                    if passDist <= 10.0 then 0.0
+                    elif passDist <= 30.0 then (passDist - 10.0) * pc.DistancePenaltyPerMeter
+                    else 20.0 * pc.DistancePenaltyPerMeter + (passDist - 30.0) * pc.LongPassPenaltyPerMeter
+
                 let passMean =
                     pc.BaseMean
-                    + PhysicsContract.normaliseAttr passer.Technical.Passing * pc.TechnicalWeight
-                    + PhysicsContract.normaliseAttr passer.Mental.Vision * pc.VisionWeight
+                    + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.Passing) * pc.TechnicalWeight
+                    + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Mental.Vision) * pc.VisionWeight
                     + actx.Att.Bonus.PassAcc
                     + (if actx.Zone = DefensiveZone then
                            passerProfile.CreativityWeight * pc.CreativityWeight + (1.0 - passerProfile.Directness) * pc.DirectnessWeight
                        else 0.0)
+                    - distPenalty
 
                 let passMeanCapped = Math.Clamp(passMean, pc.MeanMin, pc.MeanMax)
 
@@ -144,6 +153,7 @@ module PassAction =
                                 Spin = { Top = 0.0<radianPerSecond>; Side = 0.0<radianPerSecond> }
                                 Possession = InFlight(actx.Att.ClubSide, passer.Id)
                                 PendingOffsideSnapshot = Some snapshot }
+                        MatchMemory.recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
                         SimStateOps.updateMatchStats state actx.Att.ClubSide (fun s -> { s with PassSuccesses = s.PassSuccesses + 1 })
                         [ createEvent subTick passer.Id attClubId (PassCompleted(passer.Id, target.Id)) ]
                 elif bernoulli deflectRate then
@@ -175,6 +185,7 @@ module PassAction =
                             adjustMomentum actx.Att.AttackDir (-pc.FailMomentum) state
                             state.Ball <- { state.Ball with Position = { state.Ball.Position with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; LastTouchBy = Some def.Id }
                             givePossessionTo actx.Def.ClubSide def.Id state
+                            MatchMemory.recordPassFailure actx.Att.ClubSide pIdx state.MatchMemory
                             [ createEvent subTick passer.Id attClubId (PassIntercepted(passer.Id, def.Id)); createEvent subTick def.Id defClubId TackleSuccess ]
                         else
                             match nearestActiveSlotInFrameExcluding attFrame pIdx targetSp.X targetSp.Y with
@@ -184,10 +195,12 @@ module PassAction =
                                 ballTowards passerSp.X passerSp.Y actualSp.X actualSp.Y (pc.Speed * pc.MisplacedSpeedMult) pc.Vz state
                                 loosePossession state
                                 adjustMomentum actx.Att.AttackDir (-pc.FailMomentum) state
+                                MatchMemory.recordPassFailure actx.Att.ClubSide pIdx state.MatchMemory
                                 [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                             | ValueNone ->
                                 loosePossession state
                                 adjustMomentum actx.Att.AttackDir (-pc.FailMomentum) state
+                                MatchMemory.recordPassFailure actx.Att.ClubSide pIdx state.MatchMemory
                                 [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
                     | None ->
                         loosePossession state
@@ -201,10 +214,12 @@ module PassAction =
                         ballTowards passerSp.X passerSp.Y actualSp.X actualSp.Y (pc.Speed * pc.MisplacedSpeedMult) pc.Vz state
                         loosePossession state
                         adjustMomentum actx.Att.AttackDir (-pc.FailMomentum) state
+                        MatchMemory.recordPassFailure actx.Att.ClubSide pIdx state.MatchMemory
                         [ createEvent subTick passer.Id attClubId (PassMisplaced(passer.Id, actualTarget.Id)) ]
                     | ValueNone ->
                         loosePossession state
                         adjustMomentum actx.Att.AttackDir (-pc.FailMomentum) state
+                        MatchMemory.recordPassFailure actx.Att.ClubSide pIdx state.MatchMemory
                         [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
 
     let resolveLong (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
@@ -229,16 +244,6 @@ module PassAction =
             let condNorm = PhysicsContract.normaliseCondition passerCond
             let passerVisionNorm = PhysicsContract.normaliseAttr passer.Mental.Vision
 
-            let longMean =
-                pc.LongBallBaseMean
-                + PhysicsContract.normaliseAttr passer.Technical.LongShots * pc.LongBallLongShotsWeight
-                + PhysicsContract.normaliseAttr passer.Technical.Passing * pc.LongBallPassingWeight
-                + PhysicsContract.normaliseAttr passer.Mental.Vision * pc.LongBallVisionWeight
-                + actx.Att.Bonus.SetPlay
-
-            let successChance =
-                betaSample longMean (pc.LongBallSuccessShapeAlpha + condNorm * pc.LongBallSuccessConditionMultiplier)
-
             let mutable bestFwdIdx = -1
             let mutable bestFwdX = 0.0f
             let mutable bestFwdY = 0.0f
@@ -253,6 +258,17 @@ module PassAction =
                             bestFwdX <- attFrame.PosX[i]
                             bestFwdY <- attFrame.PosY[i]
                 | _ -> ()
+
+            let longMean =
+                pc.LongBallBaseMean
+                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.LongShots) * pc.LongBallLongShotsWeight
+                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.Passing) * pc.LongBallPassingWeight
+                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Mental.Vision) * pc.LongBallVisionWeight
+                + actx.Att.Bonus.SetPlay
+                - (if bestFwdIdx >= 0 && bPos.DistTo2D { X = float bestFwdX * 1.0<meter>; Y = float bestFwdY * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> } > 30.0<meter> then 0.2 else 0.0)
+
+            let successChance =
+                betaSample longMean (pc.LongBallSuccessShapeAlpha + condNorm * pc.LongBallSuccessConditionMultiplier)
 
             let nearestDefDist =
                 match SimStateOps.nearestActiveSlotInFrame defFrame bX bY with

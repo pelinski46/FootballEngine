@@ -267,31 +267,29 @@ type IntentKind =
 // FASE 1: TeamFrame — datos mutables por tick (SoA layout)
 // ============================================================
 
-[<Struct>]
-type TeamFrame = {
-    Occupancy: OccupancyKind[]
-    PosX: float32[]
-    PosY: float32[]
-    VelX: float32[]
-    VelY: float32[]
-    Condition: byte[]
-    IntentKind: IntentKind[]
-    IntentTargetX: float32[]
-    IntentTargetY: float32[]
-    IntentTargetPid: int[]
-    CachedTargetX: float32[]
-    CachedTargetY: float32[]
-    CachedExecution: float32[]
-    ComposureLevel: float32[]
-    ConfidenceLevel: float32[]
-    AggressionLevel: float32[]
-    LastCognitiveSubTick: int
-    LastShapeSubTick: int
-    LastMarkingSubTick: int
-    LastAdaptiveSubTick: int
-    ActiveCount: int
-    SlotCount: int
-}
+type TeamFrame() =
+    member val Occupancy: OccupancyKind[] = Array.empty with get, set
+    member val PosX: float32[] = Array.empty with get, set
+    member val PosY: float32[] = Array.empty with get, set
+    member val VelX: float32[] = Array.empty with get, set
+    member val VelY: float32[] = Array.empty with get, set
+    member val Condition: byte[] = Array.empty with get, set
+    member val IntentKind: IntentKind[] = Array.empty with get, set
+    member val IntentTargetX: float32[] = Array.empty with get, set
+    member val IntentTargetY: float32[] = Array.empty with get, set
+    member val IntentTargetPid: int[] = Array.empty with get, set
+    member val CachedTargetX: float32[] = Array.empty with get, set
+    member val CachedTargetY: float32[] = Array.empty with get, set
+    member val CachedExecution: float32[] = Array.empty with get, set
+    member val ComposureLevel: float32[] = Array.empty with get, set
+    member val ConfidenceLevel: float32[] = Array.empty with get, set
+    member val AggressionLevel: float32[] = Array.empty with get, set
+    member val LastCognitiveSubTick: int = 0 with get, set
+    member val LastShapeSubTick: int = 0 with get, set
+    member val LastMarkingSubTick: int = 0 with get, set
+    member val LastAdaptiveSubTick: int = 0 with get, set
+    member val ActiveCount: int = 0 with get, set
+    member val SlotCount: int = 0 with get, set
 
 // ============================================================
 // FASE 1: PlayerRoster — datos inmutables del equipo
@@ -311,28 +309,30 @@ module PlayerRoster =
 module TeamFrame =
     let init (roster: PlayerRoster) (basePositions: Spatial[]) : TeamFrame =
         let n = roster.SlotCount
-        { Occupancy = Array.init n (fun i -> OccupancyKind.Active i)
-          PosX = Array.init n (fun i -> float32 basePositions[i].X)
-          PosY = Array.init n (fun i -> float32 basePositions[i].Y)
-          VelX = Array.zeroCreate n
-          VelY = Array.zeroCreate n
-          Condition = Array.init n (fun i -> byte roster.Players[i].Condition)
-          IntentKind = Array.create n IntentKind.Idle
-          IntentTargetX = Array.zeroCreate n
-          IntentTargetY = Array.zeroCreate n
-          IntentTargetPid = Array.zeroCreate n
-          CachedTargetX = Array.init n (fun i -> float32 basePositions[i].X)
-          CachedTargetY = Array.init n (fun i -> float32 basePositions[i].Y)
-          CachedExecution = Array.create n 1.0f
-          ComposureLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ComposureLevel)
-          ConfidenceLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ConfidenceLevel)
-          AggressionLevel = Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).AggressionLevel)
-          LastCognitiveSubTick = 0
-          LastShapeSubTick = 0
-          LastMarkingSubTick = 0
-          LastAdaptiveSubTick = 0
-          ActiveCount = n
-          SlotCount = n }
+        let frame = TeamFrame()
+        frame.Occupancy <- Array.init n (fun i -> OccupancyKind.Active i)
+        frame.PosX <- Array.init n (fun i -> float32 basePositions[i].X)
+        frame.PosY <- Array.init n (fun i -> float32 basePositions[i].Y)
+        frame.VelX <- Array.zeroCreate n
+        frame.VelY <- Array.zeroCreate n
+        frame.Condition <- Array.init n (fun i -> byte roster.Players[i].Condition)
+        frame.IntentKind <- Array.create n IntentKind.Idle
+        frame.IntentTargetX <- Array.zeroCreate n
+        frame.IntentTargetY <- Array.zeroCreate n
+        frame.IntentTargetPid <- Array.zeroCreate n
+        frame.CachedTargetX <- Array.init n (fun i -> float32 basePositions[i].X)
+        frame.CachedTargetY <- Array.init n (fun i -> float32 basePositions[i].Y)
+        frame.CachedExecution <- Array.create n 1.0f
+        frame.ComposureLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ComposureLevel)
+        frame.ConfidenceLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ConfidenceLevel)
+        frame.AggressionLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).AggressionLevel)
+        frame.LastCognitiveSubTick <- 0
+        frame.LastShapeSubTick <- 0
+        frame.LastMarkingSubTick <- 0
+        frame.LastAdaptiveSubTick <- 0
+        frame.ActiveCount <- n
+        frame.SlotCount <- n
+        frame
 
 
 
@@ -420,61 +420,27 @@ module MatchStats =
         FlankSuccesses = 0
     }
 
-type TeamSimState =
-    { Frame: TeamFrame
-      Sidelined: Map<PlayerId, PlayerOut>
-      Yellows: Map<PlayerId, int>
-      SubsUsed: int
-      Tactics: TeamTactics
-      Instructions: TacticalInstructions option
-      ActiveRuns: RunAssignment list
-      EmergentState: EmergentState
-      AdaptiveState: AdaptiveState
-      MatchStats: MatchStats
-      LastCognitiveSubTick: int
-      LastShapeSubTick: int
-      LastMarkingSubTick: int
-      LastAdaptiveSubTick: int }
+type TeamSimState() =
+    member val Frame: TeamFrame = TeamFrame() with get, set
+    member val Sidelined: Map<PlayerId, PlayerOut> = Map.empty with get, set
+    member val Yellows: Map<PlayerId, int> = Map.empty with get, set
+    member val SubsUsed: int = 0 with get, set
+    member val Tactics: TeamTactics = TeamTactics.Balanced with get, set
+    member val Instructions: TacticalInstructions option = None with get, set
+    member val ActiveRuns: RunAssignment list = [] with get, set
+    member val EmergentState: EmergentState = EmergentState.initial with get, set
+    member val AdaptiveState: AdaptiveState = AdaptiveTactics.initial with get, set
+    member val MatchStats: MatchStats = MatchStats.empty with get, set
+    member val LastCognitiveSubTick: int = 0 with get, set
+    member val LastShapeSubTick: int = 0 with get, set
+    member val LastMarkingSubTick: int = 0 with get, set
+    member val LastAdaptiveSubTick: int = 0 with get, set
 
 module TeamSimState =
-    let empty =
-        { Frame = {
-            Occupancy = Array.empty<OccupancyKind>
-            PosX = Array.empty<float32>
-            PosY = Array.empty<float32>
-            VelX = Array.empty<float32>
-            VelY = Array.empty<float32>
-            Condition = Array.empty<byte>
-            IntentKind = Array.empty<IntentKind>
-            IntentTargetX = Array.empty<float32>
-            IntentTargetY = Array.empty<float32>
-            IntentTargetPid = Array.empty<int>
-            CachedTargetX = Array.empty<float32>
-            CachedTargetY = Array.empty<float32>
-            CachedExecution = Array.empty<float32>
-            ComposureLevel = Array.empty<float32>
-            ConfidenceLevel = Array.empty<float32>
-            AggressionLevel = Array.empty<float32>
-            LastCognitiveSubTick = 0
-            LastShapeSubTick = 0
-            LastMarkingSubTick = 0
-            LastAdaptiveSubTick = 0
-            ActiveCount = 0
-            SlotCount = 0
-          }
-          Sidelined = Map.empty<PlayerId, PlayerOut>
-          Yellows = Map.empty<PlayerId, int>
-          SubsUsed = 0
-          Tactics = TeamTactics.Balanced
-          Instructions = None
-          ActiveRuns = []
-          EmergentState = EmergentState.initial
-          AdaptiveState = AdaptiveTactics.initial
-          MatchStats = MatchStats.empty
-          LastCognitiveSubTick = 0
-          LastShapeSubTick = 0
-          LastMarkingSubTick = 0
-          LastAdaptiveSubTick = 0 }
+    let empty () =
+        let ts = TeamSimState()
+        ts.Frame <- TeamFrame()
+        ts
 
 [<Struct>]
 type CognitiveFrame = {
@@ -483,7 +449,7 @@ type CognitiveFrame = {
     NearestOpponentIdx: int16[]
     NearestOpponentDistSq: float32[]
     BestPassTargetIdx: int16[]
-    BestPassTargetPos: Spatial option[]
+    BestPassTargetPos: Spatial voption[]
     BallX: float32
     BallY: float32
     BallZone: PitchZone
@@ -534,7 +500,7 @@ type CognitiveFrameBuffers = {
     NearestOpponentIdx: int16[]
     NearestOpponentDistSq: float32[]
     BestPassTargetIdx: int16[]
-    BestPassTargetPos: Spatial option[]
+    BestPassTargetPos: Spatial voption[]
     PressureOnPlayer: float32[]
 }
 
@@ -545,7 +511,7 @@ module CognitiveFrameBuffers =
         NearestOpponentIdx = Array.zeroCreate<int16> n
         NearestOpponentDistSq = Array.create<float32> n System.Single.MaxValue
         BestPassTargetIdx = Array.create<int16> n -1s
-        BestPassTargetPos = Array.create<Spatial option> n None
+        BestPassTargetPos = Array.create<Spatial voption> n ValueNone
         PressureOnPlayer = Array.create<float32> n System.Single.MaxValue
     }
 
@@ -585,6 +551,7 @@ type SimState() =
     member val HomeScore = 0 with get, set
     member val AwayScore = 0 with get, set
     member val Config = BalanceConfig.defaultConfig with get, set
+    member val MatchMemory : MatchMemory = MatchMemory.empty with get, set
 
     member val Ball =
         { Position =
@@ -623,8 +590,8 @@ type SimState() =
 
     member val HomeBasePositions = Array.empty<Spatial> with get, set
     member val AwayBasePositions = Array.empty<Spatial> with get, set
-    member val Home = TeamSimState.empty with get, set
-    member val Away = TeamSimState.empty with get, set
+    member val Home = TeamSimState.empty() with get, set
+    member val Away = TeamSimState.empty() with get, set
 
     member val HomeCognitiveFrame = CognitiveFrameDefaults.empty with get, set
     member val AwayCognitiveFrame = CognitiveFrameDefaults.empty with get, set
@@ -794,27 +761,27 @@ module SimStateOps =
     let getSidelined (state: SimState) (side: ClubSide) = (getTeam state side).Sidelined
 
     let setSidelined (state: SimState) (side: ClubSide) (m: Map<PlayerId, PlayerOut>) =
-        updateTeam state side (fun t -> { t with Sidelined = m })
+        (getTeam state side).Sidelined <- m
 
     let getYellows (state: SimState) (side: ClubSide) = (getTeam state side).Yellows
 
     let setYellows (state: SimState) (side: ClubSide) (m: Map<PlayerId, int>) =
-        updateTeam state side (fun t -> { t with Yellows = m })
+        (getTeam state side).Yellows <- m
 
     let getSubsUsed (state: SimState) (side: ClubSide) = (getTeam state side).SubsUsed
 
     let setSubsUsed (state: SimState) (side: ClubSide) (n: int) =
-        updateTeam state side (fun t -> { t with SubsUsed = n })
+        (getTeam state side).SubsUsed <- n
 
     let getTactics (state: SimState) (side: ClubSide) = (getTeam state side).Tactics
 
     let setTactics (state: SimState) (side: ClubSide) (tac: TeamTactics) =
-        updateTeam state side (fun ts -> { ts with Tactics = tac })
+        (getTeam state side).Tactics <- tac
 
     let getInstructions (state: SimState) (side: ClubSide) = (getTeam state side).Instructions
 
     let setInstructions (state: SimState) (side: ClubSide) (i: TacticalInstructions option) =
-        updateTeam state side (fun t -> { t with Instructions = i })
+        (getTeam state side).Instructions <- i
 
     let getBasePositions (state: SimState) (side: ClubSide) =
         if side = HomeClub then
@@ -825,7 +792,7 @@ module SimStateOps =
     let getActiveRuns (state: SimState) (side: ClubSide) = (getTeam state side).ActiveRuns
 
     let setActiveRuns (state: SimState) (side: ClubSide) (runs: RunAssignment list) =
-        updateTeam state side (fun t -> { t with ActiveRuns = runs })
+        (getTeam state side).ActiveRuns <- runs
 
     let getChemistry (ctx: MatchContext) (side: ClubSide) =
         if side = HomeClub then
@@ -836,34 +803,35 @@ module SimStateOps =
     let getEmergentState (state: SimState) (side: ClubSide) = (getTeam state side).EmergentState
 
     let setEmergentState (state: SimState) (side: ClubSide) (s: EmergentState) =
-        updateTeam state side (fun t -> { t with EmergentState = s })
+        (getTeam state side).EmergentState <- s
 
     let getAdaptiveState (state: SimState) (side: ClubSide) = (getTeam state side).AdaptiveState
 
     let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) =
-        updateTeam state side (fun t -> { t with AdaptiveState = s })
+        (getTeam state side).AdaptiveState <- s
 
     let getMatchStats (state: SimState) (side: ClubSide) = (getTeam state side).MatchStats
 
     let setMatchStats (state: SimState) (side: ClubSide) (s: MatchStats) =
-        updateTeam state side (fun t -> { t with MatchStats = s })
+        (getTeam state side).MatchStats <- s
 
     let updateMatchStats (state: SimState) (side: ClubSide) (f: MatchStats -> MatchStats) =
-        updateTeam state side (fun t -> { t with MatchStats = f t.MatchStats })
+        let team = getTeam state side
+        team.MatchStats <- f team.MatchStats
 
     let resetAdaptiveStats (state: SimState) (side: ClubSide) =
-        updateTeam state side (fun t -> { t with MatchStats = MatchStats.empty })
+        (getTeam state side).MatchStats <- MatchStats.empty
 
     let getLastCognitiveSubTick (state: SimState) (side: ClubSide) =
         (getTeam state side).LastCognitiveSubTick
 
     let setLastCognitiveSubTick (state: SimState) (side: ClubSide) (t: int) =
-        updateTeam state side (fun ts -> { ts with LastCognitiveSubTick = t })
+        (getTeam state side).LastCognitiveSubTick <- t
 
     let getLastShapeSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastShapeSubTick
 
     let setLastShapeSubTick (state: SimState) (side: ClubSide) (t: int) =
-        updateTeam state side (fun ts -> { ts with LastShapeSubTick = t })
+        (getTeam state side).LastShapeSubTick <- t
 
     let setCachedTarget (state: SimState) (side: ClubSide) (idx: int) (x: float<meter>) (y: float<meter>) =
         let frame = (getTeam state side).Frame
@@ -873,13 +841,13 @@ module SimStateOps =
     let getLastMarkingSubTick (state: SimState) (side: ClubSide) = (getTeam state side).LastMarkingSubTick
 
     let setLastMarkingSubTick (state: SimState) (side: ClubSide) (t: int) =
-        updateTeam state side (fun ts -> { ts with LastMarkingSubTick = t })
+        (getTeam state side).LastMarkingSubTick <- t
 
     let getLastAdaptiveSubTick (state: SimState) (side: ClubSide) =
         (getTeam state side).LastAdaptiveSubTick
 
     let setLastAdaptiveSubTick (state: SimState) (side: ClubSide) (t: int) =
-        updateTeam state side (fun ts -> { ts with LastAdaptiveSubTick = t })
+        (getTeam state side).LastAdaptiveSubTick <- t
 
     let getTacticsByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         (getTeamByClubId clubId ctx state).Tactics
@@ -888,19 +856,19 @@ module SimStateOps =
         (getTeamByClubId clubId ctx state).Instructions
 
     let setTacticsByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (tac: TeamTactics) =
-        updateTeamByClubId clubId ctx state (fun ts -> { ts with Tactics = tac })
+        (getTeamByClubId clubId ctx state).Tactics <- tac
 
     let getSidelinedByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         (getTeamByClubId clubId ctx state).Sidelined
 
     let setSidelinedByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (m: Map<PlayerId, PlayerOut>) =
-        updateTeamByClubId clubId ctx state (fun ts -> { ts with Sidelined = m })
+        (getTeamByClubId clubId ctx state).Sidelined <- m
 
     let getSubsUsedByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         (getTeamByClubId clubId ctx state).SubsUsed
 
     let setSubsUsedByClubId (clubId: ClubId) (ctx: MatchContext) (state: SimState) (n: int) =
-        updateTeamByClubId clubId ctx state (fun ts -> { ts with SubsUsed = n })
+        (getTeamByClubId clubId ctx state).SubsUsed <- n
 
     let activePlayersFromFrame (frame: TeamFrame) (roster: PlayerRoster) : Player[] =
         Array.init frame.SlotCount (fun i ->

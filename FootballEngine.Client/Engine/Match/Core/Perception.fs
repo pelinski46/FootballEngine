@@ -190,9 +190,9 @@ module Perception =
         (myPos: Spatial)
         (oppFrame: TeamFrame)
         (mask: VisibilityMask)
-        : int option * float<meter> =
+        : int voption * float<meter> =
 
-        let mutable bestIdx: int option = None
+        let mutable bestIdx: int voption = ValueNone
         let mutable bestDist = 1e18<meter>
 
         for i = 0 to oppFrame.SlotCount - 1 do
@@ -205,7 +205,7 @@ module Perception =
                     let dist = myPos.DistTo2D oppPos
                     if dist < bestDist then
                         bestDist <- dist
-                        bestIdx <- Some i
+                        bestIdx <- ValueSome i
                 | _ -> ()
 
         bestIdx, bestDist

@@ -158,12 +158,17 @@ module ModEditor =
                                             "Merge Strategy"
                                             (ComboBox.create
                                                 [ ComboBox.dataItems [ "Replace"; "Append"; "Patch" ]
-                                                  ComboBox.selectedItem (state.Manifest.MergeStrategy |> Option.defaultValue "Append")
+                                                  ComboBox.selectedItem (
+                                                      state.Manifest.MergeStrategy |> Option.defaultValue "Append"
+                                                  )
                                                   ComboBox.onSelectedItemChanged (fun obj ->
                                                       match obj with
                                                       | :? string as s ->
                                                           dispatch (
-                                                              ModEditorMsg(UpdateManifest(fun m -> { m with MergeStrategy = Some s }))
+                                                              ModEditorMsg(
+                                                                  UpdateManifest(fun m ->
+                                                                      { m with MergeStrategy = Some s })
+                                                              )
                                                           )
                                                       | _ -> ()) ]))
                                     field
@@ -218,7 +223,7 @@ module ModEditor =
                                     Border.padding (12.0, 4.0, 12.0, 8.0)
                                     Border.child (
                                         TextBlock.create
-                                            [ TextBlock.text (sprintf "%d countries" filtered.Length)
+                                            [ TextBlock.text $"%d{filtered.Length} countries"
                                               TextBlock.fontSize 10.0
                                               TextBlock.foreground Theme.TextSub ]
                                     ) ]
@@ -628,7 +633,8 @@ module ModEditor =
                                                       [ Grid.column 0
                                                         TextBox.text cup.Name
                                                         TextBox.margin (0.0, 0.0, 8.0, 0.0)
-                                                        TextBox.onTextChanged (fun t -> updateCup i (fun c -> { c with Name = t })) ]
+                                                        TextBox.onTextChanged (fun t ->
+                                                            updateCup i (fun c -> { c with Name = t })) ]
                                                   ComboBox.create
                                                       [ Grid.column 1
                                                         ComboBox.dataItems [ "Knockout"; "GroupsKnockout" ]
@@ -636,13 +642,16 @@ module ModEditor =
                                                         ComboBox.margin (0.0, 0.0, 8.0, 0.0)
                                                         ComboBox.onSelectedItemChanged (fun obj ->
                                                             match obj with
-                                                            | :? string as s -> updateCup i (fun c -> { c with Format = s })
+                                                            | :? string as s ->
+                                                                updateCup i (fun c -> { c with Format = s })
                                                             | _ -> ()) ]
                                                   Border.create
                                                       [ Grid.column 2
                                                         Border.child (
                                                             dangerButton "✕" (fun _ ->
-                                                                dispatch (ModEditorMsg(RemoveCup(country.Country.Code, i))))
+                                                                dispatch (
+                                                                    ModEditorMsg(RemoveCup(country.Country.Code, i))
+                                                                ))
                                                         ) ] ] ]
                                   ) ]
 
@@ -650,7 +659,15 @@ module ModEditor =
                             [ Border.padding (12.0, 12.0)
                               Border.child (
                                   UI.primaryButton "Add Cup" (Some IconName.add) (fun _ ->
-                                      dispatch (ModEditorMsg(AddCup(country.Country.Code, { Name = "New Cup"; Format = "Knockout" }))))
+                                      dispatch (
+                                          ModEditorMsg(
+                                              AddCup(
+                                                  country.Country.Code,
+                                                  { Name = "New Cup"
+                                                    Format = "Knockout" }
+                                              )
+                                          )
+                                      ))
                               ) ] ] ])
 
     let private namePoolSubTab (country: CountryDataDto) dispatch =
@@ -876,26 +893,34 @@ module ModEditor =
                                                       [ Grid.column 0
                                                         TextBox.text comp.Name
                                                         TextBox.margin (0.0, 0.0, 8.0, 0.0)
-                                                        TextBox.onTextChanged (fun t -> updateIntComp i (fun c -> { c with Name = t })) ]
+                                                        TextBox.onTextChanged (fun t ->
+                                                            updateIntComp i (fun c -> { c with Name = t })) ]
                                                   ComboBox.create
                                                       [ Grid.column 1
-                                                        ComboBox.dataItems [ "UEFA"; "CONMEBOL"; "CONCACAF"; "CAF"; "AFC"; "OFC" ]
-                                                        ComboBox.selectedItem (comp.Confederation |> Option.defaultValue "UEFA")
+                                                        ComboBox.dataItems
+                                                            [ "UEFA"; "CONMEBOL"; "CONCACAF"; "CAF"; "AFC"; "OFC" ]
+                                                        ComboBox.selectedItem (
+                                                            comp.Confederation |> Option.defaultValue "UEFA"
+                                                        )
                                                         ComboBox.margin (0.0, 0.0, 8.0, 0.0)
                                                         ComboBox.onSelectedItemChanged (fun obj ->
                                                             match obj with
-                                                            | :? string as s -> updateIntComp i (fun c -> { c with Confederation = Some s })
+                                                            | :? string as s ->
+                                                                updateIntComp i (fun c ->
+                                                                    { c with Confederation = Some s })
                                                             | _ -> ()) ]
                                                   TextBox.create
                                                       [ Grid.column 2
                                                         TextBox.text comp.Format
                                                         TextBox.margin (0.0, 0.0, 8.0, 0.0)
-                                                        TextBox.onTextChanged (fun t -> updateIntComp i (fun c -> { c with Format = t })) ]
+                                                        TextBox.onTextChanged (fun t ->
+                                                            updateIntComp i (fun c -> { c with Format = t })) ]
                                                   Border.create
                                                       [ Grid.column 3
                                                         Border.child (
                                                             dangerButton "✕" (fun _ ->
-                                                                dispatch (ModEditorMsg(RemoveInternationalComp i)))) ] ] ]
+                                                                dispatch (ModEditorMsg(RemoveInternationalComp i)))
+                                                        ) ] ] ]
                                   ) ]
 
                         Border.create
@@ -915,7 +940,8 @@ module ModEditor =
 
     let private globalNamesTab (state: ModEditorState) dispatch =
         TextBlock.create
-            [ TextBlock.text "Global Names editor will allow defining generic first/last names shared across all countries."
+            [ TextBlock.text
+                  "Global Names editor will allow defining generic first/last names shared across all countries."
               TextBlock.foreground Theme.TextSub
               TextBlock.margin (Thickness 16.0) ]
         :> IView
@@ -950,7 +976,7 @@ module ModEditor =
                                             StackPanel.children
                                                 [ Icons.iconSm IconName.error Theme.Danger
                                                   TextBlock.create
-                                                      [ TextBlock.text (sprintf "%A" error)
+                                                      [ TextBlock.text $"%A{error}"
                                                         TextBlock.foreground Theme.TextMain
                                                         TextBlock.verticalAlignment VerticalAlignment.Center ] ] ]
                                   ) ] ] ]
@@ -974,7 +1000,7 @@ module ModEditor =
                               StackPanel.margin (Thickness 16.0)
                               StackPanel.children
                                   [ TextBlock.create
-                                        [ TextBlock.text (sprintf "Output path:  Mods/%s/" state.Manifest.Name)
+                                        [ TextBlock.text $"Output path:  Mods/%s{state.Manifest.Name}/"
                                           TextBlock.foreground Theme.TextSub
                                           TextBlock.fontSize 13.0 ]
 

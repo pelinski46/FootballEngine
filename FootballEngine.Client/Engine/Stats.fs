@@ -70,7 +70,7 @@ module Stats =
         |> snd
         |> Option.defaultWith (fun () -> weights |> List.last |> snd)
 
- 
+
 
     let setSeed (seed: int) =
         Random.SetSampleGenerator(Random.RandThreadSafe(seed))
@@ -110,3 +110,4 @@ module Stats =
     let momentumEffect (momentum: float) (isAttacking: bool) : float =
         let m = if isAttacking then momentum else -momentum
         normalSample (m * 0.5) (3.0 + Math.Abs(m) * 0.5)
+

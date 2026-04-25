@@ -36,27 +36,23 @@ module SetPlayAction =
 
             let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
 
-            let shotPower =
-                effectiveStat kicker.Technical.Finishing kickerCond kicker.Morale 2.0
-                + effectiveStat kicker.Mental.Composure kickerCond kicker.Morale (1.5 + actx.Att.Bonus.FreeKick)
-                + effectiveStat kicker.Technical.LongShots kickerCond kicker.Morale 1.0
-                + pressureNoise kicker.Mental.Composure spc.PenaltyComposureNoise
+            let kickerScore =
+                ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig kicker.Technical.Finishing kickerCond kicker.Morale
+                + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig kicker.Technical.LongShots kickerCond kicker.Morale * 0.5
+                + actx.Att.Bonus.FreeKick
 
-            let savePower =
+            let gkScore =
                 match gk with
                 | Some g ->
-                    effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale 2.5
-                    + effectiveStat g.Goalkeeping.OneOnOne g.Condition g.Morale 3.5
-                    + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale 2.0
-                | None -> normalSample 50.0 10.0
+                    ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig g.Goalkeeping.Reflexes g.Condition g.Morale
+                    + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig g.Goalkeeping.OneOnOne g.Condition g.Morale * 0.5
+                | None -> 0.5
 
-            let spin = { Top = -(PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * spc.FreeKickSpinTopMult * 1.0<radianPerSecond>; Side = (PhysicsContract.normaliseAttr kicker.Technical.FreeKick) * spc.FreeKickSpinSideMult * 1.0<radianPerSecond> }
-
-            let scored = shotPower > savePower + spc.FreeKickSavePowerThreshold + normalSample 0.0 spc.FreeKickSaveVariance
+            let fkDiff = kickerScore - gkScore
+            let scored = logisticBernoulli fkDiff spc.FreeKickSteepness
 
             if scored then
                 let goalEvents = awardGoal actx.Att.ClubSide (Some kicker.Id) subTick ctx state
-                state.Ball <- { state.Ball with Spin = spin }
                 (createEvent subTick kicker.Id clubId (FreeKick true)) :: goalEvents
             else
                 let targetX = if actx.Att.AttackDir = LeftToRight then spc.FreeKickTargetX else PhysicsContract.PitchLength - spc.FreeKickTargetX
@@ -64,10 +60,9 @@ module SetPlayAction =
                 let bY = state.Ball.Position.Y
                 ballTowards bX bY targetX bY spc.FreeKickSpeed spc.FreeKickVz state
                 loosePossession state
-                state.Ball <- { state.Ball with Spin = spin }
                 let gkClubId = actx.Def.ClubId
                 let events = [ yield createEvent subTick kicker.Id clubId (FreeKick false); match gk with | Some g -> yield createEvent subTick g.Id gkClubId Save | None -> () ]
-                if bernoulli spc.PostShotClearProbability then
+                if ActionMath.engineBernoulli (Probability.from spc.PostShotClearProbability) then
                     let clearY = PhysicsContract.PitchWidth / 2.0 + (normalSample 0.0 spc.ClearYStdDev) * 1.0<meter>
                     ballTowards state.Ball.Position.X state.Ball.Position.Y PhysicsContract.HalfwayLineX clearY spc.ClearSpeed spc.ClearVz state
                 events
@@ -130,25 +125,56 @@ module SetPlayAction =
                 let bestAttacker, _bestAttackerSp, bestAttackerCond = attackersInBox |> Array.maxBy (fun (p, _, _) -> p.Physical.Strength + p.Technical.Heading)
                 let bestDefender = defendersInBox |> Array.sortByDescending (fun (d, _) -> d.Physical.Strength + d.Mental.Positioning) |> Array.tryHead
 
-                let attackScore = PhysicsContract.normaliseAttr (min 20 (bestAttacker.Physical.Strength + bestAttacker.Technical.Heading)) * physicalVariation bestAttackerCond
-                let defScore = bestDefender |> Option.map (fun (d, _) -> PhysicsContract.normaliseAttr (min 20 (d.Physical.Strength + d.Mental.Positioning))) |> Option.defaultValue spc.CornerDefScoreDefault
-                let gkBonus = gk |> Option.map (fun g -> effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale 1.0 / 100.0) |> Option.defaultValue 0.0
-                let numDefenders = float (max 1 defendersInBox.Length)
-                let densityPenalty = (numDefenders - spc.CornerDensityBase) * spc.CornerDensityPenalty
-
+                // Etapa 1: calidad del centro
                 let crossQuality =
-                    activeAtts |> Array.tryPick (fun p -> if p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR || p.Position = MC then Some (PhysicsContract.normaliseAttr p.Technical.Crossing * cc.CrossingWeight + PhysicsContract.normaliseAttr p.Technical.Passing * cc.PassingWeight) else None) |> Option.defaultValue cc.BaseMean
+                    activeAtts
+                    |> Array.tryPick (fun p ->
+                        if p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR || p.Position = MC then
+                            Some (PhysicsContract.normaliseAttr p.Technical.Crossing * cc.CrossingWeight
+                                  + PhysicsContract.normaliseAttr p.Technical.Passing * cc.PassingWeight)
+                        else None)
+                    |> Option.defaultValue cc.BaseMean
 
-                let scored = logisticBernoulli (attackScore - defScore - gkBonus - densityPenalty + crossQuality) spc.CornerLogisticSteepness
-
-                if scored then
-                    let goalEvents = awardGoal actx.Att.ClubSide (Some bestAttacker.Id) subTick ctx state
-                    (createEvent subTick taker.Id attClubId Corner) :: goalEvents
-                else
-                    let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth - 5.0<meter> else PhysicsContract.PenaltyAreaDepth + 5.0<meter>
+                if not (ActionMath.engineBernoulli (Probability.from crossQuality)) then
+                    let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
                     ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PhysicsContract.PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
-                    if bernoulli spc.CornerKeepPossessionProbability then clearOffsideSnapshot state else loosePossession state
+                    loosePossession state
                     [ createEvent subTick taker.Id attClubId Corner ]
+                else
+                    // Etapa 2: duelo aéreo
+                    let headerScore = PhysicsContract.normaliseAttr (min 20 (bestAttacker.Physical.Strength + bestAttacker.Technical.Heading)) * physicalVariation bestAttackerCond
+                    let defScore = bestDefender |> Option.map (fun (d, _) -> PhysicsContract.normaliseAttr (min 20 (d.Physical.Strength + d.Mental.Positioning))) |> Option.defaultValue spc.CornerDefScoreDefault
+                    let numDefenders = float (max 1 defendersInBox.Length)
+                    let densityPenalty = (numDefenders - spc.CornerDensityBase) * spc.CornerDensityPenalty
+                    let headerDuel = headerScore - defScore - densityPenalty
+
+                    if not (ActionMath.engineLogisticBernoulli headerDuel cc.HeaderDuelSteepness) then
+                        let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth - 5.0<meter> else PhysicsContract.PenaltyAreaDepth + 5.0<meter>
+                        ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PhysicsContract.PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
+                        if ActionMath.engineBernoulli (Probability.from spc.CornerKeepPossessionProbability) then clearOffsideSnapshot state else loosePossession state
+                        [ createEvent subTick taker.Id attClubId Corner ]
+                    else
+                        // Etapa 3: precisión del cabezazo
+                        let headerAccuracy = cc.HeaderAccuracyBase + PhysicsContract.normaliseAttr bestAttacker.Technical.Heading * cc.HeaderAccuracySkillMult
+
+                        if not (ActionMath.engineBernoulli (Probability.from headerAccuracy)) then
+                            let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth - 5.0<meter> else PhysicsContract.PenaltyAreaDepth + 5.0<meter>
+                            ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PhysicsContract.PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
+                            loosePossession state
+                            [ createEvent subTick taker.Id attClubId Corner ]
+                        else
+                            // Etapa 4: save del arquero
+                            let saveProb = cc.GkSaveBase + (gk |> Option.map (fun g -> PhysicsContract.normaliseAttr g.Goalkeeping.Reflexes * cc.GkReflexesMult) |> Option.defaultValue 0.0)
+
+                            if ActionMath.engineBernoulli (Probability.from saveProb) then
+                                let gkClubId = actx.Def.ClubId
+                                let events = [ createEvent subTick taker.Id attClubId Corner ]
+                                match gk with
+                                | Some g -> events @ [ createEvent subTick g.Id gkClubId Save ]
+                                | None -> events
+                            else
+                                let goalEvents = awardGoal actx.Att.ClubSide (Some bestAttacker.Id) subTick ctx state
+                                (createEvent subTick taker.Id attClubId Corner) :: goalEvents
 
     let resolveThrowIn (subTick: int) (ctx: MatchContext) (state: SimState) (throwClub: ClubSide) : MatchEvent list =
         let actx = ActionContext.build ctx state
@@ -218,7 +244,9 @@ module SetPlayAction =
 
         let gkBonus =
             match gk with
-            | Some g -> effectiveStat g.Goalkeeping.Reflexes g.Condition g.Morale spc.PenaltyGkReflexesMult + effectiveStat g.Goalkeeping.Handling g.Condition g.Morale spc.PenaltyGkHandlingMult
+            | Some g ->
+                ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig g.Goalkeeping.Reflexes g.Condition g.Morale * spc.PenaltyGkReflexesMult
+                + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig g.Goalkeeping.Handling g.Condition g.Morale * spc.PenaltyGkHandlingMult
             | None -> 0.0
 
         let score =
