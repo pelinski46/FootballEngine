@@ -248,6 +248,10 @@ type SetPieceConfig =
       PenaltyMoraleBase: float
       PenaltyMoraleDivisor: float
       PenaltyGkSkillDivisor: float
+      PenaltySpeed: float<meter / second>
+      PenaltyVzBase: float<meter / second>
+      PenaltyVzVariance: float
+      PenaltyAngleSpread: float
       PostShotClearProbability: float
       ClearSpeed: float<meter / second>
       ClearVz: float<meter / second>
@@ -368,6 +372,7 @@ type DecisionConfig =
       ShootSTBonus: float
       ShootDistPenaltyDivisor: float
       ShootDistPenaltyMax: float
+      ShootDirectnessBonus: float
       PassPassingWeight: float
       PassVisionWeight: float
       PassTargetBonus: float
@@ -375,10 +380,12 @@ type DecisionConfig =
       DribbleZoneBonusAttacking: float
       DribbleZoneBonusMidfield: float
       DribbleAttackPhaseBonus: float
+      DribbleTempoPenalty: float
       CrossCrossingWeight: float
       CrossLateralTendencyWeight: float
       CrossLateralTendencyBase: float
       CrossZoneBonus: float
+      CrossWidthBonus: float
       LongBallPassingWeight: float
       LongBallVisionWeight: float
       LongBallPressDistBase: float
@@ -386,6 +393,7 @@ type DecisionConfig =
       LongBallPressMax: float
       LongBallPressNoOpponent: float
       LongBallAttackPhaseBonus: float
+      LongBallDirectnessBonus: float
       CreativityWeight: float
       DirectnessWeight: float }
 
@@ -450,10 +458,10 @@ module BalanceConfig =
               AngleSpreadBase = 0.30
               VzBase = PhysicsContract.LongBallVz
               VzVariance = 1.5
-              OnTargetBase = 0.40
-              OnTargetMultiplier = 0.30
+              OnTargetBase = 0.25
+              OnTargetMultiplier = 0.20
               OnTargetDistDecayRate = 15.0
-              OnTargetDistMaxPenalty = 0.30
+              OnTargetDistMaxPenalty = 0.15
               OnTargetDistDivisor = 20.0
               NormalisationDistance = 30.0<meter>
               DistanceToGoalMultiplier = 0.15
@@ -476,9 +484,9 @@ module BalanceConfig =
               HeavyTouchDivisor = 20.0
               HeavyTouchMultiplier = 0.25
               JitterStdDev = 2.0
-              GkReflexesStatMult = 2.5
-              GkOneOnOneStatMult = 3.5
-              SaveDenominatorOffset = 1.0 }
+              GkReflexesStatMult = 3.5
+              GkOneOnOneStatMult = 5.0
+              SaveDenominatorOffset = 3.0 }
           Pass =
             { BaseMean = 0.65
               DistancePenaltyPerMeter = 0.012
@@ -543,8 +551,8 @@ module BalanceConfig =
               HeaderDuelSteepness = 1.5
               HeaderAccuracyBase = 0.25
               HeaderAccuracySkillMult = 0.03
-              GkSaveBase = 0.15
-              GkReflexesMult = 0.02
+              GkSaveBase = 0.25
+              GkReflexesMult = 0.03
               FailMomentum = 0.30
               Speed = PhysicsContract.CrossSpeed
               Vz = PhysicsContract.CrossVz
@@ -581,8 +589,8 @@ module BalanceConfig =
             { FreeKickTargetX = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
               FreeKickSpeed = 16.0<meter / second>
               FreeKickVz = 0.50<meter / second>
-              FreeKickSteepness = 1.5
-              FreeKickSavePowerThreshold = 2.0
+              FreeKickSteepness = 2.0
+              FreeKickSavePowerThreshold = 1.5
               FreeKickSaveVariance = 1.5
               FreeKickSpinTopMult = 0.5
               FreeKickSpinSideMult = 0.9
@@ -603,14 +611,18 @@ module BalanceConfig =
               PenaltyMoraleMultiplier = 0.01
               PenaltyPressureMultiplier = 0.01
               PenaltyComposureNoise = 1.40
-              PenaltyLogisticBase = 0.80
-              PenaltyGkReflexesMult = 2.5
-              PenaltyGkHandlingMult = 2.0
-              PenaltySkillDivisor = 20.0
+              PenaltyLogisticBase = 0.70
+              PenaltyGkReflexesMult = 3.5
+              PenaltyGkHandlingMult = 3.0
+              PenaltySkillDivisor = 25.0
               PenaltyCondDivisor = 200.0
               PenaltyMoraleBase = 0.7
               PenaltyMoraleDivisor = 166.6
               PenaltyGkSkillDivisor = 40.0
+              PenaltySpeed = 28.0<meter / second>
+              PenaltyVzBase = 0.8<meter / second>
+              PenaltyVzVariance = 0.3
+              PenaltyAngleSpread = 0.12
               PostShotClearProbability = 0.40
               ClearSpeed = 16.0<meter / second>
               ClearVz = 1.5<meter / second>
@@ -720,6 +732,7 @@ module BalanceConfig =
               ShootSTBonus = 0.20
               ShootDistPenaltyDivisor = 50.0
               ShootDistPenaltyMax = 0.5
+              ShootDirectnessBonus = 0.15
               PassPassingWeight = 0.40
               PassVisionWeight = 0.30
               PassTargetBonus = 0.10
@@ -727,10 +740,12 @@ module BalanceConfig =
               DribbleZoneBonusAttacking = 0.1
               DribbleZoneBonusMidfield = 0.05
               DribbleAttackPhaseBonus = 0.05
+              DribbleTempoPenalty = 0.20
               CrossCrossingWeight = 0.60
               CrossLateralTendencyWeight = 0.60
               CrossLateralTendencyBase = 0.10
               CrossZoneBonus = 0.15
+              CrossWidthBonus = 0.25
               LongBallPassingWeight = 0.30
               LongBallVisionWeight = 0.20
               LongBallPressDistBase = 10.0
@@ -738,6 +753,7 @@ module BalanceConfig =
               LongBallPressMax = 1.0
               LongBallPressNoOpponent = 0.7
               LongBallAttackPhaseBonus = 0.05
+              LongBallDirectnessBonus = 0.20
               CreativityWeight = 0.10
               DirectnessWeight = 0.06 }
           Perception =

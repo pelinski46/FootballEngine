@@ -131,153 +131,6 @@ module RefereeAgent =
         else
             []
 
-    let resolve (subTick: int) (action: RefereeAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
-        match action with
-        | RefereeIdle -> []
-
-        | ConfirmGoal(scoringClub, scorerId, isOwnGoal) ->
-            let goalEvents = awardGoal scoringClub scorerId subTick ctx state
-            clearOffsideSnapshot state
-
-            if isOwnGoal then
-                goalEvents |> List.map (fun e -> { e with Type = OwnGoal })
-            else
-                goalEvents
-
-        | AnnulGoal ->
-            let resetX =
-                match state.PendingOffsideSnapshot with
-                | Some snap -> snap.BallXAtPass
-                | None -> PhysicsContract.HalfwayLineX
-
-            state.Ball <-
-                { state.Ball with
-                    Position = defaultSpatial resetX (PhysicsContract.PitchWidth / 2.0)
-                    Spin = Spin.zero
-                    LastTouchBy = None
-
-                    Possession = Loose }
-
-            clearOffsideSnapshot state
-            []
-
-        | AwardThrowIn team ->
-            let throwX =
-                match team with
-                | HomeClub -> PhysicsContract.PenaltyAreaDepth
-                | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
-
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { state.Ball.Position with
-                            X = throwX
-                            Y = PhysicsContract.PitchWidth / 2.0
-                            Z = 0.0<meter>
-                            Vx = 0.0<meter / second>
-                            Vy = 0.0<meter / second>
-                            Vz = 0.0<meter / second> }
-                    Spin = Spin.zero
-                    LastTouchBy = None
-
-                    Possession = Possession.SetPiece(team, SetPieceKind.ThrowIn) }
-
-            clearOffsideSnapshot state
-            []
-
-        | AwardCorner team ->
-            let cornerX =
-                match team with
-                | HomeClub -> PhysicsContract.PitchLength - 0.5<meter>
-                | AwayClub -> 0.5<meter>
-
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { state.Ball.Position with
-                            X = cornerX
-                            Y = PhysicsContract.PitchWidth / 2.0
-                            Z = 0.0<meter>
-                            Vx = 0.0<meter / second>
-                            Vy = 0.0<meter / second>
-                            Vz = 0.0<meter / second> }
-                    Spin = Spin.zero
-                    LastTouchBy = None
-
-                    Possession = Possession.SetPiece(team, SetPieceKind.Corner) }
-
-            clearOffsideSnapshot state
-
-            [ { SubTick = subTick
-                PlayerId = 0
-                ClubId = if team = HomeClub then ctx.Home.Id else ctx.Away.Id
-                Type = MatchEventType.Corner } ]
-
-        | AwardGoalKick team ->
-            let gkX =
-                match team with
-                | HomeClub -> PhysicsContract.GoalAreaDepth
-                | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
-
-            state.Ball <-
-                { state.Ball with
-                    Position = defaultSpatial gkX (PhysicsContract.PitchWidth / 2.0)
-                    Spin = Spin.zero
-                    LastTouchBy = None
-
-                    Possession = Possession.SetPiece(team, SetPieceKind.GoalKick) }
-
-            clearOffsideSnapshot state
-            []
-
-        | DropBall team ->
-            state.Ball <-
-                { state.Ball with
-                    Position =
-                        { state.Ball.Position with
-                            Z = 0.0<meter>
-                            Vx = 0.0<meter / second>
-                            Vy = 0.0<meter / second>
-                            Vz = 0.0<meter / second> }
-                    Spin = Spin.zero
-                    Possession = Possession.Loose }
-
-            clearOffsideSnapshot state
-            []
-
-        | IssueYellow(player, clubId) ->
-            let isHome = clubId = ctx.Home.Id
-            let side = if isHome then HomeClub else AwayClub
-
-            let count = getYellows state side |> Map.tryFind player.Id |> Option.defaultValue 0
-
-            if count >= 1 then
-                setYellows state side (Map.add player.Id (count + 1) (getYellows state side))
-                setSidelined state side (Map.add player.Id SidelinedByRedCard (getSidelined state side))
-
-                [ createEvent subTick player.Id clubId YellowCard
-                  createEvent subTick player.Id clubId RedCard ]
-            else
-                setYellows state side (Map.add player.Id (count + 1) (getYellows state side))
-
-                [ createEvent subTick player.Id clubId YellowCard ]
-
-        | IssueRed(player, clubId) ->
-            let isHome = clubId = ctx.Home.Id
-            let side = if isHome then HomeClub else AwayClub
-
-            setSidelined state side (Map.add player.Id SidelinedByRedCard (getSidelined state side))
-
-            [ createEvent subTick player.Id clubId RedCard ]
-
-        | IssueInjury(player, clubId) ->
-            let isHome = clubId = ctx.Home.Id
-            let side = if isHome then HomeClub else AwayClub
-
-            setSidelined state side (Map.add player.Id SidelinedByInjury (getSidelined state side))
-
-            [ createEvent subTick player.Id clubId (MatchEventType.Injury "match") ]
-
     let private defaultIntent : PlayerIntent =
         { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
           Action = None
@@ -285,35 +138,16 @@ module RefereeAgent =
           Urgency = 0.0
           Confidence = 0.5 }
 
-    let agent tick ctx (state: SimState) (clock: SimulationClock) : AgentResult =
+    let agent tick ctx (state: SimState) (clock: SimulationClock) : RefereeResult =
         match tick.Kind with
         | HalfTimeTick ->
-            state.HomeAttackDir <- RightToLeft
-
-            let mirrorFrame (frame: TeamFrame) : unit =
-                for i = 0 to frame.SlotCount - 1 do
-                    match frame.Occupancy[i] with
-                    | OccupancyKind.Active _ ->
-                        let x = float frame.PosX[i] * 1.0<meter>
-                        let y = float frame.PosY[i] * 1.0<meter>
-                        let mirrored = mirrorSpatial { X = x; Y = y; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-                        FrameMutate.setPos frame i mirrored.X mirrored.Y
-                    | _ -> ()
-
-            mirrorFrame state.Home.Frame
-            mirrorFrame state.Away.Frame
-
-            state.HomeBasePositions <- Array.map mirrorSpatial state.HomeBasePositions
-            state.AwayBasePositions <- Array.map mirrorSpatial state.AwayBasePositions
-
-            { Intent = defaultIntent
-              NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.KickOffDelay; Priority = TickPriority.MatchControl; Kind = KickOffTick }
-              Events = []
+            { NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.KickOffDelay; Priority = TickPriority.MatchControl; Kind = KickOffTick }
+              Actions = []
               Transition = Some(SetPiece SetPieceKind.KickOff) }
 
         | FullTimeTick
         | MatchEndTick ->
-            { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }
+            { NextTick = None; Actions = []; Transition = None }
 
         | InjuryTick(playerId, _severity) ->
             let homeFrame = state.Home.Frame
@@ -329,32 +163,22 @@ module RefereeAgent =
                     | Some p -> Some(p, AwayClub)
                     | None -> None
 
-            let events =
+            let actions =
                 match player with
                 | Some (p, pSide) ->
                     let pClubId = if pSide = HomeClub then ctx.Home.Id else ctx.Away.Id
-                    resolve tick.SubTick (IssueInjury(p, pClubId)) ctx state
+                    [ IssueInjury(p, pClubId) ]
                 | None -> []
 
-            { Intent = defaultIntent
-              NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.InjuryDelay; Priority = TickPriority.MatchControl; Kind = ResumePlayTick }
-              Events = events
+            { NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.InjuryDelay; Priority = TickPriority.MatchControl; Kind = ResumePlayTick }
+              Actions = actions
               Transition = Some(Stopped Injury) }
 
         | ResumePlayTick ->
-            { Intent = defaultIntent; NextTick = None; Events = []; Transition = Some LivePlay }
+            { NextTick = None; Actions = []; Transition = Some LivePlay }
 
         | RefereeTick ->
             let refActions = decide None None ctx state
-
-            let evs =
-                refActions
-                |> List.fold
-                    (fun accEvents action ->
-                        let evs = resolve tick.SubTick action ctx state
-                        evs @ accEvents)
-                    []
-                |> List.rev
 
             let hasDropBall =
                 refActions
@@ -386,10 +210,10 @@ module RefereeAgent =
                     | Some { Kind = SetPieceTick(SetPieceKind.GoalKick, _) } -> Some(PlayState.SetPiece SetPieceKind.GoalKick)
                     | _ -> None
 
-            { Intent = defaultIntent; NextTick = nextTick; Events = evs; Transition = transition }
+            { NextTick = nextTick; Actions = refActions; Transition = transition }
 
         | _ ->
-            { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }
+            { NextTick = None; Actions = []; Transition = None }
 
     let runRefereeStep subTick (att: Player option) (def: Player option) ctx state =
         let actions = decide att def ctx state
@@ -398,7 +222,7 @@ module RefereeAgent =
             actions
             |> List.fold
                 (fun accEvents action ->
-                    let evs = resolve subTick action ctx state
+                    let evs = RefereeApplicator.apply subTick action ctx state
                     evs @ accEvents)
                 []
             |> List.rev

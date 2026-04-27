@@ -17,6 +17,7 @@ module TeamIntentModule =
         SupportPositions = Array.init 11 (fun _ -> defaultSpatial 52.5<meter> 34.0<meter>)
         DesiredWidth = 0.5
         Tempo = 0.5
+        DefensiveAssignments = Array.empty
     }
 
     let private computeBuildUpSide (team: TeamPerspective) (ballX: float<meter>) (ballY: float<meter>) : BuildUpSide =
@@ -76,6 +77,7 @@ module TeamIntentModule =
         (ballPos: Spatial)
         (ballPossession: Possession)
         (emergent: EmergentState)
+        (tactics: TacticsConfig)
         : bool * PitchZone option =
         let teamHasBall =
             match ballPossession with
@@ -87,14 +89,17 @@ module TeamIntentModule =
             | Loose -> false
 
         if teamHasBall then false, None
-        elif emergent.PressingIntensity < 0.55 then false, None
+        elif emergent.PressingIntensity < 0.45 then false, None
         else
             let dir = team.AttackDir
             let zone = ofBallX ballPos.X dir
-            match zone with
-            | DefensiveZone -> true, Some zone
-            | MidfieldZone -> emergent.PressingIntensity > 0.65, Some zone
-            | AttackingZone -> false, None
+            let shouldPress =
+                match tactics.PressTriggerZone, zone with
+                | AttackingZone, AttackingZone -> true
+                | MidfieldZone, (AttackingZone | MidfieldZone) -> true
+                | DefensiveZone, _ -> true
+                | _ -> false
+            shouldPress, Some zone
 
     let private computeSupportPositions
         (team: TeamPerspective)
@@ -217,6 +222,51 @@ module TeamIntentModule =
 
         bestPlayerId, bestRunType, bestTarget
 
+    let private computeDefensiveShape
+        (team: TeamPerspective)
+        (cFrame: CognitiveFrame)
+        : DefensiveRole[] =
+        let frame = team.OwnFrame
+        let n = frame.SlotCount
+        let assignments = Array.create n DefensiveRole.Marker
+
+        if cFrame.BallCarrierOppIdx < 0s then assignments
+        else
+            let bcIdx = int cFrame.BallCarrierOppIdx
+            let bcX32 = team.OppFrame.PosX[bcIdx]
+            let bcY32 = team.OppFrame.PosY[bcIdx]
+
+            let mutable nearestIdx = -1
+            let mutable nearestDistSq = System.Single.MaxValue
+            for i = 0 to n - 1 do
+                let occ = frame.Occupancy[i]
+                match occ with
+                | OccupancyKind.Active _ ->
+                    let dx = frame.PosX[i] - bcX32
+                    let dy = frame.PosY[i] - bcY32
+                    let dSq = dx * dx + dy * dy
+                    if dSq < nearestDistSq then
+                        nearestDistSq <- dSq
+                        nearestIdx <- i
+                | _ -> ()
+
+            if nearestIdx >= 0 then
+                assignments[nearestIdx] <- FirstDefender
+
+                let mutable coverCount = 0
+                for i = 0 to n - 1 do
+                    if i <> nearestIdx && coverCount < 2 then
+                        let occ = frame.Occupancy[i]
+                        match occ with
+                        | OccupancyKind.Active _ ->
+                            let roster = team.OwnRoster
+                            if roster.Players[i].Position <> GK then
+                                assignments[i] <- Cover
+                                coverCount <- coverCount + 1
+                        | _ -> ()
+
+            assignments
+
     let build
         (clubSide: ClubSide)
         (ctx: MatchContext)
@@ -233,10 +283,11 @@ module TeamIntentModule =
         let buildUpSide = computeBuildUpSide team ballPos.X ballPos.Y
         let desiredWidth = computeDesiredWidth tactics emergent
         let tempo = computeTempo emergent tactics
-        let pressTrigger, pressZone = computePressTrigger team ballPos state.Ball.Possession emergent
+        let pressTrigger, pressZone = computePressTrigger team ballPos state.Ball.Possession emergent tactics
         let basePositions = SimStateOps.getBasePositions state clubSide
         let supportPositions = computeSupportPositions team ballPos state.Ball.Possession phase tactics desiredWidth basePositions
         let runnerId, runType, runTarget = pickRunner team ballPos state.Ball.Possession emergent
+        let defAssignments = computeDefensiveShape team cFrame
 
         { BuildUpSide = buildUpSide
           PressTrigger = pressTrigger
@@ -246,4 +297,5 @@ module TeamIntentModule =
           RunTarget = runTarget
           SupportPositions = supportPositions
           DesiredWidth = desiredWidth
-          Tempo = tempo }
+          Tempo = tempo
+          DefensiveAssignments = defAssignments }

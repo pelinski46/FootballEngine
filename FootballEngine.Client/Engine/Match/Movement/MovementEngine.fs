@@ -9,6 +9,47 @@ open SimulationClock
 
 module MovementEngine =
 
+    let private applyReactiveOverrides
+        (ctx: MatchContext)
+        (state: SimState)
+        (clubSide: ClubSide)
+        (currentSubTick: int)
+        =
+        let oppSide = ClubSide.flip clubSide
+        let ownFrame = getFrame state clubSide
+        let oppFrame = getFrame state oppSide
+        let roster = getRoster ctx clubSide
+
+        let ballCarrierOppIdx =
+            let cFrame = if clubSide = HomeClub then state.HomeCognitiveFrame else state.AwayCognitiveFrame
+            cFrame.BallCarrierOppIdx
+
+        if ballCarrierOppIdx < 0s then ()
+        else
+            let bcx = oppFrame.PosX[int ballCarrierOppIdx]
+            let bcy = oppFrame.PosY[int ballCarrierOppIdx]
+
+            for i = 0 to ownFrame.SlotCount - 1 do
+                match ownFrame.Occupancy[i] with
+                | OccupancyKind.Sidelined _ -> ()
+                | OccupancyKind.Active _ ->
+                    if ownFrame.IntentKind[i] <> IntentKind.ExecuteRun then
+                        let aggression =
+                            if i < roster.Players.Length then
+                                float roster.Players[i].Mental.Aggression / 20.0
+                            else 0.5
+
+                        match ReactiveLayer.evaluateReactiveIntent i ownFrame oppFrame (int ballCarrierOppIdx) bcx bcy aggression with
+                        | TackleAttempt oppSlot ->
+                            FrameMutate.setIntent ownFrame i IntentKind.PressBall
+                                oppFrame.PosX[oppSlot] oppFrame.PosY[oppSlot] oppSlot
+                        | PressBall(tx, ty) ->
+                            FrameMutate.setIntent ownFrame i IntentKind.PressBall tx ty 0
+                        | InterceptLane(tx, ty) ->
+                            FrameMutate.setIntent ownFrame i IntentKind.CoverSpace tx ty 0
+                        | NoReaction -> ()
+                | _ -> ()
+
     let updatePhysics
         (ctx: MatchContext)
         (state: SimState)
@@ -101,5 +142,6 @@ module MovementEngine =
         let smoothing = 0.92
         state.BallXSmooth <- smoothing * state.BallXSmooth + (1.0 - smoothing) * state.Ball.Position.X
 
+        applyReactiveOverrides ctx state clubSide currentSubTick
         updatePhysics ctx state clubSide dt
         refreshCache ctx state clubSide

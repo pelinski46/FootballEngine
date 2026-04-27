@@ -10,7 +10,12 @@ type TeamTactics =
 type TacticalInstructions =
     { Mentality: int
       DefensiveLine: int
-      PressingIntensity: int }
+      PressingIntensity: int
+      Width: int
+      Tempo: int
+      Directness: int
+      PressTriggerZone: int
+      DefensiveShape: int }
 
 
 
@@ -31,4 +36,9 @@ module TacticalInstructions =
     let defaultInstructions =
         { Mentality = 2
           DefensiveLine = 2
-          PressingIntensity = 2 }
+          PressingIntensity = 2
+          Width = 2
+          Tempo = 2
+          Directness = 2
+          PressTriggerZone = 1
+          DefensiveShape = 2 }

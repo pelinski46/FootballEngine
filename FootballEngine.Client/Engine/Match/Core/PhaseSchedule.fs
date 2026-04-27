@@ -6,9 +6,9 @@ open SimulationClock
 type SubTickPhases = {
     Physics: bool
     Cognitive: bool
-    Duel: bool
+    Steering: bool
     Referee: bool
-    Manager: bool
+    Action: bool
     SetPiece: bool
     Adaptive: bool
 }
@@ -25,11 +25,11 @@ module PhaseSchedule =
 
         for t = 0 to maxSubTick do
             let isPhysics = t % clock.PhysicsRate = 0
+            let isSteering = t % clock.SteeringRate = 0
             let isCognitive = t % clock.CognitiveRate = 0
             let isReferee = t % clock.PhysicsRate = 0
-            let isDuel = t % clock.PhysicsRate = 0
+            let isAction = t % clock.ActionRate = 0
             let isAdaptive = t % clock.AdaptiveRate = 0
-            let isManager = t % (clock.SubTicksPerSecond * 10) = 0
 
             if isAdaptive then
                 adaptiveCheckpoints.Add(t)
@@ -37,9 +37,9 @@ module PhaseSchedule =
             phases[t] <- {
                 Physics = isPhysics
                 Cognitive = isCognitive
-                Duel = isDuel
+                Steering = isSteering
                 Referee = isReferee
-                Manager = isManager
+                Action = isAction
                 SetPiece = false
                 Adaptive = isAdaptive
             }

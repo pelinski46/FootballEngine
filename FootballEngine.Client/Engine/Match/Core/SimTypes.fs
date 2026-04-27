@@ -98,6 +98,9 @@ module RunAssignment =
           Priority = 1 }
 
 [<Struct>]
+type DefensiveRole = FirstDefender | Cover | Marker
+
+[<Struct>]
 type MentalState =
     { ComposureLevel: float
       ConfidenceLevel: float
@@ -377,7 +380,8 @@ type BallPhysicsState =
       Possession: Possession
       LastTouchBy: PlayerId option
       PendingOffsideSnapshot: OffsideSnapshot option
-      StationarySinceSubTick: int option }
+      StationarySinceSubTick: int option
+      TransitionSinceSubTick: int option }
 
 type PenaltyShootout =
     { HomeKicks: (PlayerId * bool * int) list
@@ -456,6 +460,7 @@ type CognitiveFrame = {
     Phase: MatchPhase
     PressureOnPlayer: float32[]
     SlotCount: int
+    BallCarrierOppIdx: int16
 }
 
 type BuildUpSide =
@@ -475,6 +480,7 @@ type TeamIntent = {
     SupportPositions: Spatial[]
     DesiredWidth: float
     Tempo: float
+    DefensiveAssignments: DefensiveRole[]
 }
 
 module CognitiveFrameDefaults =
@@ -491,6 +497,7 @@ module CognitiveFrameDefaults =
         Phase = BuildUp
         PressureOnPlayer = Array.empty
         SlotCount = 0
+        BallCarrierOppIdx = -1s
     }
 
 [<Struct>]
@@ -544,6 +551,7 @@ module TeamIntentDefaults =
         SupportPositions = Array.empty
         DesiredWidth = 0.5
         Tempo = 0.5
+        DefensiveAssignments = Array.empty
     }
 
 type SimState() =
@@ -552,6 +560,7 @@ type SimState() =
     member val AwayScore = 0 with get, set
     member val Config = BalanceConfig.defaultConfig with get, set
     member val MatchMemory : MatchMemory = MatchMemory.empty with get, set
+    member val LastMemoryDecaySubTick = 0 with get, set
 
     member val Ball =
         { Position =
@@ -567,7 +576,8 @@ type SimState() =
           LastTouchBy = None
           Possession = SetPiece(HomeClub, KickOff)
           PendingOffsideSnapshot = None
-          StationarySinceSubTick = None } with get, set
+          StationarySinceSubTick = None
+          TransitionSinceSubTick = None } with get, set
 
     member val LastAttackingClub = HomeClub with get, set
 
@@ -636,7 +646,12 @@ module SimStateOps =
           UrgencyMultiplier: float
           ForwardPush: float
           DefensiveDrop: float
-          PressingIntensity: float }
+          PressingIntensity: float
+          Width: float
+          Tempo: float
+          Directness: float
+          PressTriggerZone: PitchZone
+          DefensiveShape: float }
 
     let private baseTacticsConfig =
         function
@@ -645,31 +660,56 @@ module SimStateOps =
               UrgencyMultiplier = 1.0
               ForwardPush = 0.0
               DefensiveDrop = 0.0
-              PressingIntensity = 1.0 }
+              PressingIntensity = 1.0
+              Width = 0.5
+              Tempo = 0.5
+              Directness = 0.5
+              PressTriggerZone = MidfieldZone
+              DefensiveShape = 0.5 }
         | TeamTactics.Attacking ->
             { PressureDistance = 8.0
               UrgencyMultiplier = 1.15
               ForwardPush = 10.0
               DefensiveDrop = -5.0
-              PressingIntensity = 1.2 }
+              PressingIntensity = 1.2
+              Width = 0.6
+              Tempo = 0.6
+              Directness = 0.4
+              PressTriggerZone = AttackingZone
+              DefensiveShape = 0.4 }
         | TeamTactics.Defensive ->
             { PressureDistance = -10.0
               UrgencyMultiplier = 0.9
               ForwardPush = -5.0
               DefensiveDrop = 8.0
-              PressingIntensity = 0.7 }
+              PressingIntensity = 0.7
+              Width = 0.4
+              Tempo = 0.3
+              Directness = 0.6
+              PressTriggerZone = DefensiveZone
+              DefensiveShape = 0.6 }
         | TeamTactics.Pressing ->
             { PressureDistance = 12.0
               UrgencyMultiplier = 1.1
               ForwardPush = 8.0
               DefensiveDrop = -3.0
-              PressingIntensity = 1.5 }
+              PressingIntensity = 1.5
+              Width = 0.5
+              Tempo = 0.7
+              Directness = 0.5
+              PressTriggerZone = AttackingZone
+              DefensiveShape = 0.5 }
         | TeamTactics.Counter ->
             { PressureDistance = -6.0
               UrgencyMultiplier = 1.2
               ForwardPush = -8.0
               DefensiveDrop = 6.0
-              PressingIntensity = 0.8 }
+              PressingIntensity = 0.8
+              Width = 0.3
+              Tempo = 0.8
+              Directness = 0.8
+              PressTriggerZone = MidfieldZone
+              DefensiveShape = 0.4 }
 
 
 
@@ -690,11 +730,22 @@ module SimStateOps =
         let defensiveLineMod = float (instr.DefensiveLine - 2) * 3.0
         let pressingMod = float (instr.PressingIntensity - 2) * 0.15
 
+        let pressTriggerZone =
+            match instr.PressTriggerZone with
+            | 0 -> DefensiveZone
+            | 2 -> AttackingZone
+            | _ -> MidfieldZone
+
         { PressureDistance = baseCfg.PressureDistance + defensiveLineMod
           UrgencyMultiplier = baseCfg.UrgencyMultiplier * (1.0 + mentalityMod)
           ForwardPush = baseCfg.ForwardPush + mentalityMod * 5.0 + defensiveLineMod * 0.5
           DefensiveDrop = baseCfg.DefensiveDrop - mentalityMod * 5.0 - defensiveLineMod * 0.5
-          PressingIntensity = baseCfg.PressingIntensity * (1.0 + pressingMod) }
+          PressingIntensity = baseCfg.PressingIntensity * (1.0 + pressingMod)
+          Width = baseCfg.Width * 0.5 + float instr.Width / 4.0 * 0.5
+          Tempo = baseCfg.Tempo * 0.5 + float instr.Tempo / 4.0 * 0.5
+          Directness = baseCfg.Directness * 0.5 + float instr.Directness / 4.0 * 0.5
+          PressTriggerZone = pressTriggerZone
+          DefensiveShape = baseCfg.DefensiveShape * 0.5 + float instr.DefensiveShape / 4.0 * 0.5 }
 
     let defaultSpatial (x: float<meter>) (y: float<meter>) : Spatial =
         { X = x
@@ -882,7 +933,8 @@ module SimStateOps =
           Possession = SetPiece(HomeClub, KickOff)
           LastTouchBy = None
           PendingOffsideSnapshot = None
-          StationarySinceSubTick = None }
+          StationarySinceSubTick = None
+          TransitionSinceSubTick = None }
 
     let resetBallForKickOff (receivingClub: ClubSide) (state: SimState) =
         state.LastAttackingClub <- receivingClub
@@ -892,7 +944,8 @@ module SimStateOps =
                 Spin = Spin.zero
                 Possession = SetPiece(receivingClub, SetPieceKind.KickOff)
                 PendingOffsideSnapshot = None
-                StationarySinceSubTick = None }
+                StationarySinceSubTick = None
+                TransitionSinceSubTick = None }
 
     let clearOffsideSnapshot (state: SimState) =
         state.Ball <-
@@ -919,32 +972,6 @@ module SimStateOps =
             { state.Ball with
                 Possession = Owned(club, pid)
                 PendingOffsideSnapshot = None }
-
-    let awardGoal
-        (scoringClub: ClubSide)
-        (scorerId: PlayerId option)
-        (subTick: int)
-        (ctx: MatchContext)
-        (state: SimState)
-        =
-        if scoringClub = HomeClub then
-            state.HomeScore <- state.HomeScore + 1
-            state.Momentum <- PhysicsContract.clampFloat (state.Momentum + 3.0) -10.0 10.0
-        else
-            state.AwayScore <- state.AwayScore + 1
-            state.Momentum <- PhysicsContract.clampFloat (state.Momentum - 3.0) -10.0 10.0
-
-        resetBallForKickOff (ClubSide.flip scoringClub) state
-
-        let clubId = if scoringClub = HomeClub then ctx.Home.Id else ctx.Away.Id
-
-        match scorerId with
-        | Some pid ->
-            [ { SubTick = subTick
-                PlayerId = pid
-                ClubId = clubId
-                Type = Goal } ]
-        | None -> []
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
         state.Momentum <- PhysicsContract.clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0

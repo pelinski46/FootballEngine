@@ -239,6 +239,30 @@ module PlayerSteering =
                       Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringCohesionTimeConstant
                       Fz = 0.0<meter/second^2> }
 
+        let boundaryAvoidance (agent: Spatial) (maxSpeed: float<meter/second>) : Force =
+            let margin = 3.0<meter>
+            let strength = 8.0<meter/second^2>
+
+            let fx =
+                if agent.X < margin then
+                    float (margin - agent.X) / float margin * float strength
+                elif agent.X > PhysicsContract.PitchLength - margin then
+                    -float (agent.X - (PhysicsContract.PitchLength - margin)) / float margin * float strength
+                else
+                    0.0
+
+            let fy =
+                if agent.Y < margin then
+                    float (margin - agent.Y) / float margin * float strength
+                elif agent.Y > PhysicsContract.PitchWidth - margin then
+                    -float (agent.Y - (PhysicsContract.PitchWidth - margin)) / float margin * float strength
+                else
+                    0.0
+
+            { Fx = fx * 1.0<meter/second^2>
+              Fy = fy * 1.0<meter/second^2>
+              Fz = 0.0<meter/second^2> }
+
     module PlayerPhysics =
 
         let playerMass (config: PhysicsConfig) (p: Player) : float =
@@ -291,9 +315,7 @@ module PlayerSteering =
             let sepForce =
                 Behaviours.separation current positions myIdx sepDist
 
-            let cohesionForce =
-                Behaviours.cohesion current positions myIdx ms
-                |> Force.scale config.CohesionWeight
+            let boundaryForce = Behaviours.boundaryAvoidance current ms
 
             let ballForce =
                 if hasBall then
@@ -305,7 +327,7 @@ module PlayerSteering =
                     Force.zero
 
             let totalForce =
-                Force.add arriveForce (Force.add sepForce (Force.add cohesionForce ballForce))
+                Force.add arriveForce (Force.add sepForce (Force.add boundaryForce ballForce))
                 |> Force.truncate config.PlayerMaxForce
 
             let currentSpeed = current.VelMag
@@ -369,9 +391,7 @@ module PlayerSteering =
             let sepForce =
                 Behaviours.separationSoA current posX posY count myIdx sepDist
 
-            let cohesionForce =
-                Behaviours.cohesionSoA current posX posY count myIdx ms
-                |> Force.scale config.CohesionWeight
+            let boundaryForce = Behaviours.boundaryAvoidance current ms
 
             let ballForce =
                 if hasBall then
@@ -383,7 +403,7 @@ module PlayerSteering =
                     Force.zero
 
             let totalForce =
-                Force.add arriveForce (Force.add sepForce (Force.add cohesionForce ballForce))
+                Force.add arriveForce (Force.add sepForce (Force.add boundaryForce ballForce))
                 |> Force.truncate config.PlayerMaxForce
 
             let currentSpeed = current.VelMag

@@ -125,28 +125,14 @@ module SchedulingTypes =
         | ScheduleSubstitution of ClubId
         | StopPlay of StopReason
 
-    type AgentResult =
-        { Intent: PlayerIntent
-          NextTick: PendingTick option
+    type PlayerResult =
+        { NextTick: PendingTick option
           Events: MatchEvent list
           Transition: PlayState option }
 
-    type TickResult = AgentResult
+    type RefereeResult =
+        { NextTick: PendingTick option
+          Actions: RefereeAction list
+          Transition: PlayState option }
 
-    type Agent =
-        ClubId
-            -> Player list
-            -> Player list
-            -> ScheduledTick
-            -> MatchContext
-            -> SimState
-            -> SimulationClock
-            -> AgentResult
 
-    type LoopState =
-        { Context: MatchContext
-          State: SimState
-          Events: ResizeArray<MatchEvent>
-          PlayState: PlayState
-          MatchEndScheduled: bool
-          SequenceCounter: int64 }

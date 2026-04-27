@@ -227,3 +227,15 @@ module MatchSpatial =
         { s with
             X = PhysicsContract.PitchLength - s.X
             Vx = -s.Vx }
+
+    let pointToLineDistSq (px: float32) (py: float32) (lx1: float32) (ly1: float32) (lx2: float32) (ly2: float32) : float32 =
+        let dx = lx2 - lx1
+        let dy = ly2 - ly1
+        let lenSq = dx * dx + dy * dy
+        if lenSq < 0.0001f then
+            (px - lx1) * (px - lx1) + (py - ly1) * (py - ly1)
+        else
+            let t = max 0.0f (min 1.0f (((px - lx1) * dx + (py - ly1) * dy) / lenSq))
+            let cx = lx1 + t * dx
+            let cy = ly1 + t * dy
+            (px - cx) * (px - cx) + (py - cy) * (py - cy)

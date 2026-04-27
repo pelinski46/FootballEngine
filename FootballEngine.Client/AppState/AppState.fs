@@ -355,6 +355,61 @@ module AppState =
                     Mode = InGame(newGs, managerEmployment newGs) },
                 Cmd.none)
 
+        | SetWidth value ->
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
+                let newGs =
+                    GameState.updateLineup clubId
+                        (Option.map (fun lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            { lineup with Instructions = Some { instructions with Width = value } }))
+                        gs
+                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+        | SetTempo value ->
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
+                let newGs =
+                    GameState.updateLineup clubId
+                        (Option.map (fun lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            { lineup with Instructions = Some { instructions with Tempo = value } }))
+                        gs
+                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+        | SetDirectness value ->
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
+                let newGs =
+                    GameState.updateLineup clubId
+                        (Option.map (fun lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            { lineup with Instructions = Some { instructions with Directness = value } }))
+                        gs
+                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+        | SetPressTriggerZone value ->
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
+                let newGs =
+                    GameState.updateLineup clubId
+                        (Option.map (fun lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            { lineup with Instructions = Some { instructions with PressTriggerZone = value } }))
+                        gs
+                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+        | SetDefensiveShape value ->
+            withGame (fun gs ->
+                let clubId = gs.UserClubId
+                let newGs =
+                    GameState.updateLineup clubId
+                        (Option.map (fun lineup ->
+                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
+                            { lineup with Instructions = Some { instructions with DefensiveShape = value } }))
+                        gs
+                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
         | SetPlayerTrainingSchedule(playerId, schedule) ->
             withGame (fun gs ->
                 let newGs =
@@ -408,7 +463,7 @@ module AppState =
             else
                 let dt = 16.67 // 60 FPS
                 let newAccumulator = state.RenderAccumulator + dt
-                let snapInterval = 1000.0 / float state.PlaybackSpeed // ms between snapshots
+                let snapInterval = 500.0 / float state.PlaybackSpeed // ms between snapshots (each snapshot = 500ms game time)
 
                 if newAccumulator >= snapInterval then
                     let total =

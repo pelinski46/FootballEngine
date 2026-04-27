@@ -83,6 +83,11 @@ type LineupSlotEntity =
       Mentality: int
       DefensiveLine: int
       PressingIntensity: int
+      Width: int
+      Tempo: int
+      Directness: int
+      PressTriggerZone: int
+      DefensiveShape: int
       SlotIndex: int
       Role: string
       X: float

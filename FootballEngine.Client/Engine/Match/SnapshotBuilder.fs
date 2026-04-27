@@ -40,8 +40,8 @@ module SnapshotBuilder =
                 { X = float frame.PosX[i] * 1.0<meter>
                   Y = float frame.PosY[i] * 1.0<meter>
                   Z = 0.0<meter>
-                  Vx = 0.0<meter/second>
-                  Vy = 0.0<meter/second>
+                  Vx = float frame.VelX[i] * 1.0<meter/second>
+                  Vy = float frame.VelY[i] * 1.0<meter/second>
                   Vz = 0.0<meter/second> }
             | _ -> SimStateOps.kickOffSpatial)
 

@@ -68,3 +68,12 @@ module MatchMemory =
     let successStreakModifier (side: ClubSide) (slotIdx: int) (mem: MatchMemory) : float =
         let arr = if side = HomeClub then mem.Home else mem.Away
         float arr[slotIdx].SuccessStreak * 0.01
+
+    let decay (mem: MatchMemory) : unit =
+        for side in [ mem.Home; mem.Away ] do
+            for i = 0 to side.Length - 1 do
+                side[i].RecentPassFailures <- max 0 (int (float side[i].RecentPassFailures * 0.8))
+                side[i].DuelWins <- max 0 (int (float side[i].DuelWins * 0.8))
+                side[i].DuelLosses <- max 0 (int (float side[i].DuelLosses * 0.8))
+
+    let DecayIntervalSubTicks = 12000

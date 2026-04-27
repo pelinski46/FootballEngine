@@ -91,6 +91,11 @@ module AppMsgs =
         | SetMentality of int
         | SetDefensiveLine of int
         | SetPressingIntensity of int
+        | SetWidth of int
+        | SetTempo of int
+        | SetDirectness of int
+        | SetPressTriggerZone of int
+        | SetDefensiveShape of int
         | ChangeLeague of CompetitionId
         | SetProcessing of bool
         | NoOp

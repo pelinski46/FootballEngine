@@ -353,14 +353,7 @@ module ManagerAgent =
             setTacticsByClubId clubId ctx state newTactics
             []
 
-    let private defaultIntent : PlayerIntent =
-        { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-          Action = None
-          Context = NormalPlay
-          Urgency = 0.0
-          Confidence = 0.5 }
-
-    let agent tick ctx state (clock: SimulationClock) : AgentResult =
+    let agent tick ctx state (clock: SimulationClock) : PlayerResult =
         match tick.Kind with
         | SubstitutionTick _clubId ->
             let actions = decide tick.SubTick ctx state None clock
@@ -374,7 +367,7 @@ module ManagerAgent =
                     []
                 |> List.rev
 
-            { Intent = defaultIntent; NextTick = None; Events = events; Transition = None }
+            { NextTick = None; Events = events; Transition = None }
 
         | ManagerReactionTick trigger ->
             let actions = decide tick.SubTick ctx state (Some trigger) clock
@@ -388,7 +381,7 @@ module ManagerAgent =
                     []
                 |> List.rev
 
-            { Intent = defaultIntent; NextTick = None; Events = events; Transition = None }
+            { NextTick = None; Events = events; Transition = None }
 
         | _ ->
-            { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }
+            { NextTick = None; Events = []; Transition = None }

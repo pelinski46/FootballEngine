@@ -14,7 +14,7 @@ module EventPipeline =
                     | Some fouler ->
                         let actions = RefereeAgent.decideCard fouler ctx state
                         for a in actions do
-                            acc.AddRange(RefereeAgent.resolve subTick a ctx state)
+                            acc.AddRange(RefereeApplicator.apply subTick a ctx state)
                     | None -> ()
 
     let reactors: EventReactor list = [ refereeReactor ]

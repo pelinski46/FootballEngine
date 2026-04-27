@@ -47,6 +47,19 @@ module CognitiveFrameModule =
         let ballZone = ofBallX state.Ball.Position.X dir
         let phase = phaseFromBallZone dir state.Ball.Position.X
 
+        let ballCarrierOppIdx =
+            match state.Ball.Possession with
+            | Owned(side, pid) when side <> clubSide ->
+                let mutable found = -1s
+                let oppFrame = getFrame state (ClubSide.flip clubSide)
+                let oppRoster = getRoster ctx (ClubSide.flip clubSide)
+                for i = 0 to oppFrame.SlotCount - 1 do
+                    match oppFrame.Occupancy[i] with
+                    | OccupancyKind.Active rosterIdx when oppRoster.Players[rosterIdx].Id = pid -> found <- int16 i
+                    | _ -> ()
+                found
+            | _ -> -1s
+
         for i = 0 to n - 1 do
             match ownFrame.Occupancy[i] with
             | OccupancyKind.Active _ ->
@@ -105,4 +118,5 @@ module CognitiveFrameModule =
           BallZone = ballZone
           Phase = phase
           PressureOnPlayer = pressure
-          SlotCount = n }
+          SlotCount = n
+          BallCarrierOppIdx = ballCarrierOppIdx }

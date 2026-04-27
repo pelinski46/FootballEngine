@@ -73,6 +73,11 @@ module Db =
                                       Mentality = instructions.Mentality
                                       DefensiveLine = instructions.DefensiveLine
                                       PressingIntensity = instructions.PressingIntensity
+                                      Width = instructions.Width
+                                      Tempo = instructions.Tempo
+                                      Directness = instructions.Directness
+                                      PressTriggerZone = instructions.PressTriggerZone
+                                      DefensiveShape = instructions.DefensiveShape
                                       SlotIndex = slot.Index
                                       Role = string slot.Role
                                       X = slot.X
@@ -156,7 +161,12 @@ module Db =
                                 let instructions =
                                     { Mentality = first.Mentality
                                       DefensiveLine = first.DefensiveLine
-                                      PressingIntensity = first.PressingIntensity }
+                                      PressingIntensity = first.PressingIntensity
+                                      Width = first.Width
+                                      Tempo = first.Tempo
+                                      Directness = first.Directness
+                                      PressTriggerZone = first.PressTriggerZone
+                                      DefensiveShape = first.DefensiveShape }
 
                                 let slotsList =
                                     slots

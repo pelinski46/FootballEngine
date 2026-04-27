@@ -79,7 +79,7 @@ module BallAgent =
                     bestPlayerId <- Some player.Id
             | _ -> ()
 
-        for i = awayFrame.SlotCount - 1 downto 0 do
+        for i = 0 to awayFrame.SlotCount - 1 do
             match awayFrame.Occupancy[i] with
             | OccupancyKind.Active _ ->
                 let player = awayRoster.Players[i]
@@ -146,21 +146,7 @@ module BallAgent =
 
         vSq < 1.0<meter / second> * 1.0<meter / second>
 
-    let private ballIntent: PlayerIntent =
-        { Movement =
-            MovementIntent.RecoverBall
-                { X = 0.0<meter>
-                  Y = 0.0<meter>
-                  Z = 0.0<meter>
-                  Vx = 0.0<meter / second>
-                  Vy = 0.0<meter / second>
-                  Vz = 0.0<meter / second> }
-          Action = None
-          Context = NormalPlay
-          Urgency = 0.0
-          Confidence = 0.5 }
-
-    let agent (tick: ScheduledTick) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : AgentResult =
+    let agent (tick: ScheduledTick) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : PlayerResult =
         let pcfg = ctx.Config.Physics
         let dt = SimulationClock.dt clock
 
@@ -186,18 +172,29 @@ module BallAgent =
                               Vz = 0.0<meter / second> } }
             | None -> state.Ball <- BallPhysics.update pcfg dt state.Ball
 
-            { Intent = ballIntent
+            { 
               NextTick = None
               Events = []
               Transition = None }
         | _ ->
-            let stepped = BallPhysics.update pcfg dt state.Ball
+            let withStationary = BallPhysics.update pcfg dt state.Ball
+
+            let wasStationary = state.Ball.StationarySinceSubTick.IsSome
+            let isNowStopped = ballNearlyStopped withStationary
+
+            let withStationary =
+                if isNowStopped && not wasStationary then
+                    { withStationary with StationarySinceSubTick = Some tick.SubTick }
+                elif not isNowStopped then
+                    { withStationary with StationarySinceSubTick = None }
+                else
+                    withStationary
 
             let winner, _winnerPosOpt, _contested =
-                Interception.chooseBestInterceptorSoA pcfg stepped.Position homeFrame awayFrame homeRoster awayRoster
+                Interception.chooseBestInterceptorSoA pcfg withStationary.Position homeFrame awayFrame homeRoster awayRoster
 
             let nearestChaser =
-                findNearestChaserSoA pcfg stepped.Position homeFrame awayFrame homeRoster awayRoster
+                findNearestChaserSoA pcfg withStationary.Position homeFrame awayFrame homeRoster awayRoster
 
             // During InFlight, the player who just released the ball (LastTouchBy) can't
             // immediately reclaim it — prevents the passer/shooter from cancelling their own action.
@@ -215,7 +212,7 @@ module BallAgent =
                     | Some pid ->
                         match findPlayerByPidSoA pid homeFrame awayFrame homeRoster awayRoster with
                         | Some(s, sx, sy) when
-                            stepped.Position.DistTo2D
+                            withStationary.Position.DistTo2D
                                 { X = sx
                                   Y = sy
                                   Z = 0.0<meter>
@@ -234,7 +231,7 @@ module BallAgent =
                 let club = SimStateOps.clubSideOf ctx state p.Id |> Option.get
 
                 state.Ball <-
-                    { stepped with
+                    { withStationary with
                         Possession = Owned(club, p.Id)
                         LastTouchBy = Some p.Id }
 
@@ -243,7 +240,7 @@ module BallAgent =
                     | Owned(_, existingPid) when existingPid = p.Id -> None
                     | _ -> None
 
-                { Intent = ballIntent
+                { 
                   NextTick = nextTick
                   Events = []
                   Transition = Some LivePlay }
@@ -251,10 +248,9 @@ module BallAgent =
             | None ->
                 match state.Ball.Possession with
                 | Possession.SetPiece _ ->
-                    state.Ball <- { stepped with Possession = Loose }
-                    let delay = TickDelay.delayFrom clock ctx.Config.Timing.DuelNextDelay
+                    state.Ball <- { withStationary with Possession = Loose }
 
-                    { Intent = ballIntent
+                    { 
                       NextTick = None
                       Events = []
                       Transition = Some LivePlay }
@@ -270,33 +266,31 @@ module BallAgent =
                         match findPlayerByPidSoA pid homeFrame awayFrame homeRoster awayRoster with
                         | Some(player, _, _) ->
                             state.Ball <-
-                                { stepped with
+                                { withStationary with
                                     Possession = Owned(side, player.Id)
                                     LastTouchBy = Some player.Id }
 
-                            { Intent = ballIntent
+                            { 
                               NextTick = None
                               Events = []
                               Transition = Some LivePlay }
                         | None ->
-                            state.Ball <- { stepped with Possession = Loose }
-                            let delay = TickDelay.delayFrom clock ctx.Config.Timing.DuelNextDelay
+                            state.Ball <- { withStationary with Possession = Loose }
 
-                            { Intent = ballIntent
+                            { 
                               NextTick = None
                               Events = []
                               Transition = Some LivePlay }
                     | _ ->
-                        state.Ball <- { stepped with Possession = Loose }
-                        let delay = TickDelay.delayFrom clock ctx.Config.Timing.DuelNextDelay
+                        state.Ball <- { withStationary with Possession = Loose }
 
-                        { Intent = ballIntent
+                        { 
                           NextTick = None
                           Events = []
                           Transition = Some LivePlay }
 
                 | Possession.InFlight _ ->
-                    if ballNearlyStopped stepped then
+                    if ballNearlyStopped withStationary then
                         match nearestChaser with
                         | Some pid ->
                             let club =
@@ -305,34 +299,32 @@ module BallAgent =
                             match findPlayerByPidSoA pid homeFrame awayFrame homeRoster awayRoster with
                             | Some(s, _, _) ->
                                 state.Ball <-
-                                    { stepped with
+                                    { withStationary with
                                         Possession = Owned(club, s.Id)
                                         LastTouchBy = Some s.Id }
 
-                                { Intent = ballIntent
+                                { 
                                   NextTick = None
                                   Events = []
                                   Transition = Some LivePlay }
                             | None ->
-                                state.Ball <- { stepped with Possession = Loose }
-                                let delay = TickDelay.delayFrom clock ctx.Config.Timing.DuelNextDelay
+                                state.Ball <- { withStationary with Possession = Loose }
 
-                                { Intent = ballIntent
+                                { 
                                   NextTick = None
                                   Events = []
                                   Transition = Some LivePlay }
                         | None ->
-                            state.Ball <- { stepped with Possession = Loose }
-                            let delay = TickDelay.delayFrom clock ctx.Config.Timing.DuelNextDelay
+                            state.Ball <- { withStationary with Possession = Loose }
 
-                            { Intent = ballIntent
+                            { 
                               NextTick = None
                               Events = []
                               Transition = Some LivePlay }
                     else
-                        state.Ball <- stepped
+                        state.Ball <- withStationary
 
-                        { Intent = ballIntent
+                        { 
                           NextTick = None
                           Events = []
                           Transition = None }
@@ -353,44 +345,44 @@ module BallAgent =
                                   Vy = 0.0<meter / second>
                                   Vz = 0.0<meter / second> }
 
-                            let timeToBall = Interception.estimateTimeToBall pcfg s pPos stepped.Position
+                            let timeToBall = Interception.estimateTimeToBall pcfg s pPos withStationary.Position
 
                             if timeToBall < 2.0 then
                                 state.Ball <-
-                                    { stepped with
+                                    { withStationary with
                                         Possession = Owned(club, s.Id)
                                         LastTouchBy = Some s.Id }
 
-                                { Intent = ballIntent
+                                { 
                                   NextTick = None
                                   Events = []
                                   Transition = Some LivePlay }
                             else
-                                state.Ball <- stepped
+                                state.Ball <- withStationary
 
-                                { Intent = ballIntent
+                                { 
                                   NextTick = None
                                   Events = []
                                   Transition = None }
                         | None ->
-                            state.Ball <- stepped
+                            state.Ball <- withStationary
 
-                            { Intent = ballIntent
+                            { 
                               NextTick = None
                               Events = []
                               Transition = None }
                     | None ->
-                        state.Ball <- stepped
+                        state.Ball <- withStationary
 
-                        { Intent = ballIntent
+                        { 
                           NextTick = None
                           Events = []
                           Transition = None }
 
                 | Possession.Owned _ ->
-                    state.Ball <- stepped
+                    state.Ball <- withStationary
 
-                    { Intent = ballIntent
+                    { 
                       NextTick = None
                       Events = []
                       Transition = None }
@@ -402,19 +394,19 @@ module BallAgent =
                             SimStateOps.clubSideOf ctx state pid |> Option.defaultValue state.AttackingSide
 
                         state.Ball <-
-                            { stepped with
+                            { withStationary with
                                 Possession = Owned(club, pid)
                                 LastTouchBy = Some pid }
 
-                        { Intent = ballIntent
+                        { 
                           NextTick = None
                           Events = []
                           Transition = Some LivePlay }
                     | None ->
-                        state.Ball <- { stepped with Possession = Loose }
+                        state.Ball <- { withStationary with Possession = Loose }
 
 
-                        { Intent = ballIntent
+                        { 
                           NextTick = None
                           Events = []
                           Transition = Some LivePlay }

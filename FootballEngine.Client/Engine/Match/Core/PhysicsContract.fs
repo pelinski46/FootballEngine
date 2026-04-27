@@ -73,6 +73,18 @@ module PhysicsContract =
     [<Literal>]
     let GoalAreaDepth = 5.5<meter>
 
+    [<Literal>]
+    let GoalAreaHalfWidth = 9.16<meter>
+
+    [<Literal>]
+    let CenterCircleRadius = 9.15<meter>
+
+    [<Literal>]
+    let PenaltyArcRadius = 9.15<meter>
+
+    [<Literal>]
+    let CornerArcRadius = 1.0<meter>
+
     // ============================================================
     // PLAYER PHYSICAL CONSTANTS — Calibratable via MovementPhysics
     // ============================================================
@@ -114,7 +126,7 @@ module PhysicsContract =
     let BallContestSeparationRadius = 0.8<meter>
 
     [<Literal>]
-    let SteeringSlowRadius = 2.5<meter>
+    let SteeringSlowRadius = 0.5<meter>
 
     [<Literal>]
     let TurnConstraintBase = 0.65
@@ -232,7 +244,7 @@ module PhysicsContract =
     let SteeringSeekTimeConstant = 0.5<second>
 
     [<Literal>]
-    let SteeringArriveTimeConstant = 0.3<second>
+    let SteeringArriveTimeConstant = 0.15<second>
 
     [<Literal>]
     let SteeringFleeTimeConstant = 0.5<second>

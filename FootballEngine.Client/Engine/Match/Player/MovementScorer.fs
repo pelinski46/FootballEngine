@@ -47,12 +47,24 @@ module MovementScorer =
         if ctx.TeamHasBall then
             0.0
         else
-            match ctx.NearestOpponentIdx with
-            | ValueNone -> 0.0
-            | ValueSome oppIdx ->
-                let oppX = float ctx.Team.OppFrame.PosX[oppIdx] * 1.0<meter>
-                let oppY = float ctx.Team.OppFrame.PosY[oppIdx] * 1.0<meter>
+            let bcIdx = int ctx.BallCarrierOppIdx
+            let hasBallCarrierInfo = bcIdx >= 0
 
+            let (oppIdx, oppX, oppY) =
+                if hasBallCarrierInfo then
+                    let ox = float ctx.Team.OppFrame.PosX[bcIdx] * 1.0<meter>
+                    let oy = float ctx.Team.OppFrame.PosY[bcIdx] * 1.0<meter>
+                    bcIdx, ox, oy
+                else
+                    match ctx.NearestOpponentIdx with
+                    | ValueNone -> -1, 0.0<meter>, 0.0<meter>
+                    | ValueSome idx ->
+                        let ox = float ctx.Team.OppFrame.PosX[idx] * 1.0<meter>
+                        let oy = float ctx.Team.OppFrame.PosY[idx] * 1.0<meter>
+                        idx, ox, oy
+
+            if oppIdx < 0 then 0.0
+            else
                 let oppPos =
                     { X = oppX
                       Y = oppY
@@ -62,11 +74,12 @@ module MovementScorer =
                       Vz = 0.0<meter / second> }
 
                 let dist = ctx.MyPos.DistTo2D oppPos
+                let markRadius = if hasBallCarrierInfo then 25.0<meter> else 20.0<meter>
 
-                if dist > 20.0<meter> then
+                if dist > markRadius then
                     0.0
                 else
-                    let baseScore = 1.0 - (float dist / 20.0)
+                    let baseScore = 1.0 - (float dist / float markRadius)
                     let positioningWeight = normStat ctx.Me.Mental.Positioning
 
                     let defensiveBonus =
@@ -80,7 +93,12 @@ module MovementScorer =
                         | MC -> 0.2
                         | _ -> 0.05
 
-                    (baseScore * positioningWeight + defensiveBonus) * normCond ctx.MyCondition
+                    let shapeFactor = ctx.Tactics.DefensiveShape
+                    let markBonus = shapeFactor * 0.3
+
+                    let ballCarrierBonus = if hasBallCarrierInfo then 0.5 else 0.0
+
+                    (baseScore * positioningWeight + defensiveBonus + markBonus + ballCarrierBonus) * normCond ctx.MyCondition
 
     let pressBallScore (ctx: AgentContext) =
         if ctx.TeamHasBall then
@@ -88,11 +106,12 @@ module MovementScorer =
         else
             let dist = ctx.MyPos.DistTo2D ctx.BallState.Position
 
-            if dist > 30.0<meter> then
+            if dist > 35.0<meter> then
                 0.0
             else
-                let baseScore = 1.2 - (float dist / 30.0)
-                let pressWeight = 0.3 + ctx.Profile.PressingIntensity * 0.7
+                let baseScore = 1.5 - (float dist / 35.0)
+                let pressFactor = ctx.Tactics.PressingIntensity * 0.5 + ctx.Profile.PressingIntensity * 0.5
+                let pressWeight = 0.4 + pressFactor * 0.6
                 let workRate = normStat ctx.Me.Mental.WorkRate
 
                 let positionMod =
@@ -104,24 +123,26 @@ module MovementScorer =
                     | ST -> 0.1
                     | _ -> 0.0
 
-                let staminaPenalty = float (100 - ctx.MyCondition) / 100.0 * 0.3
+                let staminaPenalty = float (100 - ctx.MyCondition) / 100.0 * 0.2
                 (baseScore * pressWeight * workRate + positionMod - staminaPenalty) |> max 0.0
 
     let coverSpaceScore (ctx: AgentContext) =
+        let zonalFactor = (1.0 - ctx.Tactics.DefensiveShape) * 0.3
+
         if ctx.TeamHasBall then
             match ctx.Me.Position with
             | DC
-            | DM -> 0.15 * normStat ctx.Me.Mental.Positioning
+            | DM -> (0.15 * normStat ctx.Me.Mental.Positioning + zonalFactor)
             | _ -> 0.05
         else
             match ctx.Me.Position with
             | DC
-            | DM -> 0.35 * normStat ctx.Me.Mental.Positioning
+            | DM -> (0.35 * normStat ctx.Me.Mental.Positioning + zonalFactor)
             | DL
             | DR
             | WBL
-            | WBR -> 0.2 * normStat ctx.Me.Mental.Positioning
-            | _ -> 0.1
+            | WBR -> (0.2 * normStat ctx.Me.Mental.Positioning + zonalFactor)
+            | _ -> 0.1 + zonalFactor
 
     let supportAttackScore (ctx: AgentContext) =
         if not ctx.TeamHasBall then
@@ -132,6 +153,16 @@ module MovementScorer =
             let baseScore = 0.5
             let offTheBall = normStat ctx.Me.Mental.WorkRate
             let depthBonus = ctx.Profile.AttackingDepth * 0.4
+
+            let widthBonus = ctx.Tactics.Width * ctx.Profile.LateralTendency * 0.25
+
+            let buildUpSideBonus =
+                match ctx.TeamIntent.BuildUpSide with
+                | BuildUpSide.LeftFlank ->
+                    if ctx.Me.Position = AMR || ctx.Me.Position = MR || ctx.Me.Position = WBR then 0.15 else 0.0
+                | BuildUpSide.RightFlank ->
+                    if ctx.Me.Position = AML || ctx.Me.Position = ML || ctx.Me.Position = WBL then 0.15 else 0.0
+                | _ -> 0.0
 
             let positionBonus =
                 match ctx.Me.Position with
@@ -150,7 +181,7 @@ module MovementScorer =
                 | DM -> 0.1
                 | GK -> 0.0
 
-            (baseScore + offTheBall * 0.4 + depthBonus + positionBonus)
+            (baseScore + offTheBall * 0.4 + depthBonus + positionBonus + widthBonus + buildUpSideBonus)
             * normCond ctx.MyCondition
 
     let recoverBallScore (ctx: AgentContext) =
@@ -197,16 +228,71 @@ module MovementScorer =
             CoverSpace = scores.CoverSpace * emergent.CompactnessLevel
             SupportAttack = scores.SupportAttack * emergent.RiskAppetite }
 
+    let interceptPassScore (ctx: AgentContext) : float =
+        if ctx.TeamHasBall then 0.0
+        else
+            match ctx.TeamIntent.DefensiveAssignments with
+            | assignments when assignments.Length > ctx.MeIdx ->
+                match assignments[ctx.MeIdx] with
+                | DefensiveRole.Marker ->
+                    let myX = ctx.MyPos.X
+                    let myY = ctx.MyPos.Y
+                    let bcIdx = int ctx.BallCarrierOppIdx
+                    if bcIdx >= 0 then
+                        let bcX = float ctx.Team.OppFrame.PosX[bcIdx] * 1.0<meter>
+                        let bcY = float ctx.Team.OppFrame.PosY[bcIdx] * 1.0<meter>
+                        let dist = ctx.MyPos.DistTo2D { X = bcX; Y = bcY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        if dist > 25.0<meter> then 0.0
+                        else
+                            let mutable bestInterceptScore = 0.0
+                            for j = 0 to ctx.Team.OppFrame.SlotCount - 1 do
+                                match ctx.Team.OppFrame.Occupancy[j] with
+                                | OccupancyKind.Active _ when j <> bcIdx ->
+                                    let ox = float ctx.Team.OppFrame.PosX[j] * 1.0<meter>
+                                    let oy = float ctx.Team.OppFrame.PosY[j] * 1.0<meter>
+                                    let lx1, ly1 = float32 bcX, float32 bcY
+                                    let lx2, ly2 = float32 ox, float32 oy
+                                    let laneDistSq = MatchSpatial.pointToLineDistSq (float32 myX) (float32 myY) lx1 ly1 lx2 ly2
+                                    if laneDistSq < 9.0f then
+                                        let bonus = 1.0 - float laneDistSq / 9.0
+                                        bestInterceptScore <- max bestInterceptScore bonus * 0.5
+                                | _ -> ()
+                            bestInterceptScore
+                    else 0.0
+                | _ -> 0.0
+            | _ -> 0.0
+
+    let private applyRoleModifiers (ctx: AgentContext) (scores: MovementScores) : MovementScores =
+        match ctx.TeamIntent.DefensiveAssignments with
+        | assignments when not ctx.TeamHasBall && assignments.Length > ctx.MeIdx ->
+            match assignments[ctx.MeIdx] with
+            | DefensiveRole.FirstDefender ->
+                { scores with
+                    PressBall = scores.PressBall * 2.0
+                    MarkMan = scores.MarkMan * 0.3
+                    CoverSpace = scores.CoverSpace * 0.3 }
+            | DefensiveRole.Cover ->
+                { scores with
+                    CoverSpace = scores.CoverSpace * 2.0
+                    MarkMan = scores.MarkMan * 0.5
+                    PressBall = scores.PressBall * 0.3 }
+            | DefensiveRole.Marker ->
+                { scores with
+                    MarkMan = scores.MarkMan * 2.0
+                    PressBall = scores.PressBall * 0.3
+                    CoverSpace = scores.CoverSpace * 0.5 }
+        | _ -> scores
+
     let computeAll (ctx: AgentContext) (emergent: EmergentState) : MovementScores =
         let raw =
             { MaintainShape = maintainShapeScore ctx
-              MarkMan = markManScore ctx
+              MarkMan = markManScore ctx + interceptPassScore ctx
               PressBall = pressBallScore ctx
               CoverSpace = coverSpaceScore ctx
               SupportAttack = supportAttackScore ctx
               RecoverBall = recoverBallScore ctx }
 
-        applyEmergentModifiers emergent raw
+        raw |> applyEmergentModifiers emergent |> applyRoleModifiers ctx
 
     let private scoreForIntent (scores: MovementScores) (intent: MovementIntent) : float =
         match intent with

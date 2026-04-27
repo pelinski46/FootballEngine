@@ -8,17 +8,10 @@ open FootballEngine.PhysicsContract
 
 module SetPieceAgent =
 
-    let private defaultIntent : PlayerIntent =
-        { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-          Action = None
-          Context = NormalPlay
-          Urgency = 0.5
-          Confidence = 0.5 }
-
-    let agent tick ctx state (clock: SimulationClock) : AgentResult =
+    let agent tick ctx state (clock: SimulationClock) : PlayerResult =
         match tick.Kind with
         | SetPieceTick(kind, clubSide) ->
-            let events =
+            let result =
                 match kind with
                 | SetPieceKind.FreeKick -> SetPlayAction.resolveFreeKick tick.SubTick ctx state
                 | SetPieceKind.Corner -> SetPlayAction.resolveCorner tick.SubTick ctx state
@@ -44,7 +37,7 @@ module SetPieceAgent =
                             | _ -> ()
                         idx
 
-                    if gkIdx < 0 then []
+                    if gkIdx < 0 then ActionResult.empty
                     else
                         let gk = roster.Players[gkIdx]
                         let gkXf = float frame.PosX[gkIdx] * 1.0<meter>
@@ -63,18 +56,26 @@ module SetPieceAgent =
                         let speed = pc.Speed
                         if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
 
-                        [ createEvent tick.SubTick gk.Id kickingClubId MatchEventType.GoalKick ]
+                        ActionResult.ofEvents [ createEvent tick.SubTick gk.Id kickingClubId MatchEventType.GoalKick ]
 
                 | SetPieceKind.Penalty ->
                     let frame = SimStateOps.getFrame state clubSide
                     let roster = SimStateOps.getRoster ctx clubSide
                     let kickerPlayer = roster.Players[0]
-                    let events = SetPlayAction.resolvePenalty ctx state kickerPlayer clubSide 1 clock
-                    events
+                    SetPlayAction.resolvePenalty tick.SubTick ctx state kickerPlayer clubSide clock
 
-                | SetPieceKind.KickOff -> []
+                | SetPieceKind.KickOff -> ActionResult.empty
 
-            { Intent = defaultIntent; NextTick = None; Events = events; Transition = Some LivePlay }
+            let finalEvents =
+                match result.PendingGoal with
+                | Some pg ->
+                    let scorerId, isOwnGoal = GoalDetector.scorer pg.ScoringClub state.Ball ctx state
+                    let confirmAction = ConfirmGoal(pg.ScoringClub, scorerId, isOwnGoal)
+                    let goalEvents = RefereeApplicator.apply tick.SubTick confirmAction ctx state
+                    result.Events @ goalEvents
+                | None -> result.Events
+
+            { NextTick = None; Events = finalEvents; Transition = Some LivePlay }
 
         | KickOffTick ->
             let centerX = PhysicsContract.HalfwayLineX
@@ -101,7 +102,7 @@ module SetPieceAgent =
                 |> Option.orElse (findPos (fun p -> p.Position <> GK) 0)
 
             match kickerIdx with
-            | None -> { Intent = defaultIntent; NextTick = None; Events = []; Transition = Some LivePlay }
+            | None -> { NextTick = None; Events = []; Transition = Some LivePlay }
             | Some kIdx ->
                 let kicker = roster.Players[kIdx]
 
@@ -131,6 +132,6 @@ module SetPieceAgent =
                 let speed = pc.Speed
                 if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
 
-                { Intent = defaultIntent; NextTick = None; Events = [ { SubTick = tick.SubTick; PlayerId = kicker.Id; ClubId = kickingClubId; Type = MatchEventType.KickOff } ]; Transition = Some LivePlay }
+                { NextTick = None; Events = [ { SubTick = tick.SubTick; PlayerId = kicker.Id; ClubId = kickingClubId; Type = MatchEventType.KickOff } ]; Transition = Some LivePlay }
 
-        | _ -> { Intent = defaultIntent; NextTick = None; Events = []; Transition = None }
+        | _ -> { NextTick = None; Events = []; Transition = None }

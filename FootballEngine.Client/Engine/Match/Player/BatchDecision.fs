@@ -153,7 +153,7 @@ module BatchDecision =
                 let actx =
                     AgentContext.build
                         player profile i team teamIntent previousIntent 0
-                        state clock state.Config.Decision state.Config.BuildUp
+                        state clock ctx state.Config.Decision state.Config.BuildUp
                         (Some cFrame)
                         visibilityMask
 

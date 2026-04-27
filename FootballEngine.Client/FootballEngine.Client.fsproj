@@ -53,11 +53,13 @@
         <Compile Include="Engine\Match\Core\MatchSpatial.fs"/>
         <Compile Include="Engine\Match\Core\ActionContext.fs"/>
         <Compile Include="Engine\Match\Core\BalanceCalibrator.fs"/>
+        <Compile Include="Engine\Match\Referee\RefereeAction.fs"/>
         <Compile Include="Engine\Match\Core\SchedulingTypes.fs"/>
         <Compile Include="Engine\Match\Core\Timeline.fs"/>
         <Compile Include="Engine\Match\Core\PhaseSchedule.fs"/>
         <Compile Include="Engine\Match\Core\CognitiveFrame.fs"/>
         <Compile Include="Engine\Match\Core\Perception.fs"/>
+        <Compile Include="Engine\Match\Core\PendingGoal.fs"/>
         <Compile Include="Engine\Match\Core\EventQueue.fs"/>
         <Compile Include="Engine\Match\Core\TickOrchestrator.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAction.fs"/>
@@ -72,12 +74,18 @@
         <Compile Include="Engine\Match\Movement\TeamIntent.fs"/>
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
         <Compile Include="Engine\Match\Player\MovementScorer.fs"/>
+        <Compile Include="Engine\Match\Player\ReactiveLayer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerScorer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerDecision.fs"/>
         <Compile Include="Engine\Match\Player\BatchDecision.fs"/>
         <Compile Include="Engine\Match\Movement\MovementEngine.fs"/>
         <Compile Include="Engine\Match\Ball\Interception.fs"/>
         <Compile Include="Engine\Match\Ball\BallAgent.fs"/>
+
+        <Compile Include="Engine\Match\Referee\GoalDetector.fs"/>
+        <Compile Include="Engine\Match\Referee\RefereeApplicator.fs"/>
+        <Compile Include="Engine\Match\Referee\RefereeAgent.fs"/>
+
         <Compile Include="Engine\Match\Actions\DuelAction.fs"/>
         <Compile Include="Engine\Match\Actions\ShotAction.fs"/>
         <Compile Include="Engine\Match\Actions\PassAction.fs"/>
@@ -85,10 +93,6 @@
         <Compile Include="Engine\Match\Actions\SetPlayAction.fs"/>
         <Compile Include="Engine\Match\Actions\SetPieceAgent.fs"/>
 
-        <Compile Include="Engine\Match\Referee\RefereeAction.fs"/>
-        <Compile Include="Engine\Match\Referee\GoalDetector.fs"/>
-        <Compile Include="Engine\Match\Referee\RefereeAgent.fs"/>
-        <Compile Include="Engine\Match\Core\EventReactor.fs"/>
         <Compile Include="Engine\Match\Core\MatchEventProcessor.fs"/>
         <Compile Include="Engine\Match\Player\ActionResolver.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAgent.fs"/>

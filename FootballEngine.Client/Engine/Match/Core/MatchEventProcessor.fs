@@ -32,13 +32,6 @@ module MatchEventProcessor =
                 | MatchEventType.Corner -> Some(SetPiece SetPieceKind.Corner)
                 | _ -> None)
 
-    let private defaultPlayerIntent : PlayerIntent =
-        { Movement = MovementIntent.RecoverBall { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
-          Action = None
-          Context = NormalPlay
-          Urgency = 0.5
-          Confidence = 0.5 }
-
     let processEventsAndSpawnTicks
         (subTick: int)
         (_depth: int)
@@ -49,7 +42,7 @@ module MatchEventProcessor =
         (ctx: MatchContext)
         (state: SimState)
         (_clock: SimulationClock)
-        : AgentResult =
+        : PlayerResult =
 
         let tc = ctx.Config.Timing
 
@@ -69,12 +62,10 @@ module MatchEventProcessor =
         if hasTerminating || chainBreaks then
             let transition = transitionFromEvents allEvents
 
-            { Intent = defaultPlayerIntent
-              NextTick = None
+            { NextTick = None
               Events = allEvents
               Transition = transition }
         else
-            { Intent = defaultPlayerIntent
-              NextTick = None
+            { NextTick = None
               Events = allEvents
               Transition = None }

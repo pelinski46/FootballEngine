@@ -17,7 +17,7 @@ module SimulationClock =
         { SubTicksPerSecond = sps
           PhysicsRate = 1
           SteeringRate = 2
-          CognitiveRate = 120
+          CognitiveRate = 40
           ActionRate = 8
           AdaptiveRate = 1200 }
 

@@ -10,6 +10,7 @@ type AgentContext =
     { MeIdx: int
       Me: Player
       Profile: BehavioralProfile
+      MentalState: MentalState
       MyCondition: int
       MyPos: Spatial
       BallState: BallPhysicsState
@@ -21,6 +22,7 @@ type AgentContext =
       NearestOpponentIdx: int voption
       BestPassTargetIdx: int voption
       BestPassTargetPos: Spatial voption
+      BallCarrierOppIdx: int16
       DistToGoal: float<meter>
       GoalDiff: int
       Minute: int
@@ -46,6 +48,7 @@ module AgentContext =
         (intentLockExpiry: int)
         (state: SimState)
         (clock: SimulationClock)
+        (ctx: MatchContext)
         (decision: DecisionConfig)
         (buildUp: BuildUpConfig)
         (cFrame: CognitiveFrame option)
@@ -76,6 +79,10 @@ module AgentContext =
             tacticsConfig
                 (getTactics state team.ClubSide)
                 (getInstructions state team.ClubSide)
+
+        let clubId = if team.ClubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let urgency = matchUrgency clubId ctx state clock
+        let mentalState = MentalState.initial me
 
         let myX32 = team.OwnFrame.PosX[meIdx]
         let myY32 = team.OwnFrame.PosY[meIdx]
@@ -168,6 +175,7 @@ module AgentContext =
         { MeIdx = meIdx
           Me = me
           Profile = profile
+          MentalState = mentalState
           MyCondition = me.Condition
           MyPos = myPos
           BallState = ballState
@@ -179,10 +187,14 @@ module AgentContext =
           NearestOpponentIdx = nearestOppIdx
           BestPassTargetIdx = bestPassTargetIdx
           BestPassTargetPos = bestPassTargetPos
+          BallCarrierOppIdx =
+            match cFrame with
+            | Some cf -> cf.BallCarrierOppIdx
+            | None -> -1s
           DistToGoal = dist
           GoalDiff = gd
           Minute = int (SimulationClock.subTicksToSeconds clock state.SubTick / 60.0)
-          Urgency = 1.0
+          Urgency = urgency
           Tactics = tacticsCfg
           Decision = decision
           BuildUp = buildUp
@@ -191,4 +203,4 @@ module AgentContext =
           PreviousIntent = previousIntent
           IntentLockExpiry = intentLockExpiry
           VisibilityMask = visibilityMask
-}
+        }

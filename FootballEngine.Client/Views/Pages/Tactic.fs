@@ -337,27 +337,38 @@ module Tactics =
                     Border.create
                         [ Border.padding (16.0, 12.0)
                           Border.child (
-                              StackPanel.create
-                                  [ StackPanel.spacing 14.0
-                                    StackPanel.children
-                                        [ instructionSlider "Mentality" instructions.Mentality 0 4 "Def" "Att" (fun v ->
-                                              dispatch (SetMentality v))
-                                          instructionSlider
-                                              "Defensive Line"
-                                              instructions.DefensiveLine
-                                              0
-                                              4
-                                              "Low"
-                                              "High"
-                                              (fun v -> dispatch (SetDefensiveLine v))
-                                          instructionSlider
-                                              "Pressing"
-                                              instructions.PressingIntensity
-                                              0
-                                              4
-                                              "Low"
-                                              "High"
-                                              (fun v -> dispatch (SetPressingIntensity v)) ] ]
+                               StackPanel.create
+                                   [ StackPanel.spacing 14.0
+                                     StackPanel.children
+                                         [ instructionSlider "Mentality" instructions.Mentality 0 4 "Def" "Att" (fun v ->
+                                               dispatch (SetMentality v))
+                                           instructionSlider
+                                               "Defensive Line"
+                                               instructions.DefensiveLine
+                                               0
+                                               4
+                                               "Low"
+                                               "High"
+                                               (fun v -> dispatch (SetDefensiveLine v))
+                                           instructionSlider
+                                               "Pressing"
+                                               instructions.PressingIntensity
+                                               0
+                                               4
+                                               "Low"
+                                               "High"
+                                               (fun v -> dispatch (SetPressingIntensity v))
+                                           instructionSlider "Width" instructions.Width 0 4 "Narrow" "Wide" (fun v ->
+                                               dispatch (SetWidth v))
+                                           instructionSlider "Tempo" instructions.Tempo 0 4 "Slow" "Fast" (fun v ->
+                                               dispatch (SetTempo v))
+                                           instructionSlider "Directness" instructions.Directness 0 4 "Elaborate" "Direct" (fun v ->
+                                               dispatch (SetDirectness v))
+                                           instructionSlider "Press Trigger" instructions.PressTriggerZone 0 2 "Own Half" "High Press" (fun v ->
+                                               dispatch (SetPressTriggerZone v))
+                                           instructionSlider "Defensive Shape" instructions.DefensiveShape 0 4 "Zonal" "Man" (fun v ->
+                                               dispatch (SetDefensiveShape v))
+                                         ] ]
                           ) ] ] ]
 
     let private teamStats (starterIds: Set<PlayerId>) (gs: GameState) =

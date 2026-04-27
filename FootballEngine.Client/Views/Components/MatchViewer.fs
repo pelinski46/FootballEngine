@@ -44,6 +44,28 @@ module PitchCoords =
     let lerpPos (t: float32) (ax: float32, ay: float32) (bx: float32, by: float32) = lerp t ax bx, lerp t ay by
 
 
+module PitchGeometry =
+
+    open PhysicsContract
+
+    let inline private toCanvasX (meters: float<meter>) : float32 =
+        float32 (float meters) * PitchCoords.PitchW / float32 PitchLength
+
+    let inline private toCanvasY (meters: float<meter>) : float32 =
+        float32 (float meters) * PitchCoords.PitchH / float32 PitchWidth
+
+    let PenaltyAreaDepthX = toCanvasX PenaltyAreaDepth
+    let PenaltyAreaHalfW = toCanvasY PenaltyAreaHalfWidth
+    let GoalAreaDepthX = toCanvasX GoalAreaDepth
+    let GoalAreaHalfW = toCanvasY GoalAreaHalfWidth
+    let CenterCircleRadius = toCanvasX CenterCircleRadius
+    let PenaltyArcRadius = toCanvasX PenaltyArcRadius
+    let CornerArcRadius = toCanvasX CornerArcRadius
+    let PenaltySpotX = toCanvasX PenaltySpotDistance
+    let GoalHalfW = toCanvasY (PostFarY - PostNearY) / 2.0f
+    let GoalDepth = 16.0f
+
+
 // ---------------------------------------------------------------------------
 // SKPaint cache — allocate once, reuse across frames
 // ---------------------------------------------------------------------------
@@ -89,11 +111,9 @@ module Paints =
     let pitchLight = mkFill 33uy 85uy 27uy 255uy
     let pitchVignette = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill)
 
-    let lineWhite = mkStroke 255uy 255uy 255uy 180uy 2.2f
-    let lineFaint = mkStroke 255uy 255uy 255uy 60uy 1.2f
-    let arcFaint = mkStroke 255uy 255uy 255uy 50uy 1.2f
+    let lineWhite = mkStroke 255uy 255uy 255uy 255uy 2.5f
 
-    let dotWhite = mkFill 255uy 255uy 255uy 140uy
+    let dotWhite = mkFill 255uy 255uy 255uy 255uy
 
     // ── Players ────────────────────────────────────────────────────────────
 
@@ -187,11 +207,11 @@ module Paints =
 module PitchRenderer =
 
     open PitchCoords
+    open PitchGeometry
 
     let private stripeCount = 10
 
     let drawStripes (canvas: SKCanvas) =
-        // Horizontal stripes running across the pitch width (as seen in real broadcast views)
         let stripeH = PitchH / float32 stripeCount
 
         for i in 0 .. stripeCount - 1 do
@@ -202,81 +222,39 @@ module PitchRenderer =
     let private lineW = PitchW
     let private lineH = PitchH
 
-    // Penalty area dimensions (in canvas units)
-    let private paDepthX =
-        float32 PhysicsContract.PenaltyAreaDepth * PitchW
-        / float32 PhysicsContract.PitchLength
-
-    let private paHalfW =
-        float32 PhysicsContract.PenaltyAreaHalfWidth * PitchH
-        / float32 PhysicsContract.PitchWidth
-
-    let private gaDepthX =
-        float32 PhysicsContract.GoalAreaDepth * PitchW
-        / float32 PhysicsContract.PitchLength
-
-    let private gaHalfW = 26.5f * PitchH / float32 PhysicsContract.PitchWidth
-
-    let private goalHalfW =
-        float32 (PhysicsContract.PostFarY - PhysicsContract.PostNearY) / 2.0f * PitchH
-        / float32 PhysicsContract.PitchWidth
-
-    let private goalDepth = 16.0f
-
     let drawMarkings (canvas: SKCanvas) =
         let p = Paints.lineWhite
-        let pf = Paints.lineFaint
         let cx = PitchW / 2.0f
         let cy = PitchH / 2.0f
         let mid = PitchH / 2.0f
 
-        // Outer boundary
         canvas.DrawRect(SKRect(0.0f, 0.0f, PitchW, PitchH), p)
-
-        // Halfway line
         canvas.DrawLine(cx, 0.0f, cx, PitchH, p)
 
-        // Centre circle
-        let circleR = 65.0f * PitchW / 1050.0f
-        canvas.DrawCircle(cx, cy, circleR, pf)
+        canvas.DrawCircle(cx, cy, CenterCircleRadius, p)
         canvas.DrawCircle(cx, cy, 3.5f, Paints.dotWhite)
 
-        // Left penalty area
-        let lpaRect = SKRect(0.0f, mid - paHalfW, paDepthX, mid + paHalfW)
+        let lpaRect = SKRect(0.0f, mid - PenaltyAreaHalfW, PenaltyAreaDepthX, mid + PenaltyAreaHalfW)
         canvas.DrawRect(lpaRect, p)
 
-        // Left goal area
-        canvas.DrawRect(SKRect(0.0f, mid - gaHalfW, gaDepthX, mid + gaHalfW), p)
+        canvas.DrawRect(SKRect(0.0f, mid - GoalAreaHalfW, GoalAreaDepthX, mid + GoalAreaHalfW), p)
 
-        // Left penalty spot
-        let lSpotX =
-            float32 PhysicsContract.PenaltySpotDistance * PitchW
-            / float32 PhysicsContract.PitchLength
+        canvas.DrawCircle(PenaltySpotX, mid, 3.0f, Paints.dotWhite)
 
-        canvas.DrawCircle(lSpotX, mid, 3.0f, Paints.dotWhite)
-
-        // Left penalty arc
         use arcPath = new SKPath()
-        arcPath.AddArc(SKRect(lSpotX - circleR, mid - circleR, lSpotX + circleR, mid + circleR), -53.0f, 106.0f)
-        canvas.DrawPath(arcPath, pf)
+        arcPath.AddArc(SKRect(PenaltySpotX - PenaltyArcRadius, mid - PenaltyArcRadius, PenaltySpotX + PenaltyArcRadius, mid + PenaltyArcRadius), -53.0f, 106.0f)
+        canvas.DrawPath(arcPath, p)
 
-        // Right penalty area
-        canvas.DrawRect(SKRect(PitchW - paDepthX, mid - paHalfW, PitchW, mid + paHalfW), p)
+        canvas.DrawRect(SKRect(PitchW - PenaltyAreaDepthX, mid - PenaltyAreaHalfW, PitchW, mid + PenaltyAreaHalfW), p)
 
-        // Right goal area
-        canvas.DrawRect(SKRect(PitchW - gaDepthX, mid - gaHalfW, PitchW, mid + gaHalfW), p)
+        canvas.DrawRect(SKRect(PitchW - GoalAreaDepthX, mid - GoalAreaHalfW, PitchW, mid + GoalAreaHalfW), p)
 
-        // Right penalty spot
-        let rSpotX = PitchW - lSpotX
+        let rSpotX = PitchW - PenaltySpotX
         canvas.DrawCircle(rSpotX, mid, 3.0f, Paints.dotWhite)
 
-        // Right penalty arc
         use arcPathR = new SKPath()
-        arcPathR.AddArc(SKRect(rSpotX - circleR, mid - circleR, rSpotX + circleR, mid + circleR), 127.0f, 106.0f)
-        canvas.DrawPath(arcPathR, pf)
-
-        // Corner arcs
-        let ca = 18.0f
+        arcPathR.AddArc(SKRect(rSpotX - PenaltyArcRadius, mid - PenaltyArcRadius, rSpotX + PenaltyArcRadius, mid + PenaltyArcRadius), 127.0f, 106.0f)
+        canvas.DrawPath(arcPathR, p)
 
         for cx', cy', startA in
             [ 0.0f, 0.0f, 0.0f
@@ -284,17 +262,15 @@ module PitchRenderer =
               0.0f, PitchH, 270.0f
               PitchW, PitchH, 180.0f ] do
             use cornerArc = new SKPath()
-            cornerArc.AddArc(SKRect(cx' - ca, cy' - ca, cx' + ca, cy' + ca), startA, 90.0f)
-            canvas.DrawPath(cornerArc, pf)
+            cornerArc.AddArc(SKRect(cx' - CornerArcRadius, cy' - CornerArcRadius, cx' + CornerArcRadius, cy' + CornerArcRadius), startA, 90.0f)
+            canvas.DrawPath(cornerArc, p)
 
         let mkGoalPaint () =
             new SKPaint(Color = SKColor(255uy, 255uy, 255uy, 30uy), Style = SKPaintStyle.Fill, IsAntialias = true)
 
         let goalPaint = mkGoalPaint ()
-        // Left goal
-        canvas.DrawRect(SKRect(-goalDepth, mid - goalHalfW, 0.0f, mid + goalHalfW), goalPaint)
-        // Right goal
-        canvas.DrawRect(SKRect(PitchW, mid - goalHalfW, PitchW + goalDepth, mid + goalHalfW), goalPaint)
+        canvas.DrawRect(SKRect(-GoalDepth, mid - GoalHalfW, 0.0f, mid + GoalHalfW), goalPaint)
+        canvas.DrawRect(SKRect(PitchW, mid - GoalHalfW, PitchW + GoalDepth, mid + GoalHalfW), goalPaint)
 
     let drawVignette (canvas: SKCanvas) =
         Paints.pitchVignette.Shader <- Paints.vignetteShader
@@ -401,51 +377,134 @@ module BallRenderer =
 
     let private ballR = 10.0f
 
-    let computeRotation (vx: float) (vy: float) (timeSeconds: float) =
-        let speed = float32 (sqrt (vx * vx + vy * vy))
-        let totalRotation = float32 timeSeconds * speed * 3.5f
-        totalRotation % (MathF.PI * 2.0f)
+    let private lightDirX = -0.6f
+    let private lightDirY = -0.8f
 
-    let draw (canvas: SKCanvas) (bx: float) (by: float) (vx: float) (vy: float) (rotation: float32) =
+    let private mkShadowPaint (height: float32) =
+        let alpha = max 15uy (80uy - byte (min (height * 3.0f) 65.0f))
+        let blur = 3.0f + height * 0.4f
+        new SKPaint(
+            Color = SKColor(0uy, 0uy, 0uy, alpha),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, blur)
+        )
+
+    let private mkTrailShader (speed: float32) (angle: float32) (r: float32) =
+        let len = min (speed * 2.5f) 22.0f
+        if len < 3.0f then None
+        else
+            let x1 = -MathF.Cos(angle) * len
+            let y1 = -MathF.Sin(angle) * len
+            let x2 = r * 0.3f * MathF.Cos(angle)
+            let y2 = r * 0.3f * MathF.Sin(angle)
+            Some(
+                SKShader.CreateLinearGradient(
+                    SKPoint(x1, y1),
+                    SKPoint(x2, y2),
+                    [| SKColor(245uy, 245uy, 245uy, 0uy); SKColor(245uy, 245uy, 245uy, 90uy) |],
+                    [| 0.0f; 1.0f |],
+                    SKShaderTileMode.Clamp
+                )
+            )
+
+    let private drawPentagon (canvas: SKCanvas) (cx: float32) (cy: float32) (radius: float32) (rotation: float32) (paint: SKPaint) =
+        use path = new SKPath()
+        let mutable first = true
+        for i in 0..4 do
+            let a = rotation + float32 i * 2.0f * MathF.PI / 5.0f - MathF.PI / 2.0f
+            let px = cx + MathF.Cos(a) * radius
+            let py = cy + MathF.Sin(a) * radius
+            if first then path.MoveTo(px, py) else path.LineTo(px, py)
+            first <- false
+        path.Close()
+        canvas.DrawPath(path, paint)
+
+    let draw (canvas: SKCanvas) (bx: float) (by: float) (height: float) (vx: float) (vy: float) (vz: float) (spinTop: float) (dt: float) =
         let cx, cy = toCanvas bx by
         let speed = float32 (sqrt (vx * vx + vy * vy))
+        let h = float32 height
 
-        // Motion blur elongation on fast shots
-        let scaleX = 1.0f + min (speed * 0.008f) 0.35f
+        let heightScale = max 0.85f (1.0f - h * 0.004f)
+        let r = ballR * heightScale
+
+        let moveAngle = float32 (Math.Atan2(vy, vx))
+        let isBouncing = h < 0.15f && vz > 1.5
+        let squashX, squashY =
+            if isBouncing then 1.18f, 0.82f
+            else 1.0f, 1.0f
 
         canvas.Save() |> ignore
         canvas.Translate(cx, cy)
 
-        if speed > 8.0f then
-            let angle = float32 (Math.Atan2(vy, vx)) * 180.0f / MathF.PI
-            canvas.RotateDegrees(angle)
+        let shadowOffsetX = lightDirX * (12.0f + h * 1.8f)
+        let shadowOffsetY = lightDirY * (12.0f + h * 1.8f)
+        let shadowScale = 1.0f + h * 0.02f
+        let shadowR = r * shadowScale
 
-        canvas.Scale(scaleX, 1.0f)
+        use shadowPaint = mkShadowPaint h
+        canvas.DrawOval(
+            SKRect(
+                shadowOffsetX - shadowR * 1.2f,
+                shadowOffsetY - shadowR * 0.5f,
+                shadowOffsetX + shadowR * 1.2f,
+                shadowOffsetY + shadowR * 0.7f
+            ),
+            shadowPaint
+        )
 
-        // Ground shadow (elliptical)
-        canvas.DrawOval(SKRect(-ballR * 1.3f, ballR * 0.5f, ballR * 1.3f, ballR * 1.1f), Paints.ballShadow)
+        if speed > 5.0f then
+            match mkTrailShader speed moveAngle r with
+            | Some shader ->
+                use trailPaint = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill, Shader = shader)
+                canvas.DrawCircle(0.0f, 0.0f, r * 0.9f, trailPaint)
+            | None -> ()
 
-        // Ball base
-        canvas.DrawCircle(0.0f, 0.0f, ballR, Paints.ballBase)
-
-        // Rotating pentagon panels (simplified — 3 dark patches)
         canvas.Save() |> ignore
-        canvas.RotateRadians(rotation)
+        canvas.Scale(squashX, squashY)
 
-        for i in 0..2 do
-            let a = rotation + float32 i * MathF.PI * 2.0f / 3.0f
-            let px = MathF.Cos(a) * ballR * 0.45f
-            let py = MathF.Sin(a) * ballR * 0.45f
-            canvas.DrawCircle(px, py, ballR * 0.28f, Paints.ballPanel)
+        if speed > 5.0f then
+            canvas.RotateDegrees(moveAngle * 180.0f / MathF.PI)
+
+        let motionStretch = 1.0f + min (speed * 0.006f) 0.25f
+        canvas.Scale(motionStretch, 1.0f)
+
+        canvas.DrawCircle(0.0f, 0.0f, r, Paints.ballBase)
+
+        let spinRad = float32 spinTop
+        let spinRotation = spinRad * float32 dt * 8.0f
+
+        canvas.Save() |> ignore
+        canvas.RotateRadians(spinRotation)
+
+        drawPentagon canvas 0.0f 0.0f (r * 0.38f) 0.0f Paints.ballPanel
+
+        for i in 0..4 do
+            let a = float32 i * 2.0f * MathF.PI / 5.0f
+            let px = MathF.Cos(a) * r * 0.62f
+            let py = MathF.Sin(a) * r * 0.62f
+            drawPentagon canvas px py (r * 0.32f) (a + MathF.PI / 5.0f) Paints.ballPanel
 
         canvas.Restore()
 
-        // Specular highlight
-        canvas.DrawOval(SKRect(-ballR * 0.45f, -ballR * 0.65f, ballR * 0.05f, -ballR * 0.1f), Paints.ballHighlight)
+        let hlX = lightDirX * r * 0.35f
+        let hlY = lightDirY * r * 0.35f
+        let hlIntensity = max 0.4f (1.0f - speed * 0.02f)
+        let hlAlpha = byte (int (float32 190 * hlIntensity))
+        use hlPaint =
+            new SKPaint(
+                Color = SKColor(255uy, 255uy, 255uy, hlAlpha),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            )
+        canvas.DrawOval(
+            SKRect(hlX - r * 0.25f, hlY - r * 0.35f, hlX + r * 0.15f, hlY + r * 0.05f),
+            hlPaint
+        )
 
-        // Outline
-        canvas.DrawCircle(0.0f, 0.0f, ballR, Paints.ballOutline)
+        canvas.DrawCircle(0.0f, 0.0f, r, Paints.ballOutline)
 
+        canvas.Restore()
         canvas.Restore()
 
 
@@ -634,19 +693,16 @@ type MatchDrawOp
 
                 // ── Ball ───────────────────────────────────────────────────────
 
-                let rotation =
-                    BallRenderer.computeRotation
-                        renderFrame.Ball.Velocity.X
-                        renderFrame.Ball.Velocity.Y
-                        renderFrame.TimeSeconds
-
                 BallRenderer.draw
                     canvas
                     renderFrame.Ball.Position.X
                     renderFrame.Ball.Position.Y
+                    renderFrame.Ball.Height
                     renderFrame.Ball.Velocity.X
                     renderFrame.Ball.Velocity.Y
-                    rotation
+                    renderFrame.Ball.VelocityZ
+                    renderFrame.Ball.Spin.Y
+                    0.0333
 
                 // ── HUD ────────────────────────────────────────────────────────
 
@@ -805,7 +861,6 @@ module MatchDayView =
 
                 let ctx = replay.Context
                 let clock = defaultClock
-                let snapDt = float clock.SubTicksPerSecond / float clock.SubTicksPerSecond
 
                 let currFrame = MatchProjection.project ctx currSnap (SimulationClock.subTicksToSeconds clock currSnap.SubTick)
 
@@ -814,7 +869,8 @@ module MatchDayView =
                     if snapIdx + 1 < snapCount && t > 0.0f then
                         let nextSnap = replay.Snapshots[snapIdx + 1]
                         let nextFrame = MatchProjection.project ctx nextSnap (SimulationClock.subTicksToSeconds clock nextSnap.SubTick)
-                        MatchInterp.hermite currFrame nextFrame (float t) 0.0333 // Use standard frame dt for interp
+                        let actualDt = float (nextSnap.SubTick - currSnap.SubTick) / float clock.SubTicksPerSecond
+                        MatchInterp.hermite currFrame nextFrame (float t) actualDt
                     else
                         currFrame
 

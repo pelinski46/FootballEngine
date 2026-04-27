@@ -66,7 +66,7 @@ module ActionResolver =
         let actx =
             AgentContext.build
                 controller profile meIdx team teamIntent
-                ValueNone 0 state clock state.Config.Decision state.Config.BuildUp
+                ValueNone 0 state clock ctx state.Config.Decision state.Config.BuildUp
                 None
                 ValueNone
 
@@ -79,52 +79,62 @@ module ActionResolver =
         (ctx: MatchContext)
         (state: SimState)
         (clock: SimulationClock)
-        : MatchEvent list =
+        : ActionResult * RefereeAction list =
         match intent with
         | OnBallIntent.Shoot ->
             ShotAction.resolve subTick ctx state clock
+            |> fun events -> ActionResult.ofEvents events, []
 
         | OnBallIntent.Pass targetPid ->
             match SimStateOps.findActivePlayer ctx state targetPid with
-            | Some target -> PassAction.resolve subTick ctx state target
-            | None -> []
+            | Some target -> ActionResult.ofEvents (PassAction.resolve subTick ctx state target), []
+            | None -> ActionResult.empty, []
 
         | OnBallIntent.Dribble ->
-            DuelAction.resolve subTick ctx state clock
+            let events, actions = DuelAction.resolve subTick ctx state clock
+            ActionResult.ofEvents events, actions
 
         | OnBallIntent.Cross ->
-            CrossAction.resolve subTick ctx state
+            let result = CrossAction.resolve subTick ctx state
+            result, []
 
         | OnBallIntent.LongBall _ ->
-            PassAction.resolveLong subTick ctx state
+            ActionResult.ofEvents (PassAction.resolveLong subTick ctx state), []
 
         | OnBallIntent.Tackle oppPid ->
             match SimStateOps.findActivePlayer ctx state oppPid with
-            | Some opponent -> DuelAction.resolveTackle subTick ctx state opponent
-            | None -> []
+            | Some opponent ->
+                let events, actions = DuelAction.resolveTackle subTick ctx state opponent
+                ActionResult.ofEvents events, actions
+            | None -> ActionResult.empty, []
 
     let run
         (subTick: int)
         (ctx: MatchContext)
         (state: SimState)
         (clock: SimulationClock)
-        : MatchEvent list =
+        : ActionResult =
         let controller, rosterOpt, controllerClubSide = findController ctx state
 
-        let playerEvents =
+        let playerHasBall =
+            match controller with
+            | Some ctrl ->
+                match state.Ball.Possession with
+                | Owned(_, pid) -> pid = ctrl.Id
+                | _ -> false
+            | None -> false
+
+        let actionResult, actionRefereeActions =
             match controller, rosterOpt, controllerClubSide with
-            | Some ctrl, Some roster, Some clubSide ->
+            | Some ctrl, Some roster, Some clubSide when playerHasBall ->
                 let meIdx = roster.Players |> Array.findIndex (fun p -> p.Id = ctrl.Id)
                 let profile = roster.Profiles[meIdx]
                 match decideAction ctrl profile meIdx clubSide ctx state clock with
                 | Some action -> resolveIntent subTick action ctx state clock
                 | None ->
-                    match state.Ball.Possession with
-                    | Owned _ ->
-                        SimStateOps.loosePossession state
-                        []
-                    | _ -> []
-            | _ -> []
+                    SimStateOps.loosePossession state
+                    ActionResult.empty, []
+            | _ -> ActionResult.empty, []
 
         let defSide =
             match controllerClubSide with
@@ -140,15 +150,23 @@ module ActionResolver =
             | ValueSome idx -> Some defRoster.Players[idx]
             | ValueNone -> None
 
-        let playerHasBall =
-            match controller with
-            | Some ctrl ->
-                match state.Ball.Possession with
-                | Owned(_, pid) -> pid = ctrl.Id
-                | _ -> false
-            | None -> false
-
         let attOpt = if playerHasBall then controller else None
-        let refEvents, _ = RefereeAgent.runRefereeStep subTick attOpt defOpt ctx state
+        let refActions = RefereeAgent.decide attOpt defOpt ctx state
 
-        EventPipeline.run (playerEvents @ refEvents) ctx state subTick
+        let allRefereeActions = actionRefereeActions @ refActions
+
+        let refereeEvents =
+            allRefereeActions
+            |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
+
+        let combined =
+            { Events = actionResult.Events @ refereeEvents
+              PendingGoal = actionResult.PendingGoal }
+
+        match combined.PendingGoal with
+        | Some pg ->
+            let scorerId, isOwnGoal = GoalDetector.scorer pg.ScoringClub state.Ball ctx state
+            let confirmAction = ConfirmGoal(pg.ScoringClub, scorerId, isOwnGoal)
+            let goalEvents = RefereeApplicator.apply subTick confirmAction ctx state
+            { combined with Events = combined.Events @ goalEvents }
+        | None -> combined

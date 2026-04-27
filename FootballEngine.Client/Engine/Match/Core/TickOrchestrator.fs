@@ -16,9 +16,22 @@ module TickOrchestrator =
         { LastScheduledSubTick = -9999
           LastScheduledKind = None }
 
-    let private isDuplicate (tick: ScheduledTick) (pending: PendingRequests) : bool =
-        pending.LastScheduledSubTick = tick.SubTick
-        && pending.LastScheduledKind = Some tick.Kind
+    let private isDuplicate (subTick: int) (kind: TickKind) (pending: PendingRequests) : bool =
+        pending.LastScheduledSubTick = subTick
+        && pending.LastScheduledKind = Some kind
+
+    let trySchedule
+        (subTick: int)
+        (kind: TickKind)
+        (priority: TickPriority)
+        (counter: int64)
+        (pending: PendingRequests)
+        : (int64 * PendingRequests) voption =
+
+        if isDuplicate subTick kind pending then
+            ValueNone
+        else
+            ValueSome(counter, { LastScheduledSubTick = subTick; LastScheduledKind = Some kind })
 
     let resolve
         (tick: ScheduledTick)
@@ -92,7 +105,7 @@ module TickOrchestrator =
 
         let allTicks =
             match playerNextTick with
-            | Some nt when not (isDuplicate nt newPending) -> nt :: matchLevelTicks
+            | Some nt when not (isDuplicate nt.SubTick nt.Kind newPending) -> nt :: matchLevelTicks
             | _ -> matchLevelTicks
 
         let newCounter = counter + int64 allTicks.Length

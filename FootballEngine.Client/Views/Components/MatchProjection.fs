@@ -36,6 +36,7 @@ type RenderPlayer =
 type RenderBall =
     { Position: Vector2
       Velocity: Vector2
+      VelocityZ: float
       Spin: Vector2
       Height: float }
 
@@ -121,6 +122,7 @@ module MatchProjection =
               Velocity =
                 { X = float snapshot.BallVx
                   Y = float snapshot.BallVy }
+              VelocityZ = float snapshot.BallVz
               Spin =
                 { X = float snapshot.BallSpinSide
                   Y = float snapshot.BallSpinTop }
@@ -220,6 +222,7 @@ module MatchInterp =
                     + dh01 * b1.Position.Y / dt
                     + dh11 * b1.Velocity.Y }
               Spin = Vector2.scale (1.0 - t) b0.Spin |> Vector2.add (Vector2.scale t b1.Spin)
+              VelocityZ = b0.VelocityZ * (1.0 - t) + b1.VelocityZ * t
               Height = hermiteScalar b0.Height 0.0 b1.Height 0.0 t dt }
 
         { frame0 with

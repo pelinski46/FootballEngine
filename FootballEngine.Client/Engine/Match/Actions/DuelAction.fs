@@ -22,7 +22,7 @@ module DuelAction =
             1.0
 
 
-    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchEvent list =
+    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchEvent list * RefereeAction list =
         let actx = ActionContext.build ctx state
         let attClubId = actx.Att.ClubId
         let defClubId = actx.Def.ClubId
@@ -60,7 +60,8 @@ module DuelAction =
                         Possession = Contest(actx.Def.ClubSide) }
 
                 adjustMomentum actx.Att.AttackDir (-ctx.Config.Tackle.FoulMomentum) state
-                [ createEvent subTick defP.Id defClubId FoulCommitted ]
+                let cardActions = RefereeAgent.decideCard defP ctx state
+                [ createEvent subTick defP.Id defClubId FoulCommitted ], cardActions
             else
                 let diff = float attScore - float defScore
 
@@ -83,7 +84,7 @@ module DuelAction =
                     state.Momentum <- Math.Clamp(state.Momentum + cfg.MomentumBonus, -10.0, 10.0)
                     MatchMemory.recordDuel actx.Att.ClubSide attIdx defIdx Won state.MatchMemory
                     MatchMemory.recordSuccess actx.Att.ClubSide attIdx state.MatchMemory
-                    [ createEvent subTick attP.Id attClubId DribbleSuccess ]
+                    [ createEvent subTick attP.Id attClubId DribbleSuccess ], []
                 elif logisticBernoulli (-diff) cfg.DuelSteepness then
                     let nx, ny = PitchMath.jitter bX bY dX dY 0.5 cfg.JitterRecover cfg.JitterRecover
 
@@ -98,7 +99,7 @@ module DuelAction =
 
                     state.Momentum <- Math.Clamp(state.Momentum - 1.0, -10.0, 10.0)
                     MatchMemory.recordDuel actx.Att.ClubSide attIdx defIdx Lost state.MatchMemory
-                    [ createEvent subTick attP.Id attClubId DribbleFail ]
+                    [ createEvent subTick attP.Id attClubId DribbleFail ], []
                 else
                     let nx, ny = PitchMath.jitter bX bY bX bY 0.0 cfg.JitterKeep cfg.JitterKeep
 
@@ -108,10 +109,10 @@ module DuelAction =
                         cfg.SpeedKeepVz
                         state
 
-                    [ createEvent subTick attP.Id attClubId DribbleKeep ]
-        | _ -> []
+                    [ createEvent subTick attP.Id attClubId DribbleKeep ], []
+        | _ -> [], []
 
-    let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list =
+    let resolveTackle (subTick: int) (ctx: MatchContext) (state: SimState) (defender: Player) : MatchEvent list * RefereeAction list =
         let actx = ActionContext.build ctx state
         let defFrame = actx.Def.OwnFrame
         let attFrame = actx.Att.OwnFrame
@@ -142,7 +143,7 @@ module DuelAction =
             | ValueNone -> -1
 
         if defIdx < 0 then
-            []
+            [], []
         else
             let condNorm = PhysicsContract.normaliseCondition (int defFrame.Condition[defIdx])
 
@@ -212,11 +213,12 @@ module DuelAction =
                             Possession = SetPiece(actx.Att.ClubSide, SetPieceKind.FreeKick) }
 
                     adjustMomentum actx.Att.AttackDir (-tCfg.FoulMomentum) state
-                    [ createEvent subTick defender.Id defClubId FoulCommitted ]
+                    let cardActions = RefereeAgent.decideCard defender ctx state
+                    [ createEvent subTick defender.Id defClubId FoulCommitted ], cardActions
                 else
                     adjustMomentum actx.Att.AttackDir tCfg.SuccessMomentum state
-                    [ createEvent subTick defender.Id defClubId TackleSuccess ]
+                    [ createEvent subTick defender.Id defClubId TackleSuccess ], []
             else
                 adjustMomentum actx.Att.AttackDir (-tCfg.FailMomentum) state
                 clearOffsideSnapshot state
-                [ createEvent subTick defender.Id defClubId TackleFail ]
+                [ createEvent subTick defender.Id defClubId TackleFail ], []

@@ -9,19 +9,23 @@ module PlayerDecision =
         abs (profile.LateralTendency - 0.5) > 0.3 && zone = AttackingZone
 
     let decide (ctx: AgentContext) (scores: ActionScores) : OnBallIntent option =
+        let t = ctx.Tactics
+
         let shootBlocked =
             scores.Shoot < 0.15<decisionScore> || ctx.Zone = DefensiveZone
 
         let crossBlocked =
             not (canCross ctx.Profile ctx.Zone)
 
+        let passThreshold = 0.20<decisionScore> - t.Directness * 0.08<decisionScore>
         let passBlocked =
             match ctx.BestPassTargetIdx with
             | ValueNone -> true
-            | ValueSome _ -> scores.Pass < 0.2<decisionScore>
+            | ValueSome _ -> scores.Pass < passThreshold
 
         let dribbleBlocked =
             ctx.Zone = DefensiveZone && ctx.Profile.Directness < 0.2
+            || t.Tempo > 0.7 && ctx.Profile.Directness < 0.4
 
         let passMod = if ctx.Phase = BuildUp then 1.0 + ctx.Profile.CreativityWeight * 0.15 else 1.0
 
@@ -47,9 +51,10 @@ module PlayerDecision =
 
         match ctx.BestPassTargetIdx with
         | ValueSome idx ->
+            let longBallThreshold = 0.15<decisionScore> - t.Directness * 0.06<decisionScore>
             let s = scores.LongBall * (1.0 + ctx.Urgency * 0.15)
             let targetPid = ctx.Team.OwnRoster.Players[idx].Id
-            if s > bestScore then bestScore <- s; bestIntent <- Some (OnBallIntent.LongBall targetPid)
+            if s > bestScore && s > longBallThreshold then bestScore <- s; bestIntent <- Some (OnBallIntent.LongBall targetPid)
         | ValueNone -> ()
 
         bestIntent

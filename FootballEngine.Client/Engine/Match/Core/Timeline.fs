@@ -93,14 +93,17 @@ type Timeline(maxSubTick: int) =
             bubbleUp size
             size <- size + 1
 
-    member _.Dequeue() : (TickKind * TickPriority * int64) voption =
+    member _.Dequeue(currentSubTick: int) : (TickKind * TickPriority * int64) voption =
+        let threshold = int64 currentSubTick <<< 32
         let mutable result = ValueNone
         let mutable found = false
 
         while size > 0 && not found do
             let seqId = sequenceIds[0]
 
-            if cancelled.Remove(seqId) then
+            if seqId >= threshold then
+                found <- true
+            elif cancelled.Remove(seqId) then
                 removeRoot ()
             else
                 result <- ValueSome(kinds[0], priorities[0], seqId)
@@ -125,21 +128,21 @@ type Timeline(maxSubTick: int) =
 
     member _.Advance() = currentSubTick <- currentSubTick + 1
 
-    member this.DequeueAllInto(buffer: ResizeArray<TickKind * TickPriority * int64>) =
+    member this.DequeueAllInto(buffer: ResizeArray<TickKind * TickPriority * int64>, currentSubTick: int) =
         buffer.Clear()
         let mutable running = true
 
         while running do
-            match this.Dequeue() with
+            match this.Dequeue(currentSubTick) with
             | ValueSome tick -> buffer.Add(tick)
             | ValueNone -> running <- false
 
-    member this.DequeueAll() : (TickKind * TickPriority * int64) list =
+    member this.DequeueAll(currentSubTick: int) : (TickKind * TickPriority * int64) list =
         let results = ResizeArray()
         let mutable running = true
 
         while running do
-            match this.Dequeue() with
+            match this.Dequeue(currentSubTick) with
             | ValueSome tick -> results.Add(tick)
             | ValueNone -> running <- false
 

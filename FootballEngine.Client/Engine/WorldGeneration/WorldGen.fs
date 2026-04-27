@@ -322,11 +322,9 @@ module WorldGen =
         let userManager =
             createUserManager userStaffId managerName primaryCountry userClubId year
 
-        let profileCache =
-            world.Players |> Map.map (fun _ p -> Player.profile p)
+        let profileCache = world.Players |> Map.map (fun _ p -> Player.profile p)
 
-        let activeMods =
-            DataRegistry.activeMods |> List.map (fun m -> (m.Id :> string), m.Version)
+        let activeMods = DataRegistry.activeMods |> List.map (fun m -> m.Id, m.Version)
 
         { CurrentDate = DateTime(year, 7, 1)
           Season = year
