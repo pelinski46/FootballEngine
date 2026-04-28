@@ -18,7 +18,7 @@ module Theme =
     let AccentLight = "#10b98133"
 
     let Success = "#10b981"
-    let Warning = "#f59e0b"
+    let Warning = "#78350f"
     let Danger = "#ef4444"
 
     let DragBorder = "#3b82f6"

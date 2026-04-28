@@ -54,6 +54,8 @@ module PlayerScorer =
 
         let composureStateMod = ctx.MentalState.ComposureLevel * 0.12
         let confidenceMod = ctx.MentalState.ConfidenceLevel * 0.08
+        let focusMod = ctx.MentalState.FocusLevel * 0.06
+        let riskBonus = ctx.MentalState.RiskTolerance * d.ShootDirectnessBonus * 0.5
 
         let streakMod =
             MatchMemory.successStreakModifier ctx.Team.ClubSide ctx.MeIdx matchMemory
@@ -64,6 +66,8 @@ module PlayerScorer =
             + directnessBonus
             + composureStateMod
             + confidenceMod
+            + focusMod
+            + riskBonus
             + streakMod
 
         let maxPossible =
@@ -78,6 +82,8 @@ module PlayerScorer =
             + directnessBonus
             + composureStateMod
             + confidenceMod
+            + focusMod
+            + riskBonus
 
         ((scoreRaw / maxPossible) * condFactor ctx.MyCondition)
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>
@@ -147,9 +153,22 @@ module PlayerScorer =
         let busMod = buildUpSideBonus ctx.TeamIntent me.Position
 
         let confidenceMod = ctx.MentalState.ConfidenceLevel * 0.08
+        let riskMod = ctx.MentalState.RiskTolerance * d.PassTargetBonus * 0.3
+        let focusMod = ctx.MentalState.FocusLevel * 0.05
 
         let passMemMod =
             MatchMemory.passFailureModifier ctx.Team.ClubSide ctx.MeIdx matchMemory
+
+        // Influence-based space bonus: check if target is in a favorable influence zone
+        let influenceSpaceBonus =
+            match ctx.BestPassTargetIdx with
+            | ValueNone -> 0.0
+            | ValueSome targetIdx ->
+                let targetCell = InfluenceTypes.posToCell ctx.Team.OwnFrame.PosX[targetIdx] ctx.Team.OwnFrame.PosY[targetIdx]
+                let passSafety = float ctx.Influence.AttackerPassSafety[targetCell]
+                let defCoverage = float ctx.Influence.DefenderCoverage[targetCell]
+                // High pass safety + low defender coverage = good space for receiver
+                (passSafety - 0.5) * 0.15 + (1.0 - defCoverage) * 0.10
 
         let scoreRaw =
             passing
@@ -162,6 +181,21 @@ module PlayerScorer =
             + directBias
             + busMod
             + confidenceMod
+            + riskMod
+            + focusMod
+            + influenceSpaceBonus
+
+        let maxPossible =
+            d.PassPassingWeight
+            + d.PassVisionWeight
+            + d.PassTargetBonus
+            + phaseBonusMax
+            + creativityBonusMax
+            + tempoBias
+            + abs directBias
+            + confidenceMod
+            + riskMod
+            + focusMod
 
         let maxPossible =
             d.PassPassingWeight
@@ -173,6 +207,7 @@ module PlayerScorer =
             + abs directBias
             + busMod
             + confidenceMod
+            + 0.25 // influenceSpaceBonus max contribution
 
         ((scoreRaw / maxPossible) * condFactor ctx.MyCondition)
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>

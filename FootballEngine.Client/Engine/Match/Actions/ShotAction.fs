@@ -95,15 +95,39 @@ module ShotAction =
                         )
 
                     let speed = ActionMath.shotSpeed shooter.Technical.Finishing
+
+                    let goalX =
+                        if actx.Att.AttackDir = LeftToRight then
+                            PhysicsContract.PitchLength
+                        else
+                            0.0<meter>
+
+                    let distToGoal = abs (goalX - bX)
+                    let flightTime = if float speed > 0.0 then float distToGoal / float speed else 1.0
+                    let arrivalSubTick = subTick + int (flightTime * float clock.SubTicksPerSecond)
+
+                    let peakHeight =
+                        let vz = abs (normalSample (float sc.VzBase) sc.VzVariance) * 1.0<meter / second>
+                        if vz > 0.0<meter/second> then
+                            vz * vz / (2.0 * 9.80665<meter/second^2>)
+                        else 0.0<meter>
+
+                    let speedMag = float speed
+
                     let angleSpread = sc.AngleSpreadBase * (1.0 - finishingNorm)
                     let angle = normalSample 0.0 angleSpread
-                    let speedMag = float speed
+
                     let vx = dirSign * speedMag * Math.Cos(angle)
                     let vy = speedMag * Math.Sin(angle)
+                    let vz = abs (normalSample (float sc.VzBase) sc.VzVariance) * 1.0<meter / second>
 
-                    let vz =
-                        abs (normalSample (float sc.VzBase) sc.VzVariance)
-                        * 1.0<meter / second>
+                    let targetY =
+                        if abs vx > 0.001 then
+                            bY + (vy / vx) * (goalX - bX)
+                        else bY
+
+                    let inGoalYRange = targetY >= PhysicsContract.PostNearY && targetY <= PhysicsContract.PostFarY
+                    let inGoalZRange = float vz * float vz / (2.0 * 19.6133) < float PhysicsContract.CrossbarHeight
 
                     let spin =
                         { Top =
@@ -112,33 +136,35 @@ module ShotAction =
                             * 1.0<radianPerSecond>
                           Side = 0.0<radianPerSecond> }
 
-                    let gkIdx =
-                        let mutable idx = -1
-                        for i = 0 to defFrame.SlotCount - 1 do
-                            match defFrame.Occupancy[i] with
-                            | OccupancyKind.Active _ when defRoster.Players[i].Position = GK -> idx <- i
-                            | _ -> ()
-                        idx
+                    let trajectory = {
+                        OriginX = bX
+                        OriginY = bY
+                        TargetX = goalX
+                        TargetY = targetY
+                        LaunchSubTick = subTick
+                        EstimatedArrivalSubTick = arrivalSubTick
+                        KickerId = shooter.Id
+                        PeakHeight = peakHeight
+                        ActionKind = BallActionKind.Shot(shooter.Id, quality)
+                    }
 
-                    let gk = if gkIdx >= 0 then Some defRoster.Players[gkIdx] else None
+                    let angleToGoal =
+                        let dy = abs (targetY - bY)
+                        let dx = abs (goalX - bX)
+                        if dx > 0.0<meter> then
+                            float (System.Math.Atan2(float dy, float dx)) * 180.0 / System.Math.PI
+                        else 90.0
 
-                    let onTarget =
-                        let distToGoal = PhysicsContract.distToGoal bX actx.Att.AttackDir
-                        let distPenalty = sc.OnTargetDistMaxPenalty * (1.0 - Math.Exp(-float distToGoal / sc.OnTargetDistDecayRate))
-                        let onTargetProb = sc.OnTargetBase + finishingNorm * sc.OnTargetMultiplier - distPenalty
-                        bernoulli (Math.Clamp(onTargetProb, 0.05, 0.95))
-
-                    let gkSaves =
-                        match gk with
-                        | Some g ->
-                            let gkCond = if gkIdx >= 0 then int defFrame.Condition[gkIdx] else 50
-                            let savePower =
-                                ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.Reflexes) gkCond g.Morale * sc.GkReflexesStatMult
-                                + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.OneOnOne) gkCond g.Morale * sc.GkOneOnOneStatMult
-
-                            let adjustedSave = savePower
-                            onTarget && ActionMath.engineBernoulli (Probability.from (adjustedSave / (adjustedSave + finishing + sc.SaveDenominatorOffset)))
-                        | None -> false
+                    let xgModel = {
+                        DistanceToGoal = distToGoal
+                        AngleToGoal = angleToGoal
+                        ShotType = ShotType.DrivenShot
+                        BodyPart = "Foot"
+                        AssistType = "OpenPlay"
+                        PressureLevel = 0.5
+                        IsOneOnOne = false
+                        IsSetPiece = false }
+                    let xgValue = xGCalculator.calculate xgModel
 
                     state.Ball <-
                         { state.Ball with
@@ -149,20 +175,11 @@ module ShotAction =
                                     Vz = vz
                                     X = bX }
                             Spin = spin
-                            LastTouchBy = Some shooter.Id }
+                            LastTouchBy = Some shooter.Id
+                            Possession = InFlight
+                            Trajectory = Some trajectory }
 
                     SimStateOps.adjustMomentum actx.Att.AttackDir ctx.Config.Duel.MomentumBonus state
                     clearOffsideSnapshot state
 
-                    let gkClubId = actx.Def.ClubId
-
-                    state.Ball <-
-                        { state.Ball with
-                            Possession = InFlight(actx.Att.ClubSide, shooter.Id) }
-
-                    match gk with
-                    | Some g when gkSaves ->
-                        [ createEvent subTick shooter.Id attClubId ShotBlocked
-                          createEvent subTick g.Id gkClubId Save ]
-                    | _ when not onTarget -> [ createEvent subTick shooter.Id attClubId ShotOffTarget ]
-                    | _ -> [ createEvent subTick shooter.Id attClubId ShotOnTarget ]
+                    [ { SubTick = subTick; PlayerId = shooter.Id; ClubId = attClubId; Type = ShotLaunched; Context = EventContext.at (float bX) (float bY) |> fun c -> { c with ExpectedGoal = Some xgValue } } ]

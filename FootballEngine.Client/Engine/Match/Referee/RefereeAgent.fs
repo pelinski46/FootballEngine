@@ -27,8 +27,8 @@ module RefereeAgent =
 
     let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : BallOutResult =
         let pos = state.Ball.Position
-        let outY = pos.Y < 0.5<meter> || pos.Y > PhysicsContract.PitchWidth - 0.5<meter>
-        let outX = pos.X < 0.5<meter> || pos.X > PhysicsContract.PitchLength - 0.5<meter>
+        let outY = pos.Y < 0.1<meter> || pos.Y > PhysicsContract.PitchWidth - 0.1<meter>
+        let outX = pos.X < 0.1<meter> || pos.X > PhysicsContract.PitchLength - 0.1<meter>
 
         let lastTouchClubSide () =
             state.Ball.LastTouchBy
@@ -107,7 +107,15 @@ module RefereeAgent =
             | Some since when state.SubTick - since >= state.Config.Timing.StuckBallDelay -> [ DropBall state.AttackingSide ]
             | _ -> []
 
-        goalIntent @ throwInIntent @ injuryIntent @ stuckBallIntent
+        let gkTimeWastingIntent =
+            match state.Ball.GKHoldSinceSubTick with
+            | Some since when state.SubTick - since >= state.Config.GK.MaxHoldSubTicks ->
+                match state.Ball.Possession with
+                | Owned(side, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
+                | _ -> []
+            | _ -> []
+
+        goalIntent @ throwInIntent @ injuryIntent @ stuckBallIntent @ gkTimeWastingIntent
 
     let decideCard (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
         let aggressionNorm = PhysicsContract.normaliseAttr fouler.Mental.Aggression
@@ -192,6 +200,7 @@ module RefereeAgent =
                     | AwardThrowIn team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.ThrowIn, team) }
                     | AwardCorner team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.Corner, team) }
                     | AwardGoalKick team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.GoalKick, team) }
+                    | AwardIndirectFreeKick team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.FreeKick, team) }
                     | _ -> None)
 
             let nextTick =
@@ -208,6 +217,7 @@ module RefereeAgent =
                     | Some { Kind = SetPieceTick(SetPieceKind.ThrowIn, _) } -> Some(PlayState.SetPiece SetPieceKind.ThrowIn)
                     | Some { Kind = SetPieceTick(SetPieceKind.Corner, _) } -> Some(PlayState.SetPiece SetPieceKind.Corner)
                     | Some { Kind = SetPieceTick(SetPieceKind.GoalKick, _) } -> Some(PlayState.SetPiece SetPieceKind.GoalKick)
+                    | Some { Kind = SetPieceTick(SetPieceKind.FreeKick, _) } -> Some(PlayState.SetPiece SetPieceKind.FreeKick)
                     | _ -> None
 
             { NextTick = nextTick; Actions = refActions; Transition = transition }

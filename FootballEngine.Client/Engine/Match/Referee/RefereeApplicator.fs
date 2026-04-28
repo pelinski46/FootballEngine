@@ -8,6 +8,8 @@ open PhysicsContract
 module RefereeApplicator =
 
     let private awardGoal (scoringClub: ClubSide) (scorerId: PlayerId option) (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+        state.StoppageTime.Add(subTick, StoppageReason.GoalDelay) |> ignore
+
         if scoringClub = HomeClub then
             state.HomeScore <- state.HomeScore + 1
             state.Momentum <- PhysicsContract.clampFloat (state.Momentum + 3.0) -10.0 10.0
@@ -24,7 +26,8 @@ module RefereeApplicator =
             [ { SubTick = subTick
                 PlayerId = pid
                 ClubId = clubId
-                Type = Goal } ]
+                Type = Goal
+                Context = EventContext.empty } ]
         | None -> []
 
     let apply (subTick: int) (action: RefereeAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
@@ -34,6 +37,7 @@ module RefereeApplicator =
         | ConfirmGoal(scoringClub, scorerId, isOwnGoal) ->
             let goalEvents = awardGoal scoringClub scorerId subTick ctx state
             clearOffsideSnapshot state
+
 
             if isOwnGoal then
                 goalEvents |> List.map (fun e -> { e with Type = OwnGoal })
@@ -104,7 +108,8 @@ module RefereeApplicator =
             [ { SubTick = subTick
                 PlayerId = 0
                 ClubId = if team = HomeClub then ctx.Home.Id else ctx.Away.Id
-                Type = MatchEventType.Corner } ]
+                Type = MatchEventType.Corner
+                Context = EventContext.empty } ]
 
         | AwardGoalKick team ->
             let gkX =
@@ -122,6 +127,31 @@ module RefereeApplicator =
             clearOffsideSnapshot state
             []
 
+        | AwardIndirectFreeKick team ->
+            let ballX = state.Ball.Position.X
+            let ballY = state.Ball.Position.Y
+
+            state.Ball <-
+                { state.Ball with
+                    Position =
+                        { state.Ball.Position with
+                            Vx = 0.0<meter / second>
+                            Vy = 0.0<meter / second>
+                            Vz = 0.0<meter / second> }
+                    Spin = Spin.zero
+                    LastTouchBy = None
+                    Possession = Possession.SetPiece(team, SetPieceKind.FreeKick) }
+
+            clearOffsideSnapshot state
+
+            let clubId = if team = HomeClub then ctx.Home.Id else ctx.Away.Id
+
+            [ { SubTick = subTick
+                PlayerId = 0
+                ClubId = clubId
+                Type = MatchEventType.IndirectFreeKickAwarded team
+                Context = EventContext.empty } ]
+
         | DropBall team ->
             state.Ball <-
                 { state.Ball with
@@ -138,6 +168,7 @@ module RefereeApplicator =
             []
 
         | IssueYellow(player, clubId) ->
+            state.StoppageTime.Add(subTick, StoppageReason.CardDelay) |> ignore
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub
 
@@ -155,6 +186,7 @@ module RefereeApplicator =
                 [ createEvent subTick player.Id clubId YellowCard ]
 
         | IssueRed(player, clubId) ->
+            state.StoppageTime.Add(subTick, StoppageReason.CardDelay) |> ignore
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub
 
@@ -163,6 +195,7 @@ module RefereeApplicator =
             [ createEvent subTick player.Id clubId RedCard ]
 
         | IssueInjury(player, clubId) ->
+            state.StoppageTime.Add(subTick, StoppageReason.InjuryDelay 1) |> ignore
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub
 

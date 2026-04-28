@@ -107,6 +107,8 @@ module BatchDecision =
             | Possession.SetPiece _ -> true
             | _ -> false
 
+        let cognitiveInterval = clock.CognitiveRate
+
         for i = 0 to frame.SlotCount - 1 do
             match frame.Occupancy[i] with
             | OccupancyKind.Sidelined _ -> ()
@@ -150,12 +152,17 @@ module BatchDecision =
                             team.OppFrame
                             ctx.Config.Perception)
 
+                let influence =
+                    if clubSide = HomeClub then state.HomeInfluenceFrame
+                    else state.AwayInfluenceFrame
+
                 let actx =
                     AgentContext.build
-                        player profile i team teamIntent previousIntent 0
+                        player profile i team teamIntent previousIntent frame.IntentLockExpiry[i]
                         state clock ctx state.Config.Decision state.Config.BuildUp
                         (Some cFrame)
                         visibilityMask
+                        influence
 
                 let movementScores = MovementScorer.computeAll actx emergent
 
@@ -181,3 +188,36 @@ module BatchDecision =
 
                 let kind, tx, ty, tpid = IntentFrame.fromMovementIntent finalIntent
                 FrameMutate.setIntent frame i kind tx ty tpid
+
+                let lockDuration =
+                    let baseDuration =
+                        match kind with
+                        | IntentKind.MaintainShape -> cognitiveInterval * 2
+                        | IntentKind.CoverSpace -> cognitiveInterval * 2
+                        | IntentKind.MarkMan -> cognitiveInterval
+                        | IntentKind.SupportAttack -> cognitiveInterval
+                        | IntentKind.PressBall -> cognitiveInterval / 2
+                        | IntentKind.RecoverBall -> cognitiveInterval / 2
+                        | IntentKind.ExecuteRun -> cognitiveInterval
+                        | IntentKind.Idle -> cognitiveInterval
+
+                    let scoreMargin =
+                        let topScore =
+                            [| adjustedScores.MaintainShape; adjustedScores.MarkMan
+                               adjustedScores.PressBall; adjustedScores.CoverSpace
+                               adjustedScores.SupportAttack; adjustedScores.RecoverBall |]
+                            |> Array.max
+                        let secondScore =
+                            [| adjustedScores.MaintainShape; adjustedScores.MarkMan
+                               adjustedScores.PressBall; adjustedScores.CoverSpace
+                               adjustedScores.SupportAttack; adjustedScores.RecoverBall |]
+                            |> Array.sortDescending |> Array.item 1
+                        let margin = topScore - secondScore
+                        if margin > 0.5 then 1.5
+                        elif margin > 0.3 then 1.2
+                        elif margin > 0.15 then 1.0
+                        else 0.7
+
+                    int (float baseDuration * scoreMargin)
+
+                frame.IntentLockExpiry[i] <- currentSubTick + lockDuration

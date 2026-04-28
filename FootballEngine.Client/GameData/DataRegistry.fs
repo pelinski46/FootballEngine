@@ -18,8 +18,11 @@ module DataRegistry =
         _mods <- data.ActiveMods
         _loadErrors <- data.Errors
 
-    let allCountries: CountryData list =
+    let allCountries () : CountryData list =
         _countries |> Map.values |> Seq.toList
+
+    let allCountriesMap () : Map<CountryCode, CountryData> =
+        _countries
 
     let findCountry (code: CountryCode) : CountryData =
         match _countries |> Map.tryFind code with
@@ -29,14 +32,11 @@ module DataRegistry =
     let tryFindCountry (code: CountryCode) : CountryData option =
         _countries |> Map.tryFind code
 
-    let countries: Map<CountryCode, Country> =
-        _countries |> Map.map (fun _ cd -> cd.Country)
-
-    let internationalComps: (string * CompetitionType) list =
+    let internationalComps () : (string * CompetitionType) list =
         _intlComps
 
-    let activeMods: ModManifest list =
+    let activeMods () : ModManifest list =
         _mods
 
-    let loadErrors: ModError list =
+    let loadErrors () : ModError list =
         _loadErrors

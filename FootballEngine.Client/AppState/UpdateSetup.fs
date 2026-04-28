@@ -48,9 +48,12 @@ module UpdateSetup =
                 let newGameState =
                     generateNewGame primaryCountry state.Setup.ManagerName state.Setup.SecondaryCountries
 
+                let managerName = GameState.userManagerName newGameState
+
                 { state with
                     Mode = InGame(newGameState, managerEmployment newGameState)
-                    State.Setup.Step = ClubSelection },
+                    CurrentPage = HomePage
+                    LogMessages = [ $"Career started by {managerName}" ] },
                 saveCmd newGameState state.WorldClock
 
         | ConfirmClub clubId ->

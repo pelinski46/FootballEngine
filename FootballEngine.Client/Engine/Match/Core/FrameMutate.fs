@@ -33,7 +33,9 @@ module FrameMutate =
     let setCachedExecution (frame: TeamFrame) (idx: int) (exec: float) : unit =
         frame.CachedExecution[idx] <- float32 exec
 
-    let setMental (frame: TeamFrame) (idx: int) (composure: float) (confidence: float) (aggression: float) : unit =
+    let setMental (frame: TeamFrame) (idx: int) (composure: float) (confidence: float) (aggression: float) (focus: float) (riskTolerance: float) : unit =
         frame.ComposureLevel[idx] <- float32 composure
         frame.ConfidenceLevel[idx] <- float32 confidence
         frame.AggressionLevel[idx] <- float32 aggression
+        frame.FocusLevel[idx] <- float32 focus
+        frame.RiskTolerance[idx] <- float32 riskTolerance

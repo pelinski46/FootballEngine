@@ -16,7 +16,7 @@ open FootballEngine.Domain
 open FootballEngine.SimulationClock
 open FootballEngine.AppTypes
 open FootballEngine.AppMsgs
-
+open FootballEngine.Icons
 
 // ---------------------------------------------------------------------------
 // Coordinate mapping
@@ -95,7 +95,10 @@ module Paints =
                     SKFontStyleSlant.Upright
                 )
 
-        let tf = match tf with | null -> SKTypeface.Default | t -> t
+        let tf =
+            match tf with
+            | null -> SKTypeface.Default
+            | t -> t
 
         new SKPaint(
             Color = SKColor(r, g, b, 255uy),
@@ -234,7 +237,9 @@ module PitchRenderer =
         canvas.DrawCircle(cx, cy, CenterCircleRadius, p)
         canvas.DrawCircle(cx, cy, 3.5f, Paints.dotWhite)
 
-        let lpaRect = SKRect(0.0f, mid - PenaltyAreaHalfW, PenaltyAreaDepthX, mid + PenaltyAreaHalfW)
+        let lpaRect =
+            SKRect(0.0f, mid - PenaltyAreaHalfW, PenaltyAreaDepthX, mid + PenaltyAreaHalfW)
+
         canvas.DrawRect(lpaRect, p)
 
         canvas.DrawRect(SKRect(0.0f, mid - GoalAreaHalfW, GoalAreaDepthX, mid + GoalAreaHalfW), p)
@@ -242,7 +247,18 @@ module PitchRenderer =
         canvas.DrawCircle(PenaltySpotX, mid, 3.0f, Paints.dotWhite)
 
         use arcPath = new SKPath()
-        arcPath.AddArc(SKRect(PenaltySpotX - PenaltyArcRadius, mid - PenaltyArcRadius, PenaltySpotX + PenaltyArcRadius, mid + PenaltyArcRadius), -53.0f, 106.0f)
+
+        arcPath.AddArc(
+            SKRect(
+                PenaltySpotX - PenaltyArcRadius,
+                mid - PenaltyArcRadius,
+                PenaltySpotX + PenaltyArcRadius,
+                mid + PenaltyArcRadius
+            ),
+            -53.0f,
+            106.0f
+        )
+
         canvas.DrawPath(arcPath, p)
 
         canvas.DrawRect(SKRect(PitchW - PenaltyAreaDepthX, mid - PenaltyAreaHalfW, PitchW, mid + PenaltyAreaHalfW), p)
@@ -253,7 +269,13 @@ module PitchRenderer =
         canvas.DrawCircle(rSpotX, mid, 3.0f, Paints.dotWhite)
 
         use arcPathR = new SKPath()
-        arcPathR.AddArc(SKRect(rSpotX - PenaltyArcRadius, mid - PenaltyArcRadius, rSpotX + PenaltyArcRadius, mid + PenaltyArcRadius), 127.0f, 106.0f)
+
+        arcPathR.AddArc(
+            SKRect(rSpotX - PenaltyArcRadius, mid - PenaltyArcRadius, rSpotX + PenaltyArcRadius, mid + PenaltyArcRadius),
+            127.0f,
+            106.0f
+        )
+
         canvas.DrawPath(arcPathR, p)
 
         for cx', cy', startA in
@@ -262,7 +284,13 @@ module PitchRenderer =
               0.0f, PitchH, 270.0f
               PitchW, PitchH, 180.0f ] do
             use cornerArc = new SKPath()
-            cornerArc.AddArc(SKRect(cx' - CornerArcRadius, cy' - CornerArcRadius, cx' + CornerArcRadius, cy' + CornerArcRadius), startA, 90.0f)
+
+            cornerArc.AddArc(
+                SKRect(cx' - CornerArcRadius, cy' - CornerArcRadius, cx' + CornerArcRadius, cy' + CornerArcRadius),
+                startA,
+                90.0f
+            )
+
             canvas.DrawPath(cornerArc, p)
 
         let mkGoalPaint () =
@@ -383,6 +411,7 @@ module BallRenderer =
     let private mkShadowPaint (height: float32) =
         let alpha = max 15uy (80uy - byte (min (height * 3.0f) 65.0f))
         let blur = 3.0f + height * 0.4f
+
         new SKPaint(
             Color = SKColor(0uy, 0uy, 0uy, alpha),
             IsAntialias = true,
@@ -392,12 +421,15 @@ module BallRenderer =
 
     let private mkTrailShader (speed: float32) (angle: float32) (r: float32) =
         let len = min (speed * 2.5f) 22.0f
-        if len < 3.0f then None
+
+        if len < 3.0f then
+            None
         else
             let x1 = -MathF.Cos(angle) * len
             let y1 = -MathF.Sin(angle) * len
             let x2 = r * 0.3f * MathF.Cos(angle)
             let y2 = r * 0.3f * MathF.Sin(angle)
+
             Some(
                 SKShader.CreateLinearGradient(
                     SKPoint(x1, y1),
@@ -408,19 +440,38 @@ module BallRenderer =
                 )
             )
 
-    let private drawPentagon (canvas: SKCanvas) (cx: float32) (cy: float32) (radius: float32) (rotation: float32) (paint: SKPaint) =
+    let private drawPentagon
+        (canvas: SKCanvas)
+        (cx: float32)
+        (cy: float32)
+        (radius: float32)
+        (rotation: float32)
+        (paint: SKPaint)
+        =
         use path = new SKPath()
         let mutable first = true
+
         for i in 0..4 do
             let a = rotation + float32 i * 2.0f * MathF.PI / 5.0f - MathF.PI / 2.0f
             let px = cx + MathF.Cos(a) * radius
             let py = cy + MathF.Sin(a) * radius
             if first then path.MoveTo(px, py) else path.LineTo(px, py)
             first <- false
+
         path.Close()
         canvas.DrawPath(path, paint)
 
-    let draw (canvas: SKCanvas) (bx: float) (by: float) (height: float) (vx: float) (vy: float) (vz: float) (spinTop: float) (dt: float) =
+    let draw
+        (canvas: SKCanvas)
+        (bx: float)
+        (by: float)
+        (height: float)
+        (vx: float)
+        (vy: float)
+        (vz: float)
+        (spinTop: float)
+        (dt: float)
+        =
         let cx, cy = toCanvas bx by
         let speed = float32 (sqrt (vx * vx + vy * vy))
         let h = float32 height
@@ -430,9 +481,7 @@ module BallRenderer =
 
         let moveAngle = float32 (Math.Atan2(vy, vx))
         let isBouncing = h < 0.15f && vz > 1.5
-        let squashX, squashY =
-            if isBouncing then 1.18f, 0.82f
-            else 1.0f, 1.0f
+        let squashX, squashY = if isBouncing then 1.18f, 0.82f else 1.0f, 1.0f
 
         canvas.Save() |> ignore
         canvas.Translate(cx, cy)
@@ -443,6 +492,7 @@ module BallRenderer =
         let shadowR = r * shadowScale
 
         use shadowPaint = mkShadowPaint h
+
         canvas.DrawOval(
             SKRect(
                 shadowOffsetX - shadowR * 1.2f,
@@ -456,7 +506,9 @@ module BallRenderer =
         if speed > 5.0f then
             match mkTrailShader speed moveAngle r with
             | Some shader ->
-                use trailPaint = new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill, Shader = shader)
+                use trailPaint =
+                    new SKPaint(IsAntialias = true, Style = SKPaintStyle.Fill, Shader = shader)
+
                 canvas.DrawCircle(0.0f, 0.0f, r * 0.9f, trailPaint)
             | None -> ()
 
@@ -491,16 +543,11 @@ module BallRenderer =
         let hlY = lightDirY * r * 0.35f
         let hlIntensity = max 0.4f (1.0f - speed * 0.02f)
         let hlAlpha = byte (int (float32 190 * hlIntensity))
+
         use hlPaint =
-            new SKPaint(
-                Color = SKColor(255uy, 255uy, 255uy, hlAlpha),
-                IsAntialias = true,
-                Style = SKPaintStyle.Fill
-            )
-        canvas.DrawOval(
-            SKRect(hlX - r * 0.25f, hlY - r * 0.35f, hlX + r * 0.15f, hlY + r * 0.05f),
-            hlPaint
-        )
+            new SKPaint(Color = SKColor(255uy, 255uy, 255uy, hlAlpha), IsAntialias = true, Style = SKPaintStyle.Fill)
+
+        canvas.DrawOval(SKRect(hlX - r * 0.25f, hlY - r * 0.35f, hlX + r * 0.15f, hlY + r * 0.05f), hlPaint)
 
         canvas.DrawCircle(0.0f, 0.0f, r, Paints.ballOutline)
 
@@ -629,12 +676,7 @@ module HudRenderer =
 open FootballEngine.Client.Views.Components // For RenderFrame, RenderPlayer, RenderBall, MatchInterp
 
 type MatchDrawOp
-    (
-        ctx: MatchContext,
-        renderFrame: RenderFrame,
-        userClubId: ClubId option,
-        bounds: Rect
-    ) =
+    (ctx: MatchContext, renderFrame: RenderFrame, snapshot: SimSnapshot, userClubId: ClubId option, bounds: Rect) =
     let isUserAway = userClubId |> Option.exists (fun id -> id = ctx.Away.Id)
 
     interface ICustomDrawOperation with
@@ -688,21 +730,62 @@ type MatchDrawOp
                             rp.ShortName
                             rp.Condition
                             rp.IsHome
-                            rp.HasBall
-                )
+                            rp.HasBall)
+
+                // ── Ball trajectory line ───────────────────────────────────────
+
+                match snapshot.BallTrajectory with
+                | Some traj ->
+                    let progress =
+                        if traj.EstimatedArrivalSubTick > traj.LaunchSubTick then
+                            float32 (snapshot.SubTick - traj.LaunchSubTick)
+                            / float32 (traj.EstimatedArrivalSubTick - traj.LaunchSubTick)
+                        else
+                            1.0f
+
+                    if progress >= 0.0f && progress <= 1.0f then
+                        use trajPaint =
+                            new SKPaint(
+                                Color = SKColor(255uy, 200uy, 50uy, 80uy),
+                                IsAntialias = true,
+                                Style = SKPaintStyle.Stroke,
+                                StrokeWidth = 2.0f,
+                                PathEffect = SKPathEffect.CreateDash([| 4.0f; 4.0f |], 0.0f)
+                            )
+
+                        let path = new SKPath()
+                        let ox, oy = PitchCoords.toCanvas (float traj.OriginX) (float traj.OriginY)
+                        let tx, ty = PitchCoords.toCanvas (float traj.TargetX) (float traj.TargetY)
+                        path.MoveTo(ox, oy)
+                        path.LineTo(tx, ty)
+                        canvas.DrawPath(path, trajPaint)
+                | None -> ()
 
                 // ── Ball ───────────────────────────────────────────────────────
 
-                BallRenderer.draw
-                    canvas
-                    renderFrame.Ball.Position.X
-                    renderFrame.Ball.Position.Y
-                    renderFrame.Ball.Height
-                    renderFrame.Ball.Velocity.X
-                    renderFrame.Ball.Velocity.Y
-                    renderFrame.Ball.VelocityZ
-                    renderFrame.Ball.Spin.Y
-                    0.0333
+                let ballX, ballY, ballHeight, ballVx, ballVy, ballVz =
+                    match snapshot.Possession with
+                    | Owned(club, pid) ->
+                        let carrier = renderFrame.Players |> Array.tryFind (fun rp -> rp.Id = pid)
+
+                        match carrier with
+                        | Some rp -> rp.Position.X, rp.Position.Y, 0.0, rp.Velocity.X, rp.Velocity.Y, 0.0
+                        | None ->
+                            renderFrame.Ball.Position.X,
+                            renderFrame.Ball.Position.Y,
+                            renderFrame.Ball.Height,
+                            renderFrame.Ball.Velocity.X,
+                            renderFrame.Ball.Velocity.Y,
+                            renderFrame.Ball.VelocityZ
+                    | _ ->
+                        renderFrame.Ball.Position.X,
+                        renderFrame.Ball.Position.Y,
+                        renderFrame.Ball.Height,
+                        renderFrame.Ball.Velocity.X,
+                        renderFrame.Ball.Velocity.Y,
+                        renderFrame.Ball.VelocityZ
+
+                BallRenderer.draw canvas ballX ballY ballHeight ballVx ballVy ballVz renderFrame.Ball.Spin.Y 0.0333
 
                 // ── HUD ────────────────────────────────────────────────────────
 
@@ -725,11 +808,7 @@ type MatchDrawOp
                 if possessingName <> "" then
                     HudRenderer.drawPossession canvas possessingName possessingIsHome
 
-                HudRenderer.drawMomentum
-                    canvas
-                    renderFrame.Momentum
-                    renderFrame.HomeName
-                    renderFrame.AwayName
+                HudRenderer.drawMomentum canvas renderFrame.Momentum renderFrame.HomeName renderFrame.AwayName
 
                 canvas.Restore()
 
@@ -748,11 +827,15 @@ type MatchPitchControl() =
     static let renderFrameProp =
         AvaloniaProperty.Register<MatchPitchControl, RenderFrame option>("RenderFrame", None)
 
+    static let snapshotProp =
+        AvaloniaProperty.Register<MatchPitchControl, SimSnapshot option>("Snapshot", None)
+
     static let userProp =
         AvaloniaProperty.Register<MatchPitchControl, ClubId option>("UserClubId", None)
 
     static member MatchCtxProperty = ctxProp
     static member RenderFrameProperty = renderFrameProp
+    static member SnapshotProperty = snapshotProp
     static member UserClubIdProperty = userProp
 
     override this.OnPropertyChanged(change: AvaloniaPropertyChangedEventArgs) =
@@ -761,6 +844,7 @@ type MatchPitchControl() =
         if
             change.Property = ctxProp
             || change.Property = renderFrameProp
+            || change.Property = snapshotProp
             || change.Property = userProp
         then
             this.InvalidateVisual()
@@ -773,15 +857,18 @@ type MatchPitchControl() =
         with get () = this.GetValue(renderFrameProp)
         and set v = this.SetValue(renderFrameProp, v) |> ignore
 
+    member this.Snapshot
+        with get () = this.GetValue(snapshotProp)
+        and set v = this.SetValue(snapshotProp, v) |> ignore
+
     member this.UserClubId
         with get () = this.GetValue(userProp)
         and set v = this.SetValue(userProp, v) |> ignore
 
     override this.Render(drawingContext) =
-        match this.MatchCtx, this.RenderFrame with
-        | Some ctx, Some renderFrame ->
-            let op =
-                new MatchDrawOp(ctx, renderFrame, this.UserClubId, this.Bounds)
+        match this.MatchCtx, this.RenderFrame, this.Snapshot with
+        | Some ctx, Some renderFrame, Some snapshot ->
+            let op = new MatchDrawOp(ctx, renderFrame, snapshot, this.UserClubId, this.Bounds)
 
             drawingContext.Custom(op)
         | _ -> ()
@@ -807,6 +894,9 @@ module MatchPitchView =
         static member userClubId<'t when 't :> MatchPitchControl>(v: ClubId option) : IAttr<'t> =
             AttrBuilder<'t>.CreateProperty<ClubId option>(MatchPitchControl.UserClubIdProperty, v, ValueNone)
 
+        static member snapshot<'t when 't :> MatchPitchControl>(v: SimSnapshot option) : IAttr<'t> =
+            AttrBuilder<'t>.CreateProperty<SimSnapshot option>(MatchPitchControl.SnapshotProperty, v, ValueNone)
+
 
 // ---------------------------------------------------------------------------
 // Interpolation helpers
@@ -819,12 +909,14 @@ module MatchViewer =
     let view
         (ctx: MatchContext)
         (renderFrame: RenderFrame)
+        (snapshot: SimSnapshot option)
         (userClubId: ClubId option)
         : IView =
         let pitch =
             MatchPitchView.create
                 [ MatchPitchControl.matchCtx (Some ctx)
                   MatchPitchControl.renderFrame (Some renderFrame)
+                  MatchPitchControl.snapshot snapshot
                   MatchPitchControl.userClubId userClubId ]
 
         Border.create [ Border.child pitch; Border.margin (Thickness(8.0, 12.0, 8.0, 12.0)) ]
@@ -836,8 +928,6 @@ module MatchViewer =
 // ---------------------------------------------------------------------------
 
 module MatchDayView =
-
-    open FootballEngine.Client.Views.Components.MatchProjection
 
     let private noMatchView () : IView =
         TextBlock.create
@@ -862,14 +952,24 @@ module MatchDayView =
                 let ctx = replay.Context
                 let clock = defaultClock
 
-                let currFrame = MatchProjection.project ctx currSnap (SimulationClock.subTicksToSeconds clock currSnap.SubTick)
+                let currFrame =
+                    MatchProjection.project ctx currSnap (SimulationClock.subTicksToSeconds clock currSnap.SubTick)
 
                 let renderFrame =
                     let t = float32 state.InterpolationT
+
                     if snapIdx + 1 < snapCount && t > 0.0f then
                         let nextSnap = replay.Snapshots[snapIdx + 1]
-                        let nextFrame = MatchProjection.project ctx nextSnap (SimulationClock.subTicksToSeconds clock nextSnap.SubTick)
-                        let actualDt = float (nextSnap.SubTick - currSnap.SubTick) / float clock.SubTicksPerSecond
+
+                        let nextFrame =
+                            MatchProjection.project
+                                ctx
+                                nextSnap
+                                (SimulationClock.subTicksToSeconds clock nextSnap.SubTick)
+
+                        let actualDt =
+                            float (nextSnap.SubTick - currSnap.SubTick) / float clock.SubTicksPerSecond
+
                         MatchInterp.hermite currFrame nextFrame (float t) actualDt
                     else
                         currFrame
@@ -887,10 +987,40 @@ module MatchDayView =
                     else
                         0.0
 
+                let stats = StatsPanel.computeStats ctx.Home.Id replay.Events
+                let statsPanel = StatsPanel.buildStatsPanel stats
+
+                let lastEvent = replay.Events |> List.tryLast
+
+                let commentary =
+                    match lastEvent with
+                    | Some e ->
+                        let playerName = "Player"
+                        CommentaryOverlay.commentaryForEvent e playerName
+                    | None -> ""
+
                 DockPanel.create
                     [ DockPanel.lastChildFill true
                       DockPanel.children
                           [
+                            // ── Commentary overlay ───────────────────────────
+                            if commentary <> "" then
+                                Border.create
+                                    [ Border.dock Dock.Bottom
+                                      Border.padding (Thickness(12.0, 4.0))
+                                      Border.background "#1a1a2e"
+                                      Border.child (CommentaryOverlay.buildCommentary commentary) ]
+                            else
+                                Border.create [ Border.dock Dock.Bottom; Border.height 0.0 ]
+
+                            // ── Stats panel ──────────────────────────────────
+                            Border.create
+                                [ Border.dock Dock.Right
+                                  Border.width 220.0
+                                  Border.padding (Thickness(8.0))
+                                  Border.background "#0f172a"
+                                  Border.child (statsPanel) ]
+
                             // ── Playback controls bar ──────────────────────────
                             Border.create
                                 [ Border.dock Dock.Bottom
@@ -905,17 +1035,22 @@ module MatchDayView =
                                                 [
                                                   // Step back
                                                   Button.create
-                                                      [ Button.content "⏮"
+                                                      [ Button.content (Icons.iconMd Nav.skipFirst Theme.TextMain)
                                                         Button.onClick (fun _ -> dispatch (StepActiveMatch -1)) ]
 
                                                   // Play / pause
                                                   Button.create
-                                                      [ Button.content (if state.IsPlaying then "⏸" else "▶")
+                                                      [ Button.content (
+                                                            if state.IsPlaying then
+                                                                Icons.iconMd Nav.pause Theme.TextMain
+                                                            else
+                                                                Icons.iconMd Nav.play Theme.TextMain
+                                                        )
                                                         Button.onClick (fun _ -> dispatch TogglePlayback) ]
 
                                                   // Step forward
                                                   Button.create
-                                                      [ Button.content "⏭"
+                                                      [ Button.content (Icons.iconMd Nav.skipLast Theme.TextMain)
                                                         Button.onClick (fun _ -> dispatch (StepActiveMatch 1)) ]
 
                                                   // Speed selector
@@ -924,41 +1059,45 @@ module MatchDayView =
                                                         ComboBox.selectedIndex (
                                                             match state.PlaybackSpeed with
                                                             | 1 -> 0
-                                                            | 2 -> 1
-                                                            | 4 -> 2
-                                                            | _ -> 1
+                                                            | 5 -> 1
+                                                            | 10 -> 2
+                                                            | 20 -> 3
+                                                            | 50 -> 4
+                                                            | _ -> 3
                                                         )
                                                         ComboBox.onSelectedIndexChanged (fun i ->
                                                             let speed =
                                                                 match i with
                                                                 | 0 -> 1
-                                                                | 1 -> 2
-                                                                | 2 -> 4
-                                                                | _ -> 2
+                                                                | 1 -> 5
+                                                                | 2 -> 10
+                                                                | 3 -> 20
+                                                                | 4 -> 50
+                                                                | _ -> 20
 
                                                             dispatch (SetPlaybackSpeed speed))
-                                                        ComboBox.dataItems [ "1×"; "2×"; "4×" ] ]
+                                                        ComboBox.dataItems [ "1×"; "5×"; "10×"; "20×"; "50×" ] ]
 
                                                   // Snapshot counter
                                                   TextBlock.create
                                                       [ TextBlock.text $"{snapIdx} / {totalSnaps}"
                                                         TextBlock.verticalAlignment VerticalAlignment.Center
-                                                        TextBlock.foreground "#94a3b8"
+                                                        TextBlock.foreground Theme.TextSub
                                                         TextBlock.width 80.0 ]
 
                                                   // Progress percentage
                                                   TextBlock.create
                                                       [ TextBlock.text $"{progressPct * 100.0 |> int}%%"
                                                         TextBlock.verticalAlignment VerticalAlignment.Center
-                                                        TextBlock.foreground "#64748b"
+                                                        TextBlock.foreground Theme.TextMuted
                                                         TextBlock.width 40.0 ]
 
                                                   // Close
                                                   Button.create
-                                                      [ Button.content "✕"
+                                                      [ Button.content (Icons.iconMd IconName.close Theme.TextMain)
                                                         Button.onClick (fun _ -> dispatch CloseActiveMatch) ] ] ]
                                   ) ]
 
                             // ── Pitch ─────────────────────────────────────────
-                            MatchViewer.view ctx renderFrame userClubId ] ]
+                            MatchViewer.view ctx renderFrame (Some currSnap) userClubId ] ]
                 :> IView

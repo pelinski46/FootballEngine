@@ -18,12 +18,12 @@
         <Compile Include="Domain\Match.fs"/>
         <Compile Include="Domain\MatchMetrics.fs"/>
         <Compile Include="Domain\Competition.fs"/>
+        <Compile Include="Domain\CountryData.fs"/>
         <Compile Include="Domain\Negotiation.fs"/>
         <Compile Include="Domain\Inbox.fs"/>
         <Compile Include="Domain\GameState.fs"/>
         <Compile Include="Domain\Transfer.fs"/>
         <Compile Include="Domain\Manager.fs"/>
-        <Compile Include="GameData\CountryData.fs"/>
         <Compile Include="GameData\DomainEncoders.fs"/>
         <Compile Include="GameData\JsonTypes.fs"/>
         <Compile Include="GameData\JsonConverters.fs"/>
@@ -32,6 +32,7 @@
         <Compile Include="GameData\DataRegistry.fs"/>
         <Compile Include="GameData\ModValidator.fs"/>
         <Compile Include="GameData\ModSaver.fs"/>
+        <Compile Include="GameData\ModPaths.fs"/>
         <Compile Include="FormationData.fs"/>
         <Compile Include="Lineup.fs"/>
         <Compile Include="Engine\Stats.fs"/>
@@ -42,11 +43,18 @@
         <Compile Include="Engine\Match\Core\BalanceConfig.fs"/>
         <Compile Include="Engine\Match\Core\ConfigValidation.fs"/>
         <Compile Include="Engine\Match\Core\MatchMemory.fs"/>
+        <Compile Include="Engine\Match\Referee\StoppageTimeTracker.fs"/>
         <Compile Include="Engine\Match\Core\ActionMath.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
+        <Compile Include="Engine\Match\Core\InfluenceTypes.fs"/>
         <Compile Include="Engine\Match\Core\SimTypes.fs"/>
+        <Compile Include="Engine\Match\Referee\FoulAnalysis.fs"/>
+        <Compile Include="Engine\Match\Referee\AdvantageEngine.fs"/>
+        <Compile Include="Engine\Match\Referee\HandballDetector.fs"/>
+        <Compile Include="Engine\Match\Core\AdvancedSystems.fs"/>
         <Compile Include="Engine\Match\Core\FrameMutate.fs"/>
         <Compile Include="Engine\Match\Core\IntentFrame.fs"/>
+        <Compile Include="Engine\Match\Core\InfluenceFrame.fs"/>
         <Compile Include="Engine\Match\Ball\BallPhysics.fs"/>
 
         <Compile Include="Engine\Match\Core\MatchFormulas.fs"/>
@@ -60,9 +68,9 @@
         <Compile Include="Engine\Match\Core\CognitiveFrame.fs"/>
         <Compile Include="Engine\Match\Core\Perception.fs"/>
         <Compile Include="Engine\Match\Core\PendingGoal.fs"/>
-        <Compile Include="Engine\Match\Core\EventQueue.fs"/>
         <Compile Include="Engine\Match\Core\TickOrchestrator.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAction.fs"/>
+        <Compile Include="Engine\Match\Player\GKAction.fs"/>
         <Compile Include="Engine\Match\Player\PlayerSteering.fs"/>
         <Compile Include="Engine\Match\Movement\OrganicDrift.fs"/>
         <Compile Include="Engine\Match\Movement\FatiguePipeline.fs"/>
@@ -71,11 +79,14 @@
         <Compile Include="Engine\Match\Movement\ShapeEngine.fs"/>
         <Compile Include="Engine\Match\Movement\EmergentLoops.fs"/>
         <Compile Include="Engine\Match\Movement\AdaptiveTactics.fs"/>
-        <Compile Include="Engine\Match\Movement\TeamIntent.fs"/>
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
         <Compile Include="Engine\Match\Player\MovementScorer.fs"/>
+        <Compile Include="Engine\Match\Player\SpaceScorer.fs"/>
+        <Compile Include="Engine\Match\Movement\TeamIntent.fs"/>
         <Compile Include="Engine\Match\Player\ReactiveLayer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerScorer.fs"/>
+        <Compile Include="Engine\Match\Player\PlayerPersonality.fs"/>
+        <Compile Include="Engine\Match\Player\ChemistryTracker.fs"/>
         <Compile Include="Engine\Match\Player\PlayerDecision.fs"/>
         <Compile Include="Engine\Match\Player\BatchDecision.fs"/>
         <Compile Include="Engine\Match\Movement\MovementEngine.fs"/>
@@ -85,11 +96,18 @@
         <Compile Include="Engine\Match\Referee\GoalDetector.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeApplicator.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeAgent.fs"/>
+        <Compile Include="Engine\Match\Referee\VAR\VARTypes.fs"/>
+        <Compile Include="Engine\Match\Referee\VAR\VARDetector.fs"/>
+        <Compile Include="Engine\Match\Referee\VAR\VARReview.fs"/>
+        <Compile Include="Engine\Match\Referee\VAR\VARApplicator.fs"/>
 
         <Compile Include="Engine\Match\Actions\DuelAction.fs"/>
         <Compile Include="Engine\Match\Actions\ShotAction.fs"/>
         <Compile Include="Engine\Match\Actions\PassAction.fs"/>
         <Compile Include="Engine\Match\Actions\CrossAction.fs"/>
+        <Compile Include="Engine\Match\Actions\SetPieceRoutines.fs"/>
+        <Compile Include="Engine\Match\Actions\WallBehavior.fs"/>
+        <Compile Include="Engine\Match\Actions\SecondPhase.fs"/>
         <Compile Include="Engine\Match\Actions\SetPlayAction.fs"/>
         <Compile Include="Engine\Match\Actions\SetPieceAgent.fs"/>
 
@@ -144,6 +162,9 @@
         <Compile Include="Views\Components\Header.fs"/>
         <Compile Include="Views\Components\FootballPitch.fs"/>
         <Compile Include="Views\Components\MatchProjection.fs"/>
+        <Compile Include="Views\Components\EventTimeline.fs"/>
+        <Compile Include="Views\Components\StatsPanel.fs"/>
+        <Compile Include="Views\Components\CommentaryOverlay.fs"/>
         <Compile Include="Views\Components\MatchViewer.fs"/>
         <Compile Include="Views\Pages\Loading.fs"/>
         <Compile Include="Views\Pages\Setup.fs"/>
@@ -157,6 +178,13 @@
         <Compile Include="Program.fs"/>
 
 
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="..\Data\**\*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Link>Data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        </Content>
     </ItemGroup>
 
     <ItemGroup>

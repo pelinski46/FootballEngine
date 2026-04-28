@@ -11,5 +11,6 @@ type RefereeAction =
     | AwardThrowIn of team: ClubSide
     | AwardCorner  of team: ClubSide
     | AwardGoalKick of team: ClubSide
+    | AwardIndirectFreeKick of team: ClubSide
     | DropBall     of team: ClubSide
     | RefereeIdle

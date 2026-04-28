@@ -1,6 +1,4 @@
-namespace FootballEngine.Data
-
-open FootballEngine.Domain
+namespace FootballEngine.Domain
 
 type ClubEntry =
     { Name: string

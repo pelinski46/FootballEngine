@@ -5,6 +5,7 @@ open FootballEngine.AppMsgs
 open FootballEngine.Domain
 open AppTypes
 open FootballEngine.World
+open FootballEngine.Data
 
 
 module AppState =
@@ -27,13 +28,14 @@ module AppState =
           ActiveMatchReplay = None
           ActiveMatchSnapshot = 0
           IsPlaying = false
-          PlaybackSpeed = 200
+          PlaybackSpeed = 20
           InterpolationT = 0.0
           Inbox = initInboxState
           PrevUserClubSkills = None
           PrevUserClubStatus = None
           RenderAccumulator = 0.0
-          WorldClock = WorldClockOps.init 1 }
+          WorldClock = WorldClockOps.init 1
+          ModLoadErrors = [] }
 
     let private addLog msg (state: State) =
         { state with
@@ -99,7 +101,10 @@ module AppState =
 
         | ModEditorMsg m ->
             let nextEditorState, cmd = UpdateModEditor.update m state.ModEditor
-            { state with ModEditor = nextEditorState }, Cmd.map ModEditorMsg cmd
+
+            { state with
+                ModEditor = nextEditorState },
+            Cmd.map ModEditorMsg cmd
 
         | SimMsg m ->
             let nextState, cmd = UpdateSim.handle m state
@@ -136,8 +141,7 @@ module AppState =
 
                     { state with
                         Mode = InGame(newGs, managerEmployment newGs)
-                        Inbox =
-                            { SelectedMessageId = Some messageId } },
+                        Inbox = { SelectedMessageId = Some messageId } },
                     SimHelpers.saveCmd newGs state.WorldClock)
 
             | MarkAsRead messageId ->
@@ -161,13 +165,26 @@ module AppState =
             | Some(gs, clock) ->
                 let leagueId = SimHelpers.primaryLeagueId gs
 
-                { state with
-                    Mode = InGame(gs, managerEmployment gs)
-                    CurrentPage = HomePage
-                    SelectedLeagueId = leagueId
-                    IsProcessing = false
-                    WorldClock = clock },
-                Cmd.none
+                match ModLoader.loadAll ModPaths.builtinsDir ModPaths.modsDir with
+                | Ok data ->
+                    DataRegistry.setLoadedData data
+                    { state with
+                        Mode = InGame(gs, managerEmployment gs)
+                        CurrentPage = HomePage
+                        SelectedLeagueId = leagueId
+                        IsProcessing = false
+                        WorldClock = clock
+                        ModLoadErrors = data.Errors |> List.map string },
+                    Cmd.none
+                | Error errs ->
+                    { state with
+                        Mode = InGame(gs, managerEmployment gs)
+                        CurrentPage = HomePage
+                        SelectedLeagueId = leagueId
+                        IsProcessing = false
+                        WorldClock = clock
+                        ModLoadErrors = errs |> List.map string },
+                    Cmd.none
             | None ->
                 { state with
                     Mode = NoSave
@@ -358,57 +375,108 @@ module AppState =
         | SetWidth value ->
             withGame (fun gs ->
                 let clubId = gs.UserClubId
+
                 let newGs =
-                    GameState.updateLineup clubId
+                    GameState.updateLineup
+                        clubId
                         (Option.map (fun lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            { lineup with Instructions = Some { instructions with Width = value } }))
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
+
+                            { lineup with
+                                Instructions = Some { instructions with Width = value } }))
                         gs
-                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetTempo value ->
             withGame (fun gs ->
                 let clubId = gs.UserClubId
+
                 let newGs =
-                    GameState.updateLineup clubId
+                    GameState.updateLineup
+                        clubId
                         (Option.map (fun lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            { lineup with Instructions = Some { instructions with Tempo = value } }))
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
+
+                            { lineup with
+                                Instructions = Some { instructions with Tempo = value } }))
                         gs
-                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetDirectness value ->
             withGame (fun gs ->
                 let clubId = gs.UserClubId
+
                 let newGs =
-                    GameState.updateLineup clubId
+                    GameState.updateLineup
+                        clubId
                         (Option.map (fun lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            { lineup with Instructions = Some { instructions with Directness = value } }))
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
+
+                            { lineup with
+                                Instructions = Some { instructions with Directness = value } }))
                         gs
-                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetPressTriggerZone value ->
             withGame (fun gs ->
                 let clubId = gs.UserClubId
+
                 let newGs =
-                    GameState.updateLineup clubId
+                    GameState.updateLineup
+                        clubId
                         (Option.map (fun lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            { lineup with Instructions = Some { instructions with PressTriggerZone = value } }))
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
+
+                            { lineup with
+                                Instructions =
+                                    Some
+                                        { instructions with
+                                            PressTriggerZone = value } }))
                         gs
-                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetDefensiveShape value ->
             withGame (fun gs ->
                 let clubId = gs.UserClubId
+
                 let newGs =
-                    GameState.updateLineup clubId
+                    GameState.updateLineup
+                        clubId
                         (Option.map (fun lineup ->
-                            let instructions = lineup.Instructions |> Option.defaultValue TacticalInstructions.defaultInstructions
-                            { lineup with Instructions = Some { instructions with DefensiveShape = value } }))
+                            let instructions =
+                                lineup.Instructions
+                                |> Option.defaultValue TacticalInstructions.defaultInstructions
+
+                            { lineup with
+                                Instructions =
+                                    Some
+                                        { instructions with
+                                            DefensiveShape = value } }))
                         gs
-                { state with Mode = InGame(newGs, managerEmployment newGs) }, Cmd.none)
+
+                { state with
+                    Mode = InGame(newGs, managerEmployment newGs) },
+                Cmd.none)
 
         | SetPlayerTrainingSchedule(playerId, schedule) ->
             withGame (fun gs ->
@@ -463,7 +531,7 @@ module AppState =
             else
                 let dt = 16.67 // 60 FPS
                 let newAccumulator = state.RenderAccumulator + dt
-                let snapInterval = 500.0 / float state.PlaybackSpeed // ms between snapshots (each snapshot = 500ms game time)
+                let snapInterval = 125.0 / float state.PlaybackSpeed // ms between snapshots (each snapshot = 125ms game time = 5 subticks at 40Hz)
 
                 if newAccumulator >= snapInterval then
                     let total =
@@ -483,4 +551,17 @@ module AppState =
                 else
                     { state with
                         RenderAccumulator = newAccumulator
-                        InterpolationT = newAccumulator / snapInterval }, Cmd.none
+                        InterpolationT = newAccumulator / snapInterval },
+                    Cmd.none
+
+        | ReloadMods ->
+            match ModLoader.loadAll ModPaths.builtinsDir ModPaths.modsDir with
+            | Ok data ->
+                DataRegistry.setLoadedData data
+                { state with
+                    ModLoadErrors = data.Errors |> List.map string },
+                Cmd.none
+            | Error errs ->
+                { state with
+                    ModLoadErrors = errs |> List.map string },
+                Cmd.none

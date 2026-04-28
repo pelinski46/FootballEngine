@@ -34,7 +34,10 @@ type AgentContext =
       TeamIntent: TeamIntent
       PreviousIntent: MovementIntent voption
       IntentLockExpiry: int
-      VisibilityMask: VisibilityMask voption }
+      VisibilityMask: VisibilityMask voption
+      CurrentSubTick: int
+      TransitionPressExpiry: int
+      Influence: InfluenceTypes.InfluenceFrame }
 
 module AgentContext =
 
@@ -53,6 +56,7 @@ module AgentContext =
         (buildUp: BuildUpConfig)
         (cFrame: CognitiveFrame option)
         (visibilityMask: VisibilityMask voption)
+        (influence: InfluenceTypes.InfluenceFrame)
         : AgentContext =
         let ballState = state.Ball
         let bX = ballState.Position.X
@@ -69,7 +73,7 @@ module AgentContext =
         let teamHasBall =
             match ballState.Possession with
             | Possession.Owned(side, _) -> side = team.ClubSide
-            | Possession.InFlight(side, _) -> side = team.ClubSide
+            | Possession.InFlight -> false
             | Possession.SetPiece(side, _) -> side = team.ClubSide
             | Possession.Contest(side) -> side = team.ClubSide
             | Possession.Transition(side) -> side = team.ClubSide
@@ -82,7 +86,12 @@ module AgentContext =
 
         let clubId = if team.ClubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
         let urgency = matchUrgency clubId ctx state clock
-        let mentalState = MentalState.initial me
+        let mentalState =
+            { ComposureLevel = float team.OwnFrame.ComposureLevel[meIdx]
+              ConfidenceLevel = float team.OwnFrame.ConfidenceLevel[meIdx]
+              FocusLevel = float team.OwnFrame.FocusLevel[meIdx]
+              AggressionLevel = float team.OwnFrame.AggressionLevel[meIdx]
+              RiskTolerance = float team.OwnFrame.RiskTolerance[meIdx] }
 
         let myX32 = team.OwnFrame.PosX[meIdx]
         let myY32 = team.OwnFrame.PosY[meIdx]
@@ -203,4 +212,7 @@ module AgentContext =
           PreviousIntent = previousIntent
           IntentLockExpiry = intentLockExpiry
           VisibilityMask = visibilityMask
+          CurrentSubTick = state.SubTick
+          TransitionPressExpiry = (getTeam state team.ClubSide).TransitionPressExpiry
+          Influence = influence
         }

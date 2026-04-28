@@ -28,14 +28,32 @@ module ModLoader =
 
     // ─── JSON reading ───
 
+    let private checkSchemaVersion (path: string) (json: string) : Result<unit, ModError> =
+        try
+            use doc = System.Text.Json.JsonDocument.Parse(json)
+            match doc.RootElement.TryGetProperty("SchemaVersion") with
+            | true, elem ->
+                let version = elem.GetInt32()
+                if version > SchemaVersion.Current then
+                    Error(SchemaMismatch(path, SchemaVersion.Current, version))
+                else
+                    Ok()
+            | false, _ ->
+                Ok()
+        with _ ->
+            Ok()
+
     let private readJsonFile<'T> (path: string) : Result<'T, ModError> =
         match checkFileSize path with
         | Error e -> Error e
         | Ok _ ->
             try
                 let json = File.ReadAllText path
-                let opts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
-                Ok(JsonSerializer.Deserialize<'T>(json, opts))
+                match checkSchemaVersion path json with
+                | Error e -> Error e
+                | Ok() ->
+                    let opts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+                    Ok(JsonSerializer.Deserialize<'T>(json, opts))
             with ex ->
                 Error(InvalidJson(path, ex.Message))
 
@@ -117,15 +135,15 @@ module ModLoader =
             let countriesDir = Path.Combine(modDir, "countries")
             let intlDir = Path.Combine(modDir, "international")
 
-            for jsonFile in scanJsonFiles modDir do
-                let fn = Path.GetFileNameWithoutExtension jsonFile
-                if fn.StartsWith "country_" then
-                    match loadCountryFile jsonFile manifest.Id with
-                    | Ok cd -> countries.Add cd
-                    | Error e -> errors.Add e
-
             if Directory.Exists countriesDir then
                 for jsonFile in scanJsonFiles countriesDir do
+                    let fn = Path.GetFileNameWithoutExtension jsonFile
+                    if fn.StartsWith "country_" then
+                        match loadCountryFile jsonFile manifest.Id with
+                        | Ok cd -> countries.Add cd
+                        | Error e -> errors.Add e
+            else
+                for jsonFile in scanJsonFiles modDir do
                     let fn = Path.GetFileNameWithoutExtension jsonFile
                     if fn.StartsWith "country_" then
                         match loadCountryFile jsonFile manifest.Id with
@@ -138,7 +156,6 @@ module ModLoader =
                     | Ok ic -> intlComps.Add ic
                     | Error e -> errors.Add e
 
-            // Also scan intl_*.json in root
             for jsonFile in scanJsonFiles modDir do
                 let fn = Path.GetFileNameWithoutExtension jsonFile
                 if fn.StartsWith "intl_" then
@@ -152,6 +169,27 @@ module ModLoader =
                 Ok(manifest, List.ofSeq countries, List.ofSeq intlComps)
 
     // ─── Conflict resolution ───
+
+    let private mergeCountryData (baseCd: CountryData) (otherCd: CountryData) (strategy: MergeStrategy) : CountryData =
+        match strategy with
+        | Replace -> otherCd
+        | Append ->
+            { baseCd with
+                Names =
+                    { FirstNames = baseCd.Names.FirstNames @ otherCd.Names.FirstNames |> List.distinct
+                      LastNames = baseCd.Names.LastNames @ otherCd.Names.LastNames |> List.distinct }
+                LeagueNames = baseCd.LeagueNames @ otherCd.LeagueNames |> List.distinct
+                Clubs = baseCd.Clubs @ otherCd.Clubs
+                Cups = baseCd.Cups @ otherCd.Cups }
+        | Patch ->
+            let mergeNamesPool orig upd =
+                { FirstNames = if upd.FirstNames.IsEmpty then orig.FirstNames else upd.FirstNames
+                  LastNames = if upd.LastNames.IsEmpty then orig.LastNames else upd.LastNames }
+            { baseCd with
+                Names = mergeNamesPool baseCd.Names otherCd.Names
+                LeagueNames = if otherCd.LeagueNames.IsEmpty then baseCd.LeagueNames else otherCd.LeagueNames
+                Clubs = if otherCd.Clubs.IsEmpty then baseCd.Clubs else otherCd.Clubs
+                Cups = if otherCd.Cups.IsEmpty then baseCd.Cups else otherCd.Cups }
 
     let private resolveCountries
         (entries: (ModManifest * CountryData list) list)
@@ -168,11 +206,14 @@ module ModLoader =
 
         for (code, items) in grouped do
             if items.Length > 1 then
-                let winner = items |> List.maxBy (fun (_, _, m) -> m.Priority)
-                let losers = items |> List.filter (fun (_, _, m) -> m.Id <> winner.Item3.Id)
-                for (_, _, loser) in losers do
-                    errors.Add(DuplicateCountryCode(code, loser.Id, winner.Item3.Id))
-                resolved.Add(code, winner.Item2)
+                let sorted = items |> List.sortBy (fun (_, _, m) -> m.Priority)
+                let (_, baseCd, _) = sorted[0]
+                let mutable result = baseCd
+
+                for (_, cd, manifest) in sorted |> List.tail do
+                    result <- mergeCountryData result cd manifest.MergeStrategy
+
+                resolved.Add(code, result)
             else
                 let (_, cd, _) = items[0]
                 resolved.Add(code, cd)

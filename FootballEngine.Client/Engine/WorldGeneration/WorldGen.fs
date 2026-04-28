@@ -302,7 +302,7 @@ module WorldGen =
                 (w, allCountryData)
                 ||> List.fold (fun acc cd -> generateNationalCups year cd counters acc)
 
-        let intlComps = DataRegistry.internationalComps
+        let intlComps = DataRegistry.internationalComps ()
 
         let world =
             (world, intlComps)
@@ -324,7 +324,7 @@ module WorldGen =
 
         let profileCache = world.Players |> Map.map (fun _ p -> Player.profile p)
 
-        let activeMods = DataRegistry.activeMods |> List.map (fun m -> m.Id, m.Version)
+        let activeMods = DataRegistry.activeMods () |> List.map (fun m -> m.Id, m.Version)
 
         { CurrentDate = DateTime(year, 7, 1)
           Season = year
@@ -333,7 +333,7 @@ module WorldGen =
           Players = world.Players
           Staff = world.Staff |> Map.add userStaffId userManager
           Competitions = world.Competitions
-          Countries = DataRegistry.countries
+          Countries = DataRegistry.allCountriesMap ()
           ActiveMods = activeMods
           UserClubId = userClubId
           UserStaffId = userStaffId

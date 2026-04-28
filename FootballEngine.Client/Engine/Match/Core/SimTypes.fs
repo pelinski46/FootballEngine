@@ -281,12 +281,15 @@ type TeamFrame() =
     member val IntentTargetX: float32[] = Array.empty with get, set
     member val IntentTargetY: float32[] = Array.empty with get, set
     member val IntentTargetPid: int[] = Array.empty with get, set
+    member val IntentLockExpiry: int[] = Array.empty with get, set
     member val CachedTargetX: float32[] = Array.empty with get, set
     member val CachedTargetY: float32[] = Array.empty with get, set
     member val CachedExecution: float32[] = Array.empty with get, set
     member val ComposureLevel: float32[] = Array.empty with get, set
     member val ConfidenceLevel: float32[] = Array.empty with get, set
     member val AggressionLevel: float32[] = Array.empty with get, set
+    member val FocusLevel: float32[] = Array.empty with get, set
+    member val RiskTolerance: float32[] = Array.empty with get, set
     member val LastCognitiveSubTick: int = 0 with get, set
     member val LastShapeSubTick: int = 0 with get, set
     member val LastMarkingSubTick: int = 0 with get, set
@@ -323,12 +326,15 @@ module TeamFrame =
         frame.IntentTargetX <- Array.zeroCreate n
         frame.IntentTargetY <- Array.zeroCreate n
         frame.IntentTargetPid <- Array.zeroCreate n
+        frame.IntentLockExpiry <- Array.zeroCreate n
         frame.CachedTargetX <- Array.init n (fun i -> float32 basePositions[i].X)
         frame.CachedTargetY <- Array.init n (fun i -> float32 basePositions[i].Y)
         frame.CachedExecution <- Array.create n 1.0f
         frame.ComposureLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ComposureLevel)
         frame.ConfidenceLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).ConfidenceLevel)
         frame.AggressionLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).AggressionLevel)
+        frame.FocusLevel <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).FocusLevel)
+        frame.RiskTolerance <- Array.init n (fun i -> float32 (MentalState.initial roster.Players[i]).RiskTolerance)
         frame.LastCognitiveSubTick <- 0
         frame.LastShapeSubTick <- 0
         frame.LastMarkingSubTick <- 0
@@ -361,10 +367,19 @@ type SetPieceKind =
 type Possession =
     | Loose
     | Owned of ClubSide * PlayerId
-    | InFlight of ClubSide * PlayerId
+    | InFlight
     | Contest of ClubSide
     | Transition of ClubSide
     | SetPiece of ClubSide * SetPieceKind
+
+type BallActionKind =
+    | Pass of passerId: PlayerId * targetId: PlayerId * quality: float
+    | Shot of shooterId: PlayerId * quality: float
+    | Cross of crosserId: PlayerId * targetId: PlayerId * quality: float
+    | LongBall of passerId: PlayerId * targetId: PlayerId * quality: float
+    | Clearance of playerId: PlayerId
+    | Deflection of playerId: PlayerId
+    | FreeBall
 
 type OffsideSnapshot =
     { PasserId: PlayerId
@@ -374,6 +389,18 @@ type OffsideSnapshot =
       BallXAtPass: float<meter>
       Dir: AttackDir }
 
+type BallTrajectory = {
+    OriginX: float<meter>
+    OriginY: float<meter>
+    TargetX: float<meter>
+    TargetY: float<meter>
+    LaunchSubTick: int
+    EstimatedArrivalSubTick: int
+    KickerId: PlayerId
+    PeakHeight: float<meter>
+    ActionKind: BallActionKind
+}
+
 type BallPhysicsState =
     { Position: Spatial
       Spin: Spin
@@ -381,7 +408,9 @@ type BallPhysicsState =
       LastTouchBy: PlayerId option
       PendingOffsideSnapshot: OffsideSnapshot option
       StationarySinceSubTick: int option
-      TransitionSinceSubTick: int option }
+      GKHoldSinceSubTick: int option
+      PlayerHoldSinceSubTick: int option
+      Trajectory: BallTrajectory option }
 
 type PenaltyShootout =
     { HomeKicks: (PlayerId * bool * int) list
@@ -439,6 +468,7 @@ type TeamSimState() =
     member val LastShapeSubTick: int = 0 with get, set
     member val LastMarkingSubTick: int = 0 with get, set
     member val LastAdaptiveSubTick: int = 0 with get, set
+    member val TransitionPressExpiry: int = 0 with get, set
 
 module TeamSimState =
     let empty () =
@@ -560,6 +590,7 @@ type SimState() =
     member val AwayScore = 0 with get, set
     member val Config = BalanceConfig.defaultConfig with get, set
     member val MatchMemory : MatchMemory = MatchMemory.empty with get, set
+    member val MatchEvents : ResizeArray<MatchEvent> = ResizeArray<MatchEvent>(512) with get, set
     member val LastMemoryDecaySubTick = 0 with get, set
 
     member val Ball =
@@ -577,14 +608,16 @@ type SimState() =
           Possession = SetPiece(HomeClub, KickOff)
           PendingOffsideSnapshot = None
           StationarySinceSubTick = None
-          TransitionSinceSubTick = None } with get, set
+          GKHoldSinceSubTick = None
+          PlayerHoldSinceSubTick = None
+          Trajectory = None } with get, set
 
     member val LastAttackingClub = HomeClub with get, set
 
     member this.AttackingClub =
         match this.Ball.Possession with
         | Owned(club, _) -> Some club
-        | InFlight(club, _) -> Some club
+        | InFlight -> None
         | SetPiece(club, _) -> Some club
         | Contest(club) -> Some club
         | Transition(club) -> Some club
@@ -608,8 +641,13 @@ type SimState() =
     member val HomeTeamIntent = TeamIntentDefaults.empty with get, set
     member val AwayTeamIntent = TeamIntentDefaults.empty with get, set
 
+    member val HomeInfluenceFrame = InfluenceTypes.emptyInfluenceFrame () with get, set
+    member val AwayInfluenceFrame = InfluenceTypes.emptyInfluenceFrame () with get, set
+
     member val HomeCFrameBuffers: CognitiveFrameBuffers option = None with get, set
     member val AwayCFrameBuffers: CognitiveFrameBuffers option = None with get, set
+
+    member val StoppageTime: StoppageTimeTracker = StoppageTimeTracker() with get, set
 
 [<Struct>]
 type TeamPerspective =
@@ -934,7 +972,9 @@ module SimStateOps =
           LastTouchBy = None
           PendingOffsideSnapshot = None
           StationarySinceSubTick = None
-          TransitionSinceSubTick = None }
+          GKHoldSinceSubTick = None
+          PlayerHoldSinceSubTick = None
+          Trajectory = None }
 
     let resetBallForKickOff (receivingClub: ClubSide) (state: SimState) =
         state.LastAttackingClub <- receivingClub
@@ -945,7 +985,9 @@ module SimStateOps =
                 Possession = SetPiece(receivingClub, SetPieceKind.KickOff)
                 PendingOffsideSnapshot = None
                 StationarySinceSubTick = None
-                TransitionSinceSubTick = None }
+                GKHoldSinceSubTick = None
+                PlayerHoldSinceSubTick = None
+                Trajectory = None }
 
     let clearOffsideSnapshot (state: SimState) =
         state.Ball <-
@@ -958,20 +1000,26 @@ module SimStateOps =
         | _ -> false
 
     let losePossession (state: SimState) =
-        state.Ball <- { state.Ball with Possession = Loose }
+        state.Ball <- { state.Ball with Possession = Loose; PlayerHoldSinceSubTick = None; Trajectory = None }
 
     let loosePossession (state: SimState) =
         state.Ball <-
             { state.Ball with
                 Possession = Loose
-                PendingOffsideSnapshot = None }
+                PendingOffsideSnapshot = None
+                GKHoldSinceSubTick = None
+                PlayerHoldSinceSubTick = None
+                Trajectory = None }
 
     let givePossessionTo (club: ClubSide) (pid: PlayerId) (state: SimState) =
         state.LastAttackingClub <- club
         state.Ball <-
             { state.Ball with
                 Possession = Owned(club, pid)
-                PendingOffsideSnapshot = None }
+                PendingOffsideSnapshot = None
+                GKHoldSinceSubTick = None
+                PlayerHoldSinceSubTick = None
+                Trajectory = None }
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
         state.Momentum <- PhysicsContract.clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
@@ -1058,7 +1106,15 @@ module SimStateOps =
         { SubTick = subTick
           PlayerId = playerId
           ClubId = clubId
-          Type = t }
+          Type = t
+          Context = EventContext.empty }
+
+    let createEventAt subTick playerId clubId t (pos: Spatial) : MatchEvent =
+        { SubTick = subTick
+          PlayerId = playerId
+          ClubId = clubId
+          Type = t
+          Context = EventContext.at (float pos.X) (float pos.Y) }
 
     let buildTeamPerspective
         (clubSide: ClubSide)

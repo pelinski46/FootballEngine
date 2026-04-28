@@ -9,13 +9,7 @@ open FootballEngine.Generation
 let sw = Stopwatch()
 
 let loadData () =
-    let builtinsDir =
-        System.IO.Path.Combine(System.AppContext.BaseDirectory, "Data", "Builtins")
-
-    let modsDir =
-        System.IO.Path.Combine(System.AppContext.BaseDirectory, "Data", "Mods")
-
-    match Data.ModLoader.loadAll builtinsDir modsDir with
+    match Data.ModLoader.loadAll Data.ModPaths.builtinsDir Data.ModPaths.modsDir with
     | Ok data -> Data.DataRegistry.setLoadedData data
     | Error _ -> ()
 

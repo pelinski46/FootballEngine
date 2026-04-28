@@ -193,9 +193,7 @@ module UpdateModEditor =
         | RedoMod -> redo state |> runValidation
 
         | Export ->
-            let modsDir = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Mods")
-
-            match FootballEngine.Data.ModSaver.saveMod modsDir state.Manifest state.Countries with
+            match FootballEngine.Data.ModSaver.saveMod Data.ModPaths.modsDir state.Manifest state.Countries state.InternationalComps with
             | Ok() -> { state with IsDirty = false }, Elmish.Cmd.none
             | Error err ->
                 System.Diagnostics.Debug.WriteLine($"Export failed: {err}")

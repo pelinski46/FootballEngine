@@ -106,6 +106,7 @@ module SchedulingTypes =
         | Cross
         | LongBall of target: PlayerId
         | Tackle of opponent: PlayerId
+        | PassIntoSpace of targetCell: int
 
     type IntentContext =
         | NormalPlay

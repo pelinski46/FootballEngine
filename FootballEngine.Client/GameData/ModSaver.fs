@@ -7,7 +7,7 @@ module ModSaver =
 
     let private options = JsonSerializerOptions(WriteIndented = true)
 
-    let saveMod (basePath: string) (manifest: ModManifestDto) (countries: Map<string, CountryDataDto>) =
+    let saveMod (basePath: string) (manifest: ModManifestDto) (countries: Map<string, CountryDataDto>) (intlComps: InternationalCompDto list) =
         try
             let modDir = Path.Combine(basePath, manifest.Name)
 
@@ -27,19 +27,20 @@ module ModSaver =
 
             for KeyValue(code, data) in countries do
                 let countryPath = Path.Combine(countriesDir, $"country_{code}.json")
-
-                // Wrap in envelope
-                let envelope =
-                    { SchemaVersion = SchemaVersion.Current
-                      DataType = "CountryData"
-                      RawJson = None }
-
-                // We need to serialize the whole thing.
-                // In our system, the envelope is just a header, but the actual file is the whole CountryDataDto.
-                // Wait, let's check how ModLoader loads it.
-
                 let json = JsonSerializer.Serialize(data, options)
                 File.WriteAllText(countryPath, json)
+
+            // Save international competitions
+            let intlDir = Path.Combine(modDir, "international")
+
+            if not (Directory.Exists intlDir) then
+                Directory.CreateDirectory intlDir |> ignore
+
+            for dto in intlComps do
+                let safeName = dto.Name.Replace(" ", "_").Replace("/", "_")
+                let intlPath = Path.Combine(intlDir, $"intl_{safeName}.json")
+                let json = JsonSerializer.Serialize(dto, options)
+                File.WriteAllText(intlPath, json)
 
             Ok()
         with ex ->

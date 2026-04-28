@@ -93,6 +93,7 @@ module CognitiveFrameModule =
                         if d < minOppDistSq then
                             minOppDistSq <- d
                             minOppIdx <- int16 j
+                    | _ -> ()
                 nearestOppIdx[i] <- minOppIdx
                 nearestOppDistSq[i] <- minOppDistSq
                 pressure[i] <- minOppDistSq

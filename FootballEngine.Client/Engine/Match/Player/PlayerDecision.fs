@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open SchedulingTypes
+open PlayerPersonality
 
 module PlayerDecision =
 
@@ -29,32 +30,64 @@ module PlayerDecision =
 
         let passMod = if ctx.Phase = BuildUp then 1.0 + ctx.Profile.CreativityWeight * 0.15 else 1.0
 
-        let mutable bestScore = -1.0<decisionScore>
-        let mutable bestIntent: OnBallIntent option = None
+        // Check for through ball / space pass opportunity
+        let spacePassCandidate =
+            match SpaceScorer.findThroughBallTarget ctx with
+            | ValueNone -> None
+            | ValueSome spaceTarget ->
+                let spaceScore = SpaceScorer.spacePassScore ctx spaceTarget.Cell
+                // Only consider if space pass score is competitive with regular pass
+                if float spaceScore > 0.25 then
+                    Some (float spaceScore, OnBallIntent.PassIntoSpace spaceTarget.Cell)
+                else
+                    None
 
-        if not shootBlocked then
-            let s = scores.Shoot * (1.0 + ctx.Urgency * 0.5)
-            if s > bestScore then bestScore <- s; bestIntent <- Some OnBallIntent.Shoot
+        let personality = PlayerPersonality.derive ctx.Team.OwnRoster.Players[0]
 
-        if not passBlocked then
-            let s = scores.Pass * passMod
-            let targetPid = match ctx.BestPassTargetIdx with ValueSome idx -> ctx.Team.OwnRoster.Players[idx].Id | ValueNone -> failwith "unreachable"
-            if s > bestScore then bestScore <- s; bestIntent <- Some (OnBallIntent.Pass targetPid)
+        let candidates : (float * OnBallIntent) list =
+            [
+                if not shootBlocked then
+                    let flairBonus = personality.Flair * 0.2
+                    let s = float scores.Shoot * (1.0 + ctx.Urgency * 0.5 + flairBonus)
+                    yield s, OnBallIntent.Shoot
 
-        if not dribbleBlocked then
-            let s = scores.Dribble
-            if s > bestScore then bestScore <- s; bestIntent <- Some OnBallIntent.Dribble
+                if not passBlocked then
+                    let teamworkBonus = personality.Teamwork * 0.15
+                    let s = float scores.Pass * passMod * (1.0 + teamworkBonus)
+                    match ctx.BestPassTargetIdx with
+                    | ValueSome idx ->
+                        let targetPid = ctx.Team.OwnRoster.Players[idx].Id
+                        yield s, OnBallIntent.Pass targetPid
+                    | ValueNone -> ()
 
-        if not crossBlocked then
-            let s = scores.Cross * (1.0 + ctx.Urgency * 0.1)
-            if s > bestScore then bestScore <- s; bestIntent <- Some OnBallIntent.Cross
+                // Space pass candidate (through balls)
+                match spacePassCandidate with
+                | Some (s, intent) -> yield s, intent
+                | None -> ()
 
-        match ctx.BestPassTargetIdx with
-        | ValueSome idx ->
-            let longBallThreshold = 0.15<decisionScore> - t.Directness * 0.06<decisionScore>
-            let s = scores.LongBall * (1.0 + ctx.Urgency * 0.15)
-            let targetPid = ctx.Team.OwnRoster.Players[idx].Id
-            if s > bestScore && s > longBallThreshold then bestScore <- s; bestIntent <- Some (OnBallIntent.LongBall targetPid)
-        | ValueNone -> ()
+                if not dribbleBlocked then
+                    let consistencyMod = 1.0 - personality.Consistency * 0.1
+                    let s = float scores.Dribble * consistencyMod
+                    yield s, OnBallIntent.Dribble
 
-        bestIntent
+                if not crossBlocked then
+                    let s = float scores.Cross * (1.0 + ctx.Urgency * 0.1)
+                    yield s, OnBallIntent.Cross
+
+                match ctx.BestPassTargetIdx with
+                | ValueSome idx ->
+                    let longBallThreshold = 0.15<decisionScore> - t.Directness * 0.06<decisionScore>
+                    let s = float scores.LongBall * (1.0 + ctx.Urgency * 0.15)
+                    if s > float longBallThreshold then
+                        let targetPid = ctx.Team.OwnRoster.Players[idx].Id
+                        yield s, OnBallIntent.LongBall targetPid
+                | ValueNone -> ()
+            ]
+
+        let effectiveTemp =
+            ctx.Decision.DecisionTemperature
+            * (2.0 - ctx.MentalState.ComposureLevel)
+            * (1.0 + ctx.Urgency * 0.5)
+            * (2.0 - ctx.MentalState.FocusLevel)
+
+        ActionMath.softmaxSample effectiveTemp candidates

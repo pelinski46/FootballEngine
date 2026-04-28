@@ -78,3 +78,28 @@ module ActionMath =
         let scaled = sigmoid (config.CurveSteepness * (rawValue - config.CurveInflection))
         clampFloat 0.01 1.0 scaled
 
+    /// Softmax sampling with temperature for stochastic action selection.
+    /// temperature -> 0: deterministic argmax
+    /// temperature -> inf: uniform random
+    /// Recommended: 0.10 - 0.25 for natural decision variability
+    let softmaxSample (temperature: float) (items: (float * 'a) list) : 'a option =
+        if items.IsEmpty then
+            None
+        elif items.Length = 1 then
+            Some (snd items.Head)
+        else
+            let maxScore = items |> List.maxBy fst |> fst
+            let shifted =
+                items
+                |> List.map (fun (s, v) ->
+                    let expV = System.Math.Exp((s - maxScore) / temperature)
+                    expV, v)
+            let total = shifted |> List.sumBy fst
+            let roll = Stats.rollProbability () * total
+            let rec pick acc = function
+                | [] -> snd (List.last shifted)
+                | (w, v) :: rest ->
+                    let acc' = acc + w
+                    if roll <= acc' then v else pick acc' rest
+            Some (pick 0.0 shifted)
+

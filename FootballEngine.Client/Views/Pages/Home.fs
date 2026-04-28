@@ -281,7 +281,8 @@ module Home =
             | Material.Icons.MaterialIconKind.Trophy
             | Material.Icons.MaterialIconKind.CheckCircleOutline -> Theme.Accent
             | Material.Icons.MaterialIconKind.ArrowUpBoldCircleOutline -> Theme.Success
-            | Material.Icons.MaterialIconKind.ArrowDownBoldCircleOutline -> Theme.Danger
+            | Material.Icons.MaterialIconKind.ArrowDownBoldCircleOutline
+            | Material.Icons.MaterialIconKind.AlertCircleOutline -> Theme.Danger
             | Material.Icons.MaterialIconKind.FlagCheckered -> Theme.Warning
             | _ -> Theme.TextMuted
 

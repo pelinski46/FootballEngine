@@ -72,7 +72,7 @@ module SeasonGen =
         let allCountryData =
             state.Countries
             |> Map.toList
-            |> List.map (fun (code, _) -> DataRegistry.findCountry code)
+            |> List.map snd
 
         let regenerated =
             comps

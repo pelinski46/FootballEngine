@@ -2,6 +2,16 @@ namespace FootballEngine.Domain
 
 open System
 
+type ClubSide =
+    | HomeClub
+    | AwayClub
+
+module ClubSide =
+    let flip =
+        function
+        | HomeClub -> AwayClub
+        | AwayClub -> HomeClub
+
 type MatchPhase =
     | BuildUp
     | Midfield
@@ -21,6 +31,7 @@ type MatchEventType =
     | FreeKick of isScored: bool
     | Corner
     | PassCompleted of fromPlayer: PlayerId * toPlayer: PlayerId
+    | PassLaunched of fromPlayer: PlayerId * toPlayer: PlayerId
     | PassIncomplete of fromPlayer: PlayerId
     | PassDeflected of fromPlayer: PlayerId * deflectedById: PlayerId
     | PassIntercepted of fromPlayer: PlayerId * interceptorId: PlayerId
@@ -31,20 +42,59 @@ type MatchEventType =
     | TackleSuccess
     | TackleFail
     | CrossAttempt of isSuccessful: bool
+    | CrossLaunched of fromPlayer: PlayerId * toPlayer: PlayerId
     | LongBall of isSuccessful: bool
     | ShotBlocked
+    | ShotLaunched
     | ShotOnTarget
     | ShotOffTarget
     | Save
+    | SaveCaught of shooterId: PlayerId * gkId: PlayerId
+    | SaveParried of shooterId: PlayerId * gkId: PlayerId
+    | GKPunch of gkId: PlayerId
+    | GKDistribution of gkId: PlayerId * targetId: PlayerId
+    | IndirectFreeKickAwarded of team: ClubSide
     | FoulCommitted
     | KickOff
 
+
+type PitchPos = {
+    X: float
+    Y: float
+}
+
+type EventSecondary =
+    | Deflected
+    | Rebound
+    | BlockedByWall
+    | DeflectedOffPost
+    | KeeperParried
+
+type EventContext = {
+    Position: PitchPos option
+    Quality: float option
+    ExpectedGoal: float option
+    AssistId: PlayerId option
+    SecondaryResult: EventSecondary option
+}
+
+module EventContext =
+    let empty = {
+        Position = None
+        Quality = None
+        ExpectedGoal = None
+        AssistId = None
+        SecondaryResult = None
+    }
+
+    let at x y = { empty with Position = Some { X = x; Y = y } }
 
 type MatchEvent =
     { SubTick: int
       PlayerId: PlayerId
       ClubId: ClubId
-      Type: MatchEventType }
+      Type: MatchEventType
+      Context: EventContext }
 
 type MatchFixture =
     { Id: MatchId
@@ -58,10 +108,6 @@ type MatchFixture =
       AwayScore: int option
       Events: MatchEvent list }
 
-type ClubSide =
-    | HomeClub
-    | AwayClub
-
 type AttackDir =
     | LeftToRight
     | RightToLeft
@@ -72,11 +118,45 @@ type PitchZone =
     | MidfieldZone
     | DefensiveZone
 
-module ClubSide =
-    let flip =
-        function
-        | HomeClub -> AwayClub
-        | AwayClub -> HomeClub
+type FoulSeverity =
+    | Trivial
+    | TacticalFoul
+    | ProfessionalFoul
+    | DOGSO
+    | SeriousFoulPlay
+    | ViolentConduct
+
+type PassType =
+    | GroundPass
+    | LoftedPass
+    | ThroughBall
+    | Chip
+    | DrivenPass
+    | CutBack
+    | LayOff
+    | OneTwo
+
+type ShotType =
+    | DrivenShot
+    | PlacedShot
+    | ChipShot
+    | Volley
+    | HalfVolley
+    | Header
+    | FirstTimeShot
+    | Curler
+
+type TackleType =
+    | StandingTackle
+    | SlideTackle
+    | Block
+    | Jockey
+
+type DribbleType =
+    | SpeedDribble
+    | SkillDribble
+    | ShieldDribble
+    | KnockAndRun
 
 
 

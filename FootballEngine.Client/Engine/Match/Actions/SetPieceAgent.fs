@@ -13,9 +13,9 @@ module SetPieceAgent =
         | SetPieceTick(kind, clubSide) ->
             let result =
                 match kind with
-                | SetPieceKind.FreeKick -> SetPlayAction.resolveFreeKick tick.SubTick ctx state
-                | SetPieceKind.Corner -> SetPlayAction.resolveCorner tick.SubTick ctx state
-                | SetPieceKind.ThrowIn -> SetPlayAction.resolveThrowIn tick.SubTick ctx state clubSide
+                | SetPieceKind.FreeKick -> SetPlayAction.resolveFreeKick tick.SubTick ctx state clock
+                | SetPieceKind.Corner -> SetPlayAction.resolveCorner tick.SubTick ctx state clock
+                | SetPieceKind.ThrowIn -> SetPlayAction.resolveThrowIn tick.SubTick ctx state clubSide clock
                 | SetPieceKind.GoalKick ->
                     let isHome = clubSide = HomeClub
                     let kickingClub = if isHome then HomeClub else AwayClub
@@ -48,13 +48,35 @@ module SetPieceAgent =
                             | ValueSome tmIdx -> float frame.PosX[tmIdx] * 1.0<meter>, float frame.PosY[tmIdx] * 1.0<meter>
                             | ValueNone -> (if isHome then ctx.Config.SetPiece.GoalKickFallbackDistHome else ctx.Config.SetPiece.GoalKickFallbackDistAway), centerY
 
-                        state.Ball <- { state.Ball with LastTouchBy = Some gk.Id; Possession = InFlight(kickingClub, gk.Id) }
-
                         let dx = targetX - gkXf
                         let dy = targetY - gkYf
                         let dist = sqrt (dx * dx + dy * dy)
                         let speed = pc.Speed
-                        if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
+
+                        let vx = if dist > 0.1<meter> then dx / dist * speed else 0.0<meter/second>
+                        let vy = if dist > 0.1<meter> then dy / dist * speed else 0.0<meter/second>
+
+                        let flightTime = if speed > 0.0<meter/second> then dist / speed else 0.5<second>
+                        let arrivalSubTick = tick.SubTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
+
+                        let trajectory = {
+                            OriginX = gkXf
+                            OriginY = gkYf
+                            TargetX = targetX
+                            TargetY = targetY
+                            LaunchSubTick = tick.SubTick
+                            EstimatedArrivalSubTick = arrivalSubTick
+                            KickerId = gk.Id
+                            PeakHeight = 0.0<meter>
+                            ActionKind = BallActionKind.Pass(gk.Id, gk.Id, 0.5)
+                        }
+
+                        state.Ball <-
+                            { state.Ball with
+                                LastTouchBy = Some gk.Id
+                                Possession = InFlight
+                                Position = { state.Ball.Position with Vx = vx; Vy = vy; Vz = 0.0<meter/second> }
+                                Trajectory = Some trajectory }
 
                         ActionResult.ofEvents [ createEvent tick.SubTick gk.Id kickingClubId MatchEventType.GoalKick ]
 
@@ -132,6 +154,6 @@ module SetPieceAgent =
                 let speed = pc.Speed
                 if dist > 0.1<meter> then withBallVelocity (dx / dist * speed) (dy / dist * speed) 0.0<meter/second> state
 
-                { NextTick = None; Events = [ { SubTick = tick.SubTick; PlayerId = kicker.Id; ClubId = kickingClubId; Type = MatchEventType.KickOff } ]; Transition = Some LivePlay }
+                { NextTick = None; Events = [ { SubTick = tick.SubTick; PlayerId = kicker.Id; ClubId = kickingClubId; Type = MatchEventType.KickOff; Context = EventContext.empty } ]; Transition = Some LivePlay }
 
         | _ -> { NextTick = None; Events = []; Transition = None }

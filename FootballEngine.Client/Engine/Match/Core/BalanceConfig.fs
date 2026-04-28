@@ -110,6 +110,7 @@ type ShotConfig =
         GkReflexesStatMult: float
         GkOneOnOneStatMult: float
         SaveDenominatorOffset: float
+        ShotWideMargin: float<meter>
     }
 
 type PassConfig =
@@ -166,7 +167,8 @@ type PassConfig =
       LongBallPressureContrib: float
       ForwardDepthThreshold: float
       ForwardCreativityThreshold: float
-      LongBallScrambleJitterMult: float }
+      LongBallScrambleJitterMult: float
+      PassLeadFactor: float }
 
 type CrossConfig =
     { BaseMean: float
@@ -179,6 +181,9 @@ type CrossConfig =
       HeaderAccuracySkillMult: float
       GkSaveBase: float
       GkReflexesMult: float
+      GkAerialReachMult: float
+      GkJumpMult: float
+      ClaimCrossProbability: float
       FailMomentum: float
       Speed: float<meter / second>
       Vz: float<meter / second>
@@ -316,6 +321,27 @@ type PhysicsConfig =
       ChaserProximity: float<meter>
       AirborneThreshold: float<meter> }
 
+type GKConfig =
+    { CatchHandlingMult: float
+      DiveReach: float<meter>
+      ParrySpeed: float<meter/second>
+      ParryDeflectionAngle: float
+      AerialReachMult: float
+      JumpReachMult: float
+      PunchProbability: float
+      ClaimCrossProbability: float
+      CollectionRadius: float<meter>
+      CollectionPriority: float
+      ThrowSpeed: float<meter/second>
+      RollSpeed: float<meter/second>
+      GoalKickSpeed: float<meter/second>
+      PuntSpeed: float<meter/second>
+      DistributionAccuracyMult: float
+      DistributionDecisionNoise: float
+      HoldTimeSubTicks: int
+      MaxHoldSubTicks: int
+      BackPassHandlingPenalty: float }
+
 type TimingConfig =
     { DuelChainDelay: TickDelay
       DuelNextDelay: TickDelay
@@ -395,7 +421,8 @@ type DecisionConfig =
       LongBallAttackPhaseBonus: float
       LongBallDirectnessBonus: float
       CreativityWeight: float
-      DirectnessWeight: float }
+      DirectnessWeight: float
+      DecisionTemperature: float }
 
 type PerceptionConfig =
     { VisionRadiusBase: float<meter>
@@ -419,6 +446,7 @@ type BalanceConfig =
       Dribble: DribbleConfig
       Tackle: TackleConfig
       SetPiece: SetPieceConfig
+      GK: GKConfig
       HomeAdvantage: HomeAdvantageConfig
       Physics: PhysicsConfig
       Timing: TimingConfig
@@ -486,7 +514,8 @@ module BalanceConfig =
               JitterStdDev = 2.0
               GkReflexesStatMult = 3.5
               GkOneOnOneStatMult = 5.0
-              SaveDenominatorOffset = 3.0 }
+              SaveDenominatorOffset = 3.0
+              ShotWideMargin = 3.0<meter> }
           Pass =
             { BaseMean = 0.65
               DistancePenaltyPerMeter = 0.012
@@ -541,7 +570,8 @@ module BalanceConfig =
               LongBallPressureContrib = 0.3
               ForwardDepthThreshold = 0.5
               ForwardCreativityThreshold = 0.4
-              LongBallScrambleJitterMult = 2.0 }
+              LongBallScrambleJitterMult = 2.0
+              PassLeadFactor = 0.30 }
           Cross =
             { BaseMean = 0.50
               CrossingWeight = 0.25
@@ -552,7 +582,10 @@ module BalanceConfig =
               HeaderAccuracyBase = 0.25
               HeaderAccuracySkillMult = 0.03
               GkSaveBase = 0.25
-              GkReflexesMult = 0.03
+              GkReflexesMult = 0.30
+              GkAerialReachMult = 1.2
+              GkJumpMult = 0.8
+              ClaimCrossProbability = 0.25
               FailMomentum = 0.30
               Speed = PhysicsContract.CrossSpeed
               Vz = PhysicsContract.CrossVz
@@ -633,6 +666,26 @@ module BalanceConfig =
               KickOffPartnerOffsetY = 2.0<meter>
               FoulBaseRate = 0.35
               CornerOnFailedCross = 0.85 }
+          GK =
+            { CatchHandlingMult = 1.5
+              DiveReach = 2.5<meter>
+              ParrySpeed = 8.0<meter/second>
+              ParryDeflectionAngle = 0.4
+              AerialReachMult = 1.2
+              JumpReachMult = 0.8
+              PunchProbability = 0.35
+              ClaimCrossProbability = 0.25
+              CollectionRadius = 3.0<meter>
+              CollectionPriority = 2.0
+              ThrowSpeed = 12.0<meter/second>
+              RollSpeed = 8.0<meter/second>
+              GoalKickSpeed = 30.0<meter/second>
+              PuntSpeed = 25.0<meter/second>
+              DistributionAccuracyMult = 1.0
+              DistributionDecisionNoise = 0.08
+              HoldTimeSubTicks = 20
+              MaxHoldSubTicks = 240
+              BackPassHandlingPenalty = 0.15 }
           HomeAdvantage =
             { Strength = 1.0
               DuelAttackBonus = 4.0
@@ -755,7 +808,8 @@ module BalanceConfig =
               LongBallAttackPhaseBonus = 0.05
               LongBallDirectnessBonus = 0.20
               CreativityWeight = 0.10
-              DirectnessWeight = 0.06 }
+              DirectnessWeight = 0.06
+              DecisionTemperature = 0.15 }
           Perception =
             { VisionRadiusBase = 20.0<meter>
               VisionRadiusMax = 45.0<meter>

@@ -635,16 +635,13 @@ module ModEditor =
                                                         TextBox.margin (0.0, 0.0, 8.0, 0.0)
                                                         TextBox.onTextChanged (fun t ->
                                                             updateCup i (fun c -> { c with Name = t })) ]
-                                                  ComboBox.create
+                                                  TextBox.create
                                                       [ Grid.column 1
-                                                        ComboBox.dataItems [ "Knockout"; "GroupsKnockout" ]
-                                                        ComboBox.selectedItem cup.Format
-                                                        ComboBox.margin (0.0, 0.0, 8.0, 0.0)
-                                                        ComboBox.onSelectedItemChanged (fun obj ->
-                                                            match obj with
-                                                            | :? string as s ->
-                                                                updateCup i (fun c -> { c with Format = s })
-                                                            | _ -> ()) ]
+                                                        TextBox.text cup.Format
+                                                        TextBox.margin (0.0, 0.0, 8.0, 0.0)
+                                                        TextBox.watermark "e.g. SK:SingleLeg:NoExtraTime"
+                                                        TextBox.onTextChanged (fun t ->
+                                                            updateCup i (fun c -> { c with Format = t })) ]
                                                   Border.create
                                                       [ Grid.column 2
                                                         Border.child (
@@ -664,7 +661,7 @@ module ModEditor =
                                               AddCup(
                                                   country.Country.Code,
                                                   { Name = "New Cup"
-                                                    Format = "Knockout" }
+                                                    Format = "SK:SingleLeg:NoExtraTime" }
                                               )
                                           )
                                       ))
@@ -932,7 +929,7 @@ module ModEditor =
                                               AddInternationalComp
                                                   { Name = "New Competition"
                                                     Confederation = Some "UEFA"
-                                                    Format = "GroupsKnockout"
+                                                    Format = "G32:SK:SingleLeg:NoExtraTime"
                                                     Qualification = [] }
                                           )
                                       ))
@@ -1021,11 +1018,55 @@ module ModEditor =
     let view (state: State) dispatch =
         let modState = state.ModEditor
 
-        // Computed outside ScrollViewer property list to avoid inline pattern match.
         let contentPadding =
             match modState.ActiveTab with
             | Countries -> Thickness 0.0
             | _ -> Thickness 24.0
+
+        let buildErrorBanner () =
+            let errorItems =
+                state.ModLoadErrors
+                |> List.take (min 5 state.ModLoadErrors.Length)
+                |> List.map (fun err ->
+                    TextBlock.create
+                        [ TextBlock.text $"- {err}"
+                          TextBlock.fontSize 12.0
+                          TextBlock.foreground Theme.TextSub ]
+                    :> IView)
+                |> List.append [ UI.ghostButton "Reload Mods" (Some IconName.refresh) (fun _ -> dispatch ReloadMods) ]
+
+            Border.create
+                [ Border.background (Theme.Warning + "22")
+                  Border.borderBrush Theme.Warning
+                  Border.borderThickness 1.0
+                  Border.padding 12.0
+                  Border.cornerRadius 6.0
+                  Border.margin (0.0, 0.0, 0.0, 12.0)
+                  Border.child (
+                      StackPanel.create
+                          [ StackPanel.spacing 8.0
+                            StackPanel.children
+                                [ TextBlock.create
+                                      [ TextBlock.text $"{state.ModLoadErrors.Length} mod load warning(s)"
+                                        TextBlock.fontWeight FontWeight.SemiBold
+                                        TextBlock.foreground Theme.Warning ]
+                                  StackPanel.create [ StackPanel.spacing 4.0; StackPanel.children errorItems ] ] ]
+                  ) ]
+
+        let contentView: IView =
+            match modState.ActiveTab with
+            | Overview -> overviewTab modState dispatch :> IView
+            | Countries -> countriesTab modState dispatch :> IView
+            | Validation -> validationTab modState dispatch :> IView
+            | Export -> exportTab modState dispatch :> IView
+            | International -> internationalTab modState dispatch :> IView
+            | GlobalNames -> globalNamesTab modState dispatch
+
+        let scrollContent =
+            if state.ModLoadErrors.IsEmpty then
+                contentView
+            else
+                StackPanel.create [ StackPanel.children [ buildErrorBanner (); contentView ] ]
 
         DockPanel.create
             [ DockPanel.children
@@ -1068,14 +1109,4 @@ module ModEditor =
                           ) ]
 
                     // ── Content area ──
-                    ScrollViewer.create
-                        [ ScrollViewer.padding contentPadding
-                          ScrollViewer.content (
-                              match modState.ActiveTab with
-                              | Overview -> overviewTab modState dispatch :> IView
-                              | Countries -> countriesTab modState dispatch :> IView
-                              | Validation -> validationTab modState dispatch :> IView
-                              | Export -> exportTab modState dispatch :> IView
-                              | International -> internationalTab modState dispatch :> IView
-                              | GlobalNames -> globalNamesTab modState dispatch
-                          ) ] ] ]
+                    ScrollViewer.create [ ScrollViewer.padding contentPadding; ScrollViewer.content scrollContent ] ] ]

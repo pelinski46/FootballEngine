@@ -60,7 +60,35 @@ module DuelAction =
                         Possession = Contest(actx.Def.ClubSide) }
 
                 adjustMomentum actx.Att.AttackDir (-ctx.Config.Tackle.FoulMomentum) state
-                let cardActions = RefereeAgent.decideCard defP ctx state
+
+                let reckless = bernoulli (aggressionNorm * 0.3)
+                let excessiveForce = bernoulli (aggressionNorm * 0.15)
+                let foulCtx =
+                    FoulAnalysis.assess bX bY actx.Att.AttackDir actx.Att.ClubSide
+                        defP.Mental.Aggression reckless excessiveForce
+                        attFrame attRoster defFrame defRoster
+                let severity = FoulAnalysis.classifySeverity foulCtx
+
+                let yellows =
+                    SimStateOps.getYellows state actx.Def.ClubSide
+                    |> Map.tryFind defP.Id
+                    |> Option.defaultValue 0
+                let cardActions =
+                    match FoulAnalysis.decideCard severity yellows with
+                    | Some FoulAnalysis.CardDecision.Yellow ->
+                        let side = actx.Def.ClubSide
+                        let clubId = if side = HomeClub then ctx.Home.Id else ctx.Away.Id
+                        RefereeApplicator.apply subTick (IssueYellow(defP, clubId)) ctx state
+                            |> ignore
+                        []
+                    | Some FoulAnalysis.CardDecision.Red ->
+                        let side = actx.Def.ClubSide
+                        let clubId = if side = HomeClub then ctx.Home.Id else ctx.Away.Id
+                        RefereeApplicator.apply subTick (IssueRed(defP, clubId)) ctx state
+                            |> ignore
+                        []
+                    | None -> []
+
                 [ createEvent subTick defP.Id defClubId FoulCommitted ], cardActions
             else
                 let diff = float attScore - float defScore
@@ -213,7 +241,34 @@ module DuelAction =
                             Possession = SetPiece(actx.Att.ClubSide, SetPieceKind.FreeKick) }
 
                     adjustMomentum actx.Att.AttackDir (-tCfg.FoulMomentum) state
-                    let cardActions = RefereeAgent.decideCard defender ctx state
+
+                    let reckless = bernoulli (aggressionNorm * 0.3)
+                    let excessiveForce = bernoulli (aggressionNorm * 0.15)
+                    let ballPos = state.Ball.Position
+                    let foulCtx =
+                        FoulAnalysis.assess ballPos.X ballPos.Y actx.Att.AttackDir actx.Att.ClubSide
+                            defender.Mental.Aggression reckless excessiveForce
+                            attFrame attRoster defFrame defRoster
+                    let severity = FoulAnalysis.classifySeverity foulCtx
+
+                    let yellows =
+                        SimStateOps.getYellows state actx.Def.ClubSide
+                        |> Map.tryFind defender.Id
+                        |> Option.defaultValue 0
+                    let cardActions =
+                        match FoulAnalysis.decideCard severity yellows with
+                        | Some FoulAnalysis.CardDecision.Yellow ->
+                            let clubId = actx.Def.ClubId
+                            RefereeApplicator.apply subTick (IssueYellow(defender, clubId)) ctx state
+                                |> ignore
+                            []
+                        | Some FoulAnalysis.CardDecision.Red ->
+                            let clubId = actx.Def.ClubId
+                            RefereeApplicator.apply subTick (IssueRed(defender, clubId)) ctx state
+                                |> ignore
+                            []
+                        | None -> []
+
                     [ createEvent subTick defender.Id defClubId FoulCommitted ], cardActions
                 else
                     adjustMomentum actx.Att.AttackDir tCfg.SuccessMomentum state

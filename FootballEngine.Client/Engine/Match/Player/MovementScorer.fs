@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open SimStateOps
 
 [<Struct>]
 type MovementScores =
@@ -106,10 +107,19 @@ module MovementScorer =
         else
             let dist = ctx.MyPos.DistTo2D ctx.BallState.Position
 
-            if dist > 35.0<meter> then
+            if dist > 45.0<meter> then
                 0.0
             else
-                let baseScore = 1.5 - (float dist / 35.0)
+                let zoneScore =
+                    if dist < 12.0<meter> then
+                        1.5 - float dist / 12.0
+                    elif dist < 25.0<meter> then
+                        1.2 - (float dist - 12.0) / 13.0
+                    elif dist < 45.0<meter> then
+                        0.6 - (float dist - 25.0) / 20.0
+                    else
+                        0.0
+
                 let pressFactor = ctx.Tactics.PressingIntensity * 0.5 + ctx.Profile.PressingIntensity * 0.5
                 let pressWeight = 0.4 + pressFactor * 0.6
                 let workRate = normStat ctx.Me.Mental.WorkRate
@@ -124,25 +134,58 @@ module MovementScorer =
                     | _ -> 0.0
 
                 let staminaPenalty = float (100 - ctx.MyCondition) / 100.0 * 0.2
-                (baseScore * pressWeight * workRate + positionMod - staminaPenalty) |> max 0.0
+
+                let transitionBonus =
+                    if ctx.CurrentSubTick < ctx.TransitionPressExpiry then 1.5 else 1.0
+
+                let shapeDist =
+                    if ctx.MeIdx < ctx.TeamIntent.SupportPositions.Length then
+                        let sp = ctx.TeamIntent.SupportPositions[ctx.MeIdx]
+                        if sp.X <> 0.0<meter> || sp.Y <> 0.0<meter> then
+                            ctx.MyPos.DistTo2D sp
+                        else
+                            0.0<meter>
+                    else
+                        0.0<meter>
+
+                let positionalPenalty =
+                    if shapeDist > 15.0<meter> then
+                        1.0 - (float shapeDist - 15.0) / 30.0
+                    else
+                        1.0
+
+                (zoneScore * pressWeight * workRate * transitionBonus * positionalPenalty + positionMod - staminaPenalty) |> max 0.0
 
     let coverSpaceScore (ctx: AgentContext) =
         let zonalFactor = (1.0 - ctx.Tactics.DefensiveShape) * 0.3
 
-        if ctx.TeamHasBall then
-            match ctx.Me.Position with
-            | DC
-            | DM -> (0.15 * normStat ctx.Me.Mental.Positioning + zonalFactor)
-            | _ -> 0.05
-        else
-            match ctx.Me.Position with
-            | DC
-            | DM -> (0.35 * normStat ctx.Me.Mental.Positioning + zonalFactor)
-            | DL
-            | DR
-            | WBL
-            | WBR -> (0.2 * normStat ctx.Me.Mental.Positioning + zonalFactor)
-            | _ -> 0.1 + zonalFactor
+        let baseScore =
+            if ctx.TeamHasBall then
+                match ctx.Me.Position with
+                | DC
+                | DM -> (0.15 * normStat ctx.Me.Mental.Positioning + zonalFactor)
+                | _ -> 0.05
+            else
+                match ctx.Me.Position with
+                | DC
+                | DM -> (0.35 * normStat ctx.Me.Mental.Positioning + zonalFactor)
+                | DL
+                | DR
+                | WBL
+                | WBR -> (0.2 * normStat ctx.Me.Mental.Positioning + zonalFactor)
+                | _ -> 0.1 + zonalFactor
+
+        let influenceBonus =
+            let cell = InfluenceTypes.posToCell ctx.Team.OwnFrame.PosX[ctx.MeIdx] ctx.Team.OwnFrame.PosY[ctx.MeIdx]
+            let contested = ctx.Influence.ContestedGrid[cell]
+            let gapRead = normStat ctx.Me.Mental.Positioning
+            if contested < 0.0f then
+                let deficit = min 1.0f (-contested)
+                float deficit * 0.15 * gapRead
+            else
+                0.0
+
+        baseScore + influenceBonus
 
     let supportAttackScore (ctx: AgentContext) =
         if not ctx.TeamHasBall then
@@ -181,7 +224,22 @@ module MovementScorer =
                 | DM -> 0.1
                 | GK -> 0.0
 
-            (baseScore + offTheBall * 0.4 + depthBonus + positionBonus + widthBonus + buildUpSideBonus)
+            let spaceBonus =
+                let mutable bestScore = 0.0
+                for cell = 0 to InfluenceTypes.GridSize - 1 do
+                    let s = InfluenceTypes.scoreCellRaw
+                                cell ctx.Influence
+                                (float32 ctx.MyPos.X) (float32 ctx.MyPos.Y)
+                                ctx.Team.AttackDir
+                    if s > bestScore then bestScore <- s
+                if bestScore > 0.4 then
+                    let positioning = normStat ctx.Me.Mental.Positioning
+                    let qualityFactor = min 1.0 ((bestScore - 0.4) / 0.6)
+                    qualityFactor * 0.20 * positioning
+                else
+                    0.0
+
+            (baseScore + offTheBall * 0.4 + depthBonus + positionBonus + widthBonus + buildUpSideBonus + spaceBonus)
             * normCond ctx.MyCondition
 
     let recoverBallScore (ctx: AgentContext) =
@@ -208,7 +266,23 @@ module MovementScorer =
                         | ST -> 0.15
                         | _ -> 0.0
 
-                    baseScore + positionMod
+                    let shapeDist =
+                        if ctx.MeIdx < ctx.TeamIntent.SupportPositions.Length then
+                            let sp = ctx.TeamIntent.SupportPositions[ctx.MeIdx]
+                            if sp.X <> 0.0<meter> || sp.Y <> 0.0<meter> then
+                                ctx.MyPos.DistTo2D sp
+                            else
+                                0.0<meter>
+                        else
+                            0.0<meter>
+
+                    let positionalPenalty =
+                        if shapeDist > 12.0<meter> then
+                            1.0 - (float shapeDist - 12.0) / 25.0
+                        else
+                            1.0
+
+                    (baseScore + positionMod) * positionalPenalty
             | Owned(oppositeSide, _) ->
                 if oppositeSide = ctx.Team.ClubSide then
                     0.0
@@ -304,8 +378,20 @@ module MovementScorer =
         | RecoverBall _ -> scores.RecoverBall
         | ExecuteRun _ -> scores.SupportAttack * 0.8
 
-    let pickIntent (currentSubTick: int) (scores: MovementScores) (ctx: AgentContext) : MovementIntent =
-        let ti = ctx.TeamIntent
+    let private isInPenaltyArea (x: float<meter>) (y: float<meter>) (dir: AttackDir) : bool =
+        let penX = PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
+        match dir with
+        | LeftToRight -> x > penX
+        | RightToLeft -> x < PhysicsContract.PenaltyAreaDepth
+
+    let private pickIntentNormal (currentSubTick: int) (scores: MovementScores) (ctx: AgentContext) (ti: TeamIntent) : MovementIntent =
+
+        let shapeTarget =
+            if ctx.MeIdx < ti.SupportPositions.Length then
+                let sp = ti.SupportPositions[ctx.MeIdx]
+                if sp.X <> 0.0<meter> || sp.Y <> 0.0<meter> then sp else ctx.MyPos
+            else
+                ctx.MyPos
 
         let supportTarget =
             if ctx.MeIdx < ti.SupportPositions.Length then
@@ -359,14 +445,14 @@ module MovementScorer =
 
                 let oppPlayerId = ctx.Team.OppRoster.Players[oppIdx].Id
                 MarkMan(oppPlayerId, oppPos)
-            | ValueNone -> MaintainShape ctx.MyPos
+            | ValueNone -> MaintainShape shapeTarget
 
         let mutable bestScore = -1.0
-        let mutable bestIntent = MaintainShape ctx.MyPos
+        let mutable bestIntent = MaintainShape shapeTarget
 
         if scores.MaintainShape > 0.05 && scores.MaintainShape > bestScore then
             bestScore <- scores.MaintainShape
-            bestIntent <- MaintainShape ctx.MyPos
+            bestIntent <- MaintainShape shapeTarget
 
         if scores.MarkMan > 0.05 && scores.MarkMan > bestScore then
             bestScore <- scores.MarkMan
@@ -378,7 +464,7 @@ module MovementScorer =
 
         if scores.CoverSpace > 0.05 && scores.CoverSpace > bestScore then
             bestScore <- scores.CoverSpace
-            bestIntent <- CoverSpace ctx.MyPos
+            bestIntent <- CoverSpace shapeTarget
 
         if scores.SupportAttack > 0.05 && scores.SupportAttack > bestScore then
             bestScore <- scores.SupportAttack
@@ -447,10 +533,14 @@ module MovementScorer =
             if not ctx.TeamHasBall then
                 let distToBall = ctx.MyPos.DistTo2D ctx.BallState.Position
 
-                if distToBall < 35.0<meter> then
-                    bestIntent <- RecoverBall ctx.BallState.Position
+                if distToBall < 12.0<meter> then
+                    bestIntent <- PressBall ctx.BallState.Position
+                elif distToBall < 25.0<meter> then
+                    bestIntent <- CoverSpace shapeTarget
+                elif distToBall < 45.0<meter> then
+                    bestIntent <- MaintainShape shapeTarget
                 else
-                    bestIntent <- SupportAttack supportTarget
+                    bestIntent <- MaintainShape shapeTarget
             else
                 bestIntent <- SupportAttack supportTarget
 
@@ -464,3 +554,42 @@ module MovementScorer =
             | ValueSome prev ->
                 let prevScore = scoreForIntent scores prev
                 if bestScore > prevScore + 0.12 then bestIntent else prev
+
+    let pickIntent (currentSubTick: int) (scores: MovementScores) (ctx: AgentContext) : MovementIntent =
+        let ti = ctx.TeamIntent
+
+        match ctx.BallState.Possession with
+        | Possession.InFlight ->
+            match ctx.BallState.Trajectory with
+            | Some traj ->
+                let landingPos = { X = traj.TargetX; Y = traj.TargetY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                match traj.ActionKind with
+                | BallActionKind.Pass(_, targetId, _) | BallActionKind.LongBall(_, targetId, _) ->
+                    if ctx.Me.Id = targetId then
+                        SupportAttack landingPos
+                    elif ctx.Me.Position = GK && isInPenaltyArea landingPos.X landingPos.Y ctx.Team.AttackDir then
+                        MaintainShape ctx.MyPos
+                    else
+                        let midX = (ctx.MyPos.X + landingPos.X) / 2.0
+                        let midY = (ctx.MyPos.Y + landingPos.Y) / 2.0
+                        RecoverBall { X = midX; Y = midY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                | BallActionKind.Cross(_, targetId, _) ->
+                    if ctx.Me.Id = targetId then
+                        SupportAttack landingPos
+                    elif ctx.Me.Position = GK then
+                        MaintainShape ctx.MyPos
+                    else
+                        RecoverBall landingPos
+                | BallActionKind.Shot _ ->
+                    if ctx.Me.Position = GK then
+                        MaintainShape ctx.MyPos
+                    else
+                        let midX = (ctx.MyPos.X + landingPos.X) / 2.0
+                        let midY = (ctx.MyPos.Y + landingPos.Y) / 2.0
+                        RecoverBall { X = midX; Y = midY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                | BallActionKind.Clearance _ | BallActionKind.Deflection _ | BallActionKind.FreeBall ->
+                    RecoverBall landingPos
+            | None ->
+                pickIntentNormal currentSubTick scores ctx ti
+        | _ ->
+            pickIntentNormal currentSubTick scores ctx ti

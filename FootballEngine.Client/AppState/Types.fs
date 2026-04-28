@@ -130,7 +130,8 @@ module AppTypes =
           Inbox: InboxState
           PrevUserClubSkills: Map<PlayerId, int> option
           PrevUserClubStatus: Map<PlayerId, PlayerStatus> option
-          WorldClock: WorldClock }
+          WorldClock: WorldClock
+          ModLoadErrors: string list }
 
     let initSetupState =
         { Step = MainMenu

@@ -82,7 +82,7 @@ module TeamIntentModule =
         let teamHasBall =
             match ballPossession with
             | Owned(side, _) -> side = team.ClubSide
-            | InFlight(side, _) -> side = team.ClubSide
+            | InFlight -> false
             | SetPiece(side, _) -> side = team.ClubSide
             | Contest(side) -> side = team.ClubSide
             | Transition(side) -> side = team.ClubSide
@@ -117,7 +117,7 @@ module TeamIntentModule =
         let ballCarrierId =
             match ballPossession with
             | Owned(_, pid) -> Some pid
-            | InFlight(_, pid) -> Some pid
+            | InFlight -> None
             | SetPiece(_, _) -> None
             | Contest _ -> None
             | Transition _ -> None
@@ -160,6 +160,7 @@ module TeamIntentModule =
         (ballPos: Spatial)
         (ballPossession: Possession)
         (emergent: EmergentState)
+        (influence: InfluenceTypes.InfluenceFrame)
         : PlayerId option * RunType option * Spatial option =
         let frame = team.OwnFrame
         let roster = team.OwnRoster
@@ -167,15 +168,27 @@ module TeamIntentModule =
         let ballCarrierId =
             match ballPossession with
             | Owned(_, pid) -> Some pid
-            | InFlight(_, pid) -> Some pid
+            | InFlight -> None
             | _ -> None
 
         let dir = team.AttackDir
         let forwardX = if dir = LeftToRight then 1.0 else -1.0
 
+        let mutable bestCellIdx = 0
+        let mutable bestCellScore = -1.0
+        for cell = 0 to InfluenceTypes.GridSize - 1 do
+            let s = InfluenceTypes.scoreCellRaw cell influence (float32 ballPos.X) (float32 ballPos.Y) dir
+            if s > bestCellScore then
+                bestCellScore <- s
+                bestCellIdx <- cell
+
+        let bestCellTarget =
+            let cx, cy = InfluenceTypes.cellToCenter bestCellIdx
+            defaultSpatial (PhysicsContract.clamp (float cx * 1.0<meter>) 2.0<meter> 98.0<meter>)
+                           (PhysicsContract.clamp (float cy * 1.0<meter>) 2.0<meter> 98.0<meter>)
+
         let mutable bestPlayerId: PlayerId option = None
         let mutable bestRunType: RunType option = None
-        let mutable bestTarget: Spatial option = None
         let mutable bestScore = -1.0
 
         for i = 0 to frame.SlotCount - 1 do
@@ -195,36 +208,25 @@ module TeamIntentModule =
                         bestScore <- score
                         bestPlayerId <- Some player.Id
 
-                        let runType, target =
+                        let runType =
                             match player.Position with
-                            | ST | AMC ->
-                                let tx = PhysicsContract.clamp (px + 12.0<meter> * forwardX) 2.0<meter> 98.0<meter>
-                                DeepRun, defaultSpatial tx py
-                            | AML | ML | WBL ->
-                                let ty = PhysicsContract.clamp (py - 8.0<meter>) 2.0<meter> 98.0<meter>
-                                DriftWide, defaultSpatial px ty
-                            | AMR | MR | WBR ->
-                                let ty = PhysicsContract.clamp (py + 8.0<meter>) 2.0<meter> 98.0<meter>
-                                DriftWide, defaultSpatial px ty
-                            | MC ->
-                                let tx = PhysicsContract.clamp (px + 8.0<meter> * forwardX) 2.0<meter> 98.0<meter>
-                                CheckToBall, defaultSpatial tx py
-                            | DL | DR ->
-                                let tx = PhysicsContract.clamp (px + 10.0<meter> * forwardX) 2.0<meter> 98.0<meter>
-                                OverlapRun, defaultSpatial tx py
-                            | _ ->
-                                let tx = PhysicsContract.clamp (px + 6.0<meter> * forwardX) 2.0<meter> 98.0<meter>
-                                DeepRun, defaultSpatial tx py
+                            | ST | AMC -> DeepRun
+                            | AML | ML | WBL -> DriftWide
+                            | AMR | MR | WBR -> DriftWide
+                            | MC -> CheckToBall
+                            | DL | DR -> OverlapRun
+                            | _ -> DeepRun
 
                         bestRunType <- Some runType
-                        bestTarget <- Some target
             | _ -> ()
 
-        bestPlayerId, bestRunType, bestTarget
+        bestPlayerId, bestRunType, Some bestCellTarget
 
     let private computeDefensiveShape
         (team: TeamPerspective)
         (cFrame: CognitiveFrame)
+        (currentSubTick: int)
+        (transitionExpiry: int)
         : DefensiveRole[] =
         let frame = team.OwnFrame
         let n = frame.SlotCount
@@ -253,9 +255,12 @@ module TeamIntentModule =
             if nearestIdx >= 0 then
                 assignments[nearestIdx] <- FirstDefender
 
+                let inTransition = currentSubTick < transitionExpiry
+                let maxCover = if inTransition then 2 else 3
+
                 let mutable coverCount = 0
                 for i = 0 to n - 1 do
-                    if i <> nearestIdx && coverCount < 2 then
+                    if i <> nearestIdx && coverCount < maxCover then
                         let occ = frame.Occupancy[i]
                         match occ with
                         | OccupancyKind.Active _ ->
@@ -286,8 +291,12 @@ module TeamIntentModule =
         let pressTrigger, pressZone = computePressTrigger team ballPos state.Ball.Possession emergent tactics
         let basePositions = SimStateOps.getBasePositions state clubSide
         let supportPositions = computeSupportPositions team ballPos state.Ball.Possession phase tactics desiredWidth basePositions
-        let runnerId, runType, runTarget = pickRunner team ballPos state.Ball.Possession emergent
-        let defAssignments = computeDefensiveShape team cFrame
+        let influence =
+            if clubSide = HomeClub then state.HomeInfluenceFrame
+            else state.AwayInfluenceFrame
+
+        let runnerId, runType, runTarget = pickRunner team ballPos state.Ball.Possession emergent influence
+        let defAssignments = computeDefensiveShape team cFrame state.SubTick (getTeam state clubSide).TransitionPressExpiry
 
         { BuildUpSide = buildUpSide
           PressTrigger = pressTrigger

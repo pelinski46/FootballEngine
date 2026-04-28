@@ -131,7 +131,6 @@ module MatchProjection =
         let attackingClubId =
             match snapshot.Possession with
             | Owned(club, _)
-            | InFlight(club, _)
             | SetPiece(club, _)
             | Contest club
             | Transition club ->
@@ -139,7 +138,7 @@ module MatchProjection =
                     Some ctx.Home.Id
                 else
                     Some ctx.Away.Id
-            | Loose -> None
+            | InFlight | Loose -> None
 
         { Players = Array.append homePlayers awayPlayers
           Ball = renderBall

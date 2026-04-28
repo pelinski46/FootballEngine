@@ -345,6 +345,8 @@ module ManagerAgent =
                     team.SubsUsed <- team.SubsUsed + 1
                     team.Sidelined <- Map.add playerOut.Id SidelinedBySub team.Sidelined
 
+                    state.StoppageTime.Add(subTick, StoppageReason.SubstitutionDelay) |> ignore
+
                     [ createEvent subTick playerOut.Id clubId SubstitutionOut
                       createEvent subTick incoming.Id clubId SubstitutionIn ]
                 | _ -> []

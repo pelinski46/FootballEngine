@@ -12,11 +12,12 @@ type ReactiveIntent =
 
 module ReactiveLayer =
 
-    let private reactiveRadius = 25.0<meter>
+    let private reactiveRadius = 45.0<meter>
     let private tackleRadius = 3.0<meter>
     let private pressRadius = 12.0<meter>
     let private coverRadius = 20.0<meter>
     let private laneCutRadiusSq = 9.0f
+    let private distantReactionThreshold = 0.55
 
     let evaluateReactiveIntent
         (meIdx: int)
@@ -37,6 +38,7 @@ module ReactiveLayer =
             let dist = sqrt (dx * dx + dy * dy) * 1.0<meter>
 
             if dist > reactiveRadius then NoReaction
+            elif dist > 25.0<meter> && aggression < distantReactionThreshold then NoReaction
             elif dist < tackleRadius then
                 TackleAttempt ballCarrierOppIdx
             elif dist < pressRadius then

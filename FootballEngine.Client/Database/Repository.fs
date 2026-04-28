@@ -225,7 +225,7 @@ module Db =
                     let countries =
                         countryEntities
                         |> Seq.map toCountryDomain
-                        |> Seq.map (fun c -> c.Code, c)
+                        |> Seq.map (fun cd -> cd.Country.Code, cd)
                         |> Map.ofSeq
 
                     let! inboxEntities =

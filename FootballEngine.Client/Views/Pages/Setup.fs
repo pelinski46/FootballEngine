@@ -124,24 +124,33 @@ module Setup =
                                               TextBlock.foreground Theme.TextMuted
                                               TextBlock.fontSize 13.0 ] ] ]
 
+                            let countryCount = Data.DataRegistry.allCountries () |> List.length
+                            printfn "[Setup] CountrySelection rendering: %d countries" countryCount
+
+                            let flagForCode (code: string) =
+                                match code with
+                                | "ARG" -> "🇦🇷" | "BRA" -> "🇧🇷" | "ENG" -> "🏴"
+                                | "ESP" -> "🇪🇸" | _ -> "🌍"
+
+                            let countryCards: IView list =
+                                Data.DataRegistry.allCountries ()
+                                |> List.sortBy _.Country.Name
+                                |> List.map (fun cd ->
+                                    let code = cd.Country.Code
+                                    let name = cd.Country.Name
+                                    let flag = flagForCode code
+                                    UI.countrySelectionCard
+                                        name
+                                        flag
+                                        (state.Setup.SelectedCountry = Some code)
+                                        (state.Setup.SecondaryCountries |> List.contains code)
+                                        (fun _ -> dispatch (SetupMsg(SelectPrimaryCountry code)))
+                                        (fun _ -> dispatch (SetupMsg(ToggleSecondaryCountry code)))
+                                    :> IView)
+
                             StackPanel.create
                                 [ StackPanel.spacing 8.0
-                                  StackPanel.children
-                                       [ let flagForCode (code: string) =
-                                             match code with
-                                             | "ARG" -> "🇦🇷" | "BRA" -> "🇧🇷" | "ENG" -> "🏴"
-                                             | "ESP" -> "🇪🇸" | _ -> "🌍"
-                                         for cd in Data.DataRegistry.allCountries |> List.sortBy _.Country.Name do
-                                             let code = cd.Country.Code
-                                             let name = cd.Country.Name
-                                             let flag = flagForCode code
-                                             UI.countrySelectionCard
-                                                 name
-                                                 flag
-                                                 (state.Setup.SelectedCountry = Some code)
-                                                 (state.Setup.SecondaryCountries |> List.contains code)
-                                                 (fun _ -> dispatch (SetupMsg(SelectPrimaryCountry code)))
-                                                 (fun _ -> dispatch (SetupMsg(ToggleSecondaryCountry code))) ] ]
+                                  StackPanel.children countryCards ]
 
                             navRow
                                 (Some MainMenu)

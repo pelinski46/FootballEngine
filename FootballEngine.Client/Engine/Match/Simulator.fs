@@ -51,29 +51,62 @@ module MatchSimulator =
         (takeSnapshot: SimState -> int -> unit)
         : SimState * MatchEvent list =
         let ft = fullTime clock
-        let timeline = Timeline(ft)
-        let schedule = PhaseSchedule.build clock ft
+        let ht = halfTime clock
+        let stoppageBuffer = clock.SubTicksPerSecond * 60 * 10
+        let maxTick = ft + stoppageBuffer
+        let timeline = Timeline(maxTick)
+        let schedule = PhaseSchedule.build clock maxTick
         let timelineBuffer = ResizeArray<TickKind * TickPriority * int64>(16)
 
         let mutable seqCounter = generateInitialTicks ctx clock timeline 0L
         let mutable playState = LivePlay
         let events = ResizeArray<MatchEvent>()
         let mutable pending = TickOrchestrator.empty
+        let mutable effectiveFullTime = ft
+        let mutable matchEnded = false
+        let varState = VARState()
+        let mutable momentum = DynamicMomentum.initial
+        let mutable advantageState = NoAdvantage
+
+        let addEvent (e: MatchEvent) =
+            events.Add e
+            state.MatchEvents.Add e
+
+            if state.MatchEvents.Count > 1024 then
+                state.MatchEvents.RemoveRange(0, 512)
 
         let scheduleNextTick (nt: PendingTick) =
             match TickOrchestrator.trySchedule nt.SubTick nt.Kind nt.Priority seqCounter pending with
-            | ValueSome (seq, newPending) ->
+            | ValueSome(seq, newPending) ->
                 timeline.Insert(nt.SubTick, nt.Kind, nt.Priority, seq)
                 seqCounter <- seq + 1L
                 pending <- newPending
             | ValueNone -> ()
 
-        for subTick = 0 to ft do
+        let mutable subTick = 0
+
+        while subTick <= effectiveFullTime && not matchEnded do
             state.SubTick <- subTick
 
-            let phases = schedule.Phases[subTick]
+            let phases =
+                if subTick < schedule.Phases.Length then
+                    schedule.Phases[subTick]
+                else
+                    { Physics = subTick % clock.PhysicsRate = 0
+                      Cognitive = subTick % clock.CognitiveRate = 0
+                      Steering = subTick % clock.SteeringRate = 0
+                      Referee = subTick % clock.PhysicsRate = 0
+                      Action = subTick % clock.ActionRate = 0
+                      SetPiece = false
+                      Adaptive = subTick % clock.AdaptiveRate = 0 }
 
             if phases.Cognitive then
+                // Compute influence frames once (needs both home and away frames)
+                let homeInfluence = InfluenceFrame.compute state.Home.Frame state.Away.Frame
+                let awayInfluence = InfluenceFrame.compute state.Away.Frame state.Home.Frame
+                state.HomeInfluenceFrame <- homeInfluence
+                state.AwayInfluenceFrame <- awayInfluence
+
                 for clubSide in bothSides do
                     let cFrame = CognitiveFrameModule.build ctx state clubSide
                     BatchDecision.processTeam subTick ctx state clock clubSide cFrame
@@ -91,10 +124,22 @@ module MatchSimulator =
                     let dtPlayer = SimulationClock.dtPlayer clock
 
                     MovementEngine.updateTeamSide
-                        subTick ctx state HomeClub dtPlayer clock.SteeringRate clock.CognitiveRate
+                        subTick
+                        ctx
+                        state
+                        HomeClub
+                        dtPlayer
+                        clock.SteeringRate
+                        clock.CognitiveRate
 
                     MovementEngine.updateTeamSide
-                        subTick ctx state AwayClub dtPlayer clock.SteeringRate clock.CognitiveRate
+                        subTick
+                        ctx
+                        state
+                        AwayClub
+                        dtPlayer
+                        clock.SteeringRate
+                        clock.CognitiveRate
 
                 match ballResult.NextTick with
                 | Some nt when nt.Kind <> PhysicsTick -> scheduleNextTick nt
@@ -104,7 +149,7 @@ module MatchSimulator =
                 | Some ts -> playState <- ts
                 | None -> ()
 
-                ballResult.Events |> List.iter events.Add
+                ballResult.Events |> List.iter addEvent
 
             if phases.Referee then
                 let tick =
@@ -125,7 +170,45 @@ module MatchSimulator =
 
                 refResult.Actions
                 |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
-                |> List.iter events.Add
+                |> List.iter addEvent
+
+                if not varState.IsChecking then
+                    match refResult.Actions with
+                    | ConfirmGoal(scoringClub, scorerId, isOwnGoal) :: _ ->
+                        match VARDetector.detectGoalCheck scoringClub scorerId isOwnGoal subTick with
+                        | Some incident ->
+                            state.StoppageTime.Add(subTick, StoppageReason.VARReviewDelay) |> ignore
+                            let duration = VARReview.reviewDuration subTick
+                            varState.AddReview(incident, subTick, duration)
+                        | None -> ()
+                    | _ -> ()
+
+            match advantageState with
+            | AdvantagePlaying(foulSubTick, fouledTeam, _) ->
+                if AdvantageEngine.shouldCallBack foulSubTick subTick state.Ball.Possession fouledTeam then
+                    state.Ball <-
+                        { state.Ball with
+                            Possession = Possession.SetPiece(fouledTeam, SetPieceKind.FreeKick) }
+
+                    advantageState <- AdvantageCalledBack foulSubTick
+            | _ -> ()
+
+            if varState.IsChecking then
+                match varState.CurrentReview with
+                | Some(Reviewing(incident, startSubTick, durationSubTicks)) ->
+                    if subTick >= startSubTick + durationSubTicks then
+                        let decision = VARReview.evaluate state incident
+                        varState.CompleteReview decision
+
+                        let varEvents =
+                            match decision with
+                            | Overturn -> VARApplicator.applyOverturn subTick incident ctx state
+                            | CheckComplete -> VARApplicator.applyCheckComplete subTick incident ctx state
+                            | _ -> []
+
+                        varEvents |> List.iter addEvent
+                        varState.Clear()
+                | _ -> varState.Clear()
 
             if phases.Action then
                 match playState with
@@ -135,7 +218,7 @@ module MatchSimulator =
 
                     if hasCachedIntentHome && hasCachedIntentAway then
                         let actionResult = ActionResolver.run subTick ctx state clock
-                        actionResult.Events |> List.iter events.Add
+                        actionResult.Events |> List.iter addEvent
                 | _ -> ()
 
             if phases.Adaptive then
@@ -186,6 +269,20 @@ module MatchSimulator =
                         |> EmergentLoops.updateFatigueSpiral avgCondition 0
 
                     SimStateOps.setEmergentState state clubSide updated
+
+                    let recent = EventWindow.recentEvents 1200 state.MatchEvents
+                    let adaptiveState = SimStateOps.getAdaptiveState state clubSide
+
+                    let updatedRecords =
+                        adaptiveState.Records
+                        |> Array.map (fun r -> EventWindow.patternResults r.Pattern recent)
+
+                    SimStateOps.setAdaptiveState
+                        state
+                        clubSide
+                        { AdaptiveTactics.initial with
+                            Records = updatedRecords }
+
                     SimStateOps.resetAdaptiveStats state clubSide
 
             if subTick - state.LastMemoryDecaySubTick >= MatchMemory.DecayIntervalSubTicks then
@@ -250,24 +347,48 @@ module MatchSimulator =
                         state.HomeBasePositions <- Array.map MatchSpatial.mirrorSpatial state.HomeBasePositions
                         state.AwayBasePositions <- Array.map MatchSpatial.mirrorSpatial state.AwayBasePositions
 
-                        { NextTick = None; Events = []; Transition = Some(SetPiece SetPieceKind.KickOff) }
+                        let halfAdded = state.StoppageTime.DecideHalfTime()
+                        let addedSubTicks = halfAdded * clock.SubTicksPerSecond
+
+                        if ht + addedSubTicks > effectiveFullTime then
+                            effectiveFullTime <- ht + addedSubTicks
+
+                        { NextTick = None
+                          Events = []
+                          Transition = Some(SetPiece SetPieceKind.KickOff) }
                     | FullTimeTick
                     | MatchEndTick ->
-                        { NextTick = None; Events = []; Transition = None }
+                        if not state.StoppageTime.FullTimeDecided then
+                            let fullAdded = state.StoppageTime.DecideFullTime()
+                            let addedSubTicks = fullAdded * clock.SubTicksPerSecond
+
+                            if ft + addedSubTicks > effectiveFullTime then
+                                effectiveFullTime <- ft + addedSubTicks
+
+                            if subTick >= effectiveFullTime then
+                                matchEnded <- true
+
+                        { NextTick = None
+                          Events = []
+                          Transition = None }
                     | InjuryTick _ ->
                         let refResult = RefereeAgent.agent tick ctx state clock
 
                         refResult.Actions
                         |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
-                        |> List.iter events.Add
+                        |> List.iter addEvent
 
                         { NextTick = refResult.NextTick
                           Events = []
                           Transition = refResult.Transition }
                     | ResumePlayTick ->
-                        { NextTick = None; Events = []; Transition = Some LivePlay }
+                        { NextTick = None
+                          Events = []
+                          Transition = Some LivePlay }
                     | RefereeTick ->
-                        { NextTick = None; Events = []; Transition = None }
+                        { NextTick = None
+                          Events = []
+                          Transition = None }
                     | SubstitutionTick _
                     | ManagerReactionTick _
                     | ManagerTick _ -> ManagerAgent.agent tick ctx state clock
@@ -285,9 +406,16 @@ module MatchSimulator =
                 | Some ts -> playState <- ts
                 | None -> ()
 
-                result.Events |> List.iter events.Add
+                result.Events |> List.iter addEvent
+
+                for e in result.Events do
+                    match e.ClubId with
+                    | cid when cid = ctx.Home.Id -> momentum <- DynamicMomentum.update momentum subTick HomeClub
+                    | cid when cid = ctx.Away.Id -> momentum <- DynamicMomentum.update momentum subTick AwayClub
+                    | _ -> ()
 
             takeSnapshot state subTick
+            subTick <- subTick + 1
 
         state, events |> Seq.toList
 
@@ -308,7 +436,7 @@ module MatchSimulator =
 
     let runLoopFull (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchReplay =
         let snapshots = System.Collections.Generic.List<SimSnapshot>()
-        let snapshotInterval = clock.SubTicksPerSecond / 2
+        let snapshotInterval = clock.SubTicksPerSecond / 8
         let mutable lastSnapshotAt = 0
 
         let takeSnapshot st subTick =
@@ -590,12 +718,14 @@ module MatchSimulator =
                       { SubTick = baseSubTick + k
                         PlayerId = pid
                         ClubId = ctx.Home.Id
-                        Type = PenaltyAwarded scored }
+                        Type = PenaltyAwarded scored
+                        Context = EventContext.empty }
                   for pid, scored, k in shootout.AwayKicks ->
                       { SubTick = baseSubTick + k
                         PlayerId = pid
                         ClubId = ctx.Away.Id
-                        Type = PenaltyAwarded scored } ]
+                        Type = PenaltyAwarded scored
+                        Context = EventContext.empty } ]
 
             return
                 { Context = ctx

@@ -471,12 +471,9 @@ module Mappers =
           Standings = standings
           KnockoutTies = knockoutTies }
 
-    let toCountryEntity (country: Country) : CountryEntity =
-        { Code = country.Code
-          Name = country.Name
-          Confederation = confederationToString country.Confederation }
+    let toCountryEntity (cd: CountryData) : CountryEntity =
+        { Code = cd.Country.Code
+          DataJson = Serializers.serializeCountryData cd }
 
-    let toCountryDomain (e: CountryEntity) : Country =
-        { Code = e.Code
-          Name = e.Name
-          Confederation = parseConfederation e.Confederation }
+    let toCountryDomain (e: CountryEntity) : CountryData =
+        Serializers.deserializeCountryData e.DataJson

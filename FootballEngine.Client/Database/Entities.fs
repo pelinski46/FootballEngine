@@ -199,8 +199,7 @@ type MatchFixtureEntity =
 type CountryEntity =
     { [<PrimaryKey>]
       Code: string
-      Name: string
-      Confederation: string }
+      DataJson: string }
 
 [<CLIMutable>]
 type GameSaveMeta =

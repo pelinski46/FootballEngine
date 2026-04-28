@@ -1,5 +1,6 @@
 namespace FootballEngine.Database
 
+open FootballEngine.Data
 open FootballEngine.Domain
 
 module Serializers =
@@ -436,6 +437,7 @@ module Serializers =
 
     let parseBehavioralProfile (s: string) : BehavioralProfile =
         let parts = s.Split('|')
+
         { PositionalFreedom = float parts[0]
           AttackingDepth = float parts[1]
           LateralTendency = float parts[2]
@@ -446,3 +448,14 @@ module Serializers =
           CreativityWeight = float parts[7]
           AerialThreat = float parts[8]
           HoldUpPlay = float parts[9] }
+
+    let serializeCountryData (cd: CountryData) : string =
+        let dto = JsonConverters.countryDataToDto cd
+        System.Text.Json.JsonSerializer.Serialize(dto)
+
+    let deserializeCountryData (json: string) : CountryData =
+        let dto = System.Text.Json.JsonSerializer.Deserialize<CountryDataDto>(json)
+
+        match JsonConverters.countryDataFromDto dto with
+        | Ok cd -> cd
+        | Error msg -> failwithf "deserializeCountryData: %s" msg

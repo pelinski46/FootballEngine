@@ -105,6 +105,7 @@ module AppMsgs =
         | TogglePlayback
         | SetPlaybackSpeed of int
         | TickInterpolation
+        | ReloadMods
 
 module SimHelpers =
     let primaryLeagueId (gs: GameState) =

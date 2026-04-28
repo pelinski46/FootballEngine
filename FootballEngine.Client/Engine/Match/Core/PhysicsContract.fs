@@ -126,7 +126,7 @@ module PhysicsContract =
     let BallContestSeparationRadius = 0.8<meter>
 
     [<Literal>]
-    let SteeringSlowRadius = 0.5<meter>
+    let SteeringSlowRadius = 2.5<meter>
 
     [<Literal>]
     let TurnConstraintBase = 0.65
@@ -244,7 +244,7 @@ module PhysicsContract =
     let SteeringSeekTimeConstant = 0.5<second>
 
     [<Literal>]
-    let SteeringArriveTimeConstant = 0.15<second>
+    let SteeringArriveTimeConstant = 0.3<second>
 
     [<Literal>]
     let SteeringFleeTimeConstant = 0.5<second>
