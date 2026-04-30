@@ -32,11 +32,11 @@ module MovementEngine =
             for i = 0 to ownFrame.SlotCount - 1 do
                 match ownFrame.Occupancy[i] with
                 | OccupancyKind.Sidelined _ -> ()
-                | OccupancyKind.Active _ ->
+                | OccupancyKind.Active rosterIdx ->
                     if ownFrame.IntentKind[i] <> IntentKind.ExecuteRun then
                         let aggression =
-                            if i < roster.Players.Length then
-                                float roster.Players[i].Mental.Aggression / 20.0
+                            if rosterIdx < roster.Players.Length then
+                                float roster.Players[rosterIdx].Mental.Aggression / 20.0
                             else 0.5
 
                         match ReactiveLayer.evaluateReactiveIntent i ownFrame oppFrame (int ballCarrierOppIdx) bcx bcy aggression with
@@ -54,6 +54,7 @@ module MovementEngine =
         (ctx: MatchContext)
         (state: SimState)
         (clubSide: ClubSide)
+        (currentSubTick: int)
         (dt: float<second>)
         =
         let frame = getFrame state clubSide
@@ -63,16 +64,27 @@ module MovementEngine =
         for i = 0 to frame.SlotCount - 1 do
             match frame.Occupancy[i] with
             | OccupancyKind.Sidelined _ -> ()
-            | OccupancyKind.Active _ ->
-                let player = roster.Players[i]
+            | OccupancyKind.Active rosterIdx ->
+                let player = roster.Players[rosterIdx]
                 let condition = int frame.Condition[i]
 
-                let targetX = frame.IntentTargetX[i]
-                let targetY = frame.IntentTargetY[i]
+                // INVARIANT: ActiveRuns es la única fuente de verdad para runs en ejecución.
+                // El frame lleva solo el IntentKind como señal. La posición viene de aquí.
+                let targetX, targetY =
+                    match frame.IntentKind[i] with
+                    | IntentKind.ExecuteRun ->
+                        SimStateOps.getActiveRuns state clubSide
+                        |> List.tryFind (fun r -> r.PlayerId = player.Id && RunAssignment.isActive currentSubTick r)
+                        |> Option.map (fun run ->
+                            let t = RunAssignment.progress currentSubTick run
+                            let tx, ty = RunAssignment.evaluateTrajectory t run.Trajectory
+                            float32 tx, float32 ty)
+                        |> Option.defaultWith (fun () -> frame.IntentTargetX[i], frame.IntentTargetY[i])
+                    | _ -> frame.IntentTargetX[i], frame.IntentTargetY[i]
 
                 let hasBall =
                     match state.Ball.Possession with
-                    | Owned(_, pid) -> pid = roster.Players[i].Id
+                    | Owned(_, pid) -> pid = player.Id
                     | _ -> false
 
                 let chasingBall =
@@ -142,6 +154,12 @@ module MovementEngine =
         let smoothing = 0.92
         state.BallXSmooth <- smoothing * state.BallXSmooth + (1.0 - smoothing) * state.Ball.Position.X
 
-        applyReactiveOverrides ctx state clubSide currentSubTick
-        updatePhysics ctx state clubSide dt
-        refreshCache ctx state clubSide
+        match state.Ball.Possession with
+        | Possession.SetPiece _ ->
+            // Do not apply reactive overrides during set-piece positioning
+            updatePhysics ctx state clubSide currentSubTick dt
+            refreshCache ctx state clubSide
+        | _ ->
+            applyReactiveOverrides ctx state clubSide currentSubTick
+            updatePhysics ctx state clubSide currentSubTick dt
+            refreshCache ctx state clubSide

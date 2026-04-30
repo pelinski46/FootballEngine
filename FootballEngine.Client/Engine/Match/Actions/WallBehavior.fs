@@ -34,10 +34,13 @@ module WallBehavior =
 
         defenders
         |> Array.filter (fun d -> d.Position <> Domain.GK)
-        |> Array.sortBy (fun d ->
-            let px = float d.Id
-            abs (bx - px))
-        |> Array.take (min wallSize (Array.length defenders))
+        |> fun filtered ->
+            let actualWallSize = min wallSize filtered.Length
+            filtered
+            |> Array.sortBy (fun d ->
+                let px = float d.Id
+                abs (bx - px))
+            |> Array.take actualWallSize
         |> Array.map _.Id
         |> Array.toList
 

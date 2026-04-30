@@ -2,7 +2,6 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
-open SimStateOps
 
 type SimSnapshot =
     { SubTick: int
@@ -24,7 +23,8 @@ type SimSnapshot =
       AwayConditions: int[]
       HomeSidelined: Map<PlayerId, PlayerOut>
       AwaySidelined: Map<PlayerId, PlayerOut>
-      Momentum: float }
+      Momentum: float
+      Flow: MatchFlow }
 
 type MatchReplay =
     { Context: MatchContext
@@ -41,9 +41,9 @@ module SnapshotBuilder =
                 { X = float frame.PosX[i] * 1.0<meter>
                   Y = float frame.PosY[i] * 1.0<meter>
                   Z = 0.0<meter>
-                  Vx = float frame.VelX[i] * 1.0<meter/second>
-                  Vy = float frame.VelY[i] * 1.0<meter/second>
-                  Vz = 0.0<meter/second> }
+                  Vx = float frame.VelX[i] * 1.0<meter / second>
+                  Vy = float frame.VelY[i] * 1.0<meter / second>
+                  Vz = 0.0<meter / second> }
             | _ -> SimStateOps.kickOffSpatial)
 
     let private conditionsFromFrame (frame: TeamFrame) : int[] =
@@ -71,4 +71,5 @@ module SnapshotBuilder =
           AwayConditions = conditionsFromFrame state.Away.Frame
           HomeSidelined = state.Home.Sidelined
           AwaySidelined = state.Away.Sidelined
-          Momentum = state.Momentum }
+          Momentum = state.Momentum
+          Flow = state.Flow }

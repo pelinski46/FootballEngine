@@ -101,13 +101,14 @@ module DuelAction =
                 if logisticBernoulli diff cfg.DuelSteepness then
                     let nx, ny = PitchMath.jitter bX bY aX aY 0.5 cfg.JitterWin cfg.JitterWin
 
-                    state.Ball <-
+                    let ballWithJitter =
                         { state.Ball with
                             Position =
                                 { state.Ball.Position with
                                     X = nx
-                                    Y = ny }
-                            Possession = Owned(actx.Att.ClubSide, attP.Id) }
+                                    Y = ny } }
+
+                    givePossessionTo actx.Att.ClubSide attP.Id (attP.Position = GK) subTick ballWithJitter state
 
                     state.Momentum <- Math.Clamp(state.Momentum + cfg.MomentumBonus, -10.0, 10.0)
                     MatchMemory.recordDuel actx.Att.ClubSide attIdx defIdx Won state.MatchMemory
@@ -116,7 +117,7 @@ module DuelAction =
                 elif logisticBernoulli (-diff) cfg.DuelSteepness then
                     let nx, ny = PitchMath.jitter bX bY dX dY 0.5 cfg.JitterRecover cfg.JitterRecover
 
-                    loosePossession state
+                    losePossession state
 
                     state.Ball <-
                         { state.Ball with

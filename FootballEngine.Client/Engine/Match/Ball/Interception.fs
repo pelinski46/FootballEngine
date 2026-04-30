@@ -19,6 +19,71 @@ module Interception =
             if maxSpeed <= 1e-6 then System.Double.PositiveInfinity
             else (dist - float captureRadius) / maxSpeed
 
+    let evaluateArrival (ctx: ArrivalContext) : ArrivalWinner =
+        let anticipationBonus =
+            ctx.Quality * ctx.PhysicsCfg.ArrivalAnticipationQuality
+            + ctx.PhysicsCfg.ArrivalAnticipationBase
+
+        let ballPos = ctx.BallPos
+        let ballSpeed = sqrt (ballPos.Vx * ballPos.Vx + ballPos.Vy * ballPos.Vy)
+
+        let competitionRadius = ctx.PhysicsCfg.ArrivalCompetitionRadius
+        let convergenceThreshold = ctx.PhysicsCfg.ArrivalConvergenceThreshold
+        let contestThreshold = ctx.PhysicsCfg.ArrivalContestThreshold
+
+        let competitors = ResizeArray()
+
+        let checkPlayer (frame: TeamFrame) (roster: PlayerRoster) (side: ClubSide) =
+            for i = 0 to frame.SlotCount - 1 do
+                match frame.Occupancy[i] with
+                | OccupancyKind.Active _ ->
+                    let player = roster.Players[i]
+                    let px = float frame.PosX[i] * 1.0<meter>
+                    let py = float frame.PosY[i] * 1.0<meter>
+                    let pPos = { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+                    let distToBall = ballPos.DistTo2D pPos
+
+                    if distToBall > competitionRadius then ()
+                    elif ballSpeed < 0.5<meter/second> then
+                        let projectedTime = estimateTimeToBall ctx.PhysicsCfg player pPos ballPos
+                        let adjustedTime = if player.Id = ctx.TargetId then projectedTime - anticipationBonus else projectedTime
+                        competitors.Add(player, side, adjustedTime)
+                    else
+                        let toPlayerX = px - ballPos.X
+                        let toPlayerY = py - ballPos.Y
+                        let toPlayerLen = sqrt (toPlayerX * toPlayerX + toPlayerY * toPlayerY)
+
+                        if toPlayerLen < 0.001<meter> then ()
+                        else
+                            let toPlayerNormX = toPlayerX / toPlayerLen
+                            let toPlayerNormY = toPlayerY / toPlayerLen
+                            let convergenceSpeed = float (ballPos.Vx * toPlayerNormX + ballPos.Vy * toPlayerNormY)
+
+                            if convergenceSpeed > float convergenceThreshold then ()
+                            else
+                                let projectedTime = estimateTimeToBall ctx.PhysicsCfg player pPos ballPos
+                                let adjustedTime = if player.Id = ctx.TargetId then projectedTime - anticipationBonus else projectedTime
+                                competitors.Add(player, side, adjustedTime)
+                | _ -> ()
+
+        checkPlayer ctx.HomeFrame ctx.HomeRoster HomeClub
+        checkPlayer ctx.AwayFrame ctx.AwayRoster AwayClub
+
+        if competitors.Count = 0 then NoOneInRange
+        else
+            let sorted = Seq.sortBy (fun (_, _, time) -> time) competitors |> Seq.toList
+            let bestPlayer, bestSide, bestTime = sorted.Head
+
+            if sorted.Length = 1 then
+                if bestPlayer.Id = ctx.TargetId then IntendedTarget(bestPlayer, bestSide)
+                else Intercepted(bestPlayer, bestSide)
+            else
+                let secondTime = (sorted.Item 1 |> fun (_, _, t) -> t)
+                if secondTime - bestTime <= contestThreshold then Contested
+                else if bestPlayer.Id = ctx.TargetId then IntendedTarget(bestPlayer, bestSide)
+                else Intercepted(bestPlayer, bestSide)
+
     let chooseBestInterceptorSoA
         (config: PhysicsConfig)
         (ballPos: Spatial)

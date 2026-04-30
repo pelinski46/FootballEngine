@@ -4,155 +4,156 @@ open Expecto
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open Helpers
 
 let ballPhysicsTests =
     testList
         "BallPhysics"
-        [
+        [ test "ball always decelerates after one physics step" {
+              let config = BalanceConfig.defaultConfig.Physics
+              let dt = 1.0<second>
+              let initialPos =
+                  { X = 52.5<meter>
+                    Y = 34.0<meter>
+                    Z = 0.0<meter>
+                    Vx = 10.0<meter/second>
+                    Vy = 0.0<meter/second>
+                    Vz = 0.0<meter/second> }
+              let ball: BallPhysicsState =
+                  { Position = initialPos
+                    Spin = Spin.zero
+                    Possession = Possession.Loose
+                    LastTouchBy = None
+                    PendingOffsideSnapshot = None
+                    StationarySinceSubTick = None
+                    GKHoldSinceSubTick = None
+                    PlayerHoldSinceSubTick = None
+                    Trajectory = None }
+              let updated = BallPhysics.update config dt ball
+              let speedBefore = sqrt (initialPos.Vx * initialPos.Vx + initialPos.Vy * initialPos.Vy)
+              let speedAfter = sqrt (updated.Position.Vx * updated.Position.Vx + updated.Position.Vy * updated.Position.Vy)
+              Expect.isTrue (speedAfter <= speedBefore) "speed should not increase after drag"
+          }
 
-          testCase "ball always decelerates after one physics step"
-          <| fun () ->
-              let ball =
+          test "ball Z reaches 0 after bounce" {
+              let config = BalanceConfig.defaultConfig.Physics
+              let dt = 0.025<second>
+              let initialPos =
+                  { X = 52.5<meter>
+                    Y = 34.0<meter>
+                    Z = 1.0<meter>
+                    Vx = 0.0<meter/second>
+                    Vy = 0.0<meter/second>
+                    Vz = -3.0<meter/second> }
+              let ball: BallPhysicsState =
+                  { Position = initialPos
+                    Spin = Spin.zero
+                    Possession = Possession.Loose
+                    LastTouchBy = None
+                    PendingOffsideSnapshot = None
+                    StationarySinceSubTick = None
+                    GKHoldSinceSubTick = None
+                    PlayerHoldSinceSubTick = None
+                    Trajectory = None }
+              let mutable current = ball
+              for _ in 1..200 do
+                  current <- BallPhysics.update config dt current
+              Expect.isTrue (current.Position.Z >= -0.01<meter>) "ball Z should be >= 0 after bounce"
+          }
+
+          test "ball with different spin produces different trajectory" {
+              let config = BalanceConfig.defaultConfig.Physics
+              let dt = 0.025<second>
+              let basePos =
+                  { X = 52.5<meter>
+                    Y = 34.0<meter>
+                    Z = 0.0<meter>
+                    Vx = 10.0<meter/second>
+                    Vy = 0.0<meter/second>
+                    Vz = 2.0<meter/second> }
+
+              let ballNoSpin: BallPhysicsState =
+                  { Position = basePos
+                    Spin = Spin.zero
+                    Possession = Possession.Loose
+                    LastTouchBy = None
+                    PendingOffsideSnapshot = None
+                    StationarySinceSubTick = None
+                    GKHoldSinceSubTick = None
+                    PlayerHoldSinceSubTick = None
+                    Trajectory = None }
+
+              let ballTopSpin: BallPhysicsState =
+                  { ballNoSpin with
+                      Spin =
+                          { Top = 5.0<radianPerSecond>
+                            Side = 0.0<radianPerSecond> } }
+
+              let ballSideSpin: BallPhysicsState =
+                  { ballNoSpin with
+                      Spin =
+                          { Top = 0.0<radianPerSecond>
+                            Side = 5.0<radianPerSecond> } }
+
+              let update50 (b: BallPhysicsState) =
+                  let mutable cur = b
+                  for _ in 1..50 do
+                      cur <- BallPhysics.update config dt cur
+                  cur
+
+              let r1 = update50 ballNoSpin
+              let r2 = update50 ballTopSpin
+              let r3 = update50 ballSideSpin
+              let allSame = r1.Position.X = r2.Position.X && r2.Position.X = r3.Position.X
+              Expect.isFalse allSame "different spins should produce different trajectories"
+          }
+
+          test "ball with ControlledBy=None still moves" {
+              let config = BalanceConfig.defaultConfig.Physics
+              let dt = 1.0<second>
+              let ball: BallPhysicsState =
                   { Position =
                       { X = 52.5<meter>
                         Y = 34.0<meter>
                         Z = 0.0<meter>
-                        Vx = 30.0<meter / second>
-                        Vy = 5.0<meter / second>
-                        Vz = 2.0<meter / second> }
+                        Vx = 5.0<meter/second>
+                        Vy = 3.0<meter/second>
+                        Vz = 0.0<meter/second> }
                     Spin = Spin.zero
-                    Possession = InFlight (HomeClub, 0)
+                    Possession = Possession.Loose
                     LastTouchBy = None
                     PendingOffsideSnapshot = None
-                    StationarySinceSubTick = None }
-
-              let initialSpeed =
-                  let vx = float ball.Position.Vx
-                  let vy = float ball.Position.Vy
-                  let vz = float ball.Position.Vz
-                  sqrt (vx * vx + vy * vy + vz * vz)
-
-              let stepped = BallPhysics.update 1.0<second> ball
-
-              let finalSpeed =
-                  let vx = float stepped.Position.Vx
-                  let vy = float stepped.Position.Vy
-                  let vz = float stepped.Position.Vz
-                  sqrt (vx * vx + vy * vy + vz * vz)
-
-              Expect.isLessThanOrEqual
-                  finalSpeed
-                  initialSpeed
-                  $"ball physics: speed changed from {initialSpeed:F2} to {finalSpeed:F2} m/s in one step. Ball should always decelerate."
-
-          testCase "ball Z reaches 0 after bounce"
-          <| fun () ->
-              let ball =
-                  { Position =
-                      { X = 52.5<meter>
-                        Y = 34.0<meter>
-                        Z = 1.0<meter>
-                        Vx = 5.0<meter / second>
-                        Vy = 0.0<meter / second>
-                        Vz = -3.0<meter / second> }
-                    Spin = Spin.zero
-                    Possession = InFlight (HomeClub, 0)
-                    LastTouchBy = None
-                    PendingOffsideSnapshot = None
-                    StationarySinceSubTick = None }
-
-              let stepped = BallPhysics.update 1.0<second> ball
-
-              if float stepped.Position.Z <= 0.0 then
-                  Expect.isLessThanOrEqual
-                      (float stepped.Position.Z)
-                      0.01
-                      $"ball bounce: Z = {float stepped.Position.Z:F3} after step from Z=1.0, Vz=-3.0. Expected Z ≈ 0 after bounce."
-
-          testCase "ball with different spin produces different trajectory"
-          <| fun () ->
-              let baseBall =
-                  { Position =
-                      { X = 52.5<meter>
-                        Y = 34.0<meter>
-                        Z = 0.5<meter>
-                        Vx = 15.0<meter / second>
-                        Vy = 3.0<meter / second>
-                        Vz = 1.0<meter / second> }
-                    Spin = Spin.zero
-                    Possession = InFlight (HomeClub, 0)
-                    LastTouchBy = None
-                    PendingOffsideSnapshot = None
-                    StationarySinceSubTick = None }
-
-              let spinBall =
-                  { baseBall with
-                      Spin = { Top = 3.0<radianPerSecond>; Side = 2.0<radianPerSecond> } }
-
-              let baseAfter = BallPhysics.update 1.0<second> baseBall
-              let spinAfter = BallPhysics.update 1.0<second> spinBall
-              let dx = float (baseAfter.Position.X - spinAfter.Position.X)
-              let dy = float (baseAfter.Position.Y - spinAfter.Position.Y)
-              let dist = sqrt (dx * dx + dy * dy)
-
-              Expect.isGreaterThan
-                  dist
-                  0.001
-                  $"ball spin: trajectories converged after 1 step (distance = {dist:F4}). Spin should affect trajectory."
-
-          testCase "ball with ControlledBy=None still moves"
-          <| fun () ->
-              let ball =
-                  { Position =
-                      { X = 52.5<meter>
-                        Y = 34.0<meter>
-                        Z = 0.0<meter>
-                        Vx = 10.0<meter / second>
-                        Vy = 0.0<meter / second>
-                        Vz = 0.0<meter / second> }
-                    Spin = Spin.zero
-                    Possession = Loose
-                    LastTouchBy = None
-                    PendingOffsideSnapshot = None
-                    StationarySinceSubTick = None }
-
-              let stepped = BallPhysics.update 1.0<second> ball
-
+                    StationarySinceSubTick = None
+                    GKHoldSinceSubTick = None
+                    PlayerHoldSinceSubTick = None
+                    Trajectory = None }
+              let updated = BallPhysics.update config dt ball
               let moved =
-                  abs (float (stepped.Position.X - ball.Position.X)) > 0.001
-                  || abs (float (stepped.Position.Y - ball.Position.Y)) > 0.001
+                  updated.Position.X <> ball.Position.X
+                  || updated.Position.Y <> ball.Position.Y
+              Expect.isTrue moved "ball should move unless stopped"
+          }
 
-              Expect.isTrue
-                  moved
-                  $"ball with ControlledBy=None and Vx=10: position changed from ({float ball.Position.X}, {float ball.Position.Y}) to ({float stepped.Position.X}, {float stepped.Position.Y}). Ball should still move."
-
-          testCase "PendingOffsideSnapshot survives physics step unchanged"
-          <| fun () ->
-              let snapshot =
-                  { PasserId = 1
-                    ReceiverId = 2
-                    ReceiverXAtPass = 80.0<meter>
-                    SecondLastDefenderX = 75.0<meter>
-                    BallXAtPass = 52.5<meter>
-                    Dir = LeftToRight }
-
-              let ball =
+          test "PendingOffsideSnapshot survives physics step unchanged" {
+              let config = BalanceConfig.defaultConfig.Physics
+              let dt = 0.025<second>
+              let snap = mkSnap ()
+              let ball: BallPhysicsState =
                   { Position =
                       { X = 52.5<meter>
                         Y = 34.0<meter>
                         Z = 0.0<meter>
-                        Vx = 10.0<meter / second>
-                        Vy = 0.0<meter / second>
-                        Vz = 0.0<meter / second> }
+                        Vx = 5.0<meter/second>
+                        Vy = 0.0<meter/second>
+                        Vz = 0.0<meter/second> }
                     Spin = Spin.zero
-                    Possession = InFlight (HomeClub, 0)
+                    Possession = Possession.Loose
                     LastTouchBy = None
-                    PendingOffsideSnapshot = Some snapshot
-                    StationarySinceSubTick = None }
-
-              let stepped = BallPhysics.update 1.0<second> ball
-
-              Expect.equal
-                  stepped.PendingOffsideSnapshot
-                  (Some snapshot)
-                  $"ball physics: PendingOffsideSnapshot = %A{stepped.PendingOffsideSnapshot}, expected %A{Some snapshot}. Physics step should not clear offside snapshot." ]
+                    PendingOffsideSnapshot = Some snap
+                    StationarySinceSubTick = None
+                    GKHoldSinceSubTick = None
+                    PlayerHoldSinceSubTick = None
+                    Trajectory = None }
+              let updated = BallPhysics.update config dt ball
+              Expect.equal updated.PendingOffsideSnapshot (Some snap) "offside snapshot should survive physics update"
+          } ]

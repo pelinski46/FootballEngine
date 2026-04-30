@@ -45,7 +45,7 @@ module SetPlayAction =
             let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
 
             let dirSign = PhysicsContract.forwardX actx.Att.AttackDir
-            let angleSpread = spc.FreeKickSpinSideMult * 0.1 * (1.0 - quality / 2.0)
+            let angleSpread = max 0.01 (spc.FreeKickSpinSideMult * 0.1 * (1.0 - quality / 2.0))
             let angle = normalSample 0.0 angleSpread
 
             let vx = dirSign * float spc.FreeKickSpeed * System.Math.Cos(angle)
@@ -207,7 +207,7 @@ module SetPlayAction =
         (kicker: Player)
         (kickerClub: ClubSide)
         (clock: SimulationClock)
-        : ActionResult =
+        : bool =
         let spc = ctx.Config.SetPiece
         let clubId = if kickerClub = HomeClub then ctx.Home.Id else ctx.Away.Id
         let defFrame = SimStateOps.getFrame state (ClubSide.flip kickerClub)
@@ -292,8 +292,6 @@ module SetPlayAction =
 
         if gkSaves then
             let gkClubId = ClubSide.flip kickerClub |> fun side -> if side = HomeClub then ctx.Home.Id else ctx.Away.Id
-            ActionResult.ofEvents
-                [ createEvent subTick kicker.Id clubId (PenaltyAwarded false)
-                  createEvent subTick (gk |> Option.map _.Id |> Option.defaultValue 0) gkClubId Save ]
+            false
         else
-            ActionResult.withGoal kickerClub (Some kicker.Id) [ createEvent subTick kicker.Id clubId (PenaltyAwarded true) ]
+            true

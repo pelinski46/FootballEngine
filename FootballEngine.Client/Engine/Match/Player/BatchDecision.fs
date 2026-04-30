@@ -107,6 +107,10 @@ module BatchDecision =
             | Possession.SetPiece _ -> true
             | _ -> false
 
+        // Compute and assign set-piece positions once per team when active
+        let setPiecePositions = if isSetPiece then SetPiecePositioning.computePositions ctx state clubSide else Array.empty
+        if isSetPiece then SetPiecePositioning.assignPositions ctx setPiecePositions clubSide
+
         let cognitiveInterval = clock.CognitiveRate
 
         for i = 0 to frame.SlotCount - 1 do
@@ -178,7 +182,7 @@ module BatchDecision =
 
                 let intent = MovementScorer.pickIntent currentSubTick adjustedScores actx
 
-                let finalIntent =
+                let mutable finalIntent =
                     match intent with
                     | MaintainShape _ ->
                         let tx = float frame.IntentTargetX[i] * 1.0<meter>
@@ -186,8 +190,22 @@ module BatchDecision =
                         MaintainShape(SimStateOps.defaultSpatial tx ty)
                     | other -> other
 
+                // Override intents during set pieces to move players to precomputed positions
+                if isSetPiece then
+                    let pos = if i < setPiecePositions.Length then setPiecePositions[i] else fallbackPos
+                    finalIntent <- MoveToSetPiecePos pos
+
                 let kind, tx, ty, tpid = IntentFrame.fromMovementIntent finalIntent
                 FrameMutate.setIntent frame i kind tx ty tpid
+
+                // Cuando el jugador decide correr, el run vive en ActiveRuns.
+                // Es la única fuente de verdad — MovementEngine lo lee directamente.
+                match finalIntent with
+                | ExecuteRun run ->
+                    let team = SimStateOps.getTeam state clubSide
+                    team.ActiveRuns <-
+                        run :: (team.ActiveRuns |> List.filter (fun r -> r.PlayerId <> run.PlayerId))
+                | _ -> ()
 
                 let lockDuration =
                     let baseDuration =
@@ -199,18 +217,19 @@ module BatchDecision =
                         | IntentKind.PressBall -> cognitiveInterval / 2
                         | IntentKind.RecoverBall -> cognitiveInterval / 2
                         | IntentKind.ExecuteRun -> cognitiveInterval
+                        | IntentKind.MoveToSetPiecePos -> cognitiveInterval * 4
                         | IntentKind.Idle -> cognitiveInterval
 
                     let scoreMargin =
                         let topScore =
                             [| adjustedScores.MaintainShape; adjustedScores.MarkMan
                                adjustedScores.PressBall; adjustedScores.CoverSpace
-                               adjustedScores.SupportAttack; adjustedScores.RecoverBall |]
+                               adjustedScores.SupportAttack; adjustedScores.RecoverBall; adjustedScores.MoveToSetPiecePos |]
                             |> Array.max
                         let secondScore =
                             [| adjustedScores.MaintainShape; adjustedScores.MarkMan
                                adjustedScores.PressBall; adjustedScores.CoverSpace
-                               adjustedScores.SupportAttack; adjustedScores.RecoverBall |]
+                               adjustedScores.SupportAttack; adjustedScores.RecoverBall; adjustedScores.MoveToSetPiecePos |]
                             |> Array.sortDescending |> Array.item 1
                         let margin = topScore - secondScore
                         if margin > 0.5 then 1.5

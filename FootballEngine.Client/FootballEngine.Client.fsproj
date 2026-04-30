@@ -47,6 +47,7 @@
         <Compile Include="Engine\Match\Core\ActionMath.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
         <Compile Include="Engine\Match\Core\InfluenceTypes.fs"/>
+        <Compile Include="Engine\Match\Referee\VAR\VARTypes.fs"/>
         <Compile Include="Engine\Match\Core\SimTypes.fs"/>
         <Compile Include="Engine\Match\Referee\FoulAnalysis.fs"/>
         <Compile Include="Engine\Match\Referee\AdvantageEngine.fs"/>
@@ -63,12 +64,11 @@
         <Compile Include="Engine\Match\Core\BalanceCalibrator.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeAction.fs"/>
         <Compile Include="Engine\Match\Core\SchedulingTypes.fs"/>
-        <Compile Include="Engine\Match\Core\Timeline.fs"/>
-        <Compile Include="Engine\Match\Core\PhaseSchedule.fs"/>
+        <Compile Include="Engine\Match\Core\MatchRates.fs"/>
+        <Compile Include="Engine\Match\Core\MatchCommands.fs"/>
         <Compile Include="Engine\Match\Core\CognitiveFrame.fs"/>
         <Compile Include="Engine\Match\Core\Perception.fs"/>
         <Compile Include="Engine\Match\Core\PendingGoal.fs"/>
-        <Compile Include="Engine\Match\Core\TickOrchestrator.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAction.fs"/>
         <Compile Include="Engine\Match\Player\GKAction.fs"/>
         <Compile Include="Engine\Match\Player\PlayerSteering.fs"/>
@@ -88,6 +88,7 @@
         <Compile Include="Engine\Match\Player\PlayerPersonality.fs"/>
         <Compile Include="Engine\Match\Player\ChemistryTracker.fs"/>
         <Compile Include="Engine\Match\Player\PlayerDecision.fs"/>
+        <Compile Include="Engine\Match\Actions\SetPiecePositioning.fs"/>
         <Compile Include="Engine\Match\Player\BatchDecision.fs"/>
         <Compile Include="Engine\Match\Movement\MovementEngine.fs"/>
         <Compile Include="Engine\Match\Ball\Interception.fs"/>
@@ -96,7 +97,6 @@
         <Compile Include="Engine\Match\Referee\GoalDetector.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeApplicator.fs"/>
         <Compile Include="Engine\Match\Referee\RefereeAgent.fs"/>
-        <Compile Include="Engine\Match\Referee\VAR\VARTypes.fs"/>
         <Compile Include="Engine\Match\Referee\VAR\VARDetector.fs"/>
         <Compile Include="Engine\Match\Referee\VAR\VARReview.fs"/>
         <Compile Include="Engine\Match\Referee\VAR\VARApplicator.fs"/>
@@ -111,11 +111,11 @@
         <Compile Include="Engine\Match\Actions\SetPlayAction.fs"/>
         <Compile Include="Engine\Match\Actions\SetPieceAgent.fs"/>
 
-        <Compile Include="Engine\Match\Core\MatchEventProcessor.fs"/>
         <Compile Include="Engine\Match\Player\ActionResolver.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAgent.fs"/>
         <Compile Include="Engine\Match\Manager\ManagerAction.fs"/>
         <Compile Include="Engine\Match\Manager\ManagerAgent.fs"/>
+        <Compile Include="Engine\Match\Core\MatchStepper.fs"/>
         <Compile Include="Engine\Match\SnapshotBuilder.fs"/>
         <Compile Include="Engine\Match\Simulator.fs"/>
         <Compile Include="Engine\WorldGeneration\PlayerGen.fs"/>

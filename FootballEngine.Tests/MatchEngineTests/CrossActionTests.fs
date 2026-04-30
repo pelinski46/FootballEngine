@@ -8,88 +8,35 @@ open Helpers
 let crossActionTests =
     testList
         "CrossAction"
-        [
+        [ test "successful cross produces CrossLaunched event" {
+              let home = [| makePlayer 1 MR 10; makePlayer 2 ST 15 |]
+              let away = [| makeGk 3 10 10 10; makePlayer 4 DC 10 |]
+              let ctx, s =
+                  buildState home [| 80.0, 10.0; 85.0, 34.0 |] away [| 99.0, 34.0; 85.0, 30.0 |] 80.0 10.0 (Possession.Owned(HomeClub, 1))
+              let clock = SimulationClock.defaultClock
+              let result = CrossAction.resolve 0 ctx s clock
+              let hasCrossLaunched =
+                  result.Events
+                  |> List.exists (fun e -> match e.Type with MatchEventType.CrossLaunched _ -> true | _ -> false)
+              Expect.isTrue hasCrossLaunched "cross should produce CrossLaunched event"
+          }
 
-          testCase "blocked cross → Phase = Contest(defClub) AND PendingOffsideSnapshot = None"
-          <| fun () ->
-              let home = [| makePlayer 1 MR 10; worstAttacker 4 ST |]
-              let hpos = [| 5.0, 34.0; 90.0, 34.0 |]
-              let away = [| makePlayer 2 DC 20; makePlayer 3 GK 10 |]
-              let apos = [| 90.0, 34.0; 99.0, 34.0 |]
+          test "cross always emits events" {
+              let home = [| makePlayer 1 MR 10; makePlayer 2 ST 15 |]
+              let away = [| makeGk 3 10 10 10; makePlayer 4 DC 10 |]
+              let ctx, s =
+                  buildState home [| 80.0, 10.0; 85.0, 34.0 |] away [| 99.0, 34.0; 85.0, 30.0 |] 80.0 10.0 (Possession.Owned(HomeClub, 1))
+              let clock = SimulationClock.defaultClock
+              let result = CrossAction.resolve 0 ctx s clock
+              Expect.isGreaterThan result.Events.Length 0 "cross should produce at least one event"
+          }
 
-              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1)
-                      PendingOffsideSnapshot = Some(mkSnap ()) }
-
-              let events = CrossAction.resolve 1 ctx s
-
-              let hasCrossAttempt =
-                  events
-                  |> List.exists (fun e ->
-                      match e.Type with
-                      | MatchEventType.CrossAttempt _ -> true
-                      | _ -> false)
-
-              if hasCrossAttempt then
-                  Expect.equal
-                      s.Ball.Possession
-                      (Contest AwayClub)
-                      $"blocked cross: Phase = %A{s.Ball.Possession}, expected Contest AwayClub."
-
-                  Expect.isNone
-                      s.Ball.PendingOffsideSnapshot
-                      $"blocked cross: PendingOffsideSnapshot = %A{s.Ball.PendingOffsideSnapshot}, expected None."
-
-          testCase "successful cross → Phase = SetPiece(AttSide)"
-          <| fun () ->
-              let home = [| makePlayer 1 MR 20; eliteAttacker 3 ST |]
-              let hpos = [| 5.0, 34.0; 90.0, 34.0 |]
-              let away = [| makePlayer 2 GK 1 |]
-              let apos = [| 99.0, 34.0 |]
-
-              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let events = CrossAction.resolve 1 ctx s
-
-              let hasCrossSuccess =
-                  events
-                  |> List.exists (fun e ->
-                      match e.Type with
-                      | MatchEventType.CrossAttempt true -> true
-                      | _ -> false)
-
-              if hasCrossSuccess then
-                  Expect.equal
-                      s.Ball.Possession
-                      (SetPiece (HomeClub, SetPieceKind.FreeKick))
-                      $"successful cross: Phase = %A{s.Ball.Possession}, expected SetPiece HomeClub."
-
-          testCase "cross always emits CrossAttempt event"
-          <| fun () ->
+          test "no targets fallback still produces events" {
               let home = [| makePlayer 1 MR 10 |]
-              let hpos = [| 5.0, 34.0 |]
-              let away = [| makePlayer 2 DC 10; makePlayer 3 GK 10 |]
-              let apos = [| 85.0, 34.0; 99.0, 34.0 |]
-
-              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let events = CrossAction.resolve 1 ctx s
-
-              Expect.isTrue
-                  (events
-                   |> List.exists (fun e ->
-                       match e.Type with
-                       | MatchEventType.CrossAttempt _ -> true
-                       | _ -> false))
-                  $"cross produced events: %A{events |> List.map (fun e -> e.Type)}. Expected CrossAttempt." ]
+              let away = [| makeGk 2 10 10 10 |]
+              let ctx, s =
+                  buildState home [| 80.0, 10.0 |] away [| 99.0, 34.0 |] 80.0 10.0 (Possession.Owned(HomeClub, 1))
+              let clock = SimulationClock.defaultClock
+              let result = CrossAction.resolve 0 ctx s clock
+              Expect.isGreaterThan result.Events.Length 0 "cross with no targets should still produce events"
+          } ]

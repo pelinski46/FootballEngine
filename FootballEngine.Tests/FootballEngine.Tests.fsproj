@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -8,22 +8,38 @@
     <ItemGroup>
         <Compile Include="Helpers.fs"/>
         <Compile Include="MatchEngineTests/Helpers.fs"/>
+        <Compile Include="MatchEngineTests/MatchFlowTests.fs"/>
         <Compile Include="MatchEngineTests/StateInvariantTests.fs"/>
         <Compile Include="MatchEngineTests/PossessionTests.fs"/>
         <Compile Include="MatchEngineTests/BallPhysicsTests.fs"/>
+        <Compile Include="MatchEngineTests/BallTrajectoryTests.fs"/>
         <Compile Include="MatchEngineTests/OffsideTests.fs"/>
         <Compile Include="MatchEngineTests/DuelActionTests.fs"/>
         <Compile Include="MatchEngineTests/PassActionTests.fs"/>
         <Compile Include="MatchEngineTests/ShotActionTests.fs"/>
         <Compile Include="MatchEngineTests/CrossActionTests.fs"/>
         <Compile Include="MatchEngineTests/SetPieceTests.fs"/>
+        <Compile Include="MatchEngineTests/SetPieceE2ETests.fs"/>
+        <Compile Include="MatchEngineTests/GKActionTests.fs"/>
+        <Compile Include="MatchEngineTests/ChemistryTests.fs"/>
+        <Compile Include="MatchEngineTests/AdvantageEngineTests.fs"/>
+        <Compile Include="MatchEngineTests/VARTests.fs"/>
+        <Compile Include="MatchEngineTests/HandballDetectorTests.fs"/>
+        <Compile Include="MatchEngineTests/PlayerPersonalityTests.fs"/>
+        <Compile Include="MatchEngineTests/AdaptiveTacticsTests.fs"/>
+        <Compile Include="MatchEngineTests/EmergentLoopsTests.fs"/>
+        <Compile Include="MatchEngineTests/CognitiveFrameTests.fs"/>
+        <Compile Include="MatchEngineTests/InfluenceFrameTests.fs"/>
+        <Compile Include="MatchEngineTests/TacticalImpactTests.fs"/>
         <Compile Include="MatchEngineTests/MatchInvariantsTests.fs"/>
         <Compile Include="MatchEngineTests/StatisticalContractsTests.fs"/>
         <Compile Include="MatchEngineTests/PhaseTransitionTests.fs"/>
+        <Compile Include="MatchEngineTests/KnockoutMatchTests.fs"/>
+        <Compile Include="MatchEngineTests/EdgeCaseTests.fs"/>
+        <Compile Include="MatchEngineTests/PerformanceTests.fs"/>
+        <Compile Include="MatchEngineTests/DeterminismTests.fs"/>
         <Compile Include="Enginetests.fs"/>
         <Compile Include="Worldtests.fs"/>
-        <Compile Include="DeterminismTests.fs"/>
-        <Compile Include="TickSchedulerTests.fs"/>
         <Compile Include="TrainingSystemTests.fs"/>
         <Compile Include="Program.fs"/>
     </ItemGroup>

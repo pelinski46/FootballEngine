@@ -9,13 +9,14 @@ module IntentFrame =
         | MaintainShape sp -> (IntentKind.MaintainShape, float32 sp.X, float32 sp.Y, 0)
         | MarkMan (pid, pos) -> (IntentKind.MarkMan, float32 pos.X, float32 pos.Y, pid)
         | PressBall pos -> (IntentKind.PressBall, float32 pos.X, float32 pos.Y, 0)
-        | ExecuteRun run ->
-            let t = RunAssignment.progress 0 run
-            let x, y = RunAssignment.evaluateTrajectory t run.Trajectory
-            (IntentKind.ExecuteRun, float32 x, float32 y, run.PlayerId)
+        | ExecuteRun _ ->
+            // INVARIANT: La posición del run vive en ActiveRuns, no en el frame.
+            // MovementEngine lee ActiveRuns directamente. El frame solo lleva el señal de tipo.
+            (IntentKind.ExecuteRun, 0f, 0f, 0)
         | CoverSpace sp -> (IntentKind.CoverSpace, float32 sp.X, float32 sp.Y, 0)
         | SupportAttack sp -> (IntentKind.SupportAttack, float32 sp.X, float32 sp.Y, 0)
         | RecoverBall pos -> (IntentKind.RecoverBall, float32 pos.X, float32 pos.Y, 0)
+        | MoveToSetPiecePos sp -> (IntentKind.MoveToSetPiecePos, float32 sp.X, float32 sp.Y, 0)
 
     let toMovementIntent (kind: IntentKind) (tx: float32) (ty: float32) (tpid: int) (fallback: Spatial) : MovementIntent =
         let sp = {
@@ -34,5 +35,6 @@ module IntentFrame =
         | IntentKind.CoverSpace -> CoverSpace sp
         | IntentKind.SupportAttack -> SupportAttack sp
         | IntentKind.RecoverBall -> RecoverBall sp
+        | IntentKind.MoveToSetPiecePos -> MoveToSetPiecePos sp
         | IntentKind.Idle -> MaintainShape fallback
         | _ -> MaintainShape fallback

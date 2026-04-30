@@ -2,22 +2,13 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 
-type PendingGoal =
-    { ScoringClub: ClubSide
-      ScorerId: PlayerId option }
-
 type ActionResult =
-    { Events: MatchEvent list
-      PendingGoal: PendingGoal option }
+    { Events: MatchEvent list }
 
 module ActionResult =
-    let empty = { Events = []; PendingGoal = None }
+    let empty = { Events = [] }
 
-    let ofEvents events = { Events = events; PendingGoal = None }
-
-    let withGoal scoringClub scorerId events =
-        { Events = events; PendingGoal = Some { ScoringClub = scoringClub; ScorerId = scorerId } }
+    let ofEvents events = { Events = events }
 
     let combine (results: ActionResult list) =
-        { Events = results |> List.collect _.Events
-          PendingGoal = results |> List.tryPick _.PendingGoal }
+        { Events = results |> List.collect _.Events }

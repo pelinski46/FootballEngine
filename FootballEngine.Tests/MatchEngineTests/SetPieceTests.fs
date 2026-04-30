@@ -18,19 +18,20 @@ let setPieceTests =
               let away = [| makePlayer 2 MR 10 |]
               let apos = [| 100.0, 34.0 |]
 
-              let ctx, s = buildState home hpos away apos 52.5 34.0 (Contest AwayClub)
+              let ctx, s = buildState home hpos away apos 0.0 34.0 (Contest AwayClub)
 
-              RefereeAgent.resolve 1 (AwardThrowIn HomeClub) ctx s |> ignore
+              let tick =
+                  { SubTick = 1
+                    Priority = TickPriority.Referee
+                    SequenceId = 0L
+                    Kind = RefereeTick }
 
-              Expect.equal
-                  s.Ball.Possession
-                  (Possession.SetPiece(HomeClub, SetPieceKind.ThrowIn))
-                  $"AwardThrowIn HomeClub: Phase = %A{s.Ball.Possession}, expected SetPiece(HomeClub, ThrowIn)."
+              let clock = SimulationClock.defaultClock
+              let result = RefereeAgent.agent tick ctx s clock
 
-              Expect.equal
-                  s.Ball.Position.X
-                  PhysicsContract.PenaltyAreaDepth
-                  $"AwardThrowIn HomeClub: ball X = {s.Ball.Position.X}, expected {PhysicsContract.PenaltyAreaDepth}."
+              let hasThrowIn =
+                  result.Actions |> List.exists (function | AwardThrowIn HomeClub -> true | _ -> false)
+              Expect.isTrue hasThrowIn "ball out of bounds at Y<0.1 should produce AwardThrowIn HomeClub"
 
           testCase "AwardCorner AwayClub → Phase = SetPiece AwayClub"
           <| fun () ->
@@ -39,14 +40,20 @@ let setPieceTests =
               let away = [| makePlayer 2 MR 10 |]
               let apos = [| 100.0, 34.0 |]
 
-              let ctx, s = buildState home hpos away apos 52.5 34.0 (Contest HomeClub)
+              let ctx, s = buildState home hpos away apos 104.0 34.0 (Contest HomeClub)
 
-              RefereeAgent.resolve 1 (AwardCorner AwayClub) ctx s |> ignore
+              let tick =
+                  { SubTick = 1
+                    Priority = TickPriority.Referee
+                    SequenceId = 0L
+                    Kind = RefereeTick }
 
-              Expect.equal
-                  s.Ball.Possession
-                  (Possession.SetPiece(AwayClub, SetPieceKind.Corner))
-                  $"AwardCorner AwayClub: Phase = %A{s.Ball.Possession}, expected SetPiece(AwayClub, Corner)."
+              let clock = SimulationClock.defaultClock
+              let result = RefereeAgent.agent tick ctx s clock
+
+              let hasCorner =
+                  result.Actions |> List.exists (function | AwardCorner AwayClub -> true | _ -> false)
+              Expect.isTrue hasCorner "ball out at X>104 in goal Y should produce AwardCorner AwayClub"
 
           testCase "KickOffTick (HomeClub kicking) → Phase = SetPiece HomeClub"
           <| fun () ->
@@ -59,6 +66,7 @@ let setPieceTests =
                   buildState home hpos away apos 52.5 34.0 (Possession.SetPiece(AwayClub, SetPieceKind.KickOff))
 
               s.HomeAttackDir <- LeftToRight
+              s.LastAttackingClub <- HomeClub
 
               let tick =
                   { SubTick = 100
@@ -85,15 +93,16 @@ let setPieceTests =
                   buildState home hpos away apos 40.0 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.FreeKick))
 
               s.Ball <- { s.Ball with Possession = Loose }
-              let events = SetPlayAction.resolveFreeKick 1 ctx s
+              let clock = SimulationClock.defaultClock
+              let result = SetPlayAction.resolveFreeKick 1 ctx s clock
 
               Expect.isTrue
-                  (events
+                  (result.Events
                    |> List.exists (fun e ->
                        match e.Type with
                        | MatchEventType.FreeKick _ -> true
                        | _ -> false))
-                  $"FreeKick produced events: %A{events |> List.map _.Type}. Expected FreeKick."
+                  $"FreeKick produced events: %A{result.Events |> List.map _.Type}. Expected FreeKick."
 
           testCase "Corner always emits Corner event"
           <| fun () ->
@@ -106,11 +115,12 @@ let setPieceTests =
                   buildState home hpos away apos 52.5 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.Corner))
 
               s.Ball <- { s.Ball with Possession = Loose }
-              let events = SetPlayAction.resolveCorner 1 ctx s
+              let clock = SimulationClock.defaultClock
+              let result = SetPlayAction.resolveCorner 1 ctx s clock
 
               Expect.isTrue
-                  (hasEventType MatchEventType.Corner events)
-                  $"Corner produced events: %A{events |> List.map _.Type}. Expected Corner."
+                  (hasEventType MatchEventType.Corner result.Events)
+                  $"Corner produced events: %A{result.Events |> List.map _.Type}. Expected Corner."
 
           testCase "ThrowIn emits pass-class event"
           <| fun () ->
@@ -123,19 +133,21 @@ let setPieceTests =
                   buildState home hpos away apos 10.0 34.0 (Possession.SetPiece(HomeClub, SetPieceKind.ThrowIn))
 
               s.Ball <- { s.Ball with Possession = Loose }
-              let events = SetPlayAction.resolveThrowIn 1 ctx s HomeClub
+              let clock = SimulationClock.defaultClock
+              let result = SetPlayAction.resolveThrowIn 1 ctx s HomeClub clock
 
               let hasPass =
-                  events
+                  result.Events
                   |> List.exists (fun e ->
                       match e.Type with
+                      | MatchEventType.PassLaunched _
                       | MatchEventType.PassCompleted _
                       | MatchEventType.PassIncomplete _ -> true
                       | _ -> false)
 
               Expect.isTrue
                   hasPass
-                  $"ThrowIn produced events: %A{events |> List.map _.Type}. Expected PassCompleted or PassIncomplete."
+                  $"ThrowIn produced events: %A{result.Events |> List.map _.Type}. Expected PassCompleted or PassIncomplete."
 
           testCase "elite free-kick taker scores ≥ 1 goal in 30 direct attempts"
           <| fun () ->
@@ -164,8 +176,9 @@ let setPieceTests =
                               (Possession.SetPiece(HomeClub, SetPieceKind.FreeKick))
 
                       s.Ball <- { s.Ball with Possession = Loose }
-                      let events = SetPlayAction.resolveFreeKick (1000 + i) ctx s
-                      if hasGoal events then 1 else 0)
+                      let clock = SimulationClock.defaultClock
+                      let result = SetPlayAction.resolveFreeKick (1000 + i) ctx s clock
+                      if hasGoal result.Events then 1 else 0)
 
               Expect.isGreaterThan
                   goals

@@ -118,49 +118,58 @@ module GKAction =
 
             if gkIdx < 0 then []
             else
-                let target, targetSp, distType = findBestDistributionTarget subTick ctx state gkIdx frame roster gkc
+                // INVARIANT: GKDistribution se emite exactamente una vez por posesión del GK.
+                // Garantizado por GKDecisionWindowSubTicks contra GKHoldSinceSubTick.
+                let shouldDistribute =
+                    match state.Ball.GKHoldSinceSubTick with
+                    | Some since -> subTick - since >= gkc.GKDecisionWindowSubTicks
+                    | None -> false
 
-                let speed =
-                    match distType with
-                    | Throw -> gkc.ThrowSpeed
-                    | Roll -> gkc.RollSpeed
-                    | GoalKick -> gkc.GoalKickSpeed
-                    | Punt -> gkc.PuntSpeed
+                if not shouldDistribute then []
+                else
+                    let target, targetSp, distType = findBestDistributionTarget subTick ctx state gkIdx frame roster gkc
 
-                let gkX = float frame.PosX[gkIdx] * 1.0<meter>
-                let gkY = float frame.PosY[gkIdx] * 1.0<meter>
+                    let speed =
+                        match distType with
+                        | Throw -> gkc.ThrowSpeed
+                        | Roll -> gkc.RollSpeed
+                        | GoalKick -> gkc.GoalKickSpeed
+                        | Punt -> gkc.PuntSpeed
 
-                ballTowards gkX gkY targetSp.X targetSp.Y speed (speed * 0.15) state
+                    let gkX = float frame.PosX[gkIdx] * 1.0<meter>
+                    let gkY = float frame.PosY[gkIdx] * 1.0<meter>
 
-                let dist = sqrt ((targetSp.X - gkX) * (targetSp.X - gkX) + (targetSp.Y - gkY) * (targetSp.Y - gkY))
-                let flightTime = if speed > 0.0<meter/second> then dist / speed else 0.5<second>
-                let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
+                    ballTowards gkX gkY targetSp.X targetSp.Y speed (speed * 0.15) state
 
-                let vz = speed * 0.15
-                let peakHeight =
-                    if vz > 0.0<meter/second> then
-                        vz * vz / (2.0 * 9.80665<meter/second^2>)
-                    else 0.0<meter>
+                    let dist = sqrt ((targetSp.X - gkX) * (targetSp.X - gkX) + (targetSp.Y - gkY) * (targetSp.Y - gkY))
+                    let flightTime = if speed > 0.0<meter/second> then dist / speed else 0.5<second>
+                    let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
 
-                let trajectory = {
-                    OriginX = gkX
-                    OriginY = gkY
-                    TargetX = targetSp.X
-                    TargetY = targetSp.Y
-                    LaunchSubTick = subTick
-                    EstimatedArrivalSubTick = arrivalSubTick
-                    KickerId = gkId
-                    PeakHeight = peakHeight
-                    ActionKind = BallActionKind.Pass(gkId, target.Id, 0.5)
-                }
+                    let vz = speed * 0.15
+                    let peakHeight =
+                        if vz > 0.0<meter/second> then
+                            vz * vz / (2.0 * 9.80665<meter/second^2>)
+                        else 0.0<meter>
 
-                state.Ball <-
-                    { state.Ball with
-                        Possession = InFlight
-                        LastTouchBy = Some gkId
-                        GKHoldSinceSubTick = None
-                        PlayerHoldSinceSubTick = None
-                        Trajectory = Some trajectory }
+                    let trajectory = {
+                        OriginX = gkX
+                        OriginY = gkY
+                        TargetX = targetSp.X
+                        TargetY = targetSp.Y
+                        LaunchSubTick = subTick
+                        EstimatedArrivalSubTick = arrivalSubTick
+                        KickerId = gkId
+                        PeakHeight = peakHeight
+                        ActionKind = BallActionKind.Pass(gkId, target.Id, 0.5)
+                    }
 
-                [ createEvent subTick gkId (if side = HomeClub then ctx.Home.Id else ctx.Away.Id) (GKDistribution(gkId, target.Id)) ]
+                    state.Ball <-
+                        { state.Ball with
+                            Possession = InFlight
+                            LastTouchBy = Some gkId
+                            GKHoldSinceSubTick = None
+                            PlayerHoldSinceSubTick = None
+                            Trajectory = Some trajectory }
+
+                    [ createEvent subTick gkId (if side = HomeClub then ctx.Home.Id else ctx.Away.Id) (GKDistribution(gkId, target.Id)) ]
         | _ -> []

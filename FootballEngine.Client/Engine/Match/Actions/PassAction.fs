@@ -140,7 +140,7 @@ module PassAction =
                 let offside = isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
-                    loosePossession state
+                    losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.OffsideMomentum) state
                     [ createEvent subTick target.Id attClubId (PassIncomplete target.Id) ]
                 else
@@ -222,7 +222,7 @@ module PassAction =
                 betaSample longMean (pc.LongBallSuccessShapeAlpha + condNorm * pc.LongBallSuccessConditionMultiplier)
 
             if bestFwdIdx < 0 then
-                loosePossession state
+                losePossession state
                 adjustMomentum actx.Att.AttackDir (-pc.LongBallFailMomentum) state
                 [ createEvent subTick passer.Id attClubId (LongBall false) ]
             else
@@ -235,7 +235,7 @@ module PassAction =
                 let offside = isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
-                    loosePossession state
+                    losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.LongBallOffsideMomentum) state
                     [ createEvent subTick passer.Id attClubId (LongBall false) ]
                 else
@@ -362,7 +362,7 @@ module PassAction =
                         | _ -> ()
 
                 if nearestIdx < 0 then
-                    SimStateOps.loosePossession state
+                    losePossession state
                     [ createEvent subTick passer.Id attClubId (PassIncomplete passer.Id) ]
                 else
                     let target = attRoster.Players[nearestIdx]
@@ -377,7 +377,7 @@ module PassAction =
                 let offside = isOffsideFrame bestReceiverIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
-                    SimStateOps.loosePossession state
+                    losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.OffsideMomentum) state
                     [ createEvent subTick receiver.Id attClubId (PassIncomplete receiver.Id) ]
                 else

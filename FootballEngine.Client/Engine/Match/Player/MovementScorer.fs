@@ -11,7 +11,8 @@ type MovementScores =
       PressBall: float
       CoverSpace: float
       SupportAttack: float
-      RecoverBall: float }
+      RecoverBall: float
+      MoveToSetPiecePos: float }
 
 module MovementScorer =
 
@@ -364,7 +365,8 @@ module MovementScorer =
               PressBall = pressBallScore ctx
               CoverSpace = coverSpaceScore ctx
               SupportAttack = supportAttackScore ctx
-              RecoverBall = recoverBallScore ctx }
+              RecoverBall = recoverBallScore ctx
+              MoveToSetPiecePos = maintainShapeScore ctx }
 
         raw |> applyEmergentModifiers emergent |> applyRoleModifiers ctx
 
@@ -377,6 +379,7 @@ module MovementScorer =
         | SupportAttack _ -> scores.SupportAttack
         | RecoverBall _ -> scores.RecoverBall
         | ExecuteRun _ -> scores.SupportAttack * 0.8
+        | MoveToSetPiecePos _ -> scores.MoveToSetPiecePos
 
     let private isInPenaltyArea (x: float<meter>) (y: float<meter>) (dir: AttackDir) : bool =
         let penX = PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth

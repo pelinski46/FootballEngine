@@ -63,11 +63,21 @@ let elitePasser id pos = makePlayer id pos 20
 let worstPasser id pos = makePlayer id pos 1
 let eliteDribbler id pos = makePlayer id pos 20
 let worstTackler id pos = makePlayer id pos 1
-let highAggression id pos = 
+let highAggression id pos =
     let p = makePlayer id pos 10
     { p with Mental = { p.Mental with Aggression = 20; Positioning = 1 } }
 let eliteGk id = makeGk id 20 20 20
 let weakGk id = makeGk id 1 1 1
+let eliteCrosser id pos = makePlayer id pos 20
+let worstCrosser id pos = makePlayer id pos 1
+let eliteFKTaker id pos = makePlayer id pos 20
+let elitePenaltyTaker id pos = makePlayer id pos 20
+let highWorkRate id pos =
+    let p = makePlayer id pos 10
+    { p with Mental = { p.Mental with WorkRate = 20 } }
+let elitePresser id pos =
+    let p = makePlayer id pos 15
+    { p with Mental = { p.Mental with WorkRate = 20; Aggression = 18 }; Physical = { p.Physical with Stamina = 20; Pace = 18 } }
 
 // ============================================================================
 // State builders
@@ -89,10 +99,15 @@ let buildState (homePlayers: Player[]) (homePos: (float * float)[]) (awayPlayers
     let awayFrame = TeamFrame.init awayRoster aSp
     let ctx = { Home = homeClub; Away = awayClub; HomeCoach = Unchecked.defaultof<Staff>; AwayCoach = Unchecked.defaultof<Staff>; HomePlayers = homePlayers; AwayPlayers = awayPlayers; HomeBasePositions = hSp; AwayBasePositions = aSp; HomeChemistry = ChemistryGraph.init homePlayers.Length; AwayChemistry = ChemistryGraph.init awayPlayers.Length; IsKnockoutMatch = false; Config = BalanceConfig.defaultConfig; HomeRoster = homeRoster; AwayRoster = awayRoster }
     let state = SimState()
-    state.HomeBasePositions <- hSp; state.AwayBasePositions <- aSp
-    state.Ball <- { Position = spatialAt ballX ballY; Spin = Spin.zero; Possession = phase; LastTouchBy = None; PendingOffsideSnapshot = None; StationarySinceSubTick = None }
-    state.Home <- { TeamSimState.empty with Frame = homeFrame }
-    state.Away <- { TeamSimState.empty with Frame = awayFrame }
+    state.HomeBasePositions <- hSp
+    state.AwayBasePositions <- aSp
+    state.Ball <- { Position = spatialAt ballX ballY; Spin = Spin.zero; Possession = phase; LastTouchBy = None; PendingOffsideSnapshot = None; StationarySinceSubTick = None; GKHoldSinceSubTick = None; PlayerHoldSinceSubTick = None; Trajectory = None }
+    let homeTeam = TeamSimState()
+    homeTeam.Frame <- homeFrame
+    state.Home <- homeTeam
+    let awayTeam = TeamSimState()
+    awayTeam.Frame <- awayFrame
+    state.Away <- awayTeam
     ctx, state
 
 // ============================================================================
@@ -106,7 +121,7 @@ let hasGoal events = hasEventType MatchEventType.Goal events
 let hasFoul events = hasEventType MatchEventType.FoulCommitted events
 let hasSave events = hasEventType MatchEventType.Save events
 
-let mkPhysicsTick subTick = 
+let mkPhysicsTick subTick =
     { SchedulingTypes.ScheduledTick.SubTick = subTick
       SchedulingTypes.ScheduledTick.Priority = SchedulingTypes.TickPriority.Physics
       SchedulingTypes.ScheduledTick.SequenceId = 0L
@@ -118,4 +133,4 @@ let mkSnap () =
       ReceiverXAtPass = 80.0<meter>
       SecondLastDefenderX = 75.0<meter>
       BallXAtPass = 52.5<meter>
-      Dir = LeftToRight }
+      Dir = AttackDir.LeftToRight }

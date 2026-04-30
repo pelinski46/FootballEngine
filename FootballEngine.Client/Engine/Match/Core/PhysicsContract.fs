@@ -120,6 +120,9 @@ module PhysicsContract =
     let BallContactRadius = 0.35<meter>
 
     [<Literal>]
+    let BallCaptureRadius = 1.0<meter>
+
+    [<Literal>]
     let ActionContactRadius = 1.5<meter>
 
     [<Literal>]

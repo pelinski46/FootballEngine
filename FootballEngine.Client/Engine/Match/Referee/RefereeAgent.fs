@@ -33,12 +33,9 @@ module RefereeAgent =
         let lastTouchClubSide () =
             state.Ball.LastTouchBy
             |> Option.bind (fun pid ->
-                if playerOnSide ctx state HomeClub pid then
-                    Some HomeClub
-                elif playerOnSide ctx state AwayClub pid then
-                    Some AwayClub
-                else
-                    None)
+                if playerOnSide ctx state HomeClub pid then Some HomeClub
+                elif playerOnSide ctx state AwayClub pid then Some AwayClub
+                else None)
 
         if outY then
             match lastTouchClubSide () with
@@ -67,55 +64,47 @@ module RefereeAgent =
             NoOut
 
     let decide (att: Player option) (def: Player option) (ctx: MatchContext) (state: SimState) : RefereeAction list =
-        let goalIntent =
-            GoalDetector.detect state.Ball
-            |> Option.bind (fun scoringClub ->
-                let offsideActive =
-                    state.PendingOffsideSnapshot
-                    |> Option.map isOffsideFromSnapshot
-                    |> Option.defaultValue false
+        match state.Flow with
+        | MatchFlow.Live ->
+            let throwInIntent =
+                match ballOutOfBounds ctx state with
+                | ThrowIn team -> [ AwardThrowIn team ]
+                | Corner team -> [ AwardCorner team ]
+                | GoalKick team -> [ AwardGoalKick team ]
+                | NoOut -> []
 
-                if offsideActive then
-                    Some AnnulGoal
-                else
-                    let scorerId, isOwnGoal = GoalDetector.scorer scoringClub state.Ball ctx state
-                    Some(ConfirmGoal(scoringClub, scorerId, isOwnGoal)))
-            |> Option.toList
+            let injuryIntent =
+                att
+                |> Option.filter (fun a -> bernoulli (injuryProbability a))
+                |> Option.map (fun a ->
+                    IssueInjury(
+                        a,
+                        if playerOnSide ctx state HomeClub a.Id then
+                            ctx.Home.Id
+                        else
+                            ctx.Away.Id
+                    ))
+                |> Option.toList
 
-        let throwInIntent =
-            match ballOutOfBounds ctx state with
-            | ThrowIn team -> [ AwardThrowIn team ]
-            | Corner team -> [ AwardCorner team ]
-            | GoalKick team -> [ AwardGoalKick team ]
-            | NoOut -> []
-
-        let injuryIntent =
-            att
-            |> Option.filter (fun a -> bernoulli (injuryProbability a))
-            |> Option.map (fun a ->
-                IssueInjury(
-                    a,
-                    if playerOnSide ctx state HomeClub a.Id then
-                        ctx.Home.Id
-                    else
-                        ctx.Away.Id
-                ))
-            |> Option.toList
-
-        let stuckBallIntent =
-            match state.Ball.StationarySinceSubTick with
-            | Some since when state.SubTick - since >= state.Config.Timing.StuckBallDelay -> [ DropBall state.AttackingSide ]
-            | _ -> []
-
-        let gkTimeWastingIntent =
-            match state.Ball.GKHoldSinceSubTick with
-            | Some since when state.SubTick - since >= state.Config.GK.MaxHoldSubTicks ->
-                match state.Ball.Possession with
-                | Owned(side, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
+            let stuckBallIntent =
+                match state.Ball.StationarySinceSubTick with
+                | Some since when state.SubTick - since >= state.Config.Timing.StuckBallDelay ->
+                    [ DropBall state.AttackingSide ]
                 | _ -> []
-            | _ -> []
 
-        goalIntent @ throwInIntent @ injuryIntent @ stuckBallIntent @ gkTimeWastingIntent
+            let gkTimeWastingIntent =
+                match state.Ball.GKHoldSinceSubTick with
+                | Some since when state.SubTick - since >= state.Config.GK.MaxHoldSubTicks ->
+                    match state.Ball.Possession with
+                    | Owned(side, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
+                    | _ -> []
+                | _ -> []
+
+            throwInIntent
+            @ injuryIntent
+            @ stuckBallIntent
+            @ gkTimeWastingIntent
+        | _ -> []
 
     let decideCard (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
         let aggressionNorm = PhysicsContract.normaliseAttr fouler.Mental.Aggression
@@ -139,53 +128,28 @@ module RefereeAgent =
         else
             []
 
-    let private defaultIntent : PlayerIntent =
-        { Movement = MovementIntent.MaintainShape { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+    let private defaultIntent: PlayerIntent =
+        { Movement =
+            MovementIntent.MaintainShape
+                { X = 0.0<meter>
+                  Y = 0.0<meter>
+                  Z = 0.0<meter>
+                  Vx = 0.0<meter / second>
+                  Vy = 0.0<meter / second>
+                  Vz = 0.0<meter / second> }
           Action = None
           Context = NormalPlay
           Urgency = 0.0
           Confidence = 0.5 }
 
-    let agent tick ctx (state: SimState) (clock: SimulationClock) : RefereeResult =
-        match tick.Kind with
-        | HalfTimeTick ->
-            { NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.KickOffDelay; Priority = TickPriority.MatchControl; Kind = KickOffTick }
-              Actions = []
-              Transition = Some(SetPiece SetPieceKind.KickOff) }
+    let agent ctx (state: SimState) (clock: SimulationClock) : RefereeResult =
+        let isLive = match state.Flow with Live -> true | _ -> false
 
-        | FullTimeTick
-        | MatchEndTick ->
-            { NextTick = None; Actions = []; Transition = None }
-
-        | InjuryTick(playerId, _severity) ->
-            let homeFrame = state.Home.Frame
-            let homeRoster = getRoster ctx HomeClub
-            let awayFrame = state.Away.Frame
-            let awayRoster = getRoster ctx AwayClub
-
-            let player =
-                match tryFindPlayerByPidInFrame homeFrame homeRoster playerId with
-                | Some p -> Some(p, HomeClub)
-                | None ->
-                    match tryFindPlayerByPidInFrame awayFrame awayRoster playerId with
-                    | Some p -> Some(p, AwayClub)
-                    | None -> None
-
-            let actions =
-                match player with
-                | Some (p, pSide) ->
-                    let pClubId = if pSide = HomeClub then ctx.Home.Id else ctx.Away.Id
-                    [ IssueInjury(p, pClubId) ]
-                | None -> []
-
-            { NextTick = Some { SubTick = tick.SubTick + TickDelay.delayFrom clock state.Config.Timing.InjuryDelay; Priority = TickPriority.MatchControl; Kind = ResumePlayTick }
-              Actions = actions
-              Transition = Some(Stopped Injury) }
-
-        | ResumePlayTick ->
-            { NextTick = None; Actions = []; Transition = Some LivePlay }
-
-        | RefereeTick ->
+        if not isLive then
+            { Actions = []
+              Restart = None
+              Transition = None }
+        else
             let refActions = decide None None ctx state
 
             let hasDropBall =
@@ -194,36 +158,74 @@ module RefereeAgent =
                     | DropBall _ -> true
                     | _ -> false)
 
-            let setpieceNextTick =
+            let hasConfirmGoal =
+                refActions
+                |> List.exists (function
+                    | ConfirmGoal _ -> true
+                    | _ -> false)
+
+            let restart =
                 refActions
                 |> List.tryPick (function
-                    | AwardThrowIn team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.ThrowIn, team) }
-                    | AwardCorner team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.Corner, team) }
-                    | AwardGoalKick team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.GoalKick, team) }
-                    | AwardIndirectFreeKick team -> Some { SubTick = tick.SubTick + 1; Priority = TickPriority.SetPiece; Kind = SetPieceTick(SetPieceKind.FreeKick, team) }
+                    | AwardThrowIn team -> Some(SetPieceKind.ThrowIn, team)
+                    | AwardCorner team -> Some(SetPieceKind.Corner, team)
+                    | AwardGoalKick team -> Some(SetPieceKind.GoalKick, team)
+                    | AwardIndirectFreeKick team -> Some(SetPieceKind.FreeKick, team)
+                    | ConfirmGoal(team, scorerId, isOwn) -> Some(SetPieceKind.KickOff, team)
                     | _ -> None)
 
-            let nextTick =
-                if hasDropBall then
-                    None
-                else
-                    setpieceNextTick
+            let restart = if hasDropBall then None else restart
 
             let transition =
                 if hasDropBall then
-                    Some LivePlay
+                    Some MatchFlow.Live
+                elif hasConfirmGoal then
+                    match restart with
+                    | Some(SetPieceKind.KickOff, team) ->
+                        let scorerId =
+                            refActions
+                            |> List.tryPick (function
+                                | ConfirmGoal(_, sid, _) -> sid
+                                | _ -> None)
+
+                        let isOwn =
+                            refActions
+                            |> List.exists (function
+                                | ConfirmGoal(_, _, true) -> true
+                                | _ -> false)
+
+                        Some(
+                            MatchFlow.GoalPause
+                                { ScoringTeam = team
+                                  ScorerId = scorerId
+                                  IsOwnGoal = isOwn
+                                  RemainingTicks = TickDelay.delayFrom clock state.Config.Timing.GoalDelay
+                                  VARRequested = false }
+                        )
+                    | _ -> None
                 else
-                    match setpieceNextTick with
-                    | Some { Kind = SetPieceTick(SetPieceKind.ThrowIn, _) } -> Some(PlayState.SetPiece SetPieceKind.ThrowIn)
-                    | Some { Kind = SetPieceTick(SetPieceKind.Corner, _) } -> Some(PlayState.SetPiece SetPieceKind.Corner)
-                    | Some { Kind = SetPieceTick(SetPieceKind.GoalKick, _) } -> Some(PlayState.SetPiece SetPieceKind.GoalKick)
-                    | Some { Kind = SetPieceTick(SetPieceKind.FreeKick, _) } -> Some(PlayState.SetPiece SetPieceKind.FreeKick)
+                    match restart with
+                    | Some(kind, team) ->
+                        let delay =
+                            match kind with
+                            | SetPieceKind.ThrowIn -> state.Config.Timing.ThrowInDelay
+                            | SetPieceKind.Corner -> state.Config.Timing.CornerDelay
+                            | SetPieceKind.GoalKick -> state.Config.Timing.GoalKickDelay
+                            | SetPieceKind.FreeKick -> state.Config.Timing.FreeKickDelay
+                            | _ -> state.Config.Timing.KickOffDelay
+
+                        Some(
+                            MatchFlow.RestartDelay
+                                { Kind = kind
+                                  Team = team
+                                  Cause = AfterBallOut
+                                  RemainingTicks = TickDelay.delayFrom clock delay }
+                        )
                     | _ -> None
 
-            { NextTick = nextTick; Actions = refActions; Transition = transition }
-
-        | _ ->
-            { NextTick = None; Actions = []; Transition = None }
+            { Actions = refActions
+              Restart = restart
+              Transition = transition }
 
     let runRefereeStep subTick (att: Player option) (def: Player option) ctx state =
         let actions = decide att def ctx state

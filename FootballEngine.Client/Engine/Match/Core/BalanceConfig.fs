@@ -319,7 +319,12 @@ type PhysicsConfig =
       GroundRestitutionCoeff: float
       GroundRestitutionFloor: float
       ChaserProximity: float<meter>
-      AirborneThreshold: float<meter> }
+      AirborneThreshold: float<meter>
+      ArrivalAnticipationBase: float
+      ArrivalAnticipationQuality: float
+      ArrivalCompetitionRadius: float<meter>
+      ArrivalConvergenceThreshold: float<meter/second>
+      ArrivalContestThreshold: float }
 
 type GKConfig =
     { CatchHandlingMult: float
@@ -340,7 +345,8 @@ type GKConfig =
       DistributionDecisionNoise: float
       HoldTimeSubTicks: int
       MaxHoldSubTicks: int
-      BackPassHandlingPenalty: float }
+      BackPassHandlingPenalty: float
+      GKDecisionWindowSubTicks: int }
 
 type TimingConfig =
     { DuelChainDelay: TickDelay
@@ -352,6 +358,7 @@ type TimingConfig =
       CornerDelay: TickDelay
       FreeKickDelay: TickDelay
       ThrowInDelay: TickDelay
+      GoalKickDelay: TickDelay
       InjuryDelay: TickDelay
       ManagerReactDelay: TickDelay
       SubsDelay: TickDelay
@@ -685,7 +692,8 @@ module BalanceConfig =
               DistributionDecisionNoise = 0.08
               HoldTimeSubTicks = 20
               MaxHoldSubTicks = 240
-              BackPassHandlingPenalty = 0.15 }
+              BackPassHandlingPenalty = 0.15
+              GKDecisionWindowSubTicks = 16 }
           HomeAdvantage =
             { Strength = 1.0
               DuelAttackBonus = 4.0
@@ -736,7 +744,12 @@ module BalanceConfig =
               GroundRestitutionCoeff = 0.20
               GroundRestitutionFloor = 0.005
               ChaserProximity = 1.0<meter>
-              AirborneThreshold = 0.3<meter> }
+              AirborneThreshold = 0.3<meter>
+              ArrivalAnticipationBase = 0.4
+              ArrivalAnticipationQuality = 0.8
+              ArrivalCompetitionRadius = 4.0<meter>
+              ArrivalConvergenceThreshold = -2.0<meter/second>
+              ArrivalContestThreshold = 0.1 }
           Timing =
             { DuelChainDelay = TickDelay.ofSeconds clock 4.0 1.0 2.0 7.0
               DuelNextDelay = TickDelay.ofSeconds clock 24.0 5.0 12.0 38.0
@@ -747,6 +760,7 @@ module BalanceConfig =
               CornerDelay = TickDelay.ofSeconds clock 11.0 2.0 7.0 16.0
               FreeKickDelay = TickDelay.ofSeconds clock 10.0 2.0 6.0 15.0
               ThrowInDelay = TickDelay.ofSeconds clock 5.0 1.0 3.0 8.0
+              GoalKickDelay = TickDelay.ofSeconds clock 6.0 1.0 4.0 9.0
               InjuryDelay = TickDelay.ofSeconds clock 30.0 6.0 20.0 45.0
               ManagerReactDelay = TickDelay.ofSeconds clock 8.0 2.5 5.0 15.0
               SubsDelay = TickDelay.ofSeconds clock 22.0 3.0 14.0 30.0

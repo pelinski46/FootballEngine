@@ -531,7 +531,14 @@ module AppState =
             else
                 let dt = 16.67 // 60 FPS
                 let newAccumulator = state.RenderAccumulator + dt
-                let snapInterval = 125.0 / float state.PlaybackSpeed // ms between snapshots (each snapshot = 125ms game time = 5 subticks at 40Hz)
+                let effectiveSpeed =
+                    match state.ActiveMatchReplay with
+                    | Some replay when state.ActiveMatchSnapshot < replay.Snapshots.Length ->
+                        match replay.Snapshots[state.ActiveMatchSnapshot].Flow with
+                        | MatchFlow.Live -> state.PlaybackSpeed
+                        | _ -> max 1 (state.PlaybackSpeed / 4)
+                    | _ -> state.PlaybackSpeed
+                let snapInterval = 125.0 / float effectiveSpeed // ms between snapshots (each snapshot = 125ms game time = 5 subticks at 40Hz)
 
                 if newAccumulator >= snapInterval then
                     let total =

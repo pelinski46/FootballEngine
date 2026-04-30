@@ -20,7 +20,7 @@ module ManagerAgent =
         | d when d < 0 -> Losing
         | _ -> Drawing
 
-    let private maxSubs = 3 
+    let private maxSubs = 3
 
     let private preferredPositions =
         function
@@ -107,11 +107,13 @@ module ManagerAgent =
 
             let mutable outgoingIdx: int option = None
             let mutable bestCond = 100
+
             for i = 0 to frame.SlotCount - 1 do
                 match frame.Occupancy[i] with
                 | OccupancyKind.Active rosterIdx ->
                     let p = roster.Players[rosterIdx]
                     let cond = int frame.Condition[i]
+
                     if p.Position <> GK && cond < threshold && cond < bestCond then
                         bestCond <- cond
                         outgoingIdx <- Some i
@@ -119,7 +121,9 @@ module ManagerAgent =
 
             match outgoingIdx with
             | Some outIdx ->
-                match pickIncoming squad coach (activePlayersFromFrame frame roster) sidelined (preferredPositions sit) with
+                match
+                    pickIncoming squad coach (activePlayersFromFrame frame roster) sidelined (preferredPositions sit)
+                with
                 | Some incoming -> MakeSubstitution(clubId, outIdx, incoming)
                 | None -> AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
             | None -> AdjustTactics(clubId, reactiveTactics sit (getTacticsByClubId clubId ctx state))
@@ -180,6 +184,7 @@ module ManagerAgent =
               let homeRoster = getRoster ctx HomeClub
 
               let homeSit = situation ctx.Home.Id ctx state
+
               let homeThreshold =
                   match homeSit with
                   | Losing -> ctx.Config.Manager.ConditionThresholdLosing
@@ -188,11 +193,13 @@ module ManagerAgent =
 
               let mutable homeOutIdx: int option = None
               let mutable homeBestCond = 100
+
               for i = 0 to homeFrame.SlotCount - 1 do
                   match homeFrame.Occupancy[i] with
                   | OccupancyKind.Active rosterIdx ->
                       let p = homeRoster.Players[rosterIdx]
                       let cond = int homeFrame.Condition[i]
+
                       if p.Position <> GK && cond < homeThreshold && cond < homeBestCond then
                           homeBestCond <- cond
                           homeOutIdx <- Some i
@@ -217,6 +224,7 @@ module ManagerAgent =
               let awayRoster = getRoster ctx AwayClub
 
               let awaySit = situation ctx.Away.Id ctx state
+
               let awayThreshold =
                   match awaySit with
                   | Losing -> ctx.Config.Manager.ConditionThresholdLosing
@@ -225,11 +233,13 @@ module ManagerAgent =
 
               let mutable awayOutIdx: int option = None
               let mutable awayBestCond = 100
+
               for i = 0 to awayFrame.SlotCount - 1 do
                   match awayFrame.Occupancy[i] with
                   | OccupancyKind.Active rosterIdx ->
                       let p = awayRoster.Players[rosterIdx]
                       let cond = int awayFrame.Condition[i]
+
                       if p.Position <> GK && cond < awayThreshold && cond < awayBestCond then
                           awayBestCond <- cond
                           awayOutIdx <- Some i
@@ -253,7 +263,6 @@ module ManagerAgent =
         (subTick: int)
         (ctx: MatchContext)
         (state: SimState)
-        (trigger: ReactionTrigger option)
         (clock: SimulationClock)
         : ManagerAction list =
         let elapsedSec = int (subTicksToSeconds clock subTick)
@@ -265,46 +274,10 @@ module ManagerAgent =
         let homeSquad = ctx.HomePlayers |> List.ofArray
         let awaySquad = ctx.AwayPlayers |> List.ofArray
 
-        match trigger with
-        | Some(FatigueAlert(clubId, _playerId, _condition)) ->
-            let squad = if clubId = ctx.Home.Id then homeSquad else awaySquad
-
-            let coach =
-                if clubId = ctx.Home.Id then
-                    ctx.HomeCoach
-                else
-                    ctx.AwayCoach
-
-            [ handleFatigueAlert clubId ctx state squad coach ]
-
-        | Some(MomentumSwing disadvantagedClub) ->
-            let squad =
-                if disadvantagedClub = HomeClub then
-                    homeSquad
-                else
-                    awaySquad
-
-            let coach =
-                if disadvantagedClub = HomeClub then
-                    ctx.HomeCoach
-                else
-                    ctx.AwayCoach
-
-            [ handleMomentumSwing disadvantagedClub ctx state squad coach ]
-
-        | Some(RedCardTrigger playerId) -> handleRedCard playerId ctx state
-
-        | Some(GoalScored | GoalConceded | InjuryTrigger _) ->
-            if isSubMinute then
-                handleSubstitutionWindow homeSquad awaySquad ctx state
-            else
-                [ ManagerIdle ]
-
-        | None ->
-            if isSubMinute then
-                handleSubstitutionWindow homeSquad awaySquad ctx state
-            else
-                [ ManagerIdle ]
+        if isSubMinute then
+            handleSubstitutionWindow homeSquad awaySquad ctx state
+        else
+            [ ManagerIdle ]
 
     let resolve (subTick: int) (action: ManagerAction) (ctx: MatchContext) (state: SimState) : MatchEvent list =
         match action with
@@ -328,14 +301,13 @@ module ManagerAgent =
                         | Some p -> p
                         | None -> incoming
 
-                    let inheritedPos = {
-                        X = float frame.PosX[outIdx] * 1.0<meter>
-                        Y = float frame.PosY[outIdx] * 1.0<meter>
-                        Z = 0.0<meter>
-                        Vx = 0.0<meter/second>
-                        Vy = 0.0<meter/second>
-                        Vz = 0.0<meter/second>
-                    }
+                    let inheritedPos =
+                        { X = float frame.PosX[outIdx] * 1.0<meter>
+                          Y = float frame.PosY[outIdx] * 1.0<meter>
+                          Z = 0.0<meter>
+                          Vx = 0.0<meter / second>
+                          Vy = 0.0<meter / second>
+                          Vz = 0.0<meter / second> }
 
                     FrameMutate.setPos frame outIdx inheritedPos.X inheritedPos.Y
                     FrameMutate.setCondition frame outIdx incoming.Condition
@@ -355,35 +327,16 @@ module ManagerAgent =
             setTacticsByClubId clubId ctx state newTactics
             []
 
-    let agent tick ctx state (clock: SimulationClock) : PlayerResult =
-        match tick.Kind with
-        | SubstitutionTick _clubId ->
-            let actions = decide tick.SubTick ctx state None clock
+    let agent ctx (state: SimState) (clock: SimulationClock) : PlayerResult =
+        let actions = decide state.SubTick ctx state clock
 
-            let events =
-                actions
-                |> List.fold
-                    (fun accEvents action ->
-                        let evs = resolve tick.SubTick action ctx state
-                        evs @ accEvents)
-                    []
-                |> List.rev
+        let events =
+            actions
+            |> List.fold
+                (fun accEvents action ->
+                    let evs = resolve state.SubTick action ctx state
+                    evs @ accEvents)
+                []
+            |> List.rev
 
-            { NextTick = None; Events = events; Transition = None }
-
-        | ManagerReactionTick trigger ->
-            let actions = decide tick.SubTick ctx state (Some trigger) clock
-
-            let events =
-                actions
-                |> List.fold
-                    (fun accEvents action ->
-                        let evs = resolve tick.SubTick action ctx state
-                        evs @ accEvents)
-                    []
-                |> List.rev
-
-            { NextTick = None; Events = events; Transition = None }
-
-        | _ ->
-            { NextTick = None; Events = []; Transition = None }
+        { Events = events; Transition = None }

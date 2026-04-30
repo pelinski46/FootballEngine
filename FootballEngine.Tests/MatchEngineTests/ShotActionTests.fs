@@ -8,115 +8,53 @@ open Helpers
 let shotActionTests =
     testList
         "ShotAction"
-        [
+        [ test "shot always produces ShotLaunched event and ball in InFlight" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| weakGk 2 |]
+            let ctx, s =
+                buildState home [| 90.0, 34.0 |] away [| 99.0, 34.0 |] 90.0 34.0 (Possession.Owned(HomeClub, 1))
+            let clock = SimulationClock.defaultClock
+            let events = ShotAction.resolve 0 ctx s clock
+            let hasLaunched = events |> List.exists (fun e -> match e.Type with MatchEventType.ShotLaunched -> true | _ -> false)
+            Expect.isTrue hasLaunched "shot should produce ShotLaunched event"
+            Expect.equal s.Ball.Possession InFlight "ball should be InFlight after shot"
+          }
 
-          testCase "shot always produces a shot-class event"
-          <| fun () ->
-              let home = [| eliteAttacker 1 ST |]
-              let hpos = [| 85.0, 34.0 |]
-              let away = [| makePlayer 2 GK 10 |]
-              let apos = [| 99.0, 34.0 |]
+          test "shot from own half produces ShotOffTarget" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| weakGk 2 |]
+            let ctx, s =
+                buildState home [| 5.0, 34.0 |] away [| 99.0, 34.0 |] 5.0 34.0 (Possession.Owned(HomeClub, 1))
+            let clock = SimulationClock.defaultClock
+            let events = ShotAction.resolve 0 ctx s clock
+            let isOffTarget = events |> List.exists (fun e -> e.Type = MatchEventType.ShotOffTarget)
+            Expect.isTrue isOffTarget "shot from own half should be off target"
+          }
 
-              let ctx, s = buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
+          test "elite attacker produces ShotLaunched in attacking zone" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| weakGk 2 |]
+            let mutable launched = 0
+            let clock = SimulationClock.defaultClock
+            for _ in 1..50 do
+                let ctx, s =
+                    buildState home [| 90.0, 34.0 |] away [| 99.0, 34.0 |] 90.0 34.0 (Possession.Owned(HomeClub, 1))
+                let events = ShotAction.resolve 0 ctx s clock
+                if events |> List.exists (fun e -> match e.Type with MatchEventType.ShotLaunched -> true | _ -> false) then
+                    launched <- launched + 1
+            Expect.isGreaterThanOrEqual launched 40 $"elite attacker should produce ShotLaunched >= 40/50, got {launched}"
+          }
 
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let events = ShotAction.resolve 1 ctx s SimulationClock.defaultClock
-
-              let isShotClass =
-                  events
-                  |> List.exists (fun e ->
-                      match e.Type with
-                      | MatchEventType.ShotOffTarget
-                      | MatchEventType.ShotBlocked
-                      | MatchEventType.Goal
-                      | MatchEventType.Save -> true
-                      | _ -> false)
-
-              Expect.isTrue
-                  isShotClass
-                  $"shot produced events: %A{events |> List.map _.Type}. Expected one of ShotOffTarget/ShotBlocked/Goal/Save."
-
-          testCase "after shot: Phase = InFlight(AttSide)"
-          <| fun () ->
-              let home = [| eliteAttacker 1 ST |]
-              let hpos = [| 85.0, 34.0 |]
-              let away = [| makePlayer 2 GK 10 |]
-              let apos = [| 99.0, 34.0 |]
-
-              let ctx, s = buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let _ = ShotAction.resolve 1 ctx s SimulationClock.defaultClock
-
-              Expect.equal
-                  s.Ball.Possession
-                  (InFlight(HomeClub, 1))
-                  $"after shot: Phase = %A{s.Ball.Possession}, expected InFlight HomeClub."
-
-          testCase "shot from own half (x=5) never scores"
-          <| fun () ->
-              let home = [| makePlayer 1 MC 10 |]
-              let hpos = [| 5.0, 34.0 |]
-              let away = [| makePlayer 2 GK 10 |]
-              let apos = [| 99.0, 34.0 |]
-
-              let ctx, s = buildState home hpos away apos 5.0 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let events = ShotAction.resolve 1 ctx s SimulationClock.defaultClock
-
-              Expect.isFalse
-                  (events |> List.exists (fun e -> e.Type = MatchEventType.Goal))
-                  $"shot from x=5: produced {events.Length} events. No goal expected from own half."
-
-          testCase "elite attacker vs weak GK: goal rate ≥ 20% over 100 trials"
-          <| fun () ->
-              let goals =
-                  [ 1..100 ]
-                  |> List.sumBy (fun i ->
-                      let home = [| eliteAttacker 1 ST |]
-                      let hpos = [| 85.0, 34.0 |]
-                      let away = [| weakGk 2 |]
-                      let apos = [| 99.0, 34.0 |]
-
-                      let ctx, s = buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
-
-                      s.Ball <-
-                          { s.Ball with
-                              Possession = Owned(HomeClub, 1) }
-
-                      let events = ShotAction.resolve (1000 + i) ctx s SimulationClock.defaultClock
-                      if hasGoal events then 1 else 0)
-
-              Expect.isGreaterThanOrEqual goals 20 $"eliteAttacker vs weakGK: {goals} goals / 100 shots. Expected ≥ 20."
-
-          testCase "worst attacker vs elite GK: goal rate ≤ 5% over 100 trials"
-          <| fun () ->
-              let goals =
-                  [ 1..100 ]
-                  |> List.sumBy (fun i ->
-                      let home = [| worstAttacker 1 ST |]
-                      let hpos = [| 85.0, 34.0 |]
-                      let away = [| eliteGk 2 |]
-                      let apos = [| 99.0, 34.0 |]
-
-                      let ctx, s = buildState home hpos away apos 85.0 34.0 (Owned(HomeClub, 1))
-
-                      s.Ball <-
-                          { s.Ball with
-                              Possession = Owned(HomeClub, 1) }
-
-                      let events = ShotAction.resolve (1000 + i) ctx s SimulationClock.defaultClock
-
-                      if hasGoal events then 1 else 0)
-
-              Expect.isLessThanOrEqual goals 5 $"worstAttacker vs eliteGK: {goals} goals / 100 shots. Expected ≤ 5." ]
+          test "weak attacker vs elite GK produces fewer shots on target" {
+            let home = [| worstAttacker 1 ST |]
+            let away = [| eliteGk 2 |]
+            let mutable onTarget = 0
+            let clock = SimulationClock.defaultClock
+            for _ in 1..50 do
+                let ctx, s =
+                    buildState home [| 90.0, 34.0 |] away [| 99.0, 34.0 |] 90.0 34.0 (Possession.Owned(HomeClub, 1))
+                let events = ShotAction.resolve 0 ctx s clock
+                let isNotOffTarget = events |> List.forall (fun e -> e.Type <> MatchEventType.ShotOffTarget)
+                if isNotOffTarget then onTarget <- onTarget + 1
+            Expect.isLessThanOrEqual onTarget 20 $"weak attacker should have shots on target <= 20/50, got {onTarget}"
+          } ]

@@ -5,6 +5,7 @@ open FootballEngine.PhysicsContract
 open FootballEngine.Domain.TacticalInstructions
 open SimulationClock
 
+
 type RunType =
     | DeepRun
     | OverlapRun
@@ -80,13 +81,11 @@ module RunAssignment =
         let trajectory =
             match runType with
             | CheckToBall ->
-                Waypoints [|
-                    startX, startY
-                    (startX + targetX) / 2.0, (startY + targetY) / 2.0
-                    targetX, targetY
-                |]
-            | _ ->
-                Linear(startX, startY, targetX, targetY)
+                Waypoints
+                    [| startX, startY
+                       (startX + targetX) / 2.0, (startY + targetY) / 2.0
+                       targetX, targetY |]
+            | _ -> Linear(startX, startY, targetX, targetY)
 
         { PlayerId = playerId
           RunType = runType
@@ -98,7 +97,10 @@ module RunAssignment =
           Priority = 1 }
 
 [<Struct>]
-type DefensiveRole = FirstDefender | Cover | Marker
+type DefensiveRole =
+    | FirstDefender
+    | Cover
+    | Marker
 
 [<Struct>]
 type MentalState =
@@ -224,12 +226,13 @@ type Spatial =
 
 type MovementIntent =
     | MaintainShape of target: Spatial
-    | MarkMan       of targetPlayerId: PlayerId * targetPos: Spatial
-    | PressBall     of ballPredPos: Spatial
-    | ExecuteRun    of assignment: RunAssignment
-    | CoverSpace    of target: Spatial
+    | MarkMan of targetPlayerId: PlayerId * targetPos: Spatial
+    | PressBall of ballPredPos: Spatial
+    | ExecuteRun of assignment: RunAssignment
+    | CoverSpace of target: Spatial
     | SupportAttack of target: Spatial
-    | RecoverBall   of ballPredPos: Spatial
+    | RecoverBall of ballPredPos: Spatial
+    | MoveToSetPiecePos of target: Spatial
 
 // ============================================================
 // FASE 1: Phantom types para índices de slot
@@ -252,9 +255,6 @@ type OccupancyKind =
     | Active of int
     | Sidelined of PlayerOut
 
-// ============================================================
-// FASE 1: IntentKind — enum compacto para physics loop (40Hz)
-// ============================================================
 
 type IntentKind =
     | Idle = 0uy
@@ -265,10 +265,8 @@ type IntentKind =
     | CoverSpace = 5uy
     | SupportAttack = 6uy
     | RecoverBall = 7uy
+    | MoveToSetPiecePos = 8uy
 
-// ============================================================
-// FASE 1: TeamFrame — datos mutables por tick (SoA layout)
-// ============================================================
 
 type TeamFrame() =
     member val Occupancy: OccupancyKind[] = Array.empty with get, set
@@ -301,16 +299,18 @@ type TeamFrame() =
 // FASE 1: PlayerRoster — datos inmutables del equipo
 // ============================================================
 
-type PlayerRoster = {
-    Players: Player[]
-    Profiles: BehavioralProfile[]
-    SlotCount: int
-}
+type PlayerRoster =
+    { Players: Player[]
+      Profiles: BehavioralProfile[]
+      SlotCount: int }
 
 module PlayerRoster =
     let build (players: Player[]) : PlayerRoster =
         let profiles = players |> Array.map Player.profile
-        { Players = players; Profiles = profiles; SlotCount = players.Length }
+
+        { Players = players
+          Profiles = profiles
+          SlotCount = players.Length }
 
 module TeamFrame =
     let init (roster: PlayerRoster) (basePositions: Spatial[]) : TeamFrame =
@@ -364,6 +364,56 @@ type SetPieceKind =
     | FreeKick
     | Penalty
 
+type RestartCause =
+    | AfterGoal
+    | AfterFoul
+    | AfterBallOut
+    | AfterInjury
+    | AfterVAR
+    | InitialKickOff
+
+type RestartPlan =
+    { Kind: SetPieceKind
+      Team: ClubSide
+      Cause: RestartCause
+      RemainingTicks: int }
+
+type GoalPauseState =
+    { ScoringTeam: ClubSide
+      ScorerId: PlayerId option
+      IsOwnGoal: bool
+      RemainingTicks: int
+      VARRequested: bool }
+
+type InjuryPauseState =
+    { PlayerId: PlayerId
+      Team: ClubSide
+      Severity: int
+      RemainingTicks: int
+      CanContinue: bool option }
+
+type VARPhase =
+    | CheckingIncident
+    | ReviewingAngles
+    | RefereeToMonitor
+    | DecisionReady
+
+type VARFlowState =
+    { Incident: VARReviewableIncident
+      Phase: VARPhase
+      RemainingTicks: int
+      TotalTicks: int }
+
+type MatchFlow =
+    | Live
+    | GoalPause of GoalPauseState
+    | VARReview of VARFlowState
+    | InjuryPause of InjuryPauseState
+    | RestartDelay of RestartPlan
+    | HalfTimePause of remainingTicks: int
+    | FullTimeReview
+    | MatchEnded
+
 type Possession =
     | Loose
     | Owned of ClubSide * PlayerId
@@ -371,6 +421,22 @@ type Possession =
     | Contest of ClubSide
     | Transition of ClubSide
     | SetPiece of ClubSide * SetPieceKind
+
+type ArrivalWinner =
+    | IntendedTarget of player: Player * club: ClubSide
+    | Intercepted of player: Player * club: ClubSide
+    | Contested
+    | NoOneInRange
+
+type ArrivalContext =
+    { BallPos: Spatial
+      TargetId: PlayerId
+      Quality: float
+      HomeFrame: TeamFrame
+      AwayFrame: TeamFrame
+      HomeRoster: PlayerRoster
+      AwayRoster: PlayerRoster
+      PhysicsCfg: PhysicsConfig }
 
 type BallActionKind =
     | Pass of passerId: PlayerId * targetId: PlayerId * quality: float
@@ -389,17 +455,16 @@ type OffsideSnapshot =
       BallXAtPass: float<meter>
       Dir: AttackDir }
 
-type BallTrajectory = {
-    OriginX: float<meter>
-    OriginY: float<meter>
-    TargetX: float<meter>
-    TargetY: float<meter>
-    LaunchSubTick: int
-    EstimatedArrivalSubTick: int
-    KickerId: PlayerId
-    PeakHeight: float<meter>
-    ActionKind: BallActionKind
-}
+type BallTrajectory =
+    { OriginX: float<meter>
+      OriginY: float<meter>
+      TargetX: float<meter>
+      TargetY: float<meter>
+      LaunchSubTick: int
+      EstimatedArrivalSubTick: int
+      KickerId: PlayerId
+      PeakHeight: float<meter>
+      ActionKind: BallActionKind }
 
 type BallPhysicsState =
     { Position: Spatial
@@ -434,24 +499,22 @@ type MatchContext =
       HomeRoster: PlayerRoster
       AwayRoster: PlayerRoster }
 
-type MatchStats = {
-    PassAttempts: int
-    PassSuccesses: int
-    PressAttempts: int
-    PressSuccesses: int
-    FlankAttempts: int
-    FlankSuccesses: int
-}
+type MatchStats =
+    { PassAttempts: int
+      PassSuccesses: int
+      PressAttempts: int
+      PressSuccesses: int
+      FlankAttempts: int
+      FlankSuccesses: int }
 
 module MatchStats =
-    let empty = {
-        PassAttempts = 0
-        PassSuccesses = 0
-        PressAttempts = 0
-        PressSuccesses = 0
-        FlankAttempts = 0
-        FlankSuccesses = 0
-    }
+    let empty =
+        { PassAttempts = 0
+          PassSuccesses = 0
+          PressAttempts = 0
+          PressSuccesses = 0
+          FlankAttempts = 0
+          FlankSuccesses = 0 }
 
 type TeamSimState() =
     member val Frame: TeamFrame = TeamFrame() with get, set
@@ -477,21 +540,20 @@ module TeamSimState =
         ts
 
 [<Struct>]
-type CognitiveFrame = {
-    NearestTeammateIdx: int16[]
-    NearestTeammateDistSq: float32[]
-    NearestOpponentIdx: int16[]
-    NearestOpponentDistSq: float32[]
-    BestPassTargetIdx: int16[]
-    BestPassTargetPos: Spatial voption[]
-    BallX: float32
-    BallY: float32
-    BallZone: PitchZone
-    Phase: MatchPhase
-    PressureOnPlayer: float32[]
-    SlotCount: int
-    BallCarrierOppIdx: int16
-}
+type CognitiveFrame =
+    { NearestTeammateIdx: int16[]
+      NearestTeammateDistSq: float32[]
+      NearestOpponentIdx: int16[]
+      NearestOpponentDistSq: float32[]
+      BestPassTargetIdx: int16[]
+      BestPassTargetPos: Spatial voption[]
+      BallX: float32
+      BallY: float32
+      BallZone: PitchZone
+      Phase: MatchPhase
+      PressureOnPlayer: float32[]
+      SlotCount: int
+      BallCarrierOppIdx: int16 }
 
 type BuildUpSide =
     | LeftFlank
@@ -500,98 +562,109 @@ type BuildUpSide =
     | Balanced
 
 [<Struct>]
-type TeamIntent = {
-    BuildUpSide: BuildUpSide
-    PressTrigger: bool
-    PressTriggerZone: PitchZone option
-    TargetRunner: PlayerId option
-    RunType: RunType option
-    RunTarget: Spatial option
-    SupportPositions: Spatial[]
-    DesiredWidth: float
-    Tempo: float
-    DefensiveAssignments: DefensiveRole[]
-}
+type TeamIntent =
+    { BuildUpSide: BuildUpSide
+      PressTrigger: bool
+      PressTriggerZone: PitchZone option
+      TargetRunner: PlayerId option
+      RunType: RunType option
+      RunTarget: Spatial option
+      SupportPositions: Spatial[]
+      DesiredWidth: float
+      Tempo: float
+      DefensiveAssignments: DefensiveRole[] }
 
 module CognitiveFrameDefaults =
-    let empty = {
-        NearestTeammateIdx = Array.empty
-        NearestTeammateDistSq = Array.empty
-        NearestOpponentIdx = Array.empty
-        NearestOpponentDistSq = Array.empty
-        BestPassTargetIdx = Array.empty
-        BestPassTargetPos = Array.empty
-        BallX = 0.0f
-        BallY = 0.0f
-        BallZone = MidfieldZone
-        Phase = BuildUp
-        PressureOnPlayer = Array.empty
-        SlotCount = 0
-        BallCarrierOppIdx = -1s
-    }
+    let empty =
+        { NearestTeammateIdx = Array.empty
+          NearestTeammateDistSq = Array.empty
+          NearestOpponentIdx = Array.empty
+          NearestOpponentDistSq = Array.empty
+          BestPassTargetIdx = Array.empty
+          BestPassTargetPos = Array.empty
+          BallX = 0.0f
+          BallY = 0.0f
+          BallZone = MidfieldZone
+          Phase = BuildUp
+          PressureOnPlayer = Array.empty
+          SlotCount = 0
+          BallCarrierOppIdx = -1s }
 
 [<Struct>]
-type CognitiveFrameBuffers = {
-    NearestTeammateIdx: int16[]
-    NearestTeammateDistSq: float32[]
-    NearestOpponentIdx: int16[]
-    NearestOpponentDistSq: float32[]
-    BestPassTargetIdx: int16[]
-    BestPassTargetPos: Spatial voption[]
-    PressureOnPlayer: float32[]
-}
+type CognitiveFrameBuffers =
+    { NearestTeammateIdx: int16[]
+      NearestTeammateDistSq: float32[]
+      NearestOpponentIdx: int16[]
+      NearestOpponentDistSq: float32[]
+      BestPassTargetIdx: int16[]
+      BestPassTargetPos: Spatial voption[]
+      PressureOnPlayer: float32[] }
 
 module CognitiveFrameBuffers =
-    let create n = {
-        NearestTeammateIdx = Array.zeroCreate<int16> n
-        NearestTeammateDistSq = Array.create<float32> n System.Single.MaxValue
-        NearestOpponentIdx = Array.zeroCreate<int16> n
-        NearestOpponentDistSq = Array.create<float32> n System.Single.MaxValue
-        BestPassTargetIdx = Array.create<int16> n -1s
-        BestPassTargetPos = Array.create<Spatial voption> n ValueNone
-        PressureOnPlayer = Array.create<float32> n System.Single.MaxValue
-    }
+    let create n =
+        { NearestTeammateIdx = Array.zeroCreate<int16> n
+          NearestTeammateDistSq = Array.create<float32> n System.Single.MaxValue
+          NearestOpponentIdx = Array.zeroCreate<int16> n
+          NearestOpponentDistSq = Array.create<float32> n System.Single.MaxValue
+          BestPassTargetIdx = Array.create<int16> n -1s
+          BestPassTargetPos = Array.create<Spatial voption> n ValueNone
+          PressureOnPlayer = Array.create<float32> n System.Single.MaxValue }
 
 [<Struct>]
-type VisibilityMask = {
-    CanSeeTeammates: bool[]
-    CanSeeOpponents: bool[]
-    CanSeeBall: bool
-    VisibleTeammateCount: int
-    VisibleOpponentCount: int
-}
+type VisibilityMask =
+    { CanSeeTeammates: bool[]
+      CanSeeOpponents: bool[]
+      CanSeeBall: bool
+      VisibleTeammateCount: int
+      VisibleOpponentCount: int }
 
 module VisibilityMask =
-    let empty ownCount oppCount = {
-        CanSeeTeammates = Array.create ownCount true
-        CanSeeOpponents = Array.create oppCount true
-        CanSeeBall = true
-        VisibleTeammateCount = ownCount
-        VisibleOpponentCount = oppCount
-    }
+    let empty ownCount oppCount =
+        { CanSeeTeammates = Array.create ownCount true
+          CanSeeOpponents = Array.create oppCount true
+          CanSeeBall = true
+          VisibleTeammateCount = ownCount
+          VisibleOpponentCount = oppCount }
 
 module TeamIntentDefaults =
-    let empty = {
-        BuildUpSide = Balanced
-        PressTrigger = false
-        PressTriggerZone = None
-        TargetRunner = None
-        RunType = None
-        RunTarget = None
-        SupportPositions = Array.empty
-        DesiredWidth = 0.5
-        Tempo = 0.5
-        DefensiveAssignments = Array.empty
-    }
+    let empty =
+        { BuildUpSide = Balanced
+          PressTrigger = false
+          PressTriggerZone = None
+          TargetRunner = None
+          RunType = None
+          RunTarget = None
+          SupportPositions = Array.empty
+          DesiredWidth = 0.5
+          Tempo = 0.5
+          DefensiveAssignments = Array.empty }
+
+type SubstitutionRequest =
+    { ClubId: ClubId
+      OutPlayerId: PlayerId
+      InPlayerId: PlayerId
+      RequestedSubTick: int
+      CommandId: int64 option }
 
 type SimState() =
     member val SubTick = 0 with get, set
     member val HomeScore = 0 with get, set
     member val AwayScore = 0 with get, set
+
+    member val Flow: MatchFlow =
+        RestartDelay
+            { Kind = KickOff
+              Team = HomeClub
+              Cause = InitialKickOff
+              RemainingTicks = 0 } with get, set
+
     member val Config = BalanceConfig.defaultConfig with get, set
-    member val MatchMemory : MatchMemory = MatchMemory.empty with get, set
-    member val MatchEvents : ResizeArray<MatchEvent> = ResizeArray<MatchEvent>(512) with get, set
+    member val MatchMemory: MatchMemory = MatchMemory.empty with get, set
+    member val MatchEvents: ResizeArray<MatchEvent> = ResizeArray<MatchEvent>(512) with get, set
     member val LastMemoryDecaySubTick = 0 with get, set
+    member val HalfTimeHandled = false with get, set
+    member val EffectiveFullTimeSubTick = 0 with get, set
+    member val FullTimeHandled = false with get, set
 
     member val Ball =
         { Position =
@@ -623,7 +696,8 @@ type SimState() =
         | Transition(club) -> Some club
         | Loose -> None
 
-    member this.AttackingSide = this.AttackingClub |> Option.defaultValue this.LastAttackingClub
+    member this.AttackingSide =
+        this.AttackingClub |> Option.defaultValue this.LastAttackingClub
 
     member val HomeAttackDir = LeftToRight with get, set
     member val Momentum = 0.0 with get, set
@@ -633,8 +707,8 @@ type SimState() =
 
     member val HomeBasePositions = Array.empty<Spatial> with get, set
     member val AwayBasePositions = Array.empty<Spatial> with get, set
-    member val Home = TeamSimState.empty() with get, set
-    member val Away = TeamSimState.empty() with get, set
+    member val Home = TeamSimState.empty () with get, set
+    member val Away = TeamSimState.empty () with get, set
 
     member val HomeCognitiveFrame = CognitiveFrameDefaults.empty with get, set
     member val AwayCognitiveFrame = CognitiveFrameDefaults.empty with get, set
@@ -648,31 +722,32 @@ type SimState() =
     member val AwayCFrameBuffers: CognitiveFrameBuffers option = None with get, set
 
     member val StoppageTime: StoppageTimeTracker = StoppageTimeTracker() with get, set
+    member val HomePendingSubstitutions: SubstitutionRequest list = [] with get, set
+    member val AwayPendingSubstitutions: SubstitutionRequest list = [] with get, set
 
 [<Struct>]
 type TeamPerspective =
-    { ClubSide  : ClubSide
-      ClubId    : ClubId
-      AttackDir : AttackDir
-      OwnFrame  : TeamFrame
-      OppFrame  : TeamFrame
-      OwnRoster : PlayerRoster
-      OppRoster : PlayerRoster
-      Bonus     : HomeBonus }
+    { ClubSide: ClubSide
+      ClubId: ClubId
+      AttackDir: AttackDir
+      OwnFrame: TeamFrame
+      OppFrame: TeamFrame
+      OwnRoster: PlayerRoster
+      OppRoster: PlayerRoster
+      Bonus: HomeBonus }
 
-type AgentContextParams = {
-    MeIdx: int
-    Roster: PlayerRoster
-    OwnFrame: TeamFrame
-    OppFrame: TeamFrame
-    State: SimState
-    Ctx: MatchContext
-    Clock: SimulationClock
-    Decision: DecisionConfig
-    BuildUp: BuildUpConfig
-    PreviousIntent: MovementIntent option
-    IntentLockExpiry: int
-}
+type AgentContextParams =
+    { MeIdx: int
+      Roster: PlayerRoster
+      OwnFrame: TeamFrame
+      OppFrame: TeamFrame
+      State: SimState
+      Ctx: MatchContext
+      Clock: SimulationClock
+      Decision: DecisionConfig
+      BuildUp: BuildUpConfig
+      PreviousIntent: MovementIntent option
+      IntentLockExpiry: int }
 
 module SimStateOps =
 
@@ -807,11 +882,12 @@ module SimStateOps =
 
     let findIdxByPid (pid: PlayerId) (frame: TeamFrame) (roster: PlayerRoster) : int voption =
         let mutable bestIdx = ValueNone
+
         for i = 0 to frame.SlotCount - 1 do
             match frame.Occupancy[i] with
-            | Active rosterIdx when roster.Players[rosterIdx].Id = pid ->
-                bestIdx <- ValueSome i
+            | Active rosterIdx when roster.Players[rosterIdx].Id = pid -> bestIdx <- ValueSome i
             | _ -> ()
+
         bestIdx
 
     let tryGetPlayerFromFrame (frame: TeamFrame) (roster: PlayerRoster) (idx: int) : Player option =
@@ -854,18 +930,15 @@ module SimStateOps =
 
     let getYellows (state: SimState) (side: ClubSide) = (getTeam state side).Yellows
 
-    let setYellows (state: SimState) (side: ClubSide) (m: Map<PlayerId, int>) =
-        (getTeam state side).Yellows <- m
+    let setYellows (state: SimState) (side: ClubSide) (m: Map<PlayerId, int>) = (getTeam state side).Yellows <- m
 
     let getSubsUsed (state: SimState) (side: ClubSide) = (getTeam state side).SubsUsed
 
-    let setSubsUsed (state: SimState) (side: ClubSide) (n: int) =
-        (getTeam state side).SubsUsed <- n
+    let setSubsUsed (state: SimState) (side: ClubSide) (n: int) = (getTeam state side).SubsUsed <- n
 
     let getTactics (state: SimState) (side: ClubSide) = (getTeam state side).Tactics
 
-    let setTactics (state: SimState) (side: ClubSide) (tac: TeamTactics) =
-        (getTeam state side).Tactics <- tac
+    let setTactics (state: SimState) (side: ClubSide) (tac: TeamTactics) = (getTeam state side).Tactics <- tac
 
     let getInstructions (state: SimState) (side: ClubSide) = (getTeam state side).Instructions
 
@@ -891,18 +964,15 @@ module SimStateOps =
 
     let getEmergentState (state: SimState) (side: ClubSide) = (getTeam state side).EmergentState
 
-    let setEmergentState (state: SimState) (side: ClubSide) (s: EmergentState) =
-        (getTeam state side).EmergentState <- s
+    let setEmergentState (state: SimState) (side: ClubSide) (s: EmergentState) = (getTeam state side).EmergentState <- s
 
     let getAdaptiveState (state: SimState) (side: ClubSide) = (getTeam state side).AdaptiveState
 
-    let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) =
-        (getTeam state side).AdaptiveState <- s
+    let setAdaptiveState (state: SimState) (side: ClubSide) (s: AdaptiveState) = (getTeam state side).AdaptiveState <- s
 
     let getMatchStats (state: SimState) (side: ClubSide) = (getTeam state side).MatchStats
 
-    let setMatchStats (state: SimState) (side: ClubSide) (s: MatchStats) =
-        (getTeam state side).MatchStats <- s
+    let setMatchStats (state: SimState) (side: ClubSide) (s: MatchStats) = (getTeam state side).MatchStats <- s
 
     let updateMatchStats (state: SimState) (side: ClubSide) (f: MatchStats -> MatchStats) =
         let team = getTeam state side
@@ -978,6 +1048,7 @@ module SimStateOps =
 
     let resetBallForKickOff (receivingClub: ClubSide) (state: SimState) =
         state.LastAttackingClub <- receivingClub
+
         state.Ball <-
             { state.Ball with
                 Position = kickOffSpatial
@@ -1000,9 +1071,10 @@ module SimStateOps =
         | _ -> false
 
     let losePossession (state: SimState) =
-        state.Ball <- { state.Ball with Possession = Loose; PlayerHoldSinceSubTick = None; Trajectory = None }
+        match state.Ball.Possession with
+        | Owned(side, _) -> (getTeam state side).ActiveRuns <- []
+        | _ -> ()
 
-    let loosePossession (state: SimState) =
         state.Ball <-
             { state.Ball with
                 Possession = Loose
@@ -1011,15 +1083,26 @@ module SimStateOps =
                 PlayerHoldSinceSubTick = None
                 Trajectory = None }
 
-    let givePossessionTo (club: ClubSide) (pid: PlayerId) (state: SimState) =
+    let givePossessionTo (club: ClubSide) (pid: PlayerId) (isGk: bool) (subTick: int) (ballBase: BallPhysicsState) (state: SimState) =
+        match state.Ball.Possession with
+        | Owned(losingClub, _) when losingClub <> club -> (getTeam state losingClub).ActiveRuns <- []
+        | _ -> ()
+
         state.LastAttackingClub <- club
+
         state.Ball <-
-            { state.Ball with
+            { ballBase with
                 Possession = Owned(club, pid)
+                LastTouchBy = Some pid
                 PendingOffsideSnapshot = None
-                GKHoldSinceSubTick = None
-                PlayerHoldSinceSubTick = None
-                Trajectory = None }
+                GKHoldSinceSubTick = if isGk then Some subTick else None
+                PlayerHoldSinceSubTick = if isGk then None else Some subTick
+                Trajectory = None
+                Position =
+                    { ballBase.Position with
+                        Vx = 0.0<meter / second>
+                        Vy = 0.0<meter / second>
+                        Vz = 0.0<meter / second> } }
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
         state.Momentum <- PhysicsContract.clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
@@ -1079,18 +1162,23 @@ module SimStateOps =
         let homeFrame = state.Home.Frame
         let homeRoster = getRoster ctx HomeClub
         let mutable found = false
+
         for i = 0 to homeFrame.SlotCount - 1 do
             match homeFrame.Occupancy[i] with
             | Active rosterIdx when homeRoster.Players[rosterIdx].Id = pid -> found <- true
             | _ -> ()
-        if found then Some HomeClub
+
+        if found then
+            Some HomeClub
         else
             let awayFrame = state.Away.Frame
             let awayRoster = getRoster ctx AwayClub
+
             for i = 0 to awayFrame.SlotCount - 1 do
                 match awayFrame.Occupancy[i] with
                 | Active rosterIdx when awayRoster.Players[rosterIdx].Id = pid -> found <- true
                 | _ -> ()
+
             if found then Some AwayClub else None
 
     let findActivePlayer (ctx: MatchContext) (state: SimState) (pid: PlayerId) : Player option =
@@ -1116,57 +1204,72 @@ module SimStateOps =
           Type = t
           Context = EventContext.at (float pos.X) (float pos.Y) }
 
-    let buildTeamPerspective
-        (clubSide: ClubSide)
-        (ctx: MatchContext)
-        (state: SimState)
-        : TeamPerspective =
-        let clubId   = if clubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
-        let dir      = attackDirFor clubSide state
-        let bonus    = HomeBonus.build clubSide state.Config.HomeAdvantage
+    let buildTeamPerspective (clubSide: ClubSide) (ctx: MatchContext) (state: SimState) : TeamPerspective =
+        let clubId = if clubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let dir = attackDirFor clubSide state
+        let bonus = HomeBonus.build clubSide state.Config.HomeAdvantage
         let ownFrame = (getTeam state clubSide).Frame
         let oppFrame = (getTeam state (ClubSide.flip clubSide)).Frame
         let ownRoster = getRoster ctx clubSide
         let oppRoster = getRoster ctx (ClubSide.flip clubSide)
-        { ClubSide  = clubSide
-          ClubId    = clubId
+
+        { ClubSide = clubSide
+          ClubId = clubId
           AttackDir = dir
-          OwnFrame  = ownFrame
-          OppFrame  = oppFrame
+          OwnFrame = ownFrame
+          OppFrame = oppFrame
           OwnRoster = ownRoster
           OppRoster = oppRoster
-          Bonus     = bonus }
+          Bonus = bonus }
 
-    let getFrame (state: SimState) (side: ClubSide) : TeamFrame =
-        (getTeam state side).Frame
+    let getFrame (state: SimState) (side: ClubSide) : TeamFrame = (getTeam state side).Frame
 
     let nearestActiveSlotInFrame (frame: TeamFrame) (x: float<meter>) (y: float<meter>) : int voption =
         let mutable bestIdx = ValueNone
         let mutable bestDistSq = System.Single.MaxValue
         let x32 = float32 x
         let y32 = float32 y
+
         for i = 0 to frame.SlotCount - 1 do
             match frame.Occupancy[i] with
             | Active _ ->
                 let dx = frame.PosX[i] - x32
                 let dy = frame.PosY[i] - y32
                 let d = dx * dx + dy * dy
+
                 if d < bestDistSq then
                     bestDistSq <- d
                     bestIdx <- ValueSome i
             | _ -> ()
+
         bestIdx
 
     let getCognitiveFrame (state: SimState) (side: ClubSide) : CognitiveFrame option =
-        let cf = if side = HomeClub then state.HomeCognitiveFrame else state.AwayCognitiveFrame
+        let cf =
+            if side = HomeClub then
+                state.HomeCognitiveFrame
+            else
+                state.AwayCognitiveFrame
+
         if cf.SlotCount > 0 then Some cf else None
 
     let setCognitiveFrame (state: SimState) (side: ClubSide) (cf: CognitiveFrame) =
-        if side = HomeClub then state.HomeCognitiveFrame <- cf else state.AwayCognitiveFrame <- cf
+        if side = HomeClub then
+            state.HomeCognitiveFrame <- cf
+        else
+            state.AwayCognitiveFrame <- cf
 
     let getTeamIntent (state: SimState) (side: ClubSide) : TeamIntent option =
-        let ti = if side = HomeClub then state.HomeTeamIntent else state.AwayTeamIntent
+        let ti =
+            if side = HomeClub then
+                state.HomeTeamIntent
+            else
+                state.AwayTeamIntent
+
         if ti.SupportPositions.Length > 0 then Some ti else None
 
     let setTeamIntent (state: SimState) (side: ClubSide) (ti: TeamIntent) =
-        if side = HomeClub then state.HomeTeamIntent <- ti else state.AwayTeamIntent <- ti
+        if side = HomeClub then
+            state.HomeTeamIntent <- ti
+        else
+            state.AwayTeamIntent <- ti

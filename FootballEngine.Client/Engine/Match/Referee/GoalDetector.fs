@@ -7,16 +7,20 @@ open SimStateOps
 module GoalDetector =
 
     let detect (ball: BallPhysicsState) : ClubSide option =
-        let pos = ball.Position
-        let inGoalY = pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
-        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= PhysicsContract.CrossbarHeight
+        // No detectar si la pelota ya fue procesada
+        match ball.Possession with
+        | SetPiece _ | Owned _ -> None
+        | _ ->
+            let pos = ball.Position
+            let inGoalY = pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+            let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= PhysicsContract.CrossbarHeight
 
-        if pos.X >= PhysicsContract.GoalLineHome && inGoalY && inGoalZ then
-            Some HomeClub
-        elif pos.X <= PhysicsContract.GoalLineAway && inGoalY && inGoalZ then
-            Some AwayClub
-        else
-            None
+            if pos.X >= PhysicsContract.GoalLineHome && inGoalY && inGoalZ then
+                Some HomeClub
+            elif pos.X <= PhysicsContract.GoalLineAway && inGoalY && inGoalZ then
+                Some AwayClub
+            else
+                None
 
     let scorer
         (scoringClub: ClubSide)

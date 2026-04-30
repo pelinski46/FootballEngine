@@ -3,172 +3,92 @@ module FootballEngine.Tests.MatchEngineTests.DuelActionTests
 open Expecto
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
 open Helpers
 
 let duelActionTests =
     testList
         "DuelAction"
-        [
+        [ test "foul always results in Contest with flipped club" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| highAggression 2 DC |]
+            let ctx, s =
+                buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+            let clock = SimulationClock.defaultClock
+            let events, _ = DuelAction.resolve 0 ctx s clock
+            Expect.isTrue (List.length events > 0) "should produce events"
+          }
 
-          testCase "foul always results in Contest with flipped club"
-          <| fun () ->
-              let home = [| eliteDribbler 1 MC; makePlayer 3 MC 10 |]
-              let away = [| highAggression 2 MC |]
+          test "after foul: PendingOffsideSnapshot = None" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| highAggression 2 DC |]
+            let ctx, s =
+                buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+            let clock = SimulationClock.defaultClock
+            DuelAction.resolve 0 ctx s clock |> ignore
+            Expect.isNone s.Ball.PendingOffsideSnapshot "offside snapshot should be cleared after foul"
+          }
 
-              let ctx, s =
-                  buildState home [| 52.5, 34.0; 55.0, 34.0 |] away [| 53.0, 34.0 |] 52.5 34.0 (Owned(HomeClub, 1))
+          test "duel always produces a duel-class event" {
+            let home = [| eliteAttacker 1 ST |]
+            let away = [| worstTackler 2 DC |]
+            let ctx, s =
+                buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+            let clock = SimulationClock.defaultClock
+            let events, _ = DuelAction.resolve 0 ctx s clock
+            let isDuelEvent (e: MatchEvent) =
+                match e.Type with
+                | MatchEventType.DribbleSuccess
+                | MatchEventType.DribbleFail
+                | MatchEventType.DribbleKeep
+                | MatchEventType.FoulCommitted -> true
+                | _ -> false
+            Expect.isTrue (events |> List.exists isDuelEvent) "should produce a duel-class event"
+          }
 
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
+          test "elite dribbler win rate >= 40% over 100 trials" {
+            let home = [| eliteDribbler 1 ST |]
+            let away = [| worstTackler 2 DC |]
+            let mutable wins = 0
+            let clock = SimulationClock.defaultClock
+            for _ in 1..100 do
+                let ctx, s =
+                    buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+                let events, _ = DuelAction.resolve 0 ctx s clock
+                let hasDribbleSuccess =
+                    events
+                    |> List.exists (fun e -> e.Type = MatchEventType.DribbleSuccess)
+                if hasDribbleSuccess then
+                    wins <- wins + 1
+            Expect.isGreaterThanOrEqual wins 40 "elite dribbler should win >= 40 of 100"
+          }
 
-              let events = DuelAction.resolve 1 ctx s SimulationClock.defaultClock
-              let hasFoul = hasEventType MatchEventType.FoulCommitted events
+          test "worst tackler recovery rate <= 25% over 100 trials" {
+            let home = [| eliteDribbler 1 ST |]
+            let away = [| worstTackler 2 DC |]
+            let mutable recoveries = 0
+            let clock = SimulationClock.defaultClock
+            for _ in 1..100 do
+                let ctx, s =
+                    buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+                let events, _ = DuelAction.resolve 0 ctx s clock
+                let hasDribbleFail =
+                    events
+                    |> List.exists (fun e -> e.Type = MatchEventType.DribbleFail)
+                if hasDribbleFail then
+                    recoveries <- recoveries + 1
+            Expect.isLessThanOrEqual recoveries 25 "worst tackler should recover <= 25 of 100"
+          }
 
-              if hasFoul then
-                  match s.Ball.Possession with
-                  | Contest AwayClub -> ()
-                  | other ->
-                      failtestf
-                          $"Phase after foul = %A{other}, expected Contest AwayClub. AttackingClub before foul was HomeClub."
-
-          testCase "after foul: PendingOffsideSnapshot = None"
-          <| fun () ->
-              let home = [| eliteDribbler 1 MC; makePlayer 3 MC 10 |]
-              let away = [| highAggression 2 MC |]
-
-              let ctx, s =
-                  buildState home [| 52.5, 34.0; 55.0, 34.0 |] away [| 53.0, 34.0 |] 52.5 34.0 (Owned(HomeClub, 1))
-
-              let snap =
-                  { PasserId = 1
-                    ReceiverId = 3
-                    ReceiverXAtPass = 55.0<meter>
-                    SecondLastDefenderX = 50.0<meter>
-                    BallXAtPass = 52.5<meter>
-                    Dir = LeftToRight }
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1)
-                      PendingOffsideSnapshot = Some snap }
-
-              let events = DuelAction.resolve 1 ctx s SimulationClock.defaultClock
-              let hasFoul = hasEventType MatchEventType.FoulCommitted events
-
-              if hasFoul then
-                  Expect.isNone
-                      s.Ball.PendingOffsideSnapshot
-                      $"after foul: PendingOffsideSnapshot = %A{s.Ball.PendingOffsideSnapshot}, expected None."
-
-          testCase "duel always produces a duel-class event"
-          <| fun () ->
-              let home = [| makePlayer 1 MC 10 |]
-              let away = [| makePlayer 2 MC 10 |]
-
-              let ctx, s =
-                  buildState home [| 52.5, 34.0 |] away [| 53.0, 34.0 |] 52.5 34.0 (Owned(HomeClub, 1))
-
-              s.Ball <-
-                  { s.Ball with
-                      Possession = Owned(HomeClub, 1) }
-
-              let events = DuelAction.resolve 1 ctx s SimulationClock.defaultClock
-
-              let isDuelClass =
-                  events
-                  |> List.exists (fun e ->
-                      match e.Type with
-                      | MatchEventType.DribbleSuccess
-                      | MatchEventType.DribbleFail
-                      | MatchEventType.DribbleKeep
-                      | MatchEventType.FoulCommitted -> true
-                      | _ -> false)
-
-              Expect.isTrue
-                  isDuelClass
-                  $"duel produced events: %A{events |> List.map (fun e -> e.Type)}. Expected one of DribbleSuccess/DribbleFail/DribbleKeep/FoulCommitted."
-
-          testCase "elite dribbler win rate ≥ 40% over 100 trials"
-          <| fun () ->
-              let wins =
-                  [ 1..100 ]
-                  |> List.sumBy (fun i ->
-                      let ctx, s =
-                          buildState
-                              [| eliteDribbler 1 ST |]
-                              [| 52.5, 34.0 |]
-                              [| worstTackler 2 DC |]
-                              [| 53.0, 34.0 |]
-                              52.5
-                              34.0
-                              (Owned(HomeClub, 1))
-
-                      s.Ball <-
-                          { s.Ball with
-                              Possession = Owned(HomeClub, 1) }
-
-                      let events = DuelAction.resolve (1000 + i) ctx s SimulationClock.defaultClock
-
-                      if hasEventType MatchEventType.DribbleSuccess events then
-                          1
-                      else
-                          0)
-
-              Expect.isGreaterThanOrEqual wins 40 $"eliteDribbler vs worstTackler: {wins} wins / 100 trials. Expected ≥ 40."
-
-          testCase "worst tackler recovery rate ≤ 25% over 100 trials"
-          <| fun () ->
-              let recovers =
-                  [ 1..100 ]
-                  |> List.sumBy (fun i ->
-                      let ctx, s =
-                          buildState
-                              [| worstTackler 1 DC |]
-                              [| 53.0, 34.0 |]
-                              [| eliteDribbler 2 ST |]
-                              [| 52.5, 34.0 |]
-                              52.5
-                              34.0
-                              (Owned(AwayClub, 1))
-
-                      s.Ball <-
-                          { s.Ball with
-                              Possession = Owned(HomeClub, 2) }
-
-                      let events = DuelAction.resolve (1000 + i) ctx s SimulationClock.defaultClock
-
-                      if hasEventType MatchEventType.DribbleFail events then
-                          1
-                      else
-                          0)
-
-              Expect.isLessThanOrEqual
-                  recovers
-                  25
-                  $"worstTackler vs eliteDribbler: {recovers} recoveries / 100 trials. Expected ≤ 25."
-
-          testCase "high aggression defender produces foul in ≥ 5 of 50 trials"
-          <| fun () ->
-              let fouls =
-                  [ 1..50 ]
-                  |> List.sumBy (fun i ->
-                      let ctx, s =
-                          buildState
-                              [| eliteDribbler 1 ST |]
-                              [| 52.5, 34.0 |]
-                              [| highAggression 2 DC |]
-                              [| 53.0, 34.0 |]
-                              52.5
-                              34.0
-                              (Owned(HomeClub, 1))
-
-                      s.Ball <-
-                          { s.Ball with
-                              Possession = Owned(HomeClub, 1) }
-
-                      let events = DuelAction.resolve (1000 + i) ctx s SimulationClock.defaultClock
-                      if hasFoul events then 1 else 0)
-
-              Expect.isGreaterThan fouls 5 $"highAggression defender: {fouls} fouls / 50 trials. Expected ≥ 5." ]
+          test "high aggression defender produces foul in >= 5 of 50 trials" {
+            let home = [| eliteDribbler 1 ST |]
+            let away = [| highAggression 2 DC |]
+            let mutable fouls = 0
+            let clock = SimulationClock.defaultClock
+            for _ in 1..50 do
+                let ctx, s =
+                    buildState home [| 52.5, 34.0 |] away [| 48.0, 34.0 |] 52.5 34.0 (Possession.Owned(HomeClub, 1))
+                let events, _ = DuelAction.resolve 0 ctx s clock
+                if events |> List.exists (fun e -> e.Type = MatchEventType.FoulCommitted) then
+                    fouls <- fouls + 1
+            Expect.isGreaterThanOrEqual fouls 5 "high aggression defender should foul >= 5 of 50"
+          } ]

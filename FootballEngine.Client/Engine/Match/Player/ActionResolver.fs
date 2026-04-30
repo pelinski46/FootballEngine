@@ -27,6 +27,9 @@ module ActionResolver =
                 | ValueNone -> ()
 
             result
+        // INVARIANT: ActionResolver retorna empty cuando Possession = InFlight.
+        // El arrival system (BallAgent) es la única autoridad durante el vuelo del balón.
+        | InFlight -> None, None, None
         | _ ->
             let bx = state.Ball.Position.X
             let by = state.Ball.Position.Y
@@ -137,85 +140,48 @@ module ActionResolver =
             | None -> ActionResult.empty, []
 
     let run (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : ActionResult =
-        let controller, rosterOpt, controllerClubSide = findController ctx state
+        match state.Flow with
+        | Live ->
+            let controller, rosterOpt, controllerClubSide = findController ctx state
 
-        let actionResult, actionRefereeActions =
-            match controller, rosterOpt, controllerClubSide with
-            | Some ctrl, Some roster, Some clubSide ->
-                if ctrl.Position = GK then
-                    match state.Ball.Possession with
-                    | Owned(side, gkId) when gkId = ctrl.Id ->
-                        let events = GKAction.resolve subTick ctx state clock
-                        ActionResult.ofEvents events, []
-                    | _ ->
+            let actionResult, actionRefereeActions =
+                match controller, rosterOpt, controllerClubSide with
+                | Some ctrl, Some roster, Some clubSide ->
+                    if ctrl.Position = GK then
+                        match state.Ball.Possession with
+                        | Owned(side, gkId) when gkId = ctrl.Id ->
+                            let events = GKAction.resolve subTick ctx state clock
+                            ActionResult.ofEvents events, []
+                        | _ ->
+                            let meIdx = roster.Players |> Array.findIndex (fun p -> p.Id = ctrl.Id)
+                            let profile = roster.Profiles[meIdx]
+                            match decideAction ctrl profile meIdx clubSide ctx state clock with
+                            | Some action -> resolveIntent subTick action ctx state clock
+                            | None -> ActionResult.empty, []
+                    else
                         let meIdx = roster.Players |> Array.findIndex (fun p -> p.Id = ctrl.Id)
                         let profile = roster.Profiles[meIdx]
+
                         match decideAction ctrl profile meIdx clubSide ctx state clock with
                         | Some action -> resolveIntent subTick action ctx state clock
-                        | None -> ActionResult.empty, []
-                else
-                    let meIdx = roster.Players |> Array.findIndex (fun p -> p.Id = ctrl.Id)
-                    let profile = roster.Profiles[meIdx]
+                        | None ->
+                            match state.Ball.Possession with
+                            | Owned _ ->
+                                let holdTimeout =
+                                    match state.Ball.PlayerHoldSinceSubTick with
+                                    | Some since -> subTick - since >= 12
+                                    | None -> true
+                                if holdTimeout then
+                                    SimStateOps.losePossession state
+                                    ActionResult.empty, []
+                                else
+                                    ActionResult.empty, []
+                            | _ -> ActionResult.empty, []
+                | _ -> ActionResult.empty, []
 
-                    match decideAction ctrl profile meIdx clubSide ctx state clock with
-                    | Some action -> resolveIntent subTick action ctx state clock
-                    | None ->
-                        match state.Ball.Possession with
-                        | Owned _ ->
-                            let holdTimeout =
-                                match state.Ball.PlayerHoldSinceSubTick with
-                                | Some since -> subTick - since >= 12
-                                | None -> true
-                            if holdTimeout then
-                                SimStateOps.loosePossession state
-                                ActionResult.empty, []
-                            else
-                                ActionResult.empty, []
-                        | _ -> ActionResult.empty, []
-            | _ -> ActionResult.empty, []
+            let refereeEvents =
+                actionRefereeActions
+                |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
 
-        let defSide =
-            match controllerClubSide with
-            | Some cs -> ClubSide.flip cs
-            | None -> ClubSide.flip state.AttackingSide
-
-        let defFrame = getFrame state defSide
-        let defRoster = getRoster ctx defSide
-
-        let bx, by = state.Ball.Position.X, state.Ball.Position.Y
-
-        let defOpt =
-            match SimStateOps.nearestActiveSlotInFrame defFrame bx by with
-            | ValueSome idx -> Some defRoster.Players[idx]
-            | ValueNone -> None
-
-        let playerHasBall =
-            match controller with
-            | Some ctrl ->
-                match state.Ball.Possession with
-                | Owned(_, pid) -> pid = ctrl.Id
-                | _ -> false
-            | None -> false
-
-        let attOpt = if playerHasBall then controller else None
-        let refActions = RefereeAgent.decide attOpt defOpt ctx state
-
-        let allRefereeActions = actionRefereeActions @ refActions
-
-        let refereeEvents =
-            allRefereeActions
-            |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
-
-        let combined =
-            { Events = actionResult.Events @ refereeEvents
-              PendingGoal = actionResult.PendingGoal }
-
-        match combined.PendingGoal with
-        | Some pg ->
-            let scorerId, isOwnGoal = GoalDetector.scorer pg.ScoringClub state.Ball ctx state
-            let confirmAction = ConfirmGoal(pg.ScoringClub, scorerId, isOwnGoal)
-            let goalEvents = RefereeApplicator.apply subTick confirmAction ctx state
-
-            { combined with
-                Events = combined.Events @ goalEvents }
-        | None -> combined
+            { Events = actionResult.Events @ refereeEvents }
+        | _ -> { Events = [] }

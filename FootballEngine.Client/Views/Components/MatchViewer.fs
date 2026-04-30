@@ -632,6 +632,32 @@ module HudRenderer =
         namePaint.TextAlign <- SKTextAlign.Left
         canvas.DrawText(teamName.ToUpper(), x + 26.0f, y + h / 2.0f + 4.0f, namePaint)
 
+    let drawSituationBanner (canvas: SKCanvas) (text: string) (color: SKColor) =
+        let w = 320.0f
+        let h = 52.0f
+        let x = PitchW / 2.0f - w / 2.0f
+        let y = PitchH / 2.0f - h / 2.0f - 60.0f
+
+        use bgPaint = new SKPaint(
+            Color = SKColor(15uy, 23uy, 42uy, 220uy),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill)
+        use borderPaint = new SKPaint(
+            Color = color,
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 2.0f)
+        use textPaint = new SKPaint(
+            Color = color,
+            IsAntialias = true,
+            TextSize = 20.0f,
+            TextAlign = SKTextAlign.Center,
+            Typeface = SKTypeface.FromFamilyName("Inter", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright))
+
+        canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 10.0f, 10.0f, bgPaint)
+        canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 10.0f, 10.0f, borderPaint)
+        canvas.DrawText(text, PitchW / 2.0f, y + 32.0f, textPaint)
+
     let drawMomentum (canvas: SKCanvas) (momentum: float) (homeName: string) (awayName: string) =
         let barW = 260.0f
         let barH = 6.0f
@@ -809,6 +835,25 @@ type MatchDrawOp
                     HudRenderer.drawPossession canvas possessingName possessingIsHome
 
                 HudRenderer.drawMomentum canvas renderFrame.Momentum renderFrame.HomeName renderFrame.AwayName
+
+                let bannerYellow = SKColor(245uy, 158uy, 11uy, 255uy)
+                let bannerGreen  = SKColor(16uy, 185uy, 129uy, 255uy)
+                match snapshot.Flow with
+                | MatchFlow.GoalPause _ ->
+                    HudRenderer.drawSituationBanner canvas "⚽  GOAL!" bannerGreen
+                | MatchFlow.RestartDelay { Kind = SetPieceKind.Corner } ->
+                    HudRenderer.drawSituationBanner canvas "Corner Kick" bannerYellow
+                | MatchFlow.RestartDelay { Kind = SetPieceKind.GoalKick } ->
+                    HudRenderer.drawSituationBanner canvas "Goal Kick" bannerYellow
+                | MatchFlow.RestartDelay { Kind = SetPieceKind.ThrowIn } ->
+                    HudRenderer.drawSituationBanner canvas "Throw In" bannerYellow
+                | MatchFlow.RestartDelay { Kind = SetPieceKind.FreeKick } ->
+                    HudRenderer.drawSituationBanner canvas "Free Kick" bannerYellow
+                | MatchFlow.RestartDelay { Kind = SetPieceKind.KickOff } ->
+                    HudRenderer.drawSituationBanner canvas "Kick Off" bannerYellow
+                | MatchFlow.InjuryPause _ ->
+                    HudRenderer.drawSituationBanner canvas "Injury" bannerYellow
+                | _ -> ()
 
                 canvas.Restore()
 
