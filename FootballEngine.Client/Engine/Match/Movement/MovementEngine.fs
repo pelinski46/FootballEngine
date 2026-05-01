@@ -5,7 +5,6 @@ open FootballEngine.Domain
 open FootballEngine.PlayerSteering
 open SimStateOps
 open FootballEngine.PhysicsContract
-open SimulationClock
 
 module MovementEngine =
 
@@ -21,34 +20,53 @@ module MovementEngine =
         let roster = getRoster ctx clubSide
 
         let ballCarrierOppIdx =
-            let cFrame = if clubSide = HomeClub then state.HomeCognitiveFrame else state.AwayCognitiveFrame
+            let cFrame =
+                if clubSide = HomeClub then
+                    state.HomeCognitiveFrame
+                else
+                    state.AwayCognitiveFrame
+
             cFrame.BallCarrierOppIdx
 
-        if ballCarrierOppIdx < 0s then ()
+        if ballCarrierOppIdx < 0s then
+            ()
         else
-            let bcx = oppFrame.PosX[int ballCarrierOppIdx]
-            let bcy = oppFrame.PosY[int ballCarrierOppIdx]
+            let bcx = oppFrame.Physics.PosX[int ballCarrierOppIdx]
+            let bcy = oppFrame.Physics.PosY[int ballCarrierOppIdx]
 
             for i = 0 to ownFrame.SlotCount - 1 do
-                match ownFrame.Occupancy[i] with
+                match ownFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Sidelined _ -> ()
                 | OccupancyKind.Active rosterIdx ->
-                    if ownFrame.IntentKind[i] <> IntentKind.ExecuteRun then
+                    if ownFrame.Intent.Kind[i] <> IntentKind.ExecuteRun then
                         let aggression =
                             if rosterIdx < roster.Players.Length then
                                 float roster.Players[rosterIdx].Mental.Aggression / 20.0
-                            else 0.5
+                            else
+                                0.5
 
-                        match ReactiveLayer.evaluateReactiveIntent i ownFrame oppFrame (int ballCarrierOppIdx) bcx bcy aggression with
+                        match
+                            ReactiveLayer.evaluateReactiveIntent
+                                i
+                                ownFrame
+                                oppFrame
+                                (int ballCarrierOppIdx)
+                                bcx
+                                bcy
+                                aggression
+                        with
                         | TackleAttempt oppSlot ->
-                            FrameMutate.setIntent ownFrame i IntentKind.PressBall
-                                oppFrame.PosX[oppSlot] oppFrame.PosY[oppSlot] oppSlot
-                        | PressBall(tx, ty) ->
-                            FrameMutate.setIntent ownFrame i IntentKind.PressBall tx ty 0
-                        | InterceptLane(tx, ty) ->
-                            FrameMutate.setIntent ownFrame i IntentKind.CoverSpace tx ty 0
+                            FrameMutate.setIntent
+                                ownFrame.Intent
+                                i
+                                IntentKind.PressBall
+                                oppFrame.Physics.PosX[oppSlot]
+                                oppFrame.Physics.PosY[oppSlot]
+                                oppSlot
+                        | PressBall(tx, ty) -> FrameMutate.setIntent ownFrame.Intent i IntentKind.PressBall tx ty 0
+                        | InterceptLane(tx, ty) -> FrameMutate.setIntent ownFrame.Intent i IntentKind.CoverSpace tx ty 0
                         | NoReaction -> ()
-                | _ -> ()
+
 
     let updatePhysics
         (ctx: MatchContext)
@@ -62,7 +80,7 @@ module MovementEngine =
         let pcfg = state.Config.Physics
 
         for i = 0 to frame.SlotCount - 1 do
-            match frame.Occupancy[i] with
+            match frame.Physics.Occupancy[i] with
             | OccupancyKind.Sidelined _ -> ()
             | OccupancyKind.Active rosterIdx ->
                 let player = roster.Players[rosterIdx]
@@ -71,16 +89,16 @@ module MovementEngine =
                 // INVARIANT: ActiveRuns es la única fuente de verdad para runs en ejecución.
                 // El frame lleva solo el IntentKind como señal. La posición viene de aquí.
                 let targetX, targetY =
-                    match frame.IntentKind[i] with
+                    match frame.Intent.Kind[i] with
                     | IntentKind.ExecuteRun ->
-                        SimStateOps.getActiveRuns state clubSide
+                        getActiveRuns state clubSide
                         |> List.tryFind (fun r -> r.PlayerId = player.Id && RunAssignment.isActive currentSubTick r)
                         |> Option.map (fun run ->
                             let t = RunAssignment.progress currentSubTick run
                             let tx, ty = RunAssignment.evaluateTrajectory t run.Trajectory
                             float32 tx, float32 ty)
-                        |> Option.defaultWith (fun () -> frame.IntentTargetX[i], frame.IntentTargetY[i])
-                    | _ -> frame.IntentTargetX[i], frame.IntentTargetY[i]
+                        |> Option.defaultWith (fun () -> frame.Intent.TargetX[i], frame.Intent.TargetY[i])
+                    | _ -> frame.Intent.TargetX[i], frame.Intent.TargetY[i]
 
                 let hasBall =
                     match state.Ball.Possession with
@@ -88,40 +106,49 @@ module MovementEngine =
                     | _ -> false
 
                 let chasingBall =
-                    match frame.IntentKind[i] with
-                    | IntentKind.PressBall | IntentKind.RecoverBall -> true
+                    match frame.Intent.Kind[i] with
+                    | IntentKind.PressBall
+                    | IntentKind.RecoverBall -> true
                     | _ -> false
 
-                let myX = float frame.PosX[i] * 1.0<meter>
-                let myY = float frame.PosY[i] * 1.0<meter>
-                let myVx = float frame.VelX[i] * 1.0<meter/second>
-                let myVy = float frame.VelY[i] * 1.0<meter/second>
+                let myX = float frame.Physics.PosX[i] * 1.0<meter>
+                let myY = float frame.Physics.PosY[i] * 1.0<meter>
+                let myVx = float frame.Physics.VelX[i] * 1.0<meter / second>
+                let myVy = float frame.Physics.VelY[i] * 1.0<meter / second>
 
-                let current = {
-                    X = myX; Y = myY; Z = 0.0<meter>
-                    Vx = myVx; Vy = myVy; Vz = 0.0<meter/second>
-                }
+                let current =
+                    { X = myX
+                      Y = myY
+                      Z = 0.0<meter>
+                      Vx = myVx
+                      Vy = myVy
+                      Vz = 0.0<meter / second> }
 
                 let newPos =
                     PlayerPhysics.steerSoA
-                        pcfg player condition current i
-                        frame.PosX frame.PosY frame.SlotCount
+                        pcfg
+                        player
+                        condition
+                        current
+                        i
+                        frame.Physics.PosX
+                        frame.Physics.PosY
+                        frame.SlotCount
                         (targetX, targetY)
-                        state.Ball.Position hasBall chasingBall dt
+                        state.Ball.Position
+                        hasBall
+                        chasingBall
+                        dt
 
-                FrameMutate.setPos frame i newPos.X newPos.Y
-                FrameMutate.setVel frame i newPos.Vx newPos.Vy
+                FrameMutate.setPos frame.Physics i newPos.X newPos.Y
+                FrameMutate.setVel frame.Physics i newPos.Vx newPos.Vy
 
-    let refreshCache
-        (ctx: MatchContext)
-        (state: SimState)
-        (clubSide: ClubSide)
-        =
+    let refreshCache (ctx: MatchContext) (state: SimState) (clubSide: ClubSide) =
         let frame = getFrame state clubSide
         let roster = getRoster ctx clubSide
 
         for i = 0 to frame.SlotCount - 1 do
-            match frame.Occupancy[i] with
+            match frame.Physics.Occupancy[i] with
             | OccupancyKind.Sidelined _ -> ()
             | OccupancyKind.Active _ ->
                 let player = roster.Players[i]
@@ -134,12 +161,10 @@ module MovementEngine =
                         player.Physical.Acceleration
                         condition
 
-                let targetX = frame.IntentTargetX[i]
-                let targetY = frame.IntentTargetY[i]
+                let targetX = frame.Intent.TargetX[i]
+                let targetY = frame.Intent.TargetY[i]
 
-                FrameMutate.setCachedTarget frame i
-                    (float targetX * 1.0<meter>)
-                    (float targetY * 1.0<meter>)
+                FrameMutate.setCachedTarget frame i (float targetX * 1.0<meter>) (float targetY * 1.0<meter>)
                 FrameMutate.setCachedExecution frame i (float exec)
 
     let updateTeamSide
@@ -152,7 +177,8 @@ module MovementEngine =
         (cognitiveRate: int)
         =
         let smoothing = 0.92
-        state.BallXSmooth <- smoothing * state.BallXSmooth + (1.0 - smoothing) * state.Ball.Position.X
+        let clampedX = PhysicsContract.clamp state.Ball.Position.X 0.0<meter> PhysicsContract.PitchLength
+        state.BallXSmooth <- smoothing * state.BallXSmooth + (1.0 - smoothing) * clampedX
 
         match state.Ball.Possession with
         | Possession.SetPiece _ ->

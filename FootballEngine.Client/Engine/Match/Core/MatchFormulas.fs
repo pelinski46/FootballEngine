@@ -53,14 +53,14 @@ module PitchMath =
         |> fst
 
     let jitter (oX: float<meter>) (oY: float<meter>) (tX: float<meter>) (tY: float<meter>) scale nx ny =
-        PhysicsContract.clamp
+        clamp
             (oX + (tX - oX) * scale + (normalSample 0.0 nx) * 1.0<meter>)
             0.0<meter>
-            PhysicsContract.PitchLength,
-        PhysicsContract.clamp
+            PitchLength,
+        clamp
             (oY + (tY - oY) * scale + (normalSample 0.0 ny) * 1.0<meter>)
             0.0<meter>
-            PhysicsContract.PitchWidth
+            PitchWidth
 
     type PlayerRole =
         | Defender

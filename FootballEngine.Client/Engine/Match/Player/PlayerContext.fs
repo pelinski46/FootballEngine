@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Movement
 open FootballEngine.PhysicsContract
 open SimStateOps
 open MatchSpatial
@@ -31,9 +32,12 @@ type AgentContext =
       Decision: DecisionConfig
       BuildUp: BuildUpConfig
       Dribble: DribbleConfig
-      TeamIntent: TeamIntent
+      DirectiveKind: FootballEngine.Movement.DirectiveKind
+      DirectiveParams: FootballEngine.Movement.DirectiveParams
+      TargetRunner: PlayerId option
+      RunType: RunType option
+      RunTarget: Spatial option
       PreviousIntent: MovementIntent voption
-      IntentLockExpiry: int
       VisibilityMask: VisibilityMask voption
       CurrentSubTick: int
       TransitionPressExpiry: int
@@ -46,9 +50,7 @@ module AgentContext =
         (profile: BehavioralProfile)
         (meIdx: int)
         (team: TeamPerspective)
-        (teamIntent: TeamIntent)
         (previousIntent: MovementIntent voption)
-        (intentLockExpiry: int)
         (state: SimState)
         (clock: SimulationClock)
         (ctx: MatchContext)
@@ -80,12 +82,16 @@ module AgentContext =
             | Possession.Loose -> false
 
         let tacticsCfg =
-            tacticsConfig
-                (getTactics state team.ClubSide)
-                (getInstructions state team.ClubSide)
+            tacticsConfig (getTactics state team.ClubSide) (getInstructions state team.ClubSide)
 
-        let clubId = if team.ClubSide = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let clubId =
+            if team.ClubSide = HomeClub then
+                ctx.Home.Id
+            else
+                ctx.Away.Id
+
         let urgency = matchUrgency clubId ctx state clock
+
         let mentalState =
             { ComposureLevel = float team.OwnFrame.ComposureLevel[meIdx]
               ConfidenceLevel = float team.OwnFrame.ConfidenceLevel[meIdx]
@@ -93,46 +99,59 @@ module AgentContext =
               AggressionLevel = float team.OwnFrame.AggressionLevel[meIdx]
               RiskTolerance = float team.OwnFrame.RiskTolerance[meIdx] }
 
-        let myX32 = team.OwnFrame.PosX[meIdx]
-        let myY32 = team.OwnFrame.PosY[meIdx]
+        let myX32 = team.OwnFrame.Physics.PosX[meIdx]
+        let myY32 = team.OwnFrame.Physics.PosY[meIdx]
 
-        let myPos = {
-            X = float myX32 * 1.0<meter>
-            Y = float myY32 * 1.0<meter>
-            Z = 0.0<meter>
-            Vx = 0.0<meter/second>
-            Vy = 0.0<meter/second>
-            Vz = 0.0<meter/second>
-        }
+        let myPos =
+            { X = float myX32 * 1.0<meter>
+              Y = float myY32 * 1.0<meter>
+              Z = 0.0<meter>
+              Vx = float team.OwnFrame.Physics.VelX[meIdx] * 1.0<meter / second>
+              Vy = float team.OwnFrame.Physics.VelY[meIdx] * 1.0<meter / second>
+              Vz = 0.0<meter / second> }
 
         let nearestTMIdx, nearestOppIdx, bestPassTargetIdx, bestPassTargetPos =
             match visibilityMask with
             | ValueSome mask ->
-                let oppIdx, _ = Perception.resolveNearestOpponentThroughMask myPos team.OppFrame mask
-                let passTarget = Perception.resolveBestPassTargetThroughMask meIdx team.OwnFrame team.OwnRoster team.OppFrame dir mask
+                let oppIdx, _ =
+                    Perception.resolveNearestOpponentThroughMask myPos team.OppFrame mask
+
+                let passTarget =
+                    Perception.resolveBestPassTargetThroughMask
+                        meIdx
+                        team.OwnFrame
+                        team.OwnRoster
+                        team.OppFrame
+                        dir
+                        mask
+
                 let bpIdx, bpPos =
                     match passTarget with
-                    | ValueSome (idx, sp) -> ValueSome idx, ValueSome sp
+                    | ValueSome(idx, sp) -> ValueSome idx, ValueSome sp
                     | ValueNone -> ValueNone, ValueNone
+
                 ValueNone, oppIdx, bpIdx, bpPos
             | ValueNone ->
                 match cFrame with
                 | Some cf ->
                     let tmIdx =
                         if cf.NearestTeammateIdx[meIdx] >= 0s then
-                            ValueSome (int cf.NearestTeammateIdx[meIdx])
+                            ValueSome(int cf.NearestTeammateIdx[meIdx])
                         else
                             ValueNone
+
                     let oppIdx =
                         if cf.NearestOpponentIdx[meIdx] >= 0s then
-                            ValueSome (int cf.NearestOpponentIdx[meIdx])
+                            ValueSome(int cf.NearestOpponentIdx[meIdx])
                         else
                             ValueNone
+
                     let bpIdx =
                         if cf.BestPassTargetIdx[meIdx] >= 0s then
-                            ValueSome (int cf.BestPassTargetIdx[meIdx])
+                            ValueSome(int cf.BestPassTargetIdx[meIdx])
                         else
                             ValueNone
+
                     tmIdx, oppIdx, bpIdx, cf.BestPassTargetPos[meIdx]
                 | None ->
                     let mutable nTM: int voption = ValueNone
@@ -142,22 +161,24 @@ module AgentContext =
 
                     for i = 0 to team.OwnFrame.SlotCount - 1 do
                         if i <> meIdx then
-                            match team.OwnFrame.Occupancy[i] with
+                            match team.OwnFrame.Physics.Occupancy[i] with
                             | OccupancyKind.Active _ ->
-                                let dx = team.OwnFrame.PosX[i] - myX32
-                                let dy = team.OwnFrame.PosY[i] - myY32
+                                let dx = team.OwnFrame.Physics.PosX[i] - myX32
+                                let dy = team.OwnFrame.Physics.PosY[i] - myY32
                                 let d = dx * dx + dy * dy
+
                                 if d < minDistTM then
                                     minDistTM <- d
                                     nTM <- ValueSome i
                             | _ -> ()
 
                     for i = 0 to team.OppFrame.SlotCount - 1 do
-                        match team.OppFrame.Occupancy[i] with
+                        match team.OppFrame.Physics.Occupancy[i] with
                         | OccupancyKind.Active _ ->
-                            let dx = team.OppFrame.PosX[i] - myX32
-                            let dy = team.OppFrame.PosY[i] - myY32
+                            let dx = team.OppFrame.Physics.PosX[i] - myX32
+                            let dy = team.OppFrame.Physics.PosY[i] - myY32
                             let d = dx * dx + dy * dy
+
                             if d < minDistOpp then
                                 minDistOpp <- d
                                 nOpp <- ValueSome i
@@ -168,18 +189,20 @@ module AgentContext =
 
                     let bpIdx, bpPos =
                         match bestPassTarget with
-                        | ValueSome (idx, sp) -> ValueSome idx, ValueSome sp
+                        | ValueSome(idx, sp) -> ValueSome idx, ValueSome sp
                         | ValueNone -> ValueNone, ValueNone
 
                     nTM, nOpp, bpIdx, bpPos
 
-        let goalX =
-            if dir = LeftToRight then
-                PhysicsContract.PitchLength
-            else
-                0.0<meter>
+        let goalX = if dir = LeftToRight then PitchLength else 0.0<meter>
 
         let dist = abs (myPos.X - goalX)
+
+        let directiveState = SimStateOps.getDirective state team.ClubSide
+
+        let directive =
+            FootballEngine.Movement.TeamDirectiveOps.currentDirective directiveState
+            |> Option.defaultValue (FootballEngine.Movement.TeamDirectiveOps.empty state.SubTick)
 
         { MeIdx = meIdx
           Me = me
@@ -208,11 +231,13 @@ module AgentContext =
           Decision = decision
           BuildUp = buildUp
           Dribble = state.Config.Dribble
-          TeamIntent = teamIntent
+          DirectiveKind = directive.Kind
+          DirectiveParams = directive.Params
+          TargetRunner = directive.TargetRunner
+          RunType = directive.RunType
+          RunTarget = directive.RunTarget
           PreviousIntent = previousIntent
-          IntentLockExpiry = intentLockExpiry
           VisibilityMask = visibilityMask
           CurrentSubTick = state.SubTick
           TransitionPressExpiry = (getTeam state team.ClubSide).TransitionPressExpiry
-          Influence = influence
-        }
+          Influence = influence }

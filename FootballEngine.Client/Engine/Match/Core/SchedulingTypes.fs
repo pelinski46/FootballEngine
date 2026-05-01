@@ -25,22 +25,37 @@ module SchedulingTypes =
         | Tackle of opponent: PlayerId
         | PassIntoSpace of targetCell: int
 
-    type IntentContext =
-        | NormalPlay
-        | BuildUpPhase
-        | PressingTrap
-
-    type PlayerIntent =
-        { Movement: MovementIntent
-          Action: OnBallIntent option
-          Context: IntentContext
-          Urgency: float
-          Confidence: float }
-
-
     type PlayerResult =
         { Events: MatchEvent list
           Transition: MatchFlow option }
+
+    type BallResult =
+        { Events: MatchEvent list
+          Transition: MatchFlow option
+          PossessionChanged: bool
+          BallInFlight: bool
+          SetPieceAwarded: bool
+          ReceivedByPlayer: PlayerId option
+          GoalScored: ClubSide option }
+
+    module BallResult =
+        let empty =
+            { Events = []
+              Transition = None
+              PossessionChanged = false
+              BallInFlight = false
+              SetPieceAwarded = false
+              ReceivedByPlayer = None
+              GoalScored = None }
+
+        let ofPlayerResult (pr: PlayerResult) =
+            { Events = pr.Events
+              Transition = pr.Transition
+              PossessionChanged = false
+              BallInFlight = false
+              SetPieceAwarded = false
+              ReceivedByPlayer = None
+              GoalScored = None }
 
     type RefereeResult =
         { Actions: RefereeAction list

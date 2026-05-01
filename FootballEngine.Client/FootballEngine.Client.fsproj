@@ -48,7 +48,18 @@
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
         <Compile Include="Engine\Match\Core\InfluenceTypes.fs"/>
         <Compile Include="Engine\Match\Referee\VAR\VARTypes.fs"/>
-        <Compile Include="Engine\Match\Core\SimTypes.fs"/>
+        <Compile Include="Engine\Match\Core\Primitives.fs"/>
+        <Compile Include="Engine\Match\Core\MatchPrimitives.fs"/>
+        <Compile Include="Engine\Match\Movement\MovementTypes.fs"/>
+        <Compile Include="Engine\Match\Movement\RunAssignment.fs"/>
+        <Compile Include="Engine\Match\Movement\DirectiveTypes.fs"/>
+        <Compile Include="Engine\Match\Core\IntentTypes.fs"/>
+        <Compile Include="Engine\Match\Core\PlayerFrame.fs"/>
+        <Compile Include="Engine\Match\Movement\TeamDirective.fs"/>
+        <Compile Include="Engine\Match\Core\BallTypes.fs"/>
+        <Compile Include="Engine\Match\Core\MatchContext.fs"/>
+        <Compile Include="Engine\Match\Core\SimStateOps.fs"/>
+        <Compile Include="Engine\Match\Core\IntentPhase.fs"/>
         <Compile Include="Engine\Match\Referee\FoulAnalysis.fs"/>
         <Compile Include="Engine\Match\Referee\AdvantageEngine.fs"/>
         <Compile Include="Engine\Match\Referee\HandballDetector.fs"/>
@@ -74,7 +85,6 @@
         <Compile Include="Engine\Match\Player\PlayerSteering.fs"/>
         <Compile Include="Engine\Match\Movement\OrganicDrift.fs"/>
         <Compile Include="Engine\Match\Movement\FatiguePipeline.fs"/>
-        <Compile Include="Engine\Match\Movement\MovementTypes.fs"/>
         <Compile Include="Engine\Match\Movement\EventWindow.fs"/>
         <Compile Include="Engine\Match\Movement\ShapeEngine.fs"/>
         <Compile Include="Engine\Match\Movement\EmergentLoops.fs"/>
@@ -82,7 +92,6 @@
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
         <Compile Include="Engine\Match\Player\MovementScorer.fs"/>
         <Compile Include="Engine\Match\Player\SpaceScorer.fs"/>
-        <Compile Include="Engine\Match\Movement\TeamIntent.fs"/>
         <Compile Include="Engine\Match\Player\ReactiveLayer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerScorer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerPersonality.fs"/>

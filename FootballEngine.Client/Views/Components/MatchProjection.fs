@@ -138,7 +138,8 @@ module MatchProjection =
                     Some ctx.Home.Id
                 else
                     Some ctx.Away.Id
-            | InFlight | Loose -> None
+            | InFlight
+            | Loose -> None
 
         { Players = Array.append homePlayers awayPlayers
           Ball = renderBall
@@ -202,27 +203,41 @@ module MatchInterp =
             let b0 = frame0.Ball
             let b1 = frame1.Ball
 
-            { Position = hermiteVec2 b0.Position b0.Velocity b1.Position b1.Velocity t dt
-              Velocity =
-                let t2 = t * t
-                let dh00 = 6.0 * t2 - 6.0 * t
-                let dh10 = 3.0 * t2 - 4.0 * t + 1.0
-                let dh01 = -6.0 * t2 + 6.0 * t
-                let dh11 = 3.0 * t2 - 2.0 * t
+            let dx = b1.Position.X - b0.Position.X
+            let dy = b1.Position.Y - b0.Position.Y
+            let distSq = dx * dx + dy * dy
 
-                { X =
-                    dh00 * b0.Position.X / dt
-                    + dh10 * b0.Velocity.X
-                    + dh01 * b1.Position.X / dt
-                    + dh11 * b1.Velocity.X
-                  Y =
-                    dh00 * b0.Position.Y / dt
-                    + dh10 * b0.Velocity.Y
-                    + dh01 * b1.Position.Y / dt
-                    + dh11 * b1.Velocity.Y }
-              Spin = Vector2.scale (1.0 - t) b0.Spin |> Vector2.add (Vector2.scale t b1.Spin)
-              VelocityZ = b0.VelocityZ * (1.0 - t) + b1.VelocityZ * t
-              Height = hermiteScalar b0.Height 0.0 b1.Height 0.0 t dt }
+            if distSq > 25.0 then
+                if t < 0.5 then
+                    { b0 with
+                        Spin = Vector2.scale (1.0 - t) b0.Spin |> Vector2.add (Vector2.scale t b1.Spin)
+                        VelocityZ = b0.VelocityZ * (1.0 - t) + b1.VelocityZ * t }
+                else
+                    { b1 with
+                        Spin = Vector2.scale (1.0 - t) b0.Spin |> Vector2.add (Vector2.scale t b1.Spin)
+                        VelocityZ = b0.VelocityZ * (1.0 - t) + b1.VelocityZ * t }
+            else
+                { Position = hermiteVec2 b0.Position b0.Velocity b1.Position b1.Velocity t dt
+                  Velocity =
+                    let t2 = t * t
+                    let dh00 = 6.0 * t2 - 6.0 * t
+                    let dh10 = 3.0 * t2 - 4.0 * t + 1.0
+                    let dh01 = -6.0 * t2 + 6.0 * t
+                    let dh11 = 3.0 * t2 - 2.0 * t
+
+                    { X =
+                        dh00 * b0.Position.X / dt
+                        + dh10 * b0.Velocity.X
+                        + dh01 * b1.Position.X / dt
+                        + dh11 * b1.Velocity.X
+                      Y =
+                        dh00 * b0.Position.Y / dt
+                        + dh10 * b0.Velocity.Y
+                        + dh01 * b1.Position.Y / dt
+                        + dh11 * b1.Velocity.Y }
+                  Spin = Vector2.scale (1.0 - t) b0.Spin |> Vector2.add (Vector2.scale t b1.Spin)
+                  VelocityZ = b0.VelocityZ * (1.0 - t) + b1.VelocityZ * t
+                  Height = hermiteScalar b0.Height 0.0 b1.Height 0.0 t dt }
 
         { frame0 with
             Players = players

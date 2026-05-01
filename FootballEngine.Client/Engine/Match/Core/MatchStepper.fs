@@ -271,12 +271,46 @@ module MatchStepper =
         result.Events |> List.iter (appendEvent state events)
         processTransition state result.Transition
 
+    let private updatePossessionHistory (result: BallResult) (subTick: int) (state: SimState) =
+        let h = state.PossessionHistory
+
+        state.PossessionHistory <-
+            { h with
+                LastChangeTick =
+                    if result.PossessionChanged then
+                        subTick
+                    else
+                        h.LastChangeTick
+                LastBallInFlightTick =
+                    if result.BallInFlight then
+                        subTick
+                    else
+                        h.LastBallInFlightTick
+                LastSetPieceTick =
+                    if result.SetPieceAwarded then
+                        subTick
+                    else
+                        h.LastSetPieceTick
+                LastBallReceivedTick =
+                    match result.ReceivedByPlayer with
+                    | Some _ -> subTick
+                    | None -> h.LastBallReceivedTick
+                ChangedToSide =
+                    if result.PossessionChanged then
+                        match state.Ball.Possession with
+                        | Owned(side, _) -> Some side
+                        | _ -> h.ChangedToSide
+                    else
+                        h.ChangedToSide }
+
     let private updateFlow
         (ctx: MatchContext)
         (clock: SimulationClock)
         (state: SimState)
         (events: ResizeArray<MatchEvent>)
         =
+        let wasLive = state.Flow = Live
+
         match state.Flow with
         | GoalPause goal when goal.RemainingTicks > 0 ->
             setFlow
@@ -330,6 +364,16 @@ module MatchStepper =
         | Live
         | MatchEnded -> ()
 
+        // Phase 4: suspend/resume directives on Live<->pause transitions
+        let isNowLive = state.Flow = Live
+
+        if wasLive && not isNowLive then
+            suspendDirective state HomeClub
+            suspendDirective state AwayClub
+        elif not wasLive && isNowLive then
+            resumeDirective state HomeClub
+            resumeDirective state AwayClub
+
     let private runCognition (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) =
         let homeInfluence = InfluenceFrame.compute state.Home.Frame state.Away.Frame
         let awayInfluence = InfluenceFrame.compute state.Away.Frame state.Home.Frame
@@ -368,7 +412,7 @@ module MatchStepper =
             let mutable activeCount = 0
 
             for i = 0 to frame.SlotCount - 1 do
-                match frame.Occupancy[i] with
+                match frame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
                     totalCondition <- totalCondition + int frame.Condition[i]
                     activeCount <- activeCount + 1
@@ -388,6 +432,20 @@ module MatchStepper =
                 |> EmergentLoops.updateFatigueSpiral avgCondition 0
 
             setEmergentState state clubSide updated
+
+            // Phase 3: update directive params based on new emergent state (without changing kind)
+            let directive = SimStateOps.getDirective state clubSide
+
+            match directive with
+            | TeamDirectiveState.Active d ->
+                let tactics =
+                    SimStateOps.tacticsConfig
+                        (SimStateOps.getTactics state clubSide)
+                        (SimStateOps.getInstructions state clubSide)
+
+                let newParams = SimStateOps.defaultParams tactics updated
+                SimStateOps.setDirective state clubSide (TeamDirectiveState.Active { d with Params = newParams })
+            | _ -> ()
 
             let recent = EventWindow.recentEvents 1200 state.MatchEvents
             let adaptiveState = getAdaptiveState state clubSide
@@ -430,15 +488,13 @@ module MatchStepper =
         (events: ResizeArray<MatchEvent>)
         =
         match state.Flow with
-        | Live -> // SOLO ejecutar si el flujo es Live
+        | Live ->
             let subTick = state.SubTick
 
             if MatchRates.cognition clock subTick then
                 runCognition subTick ctx state clock
 
             if MatchRates.physics clock subTick then
-                let ballResult = BallAgent.agent ctx state clock
-
                 if MatchRates.steering clock subTick then
                     let dtPlayer = SimulationClock.dtPlayer clock
 
@@ -460,8 +516,14 @@ module MatchStepper =
                         clock.SteeringRate
                         clock.CognitiveRate
 
+                let ballResult = BallAgent.agent ctx state clock
+                updatePossessionHistory ballResult subTick state
+
                 ballResult.Events |> List.iter (appendEvent state events)
-                processTransition state ballResult.Transition
+
+                match ballResult.GoalScored with
+                | Some _ -> startGoalFlow subTick ctx state clock events
+                | None -> processTransition state ballResult.Transition
 
             if MatchRates.referee clock subTick then
                 let refResult = RefereeAgent.agent ctx state clock
@@ -473,10 +535,10 @@ module MatchStepper =
                 processTransition state refResult.Transition
 
             if MatchRates.action clock subTick then
-                let hasCachedIntentHome = (SimStateOps.getTeamIntent state HomeClub).IsSome
-                let hasCachedIntentAway = (SimStateOps.getTeamIntent state AwayClub).IsSome
+                let frameHome = getFrame state HomeClub
+                let frameAway = getFrame state AwayClub
 
-                if hasCachedIntentHome && hasCachedIntentAway then
+                if frameHome.SlotCount > 0 && frameAway.SlotCount > 0 then
                     let actionResult = ActionResolver.run subTick ctx state clock
                     actionResult.Events |> List.iter (appendEvent state events)
 

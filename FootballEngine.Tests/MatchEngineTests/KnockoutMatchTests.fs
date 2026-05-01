@@ -17,7 +17,7 @@ let knockoutMatchTests =
               | Ok(replay, wentToShootout) ->
                   Expect.isNotNull (box replay) "replay should exist"
                   Expect.isFalse wentToShootout "shootout flag should be false for normal result"
-              | Error e -> Tests.failtestf $"Simulation error: %A{e}"
+              | Error e -> failtestf $"Simulation error: %A{e}"
           }
 
           test "knockout match is deterministic" {

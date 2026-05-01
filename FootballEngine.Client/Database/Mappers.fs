@@ -473,7 +473,7 @@ module Mappers =
 
     let toCountryEntity (cd: CountryData) : CountryEntity =
         { Code = cd.Country.Code
-          DataJson = Serializers.serializeCountryData cd }
+          DataJson = serializeCountryData cd }
 
     let toCountryDomain (e: CountryEntity) : CountryData =
-        Serializers.deserializeCountryData e.DataJson
+        deserializeCountryData e.DataJson

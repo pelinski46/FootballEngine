@@ -42,7 +42,7 @@ module ShapeEngine =
 
         for i = 0 to n - 1 do
             let basePos = basePositions[i]
-            let targetPullX = PhysicsContract.clamp (ballPullBase * (float i / float (n - 1))) -6.0<meter> 6.0<meter>
+            let targetPullX = clamp (ballPullBase * (float i / float (n - 1))) -6.0<meter> 6.0<meter>
             let ballPullX = targetPullX * damping
 
             let compactShift =
@@ -54,8 +54,8 @@ module ShapeEngine =
             let x = basePos.X + phaseShift + tacticalPush + defensiveDrop + ballPullX
             let y = basePos.Y + compactShift + widthShift
 
-            let finalX = PhysicsContract.clamp x 2.0<meter> (PhysicsContract.PitchLength - 7.0<meter>)
-            let finalY = PhysicsContract.clamp y 3.0<meter> (PhysicsContract.PitchWidth - 3.0<meter>)
+            let finalX = clamp x 2.0<meter> (PitchLength - 7.0<meter>)
+            let finalY = clamp y 3.0<meter> (PitchWidth - 3.0<meter>)
 
             targetX[i] <- float32 finalX
             targetY[i] <- float32 finalY

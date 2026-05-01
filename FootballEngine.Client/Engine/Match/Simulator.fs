@@ -19,9 +19,12 @@ module MatchSimulator =
         (takeSnapshot: SimState -> int -> unit)
         : SimState * MatchEvent list =
         let events = ResizeArray<MatchEvent>()
-        state.EffectiveFullTimeSubTick <- fullTime clock + state.StoppageTime.AccumulatedSeconds * clock.SubTicksPerSecond
+
+        state.EffectiveFullTimeSubTick <-
+            fullTime clock + state.StoppageTime.AccumulatedSeconds * clock.SubTicksPerSecond
 
         let maxSeguridad = fullTime clock + clock.SubTicksPerSecond * 60 * 10 // +10 min extra
+
         while state.Flow <> MatchEnded && state.SubTick < maxSeguridad do
             let snapshotSubTick = state.SubTick
             let result = MatchStepper.updateOne ctx clock [||] state
@@ -81,8 +84,8 @@ module MatchSimulator =
 
         let clampedX =
             match clubSide with
-            | HomeClub -> PhysicsContract.clamp tacticalX 2.0<meter> (HalfwayLineX - 1.0<meter>)
-            | AwayClub -> PhysicsContract.clamp tacticalX (HalfwayLineX + 1.0<meter>) (PitchLength - 2.0<meter>)
+            | HomeClub -> clamp tacticalX 2.0<meter> (HalfwayLineX - 1.0<meter>)
+            | AwayClub -> clamp tacticalX (HalfwayLineX + 1.0<meter>) (PitchLength - 2.0<meter>)
 
         clampedX, tacticalY
 
@@ -163,8 +166,8 @@ module MatchSimulator =
                         if tx > threshold then
                             HalfwayLineX - 1.0<meter> + allowedDepth * 0.5
                         else
-                            PhysicsContract.clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
-                    | _ -> PhysicsContract.clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
+                            clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
+                    | _ -> clamp tx 2.0<meter> (HalfwayLineX - 2.0<meter>)
 
                 defaultSpatial kx ty)
 
@@ -176,8 +179,7 @@ module MatchSimulator =
                     |> Map.tryFind p.Id
                     |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
 
-                let kx =
-                    PhysicsContract.clamp tx (HalfwayLineX + 4.0<meter>) (PitchLength - 2.0<meter>)
+                let kx = clamp tx (HalfwayLineX + 4.0<meter>) (PitchLength - 2.0<meter>)
 
                 defaultSpatial kx ty)
 
@@ -260,12 +262,16 @@ module MatchSimulator =
                 let homeSubTick = fullTime clock + kickNum * clock.SubTicksPerSecond * 2
                 let awaySubTick = homeSubTick + clock.SubTicksPerSecond
 
-                let homeScored = SetPlayAction.resolvePenalty homeSubTick ctx state homeKicker HomeClub clock
+                let homeScored =
+                    SetPlayAction.resolvePenalty homeSubTick ctx state homeKicker HomeClub clock
+
                 if homeScored then
                     RefereeApplicator.apply homeSubTick (ConfirmGoal(HomeClub, Some homeKicker.Id, false)) ctx state
                     |> ignore
 
-                let awayScored = SetPlayAction.resolvePenalty awaySubTick ctx state awayKicker AwayClub clock
+                let awayScored =
+                    SetPlayAction.resolvePenalty awaySubTick ctx state awayKicker AwayClub clock
+
                 if awayScored then
                     RefereeApplicator.apply awaySubTick (ConfirmGoal(AwayClub, Some awayKicker.Id, false)) ctx state
                     |> ignore

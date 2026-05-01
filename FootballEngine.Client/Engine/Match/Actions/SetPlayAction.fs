@@ -17,11 +17,11 @@ module SetPlayAction =
         let clubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
-        let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
+        let defRoster = getRoster ctx actx.Def.ClubSide
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
 
-        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
+        match nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> ActionResult.empty
         | ValueSome kickerIdx ->
             let kicker =
@@ -36,7 +36,7 @@ module SetPlayAction =
                 + actx.Att.Bonus.FreeKick
 
             let goalX =
-                if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength
+                if actx.Att.AttackDir = LeftToRight then PitchLength
                 else 0.0<meter>
 
             let distToGoal = abs (goalX - bX)
@@ -44,7 +44,7 @@ module SetPlayAction =
             let flightTime = if spc.FreeKickSpeed > 0.0<meter/second> then distToGoal / spc.FreeKickSpeed else 1.0<second>
             let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
 
-            let dirSign = PhysicsContract.forwardX actx.Att.AttackDir
+            let dirSign = forwardX actx.Att.AttackDir
             let angleSpread = max 0.01 (spc.FreeKickSpinSideMult * 0.1 * (1.0 - quality / 2.0))
             let angle = normalSample 0.0 angleSpread
 
@@ -66,8 +66,8 @@ module SetPlayAction =
                 ActionKind = BallActionKind.Shot(kicker.Id, quality / 2.0)
             }
 
-            let wallSize = WallBehavior.calculateWallSize distToGoal
-            let wallPlayers = WallBehavior.selectWallPlayers defRoster.Players bX goalX bY wallSize
+            let wallSize = calculateWallSize distToGoal
+            let wallPlayers = selectWallPlayers defRoster.Players bX goalX bY wallSize
 
             state.Ball <-
                 { state.Ball with
@@ -89,10 +89,10 @@ module SetPlayAction =
         let attClubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
-        let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
+        let defRoster = getRoster ctx actx.Def.ClubSide
 
-        let activeAtts = [| for i = 0 to attFrame.SlotCount - 1 do match attFrame.Occupancy[i] with | OccupancyKind.Active _ -> yield attRoster.Players[i] | _ -> () |]
+        let activeAtts = [| for i = 0 to attFrame.SlotCount - 1 do match attFrame.Physics.Occupancy[i] with | OccupancyKind.Active _ -> yield attRoster.Players[i] | _ -> () |]
 
         if activeAtts.Length = 0 then ActionResult.empty
         else
@@ -106,19 +106,19 @@ module SetPlayAction =
 
             let attackersInBox =
                 [| for i = 0 to attFrame.SlotCount - 1 do
-                     match attFrame.Occupancy[i] with
+                     match attFrame.Physics.Occupancy[i] with
                      | OccupancyKind.Active _ ->
                          let p = attRoster.Players[i]
-                         let sp = { X = float attFrame.PosX[i] * 1.0<meter>; Y = float attFrame.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                         let sp = { X = float attFrame.Physics.PosX[i] * 1.0<meter>; Y = float attFrame.Physics.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                          let cond = int attFrame.Condition[i]
                          if (p.Position = ST || p.Position = AML || p.Position = AMR || p.Position = AMC || p.Position = MC || p.Position = DC)
-                            && (if actx.Att.AttackDir = LeftToRight then sp.X > boxThreshold else sp.X < (PhysicsContract.PitchLength - boxThreshold)) then
+                            && (if actx.Att.AttackDir = LeftToRight then sp.X > boxThreshold else sp.X < (PitchLength - boxThreshold)) then
                              yield (p, sp, cond)
                      | _ -> () |]
 
             if attackersInBox.Length = 0 then
-                let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
-                ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PhysicsContract.PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
+                let targetX = if actx.Att.AttackDir = LeftToRight then PitchLength - PenaltyAreaDepth else PenaltyAreaDepth
+                ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
                 state.Ball <- { state.Ball with Possession = InFlight }
                 ActionResult.ofEvents [ createEvent subTick taker.Id attClubId Corner ]
             else
@@ -128,13 +128,13 @@ module SetPlayAction =
                     activeAtts
                     |> Array.tryPick (fun p ->
                         if p.Position = ML || p.Position = MR || p.Position = AML || p.Position = AMR || p.Position = MC then
-                            Some (PhysicsContract.normaliseAttr p.Technical.Crossing * cc.CrossingWeight
-                                  + PhysicsContract.normaliseAttr p.Technical.Passing * cc.PassingWeight)
+                            Some (normaliseAttr p.Technical.Crossing * cc.CrossingWeight
+                                  + normaliseAttr p.Technical.Passing * cc.PassingWeight)
                         else None)
                     |> Option.defaultValue cc.BaseMean
 
-                let targetX = bestAttackerSp.X + normalSample 0.0 (0.15 * (1.0 - crossQuality)) * 1.0<meter> |> fun x -> PhysicsContract.clamp x 0.0<meter> PhysicsContract.PitchLength
-                let targetY = bestAttackerSp.Y + normalSample 0.0 (0.15 * (1.0 - crossQuality)) * 1.0<meter> |> fun y -> PhysicsContract.clamp y 0.0<meter> PhysicsContract.PitchWidth
+                let targetX = bestAttackerSp.X + normalSample 0.0 (0.15 * (1.0 - crossQuality)) * 1.0<meter> |> fun x -> clamp x 0.0<meter> PitchLength
+                let targetY = bestAttackerSp.Y + normalSample 0.0 (0.15 * (1.0 - crossQuality)) * 1.0<meter> |> fun y -> clamp y 0.0<meter> PitchWidth
 
                 let dist = sqrt ((targetX - state.Ball.Position.X) * (targetX - state.Ball.Position.X) + (targetY - state.Ball.Position.Y) * (targetY - state.Ball.Position.Y))
                 let flightTime = if spc.CornerSpeed > 0.0<meter/second> then dist / spc.CornerSpeed else 1.0<second>
@@ -166,17 +166,17 @@ module SetPlayAction =
         let actx = ActionContext.build ctx state
         let spc = ctx.Config.SetPiece
         let clubId = if throwClub = HomeClub then ctx.Home.Id else ctx.Away.Id
-        let throwFrame = SimStateOps.getFrame state throwClub
-        let throwRoster = SimStateOps.getRoster ctx throwClub
+        let throwFrame = getFrame state throwClub
+        let throwRoster = getRoster ctx throwClub
 
-        let activeCount = throwFrame.Occupancy |> Array.sumBy (function | OccupancyKind.Active _ -> 1 | _ -> 0)
+        let activeCount = throwFrame.Physics.Occupancy |> Array.sumBy (function | OccupancyKind.Active _ -> 1 | _ -> 0)
         if activeCount = 0 then ActionResult.empty
         else
             let throwerIdx =
                 let mutable bestIdx = 0
                 let mutable bestScore = 999
                 for i = 0 to throwFrame.SlotCount - 1 do
-                    match throwFrame.Occupancy[i] with
+                    match throwFrame.Physics.Occupancy[i] with
                     | OccupancyKind.Active _ ->
                         let profile = throwRoster.Profiles[i]
                         let score = if profile.LateralTendency > 0.3 || profile.LateralTendency < -0.3 then 0 else 1
@@ -190,12 +190,12 @@ module SetPlayAction =
             let bX = state.Ball.Position.X
             let bY = state.Ball.Position.Y
 
-            match MatchSpatial.nearestActiveSlotInFrameExcluding throwFrame throwerIdx bX bY with
+            match nearestActiveSlotInFrameExcluding throwFrame throwerIdx bX bY with
             | ValueNone -> ActionResult.empty
             | ValueSome tmIdx ->
                 let teammate = throwRoster.Players[tmIdx]
-                let tX = float throwFrame.PosX[tmIdx] * 1.0<meter>
-                let tY = float throwFrame.PosY[tmIdx] * 1.0<meter>
+                let tX = float throwFrame.Physics.PosX[tmIdx] * 1.0<meter>
+                let tY = float throwFrame.Physics.PosY[tmIdx] * 1.0<meter>
                 ballTowards state.Ball.Position.X state.Ball.Position.Y tX tY spc.ThrowInSpeed spc.ThrowInVz state
                 adjustMomentum actx.Att.AttackDir spc.ThrowInMomentum state
                 ActionResult.ofEvents [ createEvent subTick teammate.Id clubId (PassLaunched(thrower.Id, teammate.Id)) ]
@@ -210,13 +210,13 @@ module SetPlayAction =
         : bool =
         let spc = ctx.Config.SetPiece
         let clubId = if kickerClub = HomeClub then ctx.Home.Id else ctx.Away.Id
-        let defFrame = SimStateOps.getFrame state (ClubSide.flip kickerClub)
-        let defRoster = SimStateOps.getRoster ctx (ClubSide.flip kickerClub)
+        let defFrame = getFrame state (ClubSide.flip kickerClub)
+        let defRoster = getRoster ctx (ClubSide.flip kickerClub)
 
         let gk =
             let mutable gkOpt: Player option = None
             for i = 0 to defFrame.SlotCount - 1 do
-                match defFrame.Occupancy[i] with
+                match defFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ when defRoster.Players[i].Position = GK -> gkOpt <- Some defRoster.Players[i]
                 | _ -> ()
             gkOpt
@@ -224,13 +224,13 @@ module SetPlayAction =
         let gkIdx =
             let mutable idx = -1
             for i = 0 to defFrame.SlotCount - 1 do
-                match defFrame.Occupancy[i] with
+                match defFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ when defRoster.Players[i].Position = GK -> idx <- i
                 | _ -> ()
             idx
 
-        let dirSign = PhysicsContract.forwardX (attackDirFor kickerClub state)
-        let finishingNorm = PhysicsContract.normaliseAttr kicker.Technical.Finishing
+        let dirSign = forwardX (attackDirFor kickerClub state)
+        let finishingNorm = normaliseAttr kicker.Technical.Finishing
         let angleSpread = spc.PenaltyAngleSpread * (1.0 - finishingNorm)
         let angle = normalSample 0.0 angleSpread
         let speed = spc.PenaltySpeed
@@ -253,13 +253,13 @@ module SetPlayAction =
             | Some g ->
                 let gkCond = if gkIdx >= 0 then int defFrame.Condition[gkIdx] else 50
                 let savePower =
-                    ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.Reflexes) gkCond g.Morale * spc.PenaltyGkReflexesMult
-                    + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (PhysicsContract.normaliseAttr g.Goalkeeping.Handling) gkCond g.Morale * spc.PenaltyGkHandlingMult
+                    ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (normaliseAttr g.Goalkeeping.Reflexes) gkCond g.Morale * spc.PenaltyGkReflexesMult
+                    + ActionMath.evalPerformance PerformanceDefaults.technicalPerformanceConfig (normaliseAttr g.Goalkeeping.Handling) gkCond g.Morale * spc.PenaltyGkHandlingMult
                 ActionMath.engineBernoulli (Probability.from (savePower / (savePower + kickerPower + 1.0)))
             | None -> false
 
         let goalX =
-            if attackDirFor kickerClub state = LeftToRight then PhysicsContract.PitchLength
+            if attackDirFor kickerClub state = LeftToRight then PitchLength
             else 0.0<meter>
 
         let bX = state.Ball.Position.X

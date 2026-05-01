@@ -18,12 +18,28 @@ module ActionResolver =
             let mutable result: Player option * PlayerRoster option * ClubSide option =
                 None, None, None
 
+            let bx = state.Ball.Position.X
+            let by = state.Ball.Position.Y
+
+            let maxControlDistSq =
+                ctx.Config.Physics.ContactRadius * ctx.Config.Physics.ContactRadius
+
             for clubSide in bothSides do
                 let frame = getFrame state clubSide
                 let roster = getRoster ctx clubSide
 
-                match SimStateOps.findIdxByPid pid frame roster with
-                | ValueSome idx -> result <- Some roster.Players[idx], Some roster, Some clubSide
+                match findIdxByPid pid frame roster with
+                | ValueSome idx ->
+                    let px = float frame.Physics.PosX[idx] * 1.0<meter>
+                    let py = float frame.Physics.PosY[idx] * 1.0<meter>
+                    let dx = px - bx
+                    let dy = py - by
+                    let distSq = dx * dx + dy * dy
+
+                    if distSq <= maxControlDistSq then
+                        result <- Some roster.Players[idx], Some roster, Some clubSide
+                    else
+                        losePossession state
                 | ValueNone -> ()
 
             result
@@ -43,10 +59,10 @@ module ActionResolver =
                 let roster = getRoster ctx clubSide
 
                 for i = 0 to frame.SlotCount - 1 do
-                    match frame.Occupancy[i] with
+                    match frame.Physics.Occupancy[i] with
                     | OccupancyKind.Active _ ->
-                        let px = float frame.PosX[i] * 1.0<meter>
-                        let py = float frame.PosY[i] * 1.0<meter>
+                        let px = float frame.Physics.PosX[i] * 1.0<meter>
+                        let py = float frame.Physics.PosY[i] * 1.0<meter>
                         let dx = px - bx
                         let dy = py - by
                         let distSq = dx * dx + dy * dy
@@ -69,17 +85,13 @@ module ActionResolver =
         (state: SimState)
         (clock: SimulationClock)
         : OnBallIntent option =
-        let team = SimStateOps.buildTeamPerspective clubSide ctx state
-        let cachedIntent = SimStateOps.getTeamIntent state clubSide
-
-        let teamIntent =
-            match cachedIntent with
-            | Some ti -> ti
-            | None -> TeamIntentModule.empty clubSide
+        let team = buildTeamPerspective clubSide ctx state
 
         let influence =
-            if clubSide = HomeClub then state.HomeInfluenceFrame
-            else state.AwayInfluenceFrame
+            if clubSide = HomeClub then
+                state.HomeInfluenceFrame
+            else
+                state.AwayInfluenceFrame
 
         let actx =
             AgentContext.build
@@ -87,9 +99,7 @@ module ActionResolver =
                 profile
                 meIdx
                 team
-                teamIntent
                 ValueNone
-                0
                 state
                 clock
                 ctx
@@ -115,7 +125,7 @@ module ActionResolver =
             |> fun events -> ActionResult.ofEvents events, []
 
         | OnBallIntent.Pass targetPid ->
-            match SimStateOps.findActivePlayer ctx state targetPid with
+            match findActivePlayer ctx state targetPid with
             | Some target -> ActionResult.ofEvents (PassAction.resolve subTick ctx state clock target), []
             | None -> ActionResult.empty, []
 
@@ -133,7 +143,7 @@ module ActionResolver =
             ActionResult.ofEvents (PassAction.resolveIntoSpace subTick ctx state clock targetCell), []
 
         | OnBallIntent.Tackle oppPid ->
-            match SimStateOps.findActivePlayer ctx state oppPid with
+            match findActivePlayer ctx state oppPid with
             | Some opponent ->
                 let events, actions = DuelAction.resolveTackle subTick ctx state opponent
                 ActionResult.ofEvents events, actions
@@ -155,6 +165,7 @@ module ActionResolver =
                         | _ ->
                             let meIdx = roster.Players |> Array.findIndex (fun p -> p.Id = ctrl.Id)
                             let profile = roster.Profiles[meIdx]
+
                             match decideAction ctrl profile meIdx clubSide ctx state clock with
                             | Some action -> resolveIntent subTick action ctx state clock
                             | None -> ActionResult.empty, []
@@ -171,8 +182,9 @@ module ActionResolver =
                                     match state.Ball.PlayerHoldSinceSubTick with
                                     | Some since -> subTick - since >= 12
                                     | None -> true
+
                                 if holdTimeout then
-                                    SimStateOps.losePossession state
+                                    losePossession state
                                     ActionResult.empty, []
                                 else
                                     ActionResult.empty, []

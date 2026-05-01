@@ -21,8 +21,13 @@ module PlayerScorer =
     let private directnessFactor (t: TacticsConfig) (profile: BehavioralProfile) =
         t.Directness * 0.6 + profile.Directness * 0.4
 
-    let private buildUpSideBonus (intent: TeamIntent) (pos: Position) =
-        match intent.BuildUpSide with
+    let private buildUpSideBonus (directiveKind: FootballEngine.Movement.DirectiveKind) (pos: Position) =
+        let buildUpSide =
+            match directiveKind with
+            | FootballEngine.Movement.DirectiveKind.DirectAttack -> BuildUpSide.Central
+            | _ -> BuildUpSide.Balanced
+
+        match buildUpSide with
         | BuildUpSide.LeftFlank -> if pos = AMR || pos = MR || pos = WBR then 0.1 else 0.0
         | BuildUpSide.RightFlank -> if pos = AML || pos = ML || pos = WBL then 0.1 else 0.0
         | _ -> 0.0
@@ -37,7 +42,7 @@ module PlayerScorer =
 
         let distNorm =
             (1.0
-             - PhysicsContract.clampFloat (float ctx.DistToGoal / d.ShootDistNormDivisor) 0.0 1.0)
+             - clampFloat (float ctx.DistToGoal / d.ShootDistNormDivisor) 0.0 1.0)
             * d.ShootDistNormWeight
 
         let posBonus =
@@ -46,7 +51,7 @@ module PlayerScorer =
             + if me.Position = ST then d.ShootSTBonus else 0.0
 
         let distPenalty =
-            PhysicsContract.clampFloat (float ctx.DistToGoal / d.ShootDistPenaltyDivisor) 0.0 d.ShootDistPenaltyMax
+            clampFloat (float ctx.DistToGoal / d.ShootDistPenaltyDivisor) 0.0 d.ShootDistPenaltyMax
 
         let df = directnessFactor t ctx.Profile
         let mentalityBonus = t.UrgencyMultiplier * 0.1
@@ -103,15 +108,15 @@ module PlayerScorer =
                 let receiverQuality = float target.Technical.BallControl / 20.0 * d.PassTargetBonus
 
                 let targetMarkingPressure =
-                    let targetX = ctx.Team.OwnFrame.PosX[targetIdx]
-                    let targetY = ctx.Team.OwnFrame.PosY[targetIdx]
-                    let mutable minDistSq = System.Single.MaxValue
+                    let targetX = ctx.Team.OwnFrame.Physics.PosX[targetIdx]
+                    let targetY = ctx.Team.OwnFrame.Physics.PosY[targetIdx]
+                    let mutable minDistSq = Single.MaxValue
 
                     for i = 0 to ctx.Team.OppFrame.SlotCount - 1 do
-                        match ctx.Team.OppFrame.Occupancy[i] with
+                        match ctx.Team.OppFrame.Physics.Occupancy[i] with
                         | OccupancyKind.Active _ ->
-                            let dx = targetX - ctx.Team.OppFrame.PosX[i]
-                            let dy = targetY - ctx.Team.OppFrame.PosY[i]
+                            let dx = targetX - ctx.Team.OppFrame.Physics.PosX[i]
+                            let dy = targetY - ctx.Team.OppFrame.Physics.PosY[i]
                             let d = dx * dx + dy * dy
 
                             if d < minDistSq then
@@ -150,7 +155,7 @@ module PlayerScorer =
         let tempoBias = t.Tempo * 0.15
         let directBias = -(df * 0.20)
 
-        let busMod = buildUpSideBonus ctx.TeamIntent me.Position
+        let busMod = buildUpSideBonus ctx.DirectiveKind me.Position
 
         let confidenceMod = ctx.MentalState.ConfidenceLevel * 0.08
         let riskMod = ctx.MentalState.RiskTolerance * d.PassTargetBonus * 0.3
@@ -164,7 +169,7 @@ module PlayerScorer =
             match ctx.BestPassTargetIdx with
             | ValueNone -> 0.0
             | ValueSome targetIdx ->
-                let targetCell = InfluenceTypes.posToCell ctx.Team.OwnFrame.PosX[targetIdx] ctx.Team.OwnFrame.PosY[targetIdx]
+                let targetCell = InfluenceTypes.posToCell ctx.Team.OwnFrame.Physics.PosX[targetIdx] ctx.Team.OwnFrame.Physics.PosY[targetIdx]
                 let passSafety = float ctx.Influence.AttackerPassSafety[targetCell]
                 let defCoverage = float ctx.Influence.DefenderCoverage[targetCell]
                 // High pass safety + low defender coverage = good space for receiver
@@ -298,12 +303,12 @@ module PlayerScorer =
         let pressureMod =
             match ctx.NearestOpponentIdx with
             | ValueSome oppIdx ->
-                let oppX = float ctx.Team.OppFrame.PosX[oppIdx] * 1.0<meter>
-                let oppY = float ctx.Team.OppFrame.PosY[oppIdx] * 1.0<meter>
+                let oppX = float ctx.Team.OppFrame.Physics.PosX[oppIdx] * 1.0<meter>
+                let oppY = float ctx.Team.OppFrame.Physics.PosY[oppIdx] * 1.0<meter>
                 let dx = ctx.MyPos.X - oppX
                 let dy = ctx.MyPos.Y - oppY
                 let dist = sqrt (dx * dx + dy * dy)
-                PhysicsContract.clampFloat (float dist / d.LongBallPressDistBase) d.LongBallPressMin d.LongBallPressMax
+                clampFloat (float dist / d.LongBallPressDistBase) d.LongBallPressMin d.LongBallPressMax
             | ValueNone -> d.LongBallPressNoOpponent
 
         let phaseMod =

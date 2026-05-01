@@ -30,9 +30,9 @@ module FoulAnalysis =
         let mutable count = 0
         let forward = dir = LeftToRight
         for i = 0 to defFrame.SlotCount - 1 do
-            match defFrame.Occupancy[i] with
+            match defFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active rosterIdx ->
-                let playerX = float defFrame.PosX[i] * 1.0<meter>
+                let playerX = float defFrame.Physics.PosX[i] * 1.0<meter>
                 let between =
                     if forward then
                         foulX < playerX && playerX <= goalX

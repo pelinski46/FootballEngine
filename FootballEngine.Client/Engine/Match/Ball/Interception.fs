@@ -35,11 +35,11 @@ module Interception =
 
         let checkPlayer (frame: TeamFrame) (roster: PlayerRoster) (side: ClubSide) =
             for i = 0 to frame.SlotCount - 1 do
-                match frame.Occupancy[i] with
+                match frame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
                     let player = roster.Players[i]
-                    let px = float frame.PosX[i] * 1.0<meter>
-                    let py = float frame.PosY[i] * 1.0<meter>
+                    let px = float frame.Physics.PosX[i] * 1.0<meter>
+                    let py = float frame.Physics.PosY[i] * 1.0<meter>
                     let pPos = { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
                     let distToBall = ballPos.DistTo2D pPos
@@ -99,14 +99,14 @@ module Interception =
         let mutable touchingPos2 = { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
         for i = 0 to homeFrame.SlotCount - 1 do
-            match homeFrame.Occupancy[i] with
+            match homeFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
                 let player = homeRoster.Players[i]
                 let captureRadius =
                     config.ContactRadius
                     + (float player.Technical.BallControl / 20.0) * 0.20<meter>
-                let px = float homeFrame.PosX[i] * 1.0<meter>
-                let py = float homeFrame.PosY[i] * 1.0<meter>
+                let px = float homeFrame.Physics.PosX[i] * 1.0<meter>
+                let py = float homeFrame.Physics.PosY[i] * 1.0<meter>
                 let dx = ballPos.X - px
                 let dy = ballPos.Y - py
                 let dist = sqrt (dx * dx + dy * dy)
@@ -119,14 +119,14 @@ module Interception =
             | _ -> ()
 
         for i = 0 to awayFrame.SlotCount - 1 do
-            match awayFrame.Occupancy[i] with
+            match awayFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
                 let player = awayRoster.Players[i]
                 let captureRadius =
                     config.ContactRadius
                     + (float player.Technical.BallControl / 20.0) * 0.20<meter>
-                let px = float awayFrame.PosX[i] * 1.0<meter>
-                let py = float awayFrame.PosY[i] * 1.0<meter>
+                let px = float awayFrame.Physics.PosX[i] * 1.0<meter>
+                let py = float awayFrame.Physics.PosY[i] * 1.0<meter>
                 let dx = ballPos.X - px
                 let dy = ballPos.Y - py
                 let dist = sqrt (dx * dx + dy * dy)

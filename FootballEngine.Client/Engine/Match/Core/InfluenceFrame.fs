@@ -15,7 +15,7 @@ module InfluenceFrame =
 
     // Pre-compute cell centers to avoid recomputing every frame
     let private cellCenters : (float32 * float32)[] =
-        Array.init InfluenceTypes.GridSize (fun i -> cellToCenter i)
+        Array.init GridSize (fun i -> cellToCenter i)
 
     /// Build influence grids from team frames.
     /// homeFrame/awayFrame = current positions, homeRoster/awayRoster = player attributes.
@@ -31,10 +31,10 @@ module InfluenceFrame =
 
         // Accumulate home influence
         for i = 0 to homeFrame.SlotCount - 1 do
-            match homeFrame.Occupancy[i] with
+            match homeFrame.Physics.Occupancy[i] with
             | Active _ ->
-                let px = homeFrame.PosX[i]
-                let py = homeFrame.PosY[i]
+                let px = homeFrame.Physics.PosX[i]
+                let py = homeFrame.Physics.PosY[i]
                 let conditionFactor = float32 homeFrame.Condition[i] / 100.0f
                 // Only iterate cells within ~3 sigma (45m) for performance
                 let minCol = max 0 (int ((px - 3.0f * sigma) / CellWidth))
@@ -54,10 +54,10 @@ module InfluenceFrame =
 
         // Accumulate away influence (same logic)
         for i = 0 to awayFrame.SlotCount - 1 do
-            match awayFrame.Occupancy[i] with
+            match awayFrame.Physics.Occupancy[i] with
             | Active _ ->
-                let px = awayFrame.PosX[i]
-                let py = awayFrame.PosY[i]
+                let px = awayFrame.Physics.PosX[i]
+                let py = awayFrame.Physics.PosY[i]
                 let conditionFactor = float32 awayFrame.Condition[i] / 100.0f
                 let minCol = max 0 (int ((px - 3.0f * sigma) / CellWidth))
                 let maxCol = min (GridCols - 1) (int ((px + 3.0f * sigma) / CellWidth))

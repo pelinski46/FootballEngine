@@ -31,8 +31,8 @@ module ReactiveLayer =
 
         if ballCarrierOppIdx < 0 then NoReaction
         else
-            let myX = ownFrame.PosX[meIdx]
-            let myY = ownFrame.PosY[meIdx]
+            let myX = ownFrame.Physics.PosX[meIdx]
+            let myY = ownFrame.Physics.PosY[meIdx]
             let dx = float myX - float bcx
             let dy = float myY - float bcy
             let dist = sqrt (dx * dx + dy * dy) * 1.0<meter>
@@ -49,18 +49,18 @@ module ReactiveLayer =
                 let mutable bestScore = System.Single.MaxValue
                 for j = 0 to oppFrame.SlotCount - 1 do
                     if j <> ballCarrierOppIdx then
-                        let active = oppFrame.Occupancy[j]
+                        let active = oppFrame.Physics.Occupancy[j]
                         match active with
                         | OccupancyKind.Active _ ->
-                            let odx = oppFrame.PosX[j] - bcx
-                            let ody = oppFrame.PosY[j] - bcy
+                            let odx = oppFrame.Physics.PosX[j] - bcx
+                            let ody = oppFrame.Physics.PosY[j] - bcy
                             let oDist = sqrt (odx * odx + ody * ody)
                             if oDist > 3.0f && oDist < 30.0f then
-                                let laneDistSq = MatchSpatial.pointToLineDistSq myX myY bcx bcy oppFrame.PosX[j] oppFrame.PosY[j]
+                                let laneDistSq = MatchSpatial.pointToLineDistSq myX myY bcx bcy oppFrame.Physics.PosX[j] oppFrame.Physics.PosY[j]
                                 if laneDistSq < laneCutRadiusSq && laneDistSq < bestScore then
                                     bestScore <- laneDistSq
-                                    bestTargetX <- oppFrame.PosX[j]
-                                    bestTargetY <- oppFrame.PosY[j]
+                                    bestTargetX <- oppFrame.Physics.PosX[j]
+                                    bestTargetY <- oppFrame.Physics.PosY[j]
                         | _ -> ()
                 if bestScore < laneCutRadiusSq then
                     InterceptLane(bestTargetX, bestTargetY)

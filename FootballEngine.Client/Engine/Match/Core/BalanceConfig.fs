@@ -323,13 +323,13 @@ type PhysicsConfig =
       ArrivalAnticipationBase: float
       ArrivalAnticipationQuality: float
       ArrivalCompetitionRadius: float<meter>
-      ArrivalConvergenceThreshold: float<meter/second>
+      ArrivalConvergenceThreshold: float<meter / second>
       ArrivalContestThreshold: float }
 
 type GKConfig =
     { CatchHandlingMult: float
       DiveReach: float<meter>
-      ParrySpeed: float<meter/second>
+      ParrySpeed: float<meter / second>
       ParryDeflectionAngle: float
       AerialReachMult: float
       JumpReachMult: float
@@ -337,10 +337,10 @@ type GKConfig =
       ClaimCrossProbability: float
       CollectionRadius: float<meter>
       CollectionPriority: float
-      ThrowSpeed: float<meter/second>
-      RollSpeed: float<meter/second>
-      GoalKickSpeed: float<meter/second>
-      PuntSpeed: float<meter/second>
+      ThrowSpeed: float<meter / second>
+      RollSpeed: float<meter / second>
+      GoalKickSpeed: float<meter / second>
+      PuntSpeed: float<meter / second>
       DistributionAccuracyMult: float
       DistributionDecisionNoise: float
       HoldTimeSubTicks: int
@@ -489,9 +489,9 @@ module BalanceConfig =
               FatigueThreshold = 50
               FatigueDecay = 0.04 }
           Shot =
-            { QualityGate = 0.10
-              AngleSpreadBase = 0.30
-              VzBase = PhysicsContract.LongBallVz
+            { QualityGate = 0.35
+              AngleSpreadBase = 0.80
+              VzBase = LongBallVz
               VzVariance = 1.5
               OnTargetBase = 0.25
               OnTargetMultiplier = 0.20
@@ -543,8 +543,8 @@ module BalanceConfig =
               InterceptPaceWeight = 0.35
               InterceptPositioningWeight = 0.45
               ScrambleJitter = 3.0<meter>
-              Speed = PhysicsContract.PassSpeed
-              Vz = PhysicsContract.PassVz
+              Speed = PassSpeed
+              Vz = PassVz
               InterceptDistFactorWeight = 0.3
               InterceptPositioningContrib = 0.15
               InterceptVisionContrib = 0.10
@@ -570,8 +570,8 @@ module BalanceConfig =
               LongBallOffsideMomentum = 0.40
               LongBallSuccessMomentum = 0.50
               LongBallFailMomentum = 0.40
-              LongBallSpeed = PhysicsContract.LongBallSpeed
-              LongBallVz = PhysicsContract.LongBallVz
+              LongBallSpeed = LongBallSpeed
+              LongBallVz = LongBallVz
               LongBallDeflectMult = 1.5
               LongBallInterceptMult = 1.5
               LongBallPressureContrib = 0.3
@@ -594,8 +594,8 @@ module BalanceConfig =
               GkJumpMult = 0.8
               ClaimCrossProbability = 0.25
               FailMomentum = 0.30
-              Speed = PhysicsContract.CrossSpeed
-              Vz = PhysicsContract.CrossVz
+              Speed = CrossSpeed
+              Vz = CrossVz
               AerialThreatThreshold = 0.4
               AttackingDepthThreshold = 0.5
               GkSkillDefault = 50.0
@@ -626,7 +626,7 @@ module BalanceConfig =
               FailMomentum = 0.50
               TackleSteepness = 1.5 }
           SetPiece =
-            { FreeKickTargetX = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
+            { FreeKickTargetX = GoalLineHome - PenaltyAreaDepth
               FreeKickSpeed = 16.0<meter / second>
               FreeKickVz = 0.50<meter / second>
               FreeKickSteepness = 2.0
@@ -634,8 +634,8 @@ module BalanceConfig =
               FreeKickSaveVariance = 1.5
               FreeKickSpinTopMult = 0.5
               FreeKickSpinSideMult = 0.9
-              CornerBoxXThreshold = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth
-              CornerDefenderBoxThreshold = PhysicsContract.GoalLineHome - PhysicsContract.PenaltyAreaDepth - 5.0<meter>
+              CornerBoxXThreshold = GoalLineHome - PenaltyAreaDepth
+              CornerDefenderBoxThreshold = GoalLineHome - PenaltyAreaDepth - 5.0<meter>
               CornerSecondPhaseProbability = 0.35
               CornerKeepPossessionProbability = 0.55
               CornerSpeed = 14.0<meter / second>
@@ -674,9 +674,9 @@ module BalanceConfig =
               FoulBaseRate = 0.35
               CornerOnFailedCross = 0.85 }
           GK =
-            { CatchHandlingMult = 1.5
+            { CatchHandlingMult = 0.85
               DiveReach = 2.5<meter>
-              ParrySpeed = 8.0<meter/second>
+              ParrySpeed = 8.0<meter / second>
               ParryDeflectionAngle = 0.4
               AerialReachMult = 1.2
               JumpReachMult = 0.8
@@ -684,10 +684,10 @@ module BalanceConfig =
               ClaimCrossProbability = 0.25
               CollectionRadius = 3.0<meter>
               CollectionPriority = 2.0
-              ThrowSpeed = 12.0<meter/second>
-              RollSpeed = 8.0<meter/second>
-              GoalKickSpeed = 30.0<meter/second>
-              PuntSpeed = 25.0<meter/second>
+              ThrowSpeed = 12.0<meter / second>
+              RollSpeed = 8.0<meter / second>
+              GoalKickSpeed = 30.0<meter / second>
+              PuntSpeed = 25.0<meter / second>
               DistributionAccuracyMult = 1.0
               DistributionDecisionNoise = 0.08
               HoldTimeSubTicks = 20
@@ -708,28 +708,28 @@ module BalanceConfig =
               CardReduction = 0.20
               FatigueReduction = 0.10 }
           Physics =
-            { Gravity = PhysicsContract.Gravity
-              AirDrag = PhysicsContract.BallAirDrag
-              GroundRestitution = PhysicsContract.BallGroundRestitution
-              GroundFriction = PhysicsContract.BallGroundFriction
-              PostRestitution = PhysicsContract.BallPostRestitution
-              SpinDecay = PhysicsContract.BallSpinDecay
-              MagnusCoeff = PhysicsContract.BallMagnusCoeff
-              ContactRadius = PhysicsContract.BallContactRadius
+            { Gravity = Gravity
+              AirDrag = BallAirDrag
+              GroundRestitution = BallGroundRestitution
+              GroundFriction = BallGroundFriction
+              PostRestitution = BallPostRestitution
+              SpinDecay = BallSpinDecay
+              MagnusCoeff = BallMagnusCoeff
+              ContactRadius = BallContactRadius
               PlayerMaxForce = 25.0<meter / second^2>
               PlayerMassBase = 70.0
               PlayerMassWeightCoeff = 0.30
               PlayerMassStrengthCoeff = 0.50
-              SteeringSlowRadius = PhysicsContract.SteeringSlowRadius
+              SteeringSlowRadius = SteeringSlowRadius
               SteeringFleeRadius = 8.0<meter>
               SteeringAlignmentWeight = 0.30
               CohesionWeight = 0.08
-              TurnConstraintAgilityCoeff = PhysicsContract.TurnConstraintAgilityCoeff
-              TurnConstraintBaseLimit = PhysicsContract.TurnConstraintBase
-              MoveSpeedMax = PhysicsContract.PlayerSpeedMax
-              MoveSpeedMin = PhysicsContract.PlayerSpeedMin
-              SeparationMinDistance = PhysicsContract.PlayerSeparationRadius
-              BallContestSeparationRadius = PhysicsContract.BallContestSeparationRadius
+              TurnConstraintAgilityCoeff = TurnConstraintAgilityCoeff
+              TurnConstraintBaseLimit = TurnConstraintBase
+              MoveSpeedMax = PlayerSpeedMax
+              MoveSpeedMin = PlayerSpeedMin
+              SeparationMinDistance = PlayerSeparationRadius
+              BallContestSeparationRadius = BallContestSeparationRadius
               SeparationStrength = 0.10
               SeparationAgilityMultiplier = 0.15
               JitterBase = 0.30
@@ -747,8 +747,8 @@ module BalanceConfig =
               AirborneThreshold = 0.3<meter>
               ArrivalAnticipationBase = 0.4
               ArrivalAnticipationQuality = 0.8
-              ArrivalCompetitionRadius = 4.0<meter>
-              ArrivalConvergenceThreshold = -2.0<meter/second>
+              ArrivalCompetitionRadius = 2.0<meter>
+              ArrivalConvergenceThreshold = -2.0<meter / second>
               ArrivalContestThreshold = 0.1 }
           Timing =
             { DuelChainDelay = TickDelay.ofSeconds clock 4.0 1.0 2.0 7.0

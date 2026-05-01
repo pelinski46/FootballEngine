@@ -14,8 +14,8 @@ module SetPiecePositioning =
 
         // Helper to create spatial from frame arrays
         let fromFrame i =
-            { X = float frame.PosX[i] * 1.0<meter>
-              Y = float frame.PosY[i] * 1.0<meter>
+            { X = float frame.Physics.PosX[i] * 1.0<meter>
+              Y = float frame.Physics.PosY[i] * 1.0<meter>
               Z = 0.0<meter>
               Vx = 0.0<meter/second>
               Vy = 0.0<meter/second>
@@ -45,8 +45,8 @@ module SetPiecePositioning =
                 // attack direction helper
                 let dir = SimStateOps.attackDirFor clubSide state
                 let insideOffset (d: float<meter>) = if dir = LeftToRight then -d else d
-                let goalX = if dir = LeftToRight then PhysicsContract.GoalLineHome else PhysicsContract.GoalLineAway
-                let centerY = PhysicsContract.PitchWidth / 2.0
+                let goalX = if dir = LeftToRight then GoalLineHome else GoalLineAway
+                let centerY = PitchWidth / 2.0
 
                 // role placements (best-effort)
                 let mutable idx = 0
@@ -54,13 +54,13 @@ module SetPiecePositioning =
                 // near-post
                 if candidates.Length > idx then
                     let sIdx, _, _ = candidates[idx]
-                    positions[sIdx] <- { X = goalX + insideOffset 1.0<meter>; Y = PhysicsContract.PostNearY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                    positions[sIdx] <- { X = goalX + insideOffset 1.0<meter>; Y = PostNearY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     idx <- idx + 1
 
                 // far-post
                 if candidates.Length > idx then
                     let sIdx, _, _ = candidates[idx]
-                    positions[sIdx] <- { X = goalX + insideOffset 1.0<meter>; Y = PhysicsContract.PostFarY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                    positions[sIdx] <- { X = goalX + insideOffset 1.0<meter>; Y = PostFarY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     idx <- idx + 1
 
                 // two box positions (~6m from goal)
@@ -77,7 +77,7 @@ module SetPiecePositioning =
                 // penalty spot (~11m)
                 if candidates.Length > idx then
                     let sIdx, _, _ = candidates[idx]
-                    positions[sIdx] <- { X = goalX + insideOffset PhysicsContract.PenaltySpotDistance; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                    positions[sIdx] <- { X = goalX + insideOffset PenaltySpotDistance; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     idx <- idx + 1
 
                 // edge of area (~18m) one or two
@@ -104,8 +104,8 @@ module SetPiecePositioning =
                 let sb = defenders |> List.truncate stayBackCount
                 for (sIdx, _) in sb do
                     // keep near own half a bit
-                    let safeDist = PhysicsContract.PenaltyAreaDepth + 5.0<meter>
-                    let safeX = goalX - (PhysicsContract.forwardX dir) * safeDist
+                    let safeDist = PenaltyAreaDepth + 5.0<meter>
+                    let safeX = goalX - (forwardX dir) * safeDist
                     positions[sIdx] <- { X = safeX; Y = positions[sIdx].Y; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
                 positions

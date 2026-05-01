@@ -43,9 +43,9 @@ let edgeCaseTests =
               let bx = s.Ball.Position.X
               let by = s.Ball.Position.Y
               Expect.isGreaterThanOrEqual bx 0.0<meter> "ball X >= 0"
-              Expect.isLessThanOrEqual bx PhysicsContract.PitchLength "ball X <= pitch length"
+              Expect.isLessThanOrEqual bx PitchLength "ball X <= pitch length"
               Expect.isGreaterThanOrEqual by 0.0<meter> "ball Y >= 0"
-              Expect.isLessThanOrEqual by PhysicsContract.PitchWidth "ball Y <= pitch width"
+              Expect.isLessThanOrEqual by PitchWidth "ball Y <= pitch width"
           }
 
           test "empty team does not crash" {
@@ -114,7 +114,7 @@ let edgeCaseTests =
               s.Ball <-
                   { s.Ball with
                       Position =
-                          { X = PhysicsContract.GoalLineHome
+                          { X = GoalLineHome
                             Y = 34.0<meter>
                             Z = 0.5<meter>
                             Vx = 0.0<meter / second>
@@ -158,5 +158,5 @@ let edgeCaseTests =
               let bx = s.Ball.Position.X
               let by = s.Ball.Position.Y
               Expect.isGreaterThan bx 0.0<meter> $"ball should be moved off goal line, X = {bx}"
-              Expect.isLessThan bx PhysicsContract.GoalLineHome $"ball should be moved off goal line, X = {bx}"
+              Expect.isLessThan bx GoalLineHome $"ball should be moved off goal line, X = {bx}"
           } ]

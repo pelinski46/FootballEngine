@@ -43,10 +43,10 @@ module MatchSpatial =
         let y32 = float32 y
         for i = 0 to frame.SlotCount - 1 do
             if i <> excludeIdx then
-                match frame.Occupancy[i] with
+                match frame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let dx = frame.PosX[i] - x32
-                    let dy = frame.PosY[i] - y32
+                    let dx = frame.Physics.PosX[i] - x32
+                    let dy = frame.Physics.PosY[i] - y32
                     let d = dx * dx + dy * dy
                     if d < bestDistSq then
                         bestDistSq <- d
@@ -61,8 +61,8 @@ module MatchSpatial =
         (defFrame: TeamFrame)
         (dir: AttackDir)
         : (int * Spatial) voption =
-        let bX = attFrame.PosX[meIdx]
-        let bY = attFrame.PosY[meIdx]
+        let bX = attFrame.Physics.PosX[meIdx]
+        let bY = attFrame.Physics.PosY[meIdx]
 
         let isForward (px: float32) =
             match dir with
@@ -75,8 +75,8 @@ module MatchSpatial =
             | RightToLeft -> float px > float bX + 10.0
 
         let passLaneClear (targetIdx: int) =
-            let tx = attFrame.PosX[targetIdx]
-            let ty = attFrame.PosY[targetIdx]
+            let tx = attFrame.Physics.PosX[targetIdx]
+            let ty = attFrame.Physics.PosY[targetIdx]
             let tdx = tx - bX
             let tdy = ty - bY
             let lenSq = tdx * tdx + tdy * tdy
@@ -88,10 +88,10 @@ module MatchSpatial =
                 let mutable blocked = false
                 let mutable i = 0
                 while not blocked && i < defFrame.SlotCount do
-                    match defFrame.Occupancy[i] with
+                    match defFrame.Physics.Occupancy[i] with
                     | OccupancyKind.Active _ ->
-                        let dpx = defFrame.PosX[i] - bX
-                        let dpy = defFrame.PosY[i] - bY
+                        let dpx = defFrame.Physics.PosX[i] - bX
+                        let dpy = defFrame.Physics.PosY[i] - bY
                         let t = (dpx * tdx + dpy * tdy) * invLenSq
                         if t >= 0.0f && t <= 1.0f then
                             let crossSq = (dpx * tdy - dpy * tdx) * (dpx * tdy - dpy * tdx)
@@ -107,10 +107,10 @@ module MatchSpatial =
 
         for i = 0 to attFrame.SlotCount - 1 do
             if i <> meIdx then
-                match attFrame.Occupancy[i] with
+                match attFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let px = attFrame.PosX[i]
-                    let py = attFrame.PosY[i]
+                    let px = attFrame.Physics.PosX[i]
+                    let py = attFrame.Physics.PosY[i]
                     let dx = px - bX
                     let dy = py - bY
                     let dist = sqrt (dx * dx + dy * dy)
@@ -128,8 +128,8 @@ module MatchSpatial =
         match bestIdx with
         | ValueSome idx ->
             let sp = {
-                X = float attFrame.PosX[idx] * 1.0<meter>
-                Y = float attFrame.PosY[idx] * 1.0<meter>
+                X = float attFrame.Physics.PosX[idx] * 1.0<meter>
+                Y = float attFrame.Physics.PosY[idx] * 1.0<meter>
                 Z = 0.0<meter>
                 Vx = 0.0<meter/second>
                 Vy = 0.0<meter/second>
@@ -144,9 +144,9 @@ module MatchSpatial =
         let mutable found = 0
 
         for i = 0 to frame.SlotCount - 1 do
-            match frame.Occupancy[i] with
+            match frame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let x = frame.PosX[i]
+                let x = frame.Physics.PosX[i]
                 found <- found + 1
                 if dir = LeftToRight then
                     if x > firstX then
@@ -176,11 +176,11 @@ module MatchSpatial =
         if player.Position = GK then false
         else
             let dir = attackDirFor clubSide state
-            let playerX = float attFrame.PosX[idx] * 1.0<meter>
+            let playerX = float attFrame.Physics.PosX[idx] * 1.0<meter>
             let secondX = secondLastDefenderXFrame defFrame dir
             let ballX = state.Ball.Position.X
             let offsideLine =
-                if defFrame.ActiveCount < 2 then
+                if defFrame.Physics.ActiveCount < 2 then
                     match dir with
                     | LeftToRight -> 106.0<meter>
                     | RightToLeft -> -1.0<meter>
@@ -209,7 +209,7 @@ module MatchSpatial =
         : OffsideSnapshot =
         { PasserId = attRoster.Players[passerIdx].Id
           ReceiverId = attRoster.Players[receiverIdx].Id
-          ReceiverXAtPass = float attFrame.PosX[receiverIdx] * 1.0<meter>
+          ReceiverXAtPass = float attFrame.Physics.PosX[receiverIdx] * 1.0<meter>
           SecondLastDefenderX = secondLastDefenderXFrame defFrame dir
           BallXAtPass = state.Ball.Position.X
           Dir = dir }
@@ -225,7 +225,7 @@ module MatchSpatial =
 
     let mirrorSpatial (s: Spatial) =
         { s with
-            X = PhysicsContract.PitchLength - s.X
+            X = PitchLength - s.X
             Vx = -s.Vx }
 
     let pointToLineDistSq (px: float32) (py: float32) (lx1: float32) (ly1: float32) (lx2: float32) (ly2: float32) : float32 =

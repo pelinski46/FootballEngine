@@ -22,11 +22,10 @@ module StoppageReason =
         | VARReviewDelay -> 0
         | OtherDelay _ -> 10
 
-type StoppageEntry = {
-    SubTick: int
-    Reason: StoppageReason
-    SecondsAdded: int
-}
+type StoppageEntry =
+    { SubTick: int
+      Reason: StoppageReason
+      SecondsAdded: int }
 
 type StoppageTimeTracker() =
     member val private entries: ResizeArray<StoppageEntry> = ResizeArray() with get
@@ -37,18 +36,24 @@ type StoppageTimeTracker() =
 
     member this.Add(subTick, reason, ?seconds) =
         let secs = defaultArg seconds (StoppageReason.defaultSeconds reason)
+
         let varDelay =
             match reason with
-            | VARReview -> normalInt 30.0 10.0 20 50
+            | StoppageReason.VARReviewDelay -> normalInt 30.0 10.0 20 50
             | _ -> 0
+
         let total = secs + varDelay
-        this.entries.Add { SubTick = subTick; Reason = reason; SecondsAdded = total }
+
+        this.entries.Add
+            { SubTick = subTick
+              Reason = reason
+              SecondsAdded = total }
+
         total
 
-    member this.AccumulatedSeconds =
-        this.entries |> Seq.sumBy _.SecondsAdded
+    member this.AccumulatedSeconds = this.entries |> Seq.sumBy _.SecondsAdded
 
-    member this.DecideHalfTime () =
+    member this.DecideHalfTime() =
         let baseSeconds = this.AccumulatedSeconds
         let minAdded = max 1 (baseSeconds / 60)
         let maxAdded = max minAdded (baseSeconds / 45 + 2)
@@ -57,8 +62,10 @@ type StoppageTimeTracker() =
         this.HalfTimeDecided <- true
         decided
 
-    member this.DecideFullTime () =
-        let secondHalfEntries = this.entries |> Seq.filter (fun e -> e.SubTick > 0) |> Seq.sumBy _.SecondsAdded
+    member this.DecideFullTime() =
+        let secondHalfEntries =
+            this.entries |> Seq.filter (fun e -> e.SubTick > 0) |> Seq.sumBy _.SecondsAdded
+
         let baseSeconds = secondHalfEntries
         let minAdded = max 1 (baseSeconds / 60)
         let maxAdded = max minAdded (baseSeconds / 45 + 2)

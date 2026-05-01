@@ -226,8 +226,8 @@ module WorldRunner =
                     MatchMetrics.extract replay.Events fixture.HomeClubId fixture.AwayClubId
 
                 ignore (
-                    BalanceCalibrator.calibrateOnce
-                        (BalanceCalibrator.getConfig ())
+                    calibrateOnce
+                        (getConfig ())
                         metrics
                         CalibrationTargets.targetsDefault
                         0.1

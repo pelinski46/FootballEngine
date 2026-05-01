@@ -33,7 +33,7 @@ let tacticalImpactTests =
               | Ok(_, _, _, final) ->
                   Expect.isNotNull (box final.Home.Tactics) "home tactics should exist"
                   Expect.isNotNull (box final.Away.Tactics) "away tactics should exist"
-              | Error e -> Tests.failtestf $"Simulation error: %A{e}"
+              | Error e -> failtestf $"Simulation error: %A{e}"
           }
 
           test "subs within limits after match" {
@@ -44,5 +44,5 @@ let tacticalImpactTests =
               | Ok(_, _, _, final) ->
                   Expect.isLessThanOrEqual final.Home.SubsUsed 3 "home subs <= 3"
                   Expect.isLessThanOrEqual final.Away.SubsUsed 3 "away subs <= 3"
-              | Error e -> Tests.failtestf $"Simulation error: %A{e}"
+              | Error e -> failtestf $"Simulation error: %A{e}"
           } ]

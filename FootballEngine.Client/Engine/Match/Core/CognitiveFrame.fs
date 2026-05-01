@@ -54,26 +54,26 @@ module CognitiveFrameModule =
                 let oppFrame = getFrame state (ClubSide.flip clubSide)
                 let oppRoster = getRoster ctx (ClubSide.flip clubSide)
                 for i = 0 to oppFrame.SlotCount - 1 do
-                    match oppFrame.Occupancy[i] with
+                    match oppFrame.Physics.Occupancy[i] with
                     | OccupancyKind.Active rosterIdx when oppRoster.Players[rosterIdx].Id = pid -> found <- int16 i
                     | _ -> ()
                 found
             | _ -> -1s
 
         for i = 0 to n - 1 do
-            match ownFrame.Occupancy[i] with
+            match ownFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let ox = ownFrame.PosX[i]
-                let oy = ownFrame.PosY[i]
+                let ox = ownFrame.Physics.PosX[i]
+                let oy = ownFrame.Physics.PosY[i]
 
                 let mutable minTMDistSq = System.Single.MaxValue
                 let mutable minTMIdx = int16 -1s
                 for j = 0 to n - 1 do
                     if i <> j then
-                        match ownFrame.Occupancy[j] with
+                        match ownFrame.Physics.Occupancy[j] with
                         | OccupancyKind.Active _ ->
-                            let dx = ownFrame.PosX[j] - ox
-                            let dy = ownFrame.PosY[j] - oy
+                            let dx = ownFrame.Physics.PosX[j] - ox
+                            let dy = ownFrame.Physics.PosY[j] - oy
                             let d = dx * dx + dy * dy
                             if d < minTMDistSq then
                                 minTMDistSq <- d
@@ -85,10 +85,10 @@ module CognitiveFrameModule =
                 let mutable minOppDistSq = System.Single.MaxValue
                 let mutable minOppIdx = int16 -1s
                 for j = 0 to m - 1 do
-                    match oppFrame.Occupancy[j] with
+                    match oppFrame.Physics.Occupancy[j] with
                     | OccupancyKind.Active _ ->
-                        let dx = oppFrame.PosX[j] - ox
-                        let dy = oppFrame.PosY[j] - oy
+                        let dx = oppFrame.Physics.PosX[j] - ox
+                        let dy = oppFrame.Physics.PosY[j] - oy
                         let d = dx * dx + dy * dy
                         if d < minOppDistSq then
                             minOppDistSq <- d

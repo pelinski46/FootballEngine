@@ -30,7 +30,7 @@ module ModLoader =
 
     let private checkSchemaVersion (path: string) (json: string) : Result<unit, ModError> =
         try
-            use doc = System.Text.Json.JsonDocument.Parse(json)
+            use doc = JsonDocument.Parse(json)
             match doc.RootElement.TryGetProperty("SchemaVersion") with
             | true, elem ->
                 let version = elem.GetInt32()

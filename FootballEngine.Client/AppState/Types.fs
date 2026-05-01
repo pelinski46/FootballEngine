@@ -120,7 +120,7 @@ module AppTypes =
           PlayerSortBy: string
           Setup: SetupState
           Transfer: TransferState
-          ModEditor: ModEditorTypes.ModEditorState
+          ModEditor: ModEditorState
           ActiveMatchReplay: MatchReplay option
           ActiveMatchSnapshot: int
           IsPlaying: bool

@@ -49,7 +49,7 @@ module SpaceScorer =
         (attackDir: AttackDir)
         : float =
 
-        InfluenceTypes.scoreCellRaw cell influence (float32 myPos.X) (float32 myPos.Y) attackDir
+        scoreCellRaw cell influence (float32 myPos.X) (float32 myPos.Y) attackDir
 
     /// Compute how many teammates are moving toward a given cell.
     /// Returns a convergence score 0.0-1.0.
@@ -64,12 +64,12 @@ module SpaceScorer =
 
         for i = 0 to ctx.Team.OwnFrame.SlotCount - 1 do
             if i <> ctx.MeIdx then
-                match ctx.Team.OwnFrame.Occupancy[i] with
+                match ctx.Team.OwnFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let px = float ctx.Team.OwnFrame.PosX[i] * 1.0<meter>
-                    let py = float ctx.Team.OwnFrame.PosY[i] * 1.0<meter>
-                    let vx = float ctx.Team.OwnFrame.VelX[i] * 1.0<meter/second>
-                    let vy = float ctx.Team.OwnFrame.VelY[i] * 1.0<meter/second>
+                    let px = float ctx.Team.OwnFrame.Physics.PosX[i] * 1.0<meter>
+                    let py = float ctx.Team.OwnFrame.Physics.PosY[i] * 1.0<meter>
+                    let vx = float ctx.Team.OwnFrame.Physics.VelX[i] * 1.0<meter/second>
+                    let vy = float ctx.Team.OwnFrame.Physics.VelY[i] * 1.0<meter/second>
 
                     let playerPos = { X = px; Y = py; Z = 0.0<meter>; Vx = vx; Vy = vy; Vz = 0.0<meter/second> }
                     let dist = playerPos.DistTo2D targetPos
@@ -108,9 +108,9 @@ module SpaceScorer =
             | RightToLeft -> float32 PitchLength
 
         for i = 0 to ctx.Team.OppFrame.SlotCount - 1 do
-            match ctx.Team.OppFrame.Occupancy[i] with
+            match ctx.Team.OppFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let dx = ctx.Team.OppFrame.PosX[i]
+                let dx = ctx.Team.OppFrame.Physics.PosX[i]
                 let isDeeper =
                     match attackDir with
                     | LeftToRight -> dx > deepestDefX

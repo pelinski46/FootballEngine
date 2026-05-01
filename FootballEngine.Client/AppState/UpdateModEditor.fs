@@ -193,7 +193,7 @@ module UpdateModEditor =
         | RedoMod -> redo state |> runValidation
 
         | Export ->
-            match FootballEngine.Data.ModSaver.saveMod Data.ModPaths.modsDir state.Manifest state.Countries state.InternationalComps with
+            match ModSaver.saveMod ModPaths.modsDir state.Manifest state.Countries state.InternationalComps with
             | Ok() -> { state with IsDirty = false }, Elmish.Cmd.none
             | Error err ->
                 System.Diagnostics.Debug.WriteLine($"Export failed: {err}")
@@ -202,7 +202,7 @@ module UpdateModEditor =
         | Validate ->
             let allErrors =
                 [ for KeyValue(code, data) in state.Countries do
-                      yield! FootballEngine.Data.ModValidator.validateCountryData state.Manifest.Name data ]
+                      yield! ModValidator.validateCountryData state.Manifest.Name data ]
 
             { state with Errors = allErrors }, Elmish.Cmd.none
 

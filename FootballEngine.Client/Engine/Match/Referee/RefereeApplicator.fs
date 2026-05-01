@@ -12,10 +12,10 @@ module RefereeApplicator =
 
         if scoringClub = HomeClub then
             state.HomeScore <- state.HomeScore + 1
-            state.Momentum <- PhysicsContract.clampFloat (state.Momentum + 3.0) -10.0 10.0
+            state.Momentum <- clampFloat (state.Momentum + 3.0) -10.0 10.0
         else
             state.AwayScore <- state.AwayScore + 1
-            state.Momentum <- PhysicsContract.clampFloat (state.Momentum - 3.0) -10.0 10.0
+            state.Momentum <- clampFloat (state.Momentum - 3.0) -10.0 10.0
 
         resetBallForKickOff (ClubSide.flip scoringClub) state
 
@@ -48,11 +48,11 @@ module RefereeApplicator =
             let resetX =
                 match state.PendingOffsideSnapshot with
                 | Some snap -> snap.BallXAtPass
-                | None -> PhysicsContract.HalfwayLineX
+                | None -> HalfwayLineX
 
             state.Ball <-
                 { state.Ball with
-                    Position = defaultSpatial resetX (PhysicsContract.PitchWidth / 2.0)
+                    Position = defaultSpatial resetX (PitchWidth / 2.0)
                     Spin = Spin.zero
                     LastTouchBy = None
                     Possession = Loose }
@@ -63,15 +63,15 @@ module RefereeApplicator =
         | AwardThrowIn team ->
             let throwX =
                 match team with
-                | HomeClub -> PhysicsContract.PenaltyAreaDepth
-                | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth
+                | HomeClub -> PenaltyAreaDepth
+                | AwayClub -> PitchLength - PenaltyAreaDepth
 
             state.Ball <-
                 { state.Ball with
                     Position =
                         { state.Ball.Position with
                             X = throwX
-                            Y = PhysicsContract.PitchWidth / 2.0
+                            Y = PitchWidth / 2.0
                             Z = 0.0<meter>
                             Vx = 0.0<meter / second>
                             Vy = 0.0<meter / second>
@@ -86,7 +86,7 @@ module RefereeApplicator =
         | AwardCorner team ->
             let cornerX =
                 match team with
-                | HomeClub -> PhysicsContract.PitchLength - 0.5<meter>
+                | HomeClub -> PitchLength - 0.5<meter>
                 | AwayClub -> 0.5<meter>
 
             state.Ball <-
@@ -94,7 +94,7 @@ module RefereeApplicator =
                     Position =
                         { state.Ball.Position with
                             X = cornerX
-                            Y = PhysicsContract.PitchWidth / 2.0
+                            Y = PitchWidth / 2.0
                             Z = 0.0<meter>
                             Vx = 0.0<meter / second>
                             Vy = 0.0<meter / second>
@@ -114,12 +114,12 @@ module RefereeApplicator =
         | AwardGoalKick team ->
             let gkX =
                 match team with
-                | HomeClub -> PhysicsContract.GoalAreaDepth
-                | AwayClub -> PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
+                | HomeClub -> GoalAreaDepth
+                | AwayClub -> PitchLength - GoalAreaDepth
 
             state.Ball <-
                 { state.Ball with
-                    Position = defaultSpatial gkX (PhysicsContract.PitchWidth / 2.0)
+                    Position = defaultSpatial gkX (PitchWidth / 2.0)
                     Spin = Spin.zero
                     LastTouchBy = None
                     Possession = Possession.SetPiece(team, SetPieceKind.GoalKick) }

@@ -40,15 +40,15 @@ module ShotAction =
         let attClubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
-        let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
+        let defRoster = getRoster ctx actx.Def.ClubSide
 
         let bX = state.Ball.Position.X
         let bY = state.Ball.Position.Y
 
         let inChance = actx.Zone = AttackingZone || actx.Zone = MidfieldZone
 
-        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
+        match nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> []
         | ValueSome shooterIdx ->
             let shooter = attRoster.Players[shooterIdx]
@@ -60,7 +60,7 @@ module ShotAction =
             else
                 let quality =
                     let distToGoal = PhysicsContract.distToGoal bX actx.Att.AttackDir
-                    let distNorm = PhysicsContract.clamp (distToGoal / sc.NormalisationDistance) 0.0 1.0
+                    let distNorm = clamp (distToGoal / sc.NormalisationDistance) 0.0 1.0
                     let positionBonus =
                         shooterProfile.Directness * sc.PositionDirectnessWeight
                         + shooterProfile.AttackingDepth * sc.PositionDepthWeight
@@ -80,16 +80,16 @@ module ShotAction =
                     let u = matchUrgency attClubId ctx state clock * tacticsCfg.UrgencyMultiplier
 
                     let dist =
-                        PhysicsContract.distToGoal bX actx.Att.AttackDir
+                        distToGoal bX actx.Att.AttackDir
                         * sc.DistanceToGoalMultiplier
 
                     let homeComposure = actx.Att.Bonus.ShotCompos
                     let finishing = calcShotPower sc shooter shooterCond composure u dist homeComposure
-                    let dirSign = PhysicsContract.forwardX actx.Att.AttackDir
+                    let dirSign = forwardX actx.Att.AttackDir
 
                     let finishingNorm =
                         Math.Clamp(
-                            PhysicsContract.normaliseAttr shooter.Technical.Finishing,
+                            normaliseAttr shooter.Technical.Finishing,
                             sc.FinishingMin,
                             sc.FinishingMax
                         )
@@ -98,7 +98,7 @@ module ShotAction =
 
                     let goalX =
                         if actx.Att.AttackDir = LeftToRight then
-                            PhysicsContract.PitchLength
+                            PitchLength
                         else
                             0.0<meter>
 
@@ -126,12 +126,12 @@ module ShotAction =
                             bY + (vy / vx) * (goalX - bX)
                         else bY
 
-                    let inGoalYRange = targetY >= PhysicsContract.PostNearY && targetY <= PhysicsContract.PostFarY
-                    let inGoalZRange = float vz * float vz / (2.0 * 19.6133) < float PhysicsContract.CrossbarHeight
+                    let inGoalYRange = targetY >= PostNearY && targetY <= PostFarY
+                    let inGoalZRange = float vz * float vz / (2.0 * 19.6133) < float CrossbarHeight
 
                     let spin =
                         { Top =
-                            -(PhysicsContract.normaliseAttr shooter.Technical.Finishing)
+                            -(normaliseAttr shooter.Technical.Finishing)
                             * sc.SpinTopMultiplier
                             * 1.0<radianPerSecond>
                           Side = 0.0<radianPerSecond> }
@@ -152,7 +152,7 @@ module ShotAction =
                         let dy = abs (targetY - bY)
                         let dx = abs (goalX - bX)
                         if dx > 0.0<meter> then
-                            float (System.Math.Atan2(float dy, float dx)) * 180.0 / System.Math.PI
+                            float (Math.Atan2(float dy, float dx)) * 180.0 / Math.PI
                         else 90.0
 
                     let xgModel = {
@@ -179,7 +179,7 @@ module ShotAction =
                             Possession = InFlight
                             Trajectory = Some trajectory }
 
-                    SimStateOps.adjustMomentum actx.Att.AttackDir ctx.Config.Duel.MomentumBonus state
+                    adjustMomentum actx.Att.AttackDir ctx.Config.Duel.MomentumBonus state
                     clearOffsideSnapshot state
 
                     [ { SubTick = subTick; PlayerId = shooter.Id; ClubId = attClubId; Type = ShotLaunched; Context = EventContext.at (float bX) (float bY) |> fun c -> { c with ExpectedGoal = Some xgValue } } ]

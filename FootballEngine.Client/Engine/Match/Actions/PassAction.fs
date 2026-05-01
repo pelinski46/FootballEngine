@@ -2,6 +2,7 @@ namespace FootballEngine
 
 open System
 open FootballEngine.Domain
+open FootballEngine.Movement
 open FootballEngine.Stats
 open SimStateOps
 open MatchSpatial
@@ -17,28 +18,54 @@ module PassAction =
         (passerY: float<meter>)
         (targetX: float<meter>)
         (targetY: float<meter>)
-        (targetVx: float<meter/second>)
-        (targetVy: float<meter/second>)
-        (passSpeed: float<meter/second>)
+        (targetVx: float<meter / second>)
+        (targetVy: float<meter / second>)
+        (passSpeed: float<meter / second>)
         : float<meter> * float<meter> =
         let dx = targetX - passerX
         let dy = targetY - passerY
         let dist = sqrt (dx * dx + dy * dy)
-        let flightTime = if passSpeed > 0.0<meter/second> then dist / passSpeed else 0.5<second>
+
+        let flightTime =
+            if passSpeed > 0.0<meter / second> then
+                dist / passSpeed
+            else
+                0.5<second>
+
         let effectiveTime = flightTime * leadFactor
         let leadX = targetX + targetVx * effectiveTime
         let leadY = targetY + targetVy * effectiveTime
-        PhysicsContract.clamp leadX 0.0<meter> PhysicsContract.PitchLength,
-        PhysicsContract.clamp leadY 0.0<meter> PhysicsContract.PitchWidth
+        clamp leadX 0.0<meter> PitchLength, clamp leadY 0.0<meter> PitchWidth
 
-    let private makeTrajectory (subTick: int) (clock: SimulationClock) (passerId: PlayerId) (ox: float<meter>) (oy: float<meter>) (tx: float<meter>) (ty: float<meter>) (speed: float<meter/second>) (vz: float<meter/second>) (actionKind: BallActionKind) : BallTrajectory =
+    let private makeTrajectory
+        (subTick: int)
+        (clock: SimulationClock)
+        (passerId: PlayerId)
+        (ox: float<meter>)
+        (oy: float<meter>)
+        (tx: float<meter>)
+        (ty: float<meter>)
+        (speed: float<meter / second>)
+        (vz: float<meter / second>)
+        (actionKind: BallActionKind)
+        : BallTrajectory =
         let dist = sqrt ((tx - ox) * (tx - ox) + (ty - oy) * (ty - oy))
-        let flightTime = if speed > 0.0<meter/second> then dist / speed else 0.5<second>
-        let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
+
+        let flightTime =
+            if speed > 0.0<meter / second> then
+                dist / speed
+            else
+                0.5<second>
+
+        let arrivalSubTick =
+            subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
+
         let peakHeight =
-            if vz > 0.0<meter/second> then
-                vz * vz / (2.0 * 9.80665<meter/second^2>)
-            else 0.0<meter>
+            if vz > 0.0<meter / second> then
+                vz * vz / (2.0 * 9.80665<meter / second^2>)
+            else
+                0.0<meter>
+
         { OriginX = ox
           OriginY = oy
           TargetX = tx
@@ -49,37 +76,55 @@ module PassAction =
           PeakHeight = peakHeight
           ActionKind = actionKind }
 
-    let resolve (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) (target: Player) : MatchEvent list =
+    let resolve
+        (subTick: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        (clock: SimulationClock)
+        (target: Player)
+        : MatchEvent list =
         let actx = ActionContext.build ctx state
         let pc = ctx.Config.Pass
         let attClubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
 
         let targetIdx =
-            match SimStateOps.findIdxByPid target.Id attFrame attRoster with
+            match findIdxByPid target.Id attFrame attRoster with
             | ValueSome i -> i
             | ValueNone -> -1
 
-        if targetIdx < 0 then []
+        if targetIdx < 0 then
+            []
         else
-            let targetCurrX = float attFrame.PosX[targetIdx] * 1.0<meter>
-            let targetCurrY = float attFrame.PosY[targetIdx] * 1.0<meter>
-            let targetVx = float attFrame.VelX[targetIdx] * 1.0<meter/second>
-            let targetVy = float attFrame.VelY[targetIdx] * 1.0<meter/second>
-            let targetSp = { X = targetCurrX; Y = targetCurrY; Z = 0.0<meter>; Vx = targetVx; Vy = targetVy; Vz = 0.0<meter/second> }
+            let targetCurrX = float attFrame.Physics.PosX[targetIdx] * 1.0<meter>
+            let targetCurrY = float attFrame.Physics.PosY[targetIdx] * 1.0<meter>
+            let targetVx = float attFrame.Physics.VelX[targetIdx] * 1.0<meter / second>
+            let targetVy = float attFrame.Physics.VelY[targetIdx] * 1.0<meter / second>
+
+            let targetSp =
+                { X = targetCurrX
+                  Y = targetCurrY
+                  Z = 0.0<meter>
+                  Vx = targetVx
+                  Vy = targetVy
+                  Vz = 0.0<meter / second> }
 
             let passerIdx =
                 match state.Ball.Possession with
                 | Owned(_, ctrlId) ->
-                    match SimStateOps.findIdxByPid ctrlId attFrame attRoster with
+                    match findIdxByPid ctrlId attFrame attRoster with
                     | ValueSome i -> Some i
                     | ValueNone -> None
-                | Loose | InFlight | SetPiece _ | Contest _ | Transition _ ->
+                | Loose
+                | InFlight
+                | Possession.SetPiece _
+                | Contest _
+                | Transition _ ->
                     match state.Ball.LastTouchBy with
                     | Some pid ->
-                        match SimStateOps.findIdxByPid pid attFrame attRoster with
+                        match findIdxByPid pid attFrame attRoster with
                         | ValueSome i -> Some i
                         | ValueNone -> None
                     | None -> None
@@ -87,15 +132,26 @@ module PassAction =
             match passerIdx with
             | None -> []
             | Some pIdx ->
-                SimStateOps.updateMatchStats state actx.Att.ClubSide (fun s -> { s with PassAttempts = s.PassAttempts + 1 })
+                updateMatchStats state actx.Att.ClubSide (fun s ->
+                    { s with
+                        PassAttempts = s.PassAttempts + 1 })
+
                 let passer = attRoster.Players[pIdx]
                 let passerCond = int attFrame.Condition[pIdx]
                 let passerProfile = attRoster.Profiles[pIdx]
-                let passerSp = { X = float attFrame.PosX[pIdx] * 1.0<meter>; Y = float attFrame.PosY[pIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
-                let condNorm = PhysicsContract.normaliseCondition passerCond
+                let passerSp =
+                    { X = float attFrame.Physics.PosX[pIdx] * 1.0<meter>
+                      Y = float attFrame.Physics.PosY[pIdx] * 1.0<meter>
+                      Z = 0.0<meter>
+                      Vx = 0.0<meter / second>
+                      Vy = 0.0<meter / second>
+                      Vz = 0.0<meter / second> }
 
-                let chemistry = SimStateOps.getChemistry ctx actx.Att.ClubSide
+                let condNorm = normaliseCondition passerCond
+
+                let chemistry = getChemistry ctx actx.Att.ClubSide
+
                 let familiarity =
                     if pIdx < chemistry.PlayerCount && targetIdx < chemistry.PlayerCount then
                         chemistry.Familiarity[pIdx, targetIdx]
@@ -105,74 +161,117 @@ module PassAction =
                 let passDist = float (passerSp.DistTo2D targetSp)
 
                 let distPenalty =
-                    if passDist <= 10.0 then 0.0
-                    elif passDist <= 30.0 then (passDist - 10.0) * pc.DistancePenaltyPerMeter
-                    else 20.0 * pc.DistancePenaltyPerMeter + (passDist - 30.0) * pc.LongPassPenaltyPerMeter
+                    if passDist <= 10.0 then
+                        0.0
+                    elif passDist <= 30.0 then
+                        (passDist - 10.0) * pc.DistancePenaltyPerMeter
+                    else
+                        20.0 * pc.DistancePenaltyPerMeter
+                        + (passDist - 30.0) * pc.LongPassPenaltyPerMeter
 
                 let passMean =
                     pc.BaseMean
-                    + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.Passing) * pc.TechnicalWeight
-                    + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Mental.Vision) * pc.VisionWeight
+                    + toScalar (normaliseAttr passer.Technical.Passing) * pc.TechnicalWeight
+                    + toScalar (normaliseAttr passer.Mental.Vision) * pc.VisionWeight
                     + actx.Att.Bonus.PassAcc
                     + (if actx.Zone = DefensiveZone then
-                           passerProfile.CreativityWeight * pc.CreativityWeight + (1.0 - passerProfile.Directness) * pc.DirectnessWeight
-                       else 0.0)
+                           passerProfile.CreativityWeight * pc.CreativityWeight
+                           + (1.0 - passerProfile.Directness) * pc.DirectnessWeight
+                       else
+                           0.0)
                     - distPenalty
                     + (familiarity - 0.5) * 0.15
 
                 let passMeanCapped = Math.Clamp(passMean, pc.MeanMin, pc.MeanMax)
 
-                let chemBonus = ChemistryTracker.familiarityBonus familiarity
+                let chemBonus = familiarityBonus familiarity
 
                 let quality =
-                    betaSample (passMeanCapped + chemBonus) (pc.SuccessShapeAlpha + condNorm * pc.SuccessConditionMultiplier)
+                    betaSample
+                        (passMeanCapped + chemBonus)
+                        (pc.SuccessShapeAlpha + condNorm * pc.SuccessConditionMultiplier)
 
                 let nearestDefDist =
-                    match SimStateOps.nearestActiveSlotInFrame defFrame passerSp.X passerSp.Y with
+                    match nearestActiveSlotInFrame defFrame passerSp.X passerSp.Y with
                     | ValueSome dIdx ->
-                        let defX = float defFrame.PosX[dIdx] * 1.0<meter>
-                        let defY = float defFrame.PosY[dIdx] * 1.0<meter>
-                        passerSp.DistTo2D { X = defX; Y = defY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        let defX = float defFrame.Physics.PosX[dIdx] * 1.0<meter>
+                        let defY = float defFrame.Physics.PosY[dIdx] * 1.0<meter>
+
+                        passerSp.DistTo2D
+                            { X = defX
+                              Y = defY
+                              Z = 0.0<meter>
+                              Vx = 0.0<meter / second>
+                              Vy = 0.0<meter / second>
+                              Vz = 0.0<meter / second> }
                     | ValueNone -> pc.DefaultNearestDefDist
 
-                let pressureFactor = Math.Clamp(1.0 - float (nearestDefDist / pc.PressureDistance), 0.0, 1.0)
+                let pressureFactor =
+                    Math.Clamp(1.0 - float (nearestDefDist / pc.PressureDistance), 0.0, 1.0)
 
-                let offside = isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
+                let offside =
+                    isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
                     losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.OffsideMomentum) state
                     [ createEvent subTick target.Id attClubId (PassIncomplete target.Id) ]
                 else
-                    let snapshot = snapshotAtPassFrame pIdx targetIdx attFrame attRoster defFrame state actx.Att.AttackDir
+                    let snapshot =
+                        snapshotAtPassFrame pIdx targetIdx attFrame attRoster defFrame state actx.Att.AttackDir
 
-                    let heavyTouchChance = (1.0 - float target.Technical.BallControl / pc.HeavyTouchDivisor) * pc.HeavyTouchMultiplier
+                    let heavyTouchChance =
+                        (1.0 - float target.Technical.BallControl / pc.HeavyTouchDivisor)
+                        * pc.HeavyTouchMultiplier
 
                     let accuracyNoise = pc.JitterStdDev * (1.0 - quality)
 
-                    let leadX, leadY = predictLeadPosition pc.PassLeadFactor passerSp.X passerSp.Y targetSp.X targetSp.Y targetSp.Vx targetSp.Vy pc.Speed
+                    let leadX, leadY =
+                        predictLeadPosition
+                            pc.PassLeadFactor
+                            passerSp.X
+                            passerSp.Y
+                            targetSp.X
+                            targetSp.Y
+                            targetSp.Vx
+                            targetSp.Vy
+                            pc.Speed
 
                     let actualTargetX, actualTargetY =
                         if bernoulli heavyTouchChance then
-                            PhysicsContract.clamp (leadX + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PhysicsContract.PitchLength,
-                            PhysicsContract.clamp (leadY + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PhysicsContract.PitchWidth
+                            clamp (leadX + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PitchLength,
+                            clamp (leadY + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PitchWidth
                         else
                             leadX, leadY
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz state
 
                     let actionKind = BallActionKind.Pass(passer.Id, target.Id, quality)
-                    let traj = makeTrajectory subTick clock passer.Id passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz actionKind
+
+                    let traj =
+                        makeTrajectory
+                            subTick
+                            clock
+                            passer.Id
+                            passerSp.X
+                            passerSp.Y
+                            actualTargetX
+                            actualTargetY
+                            pc.Speed
+                            pc.Vz
+                            actionKind
 
                     state.Ball <-
                         { state.Ball with
-                            Spin = { Top = 0.0<radianPerSecond>; Side = 0.0<radianPerSecond> }
+                            Spin =
+                                { Top = 0.0<radianPerSecond>
+                                  Side = 0.0<radianPerSecond> }
                             Possession = InFlight
                             PendingOffsideSnapshot = Some snapshot
                             Trajectory = Some traj }
 
                     adjustMomentum actx.Att.AttackDir pc.SuccessMomentum state
-                    MatchMemory.recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
+                    recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
                     [ createEvent subTick passer.Id attClubId (PassLaunched(passer.Id, target.Id)) ]
 
     let resolveLong (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchEvent list =
@@ -181,42 +280,65 @@ module PassAction =
         let attClubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
 
         let bPos = state.Ball.Position
         let bX, bY = bPos.X, bPos.Y
 
-        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
+        match nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> []
         | ValueSome passerIdx ->
             let passer = attRoster.Players[passerIdx]
             let passerCond = int attFrame.Condition[passerIdx]
-            let passerSp = { X = float attFrame.PosX[passerIdx] * 1.0<meter>; Y = float attFrame.PosY[passerIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
-            let condNorm = PhysicsContract.normaliseCondition passerCond
+            let passerSp =
+                { X = float attFrame.Physics.PosX[passerIdx] * 1.0<meter>
+                  Y = float attFrame.Physics.PosY[passerIdx] * 1.0<meter>
+                  Z = 0.0<meter>
+                  Vx = 0.0<meter / second>
+                  Vy = 0.0<meter / second>
+                  Vz = 0.0<meter / second> }
+
+            let condNorm = normaliseCondition passerCond
 
             let mutable bestFwdIdx = -1
             let mutable bestFwdX = 0.0f
             let mutable bestFwdY = 0.0f
 
             for i = 0 to attFrame.SlotCount - 1 do
-                match attFrame.Occupancy[i] with
+                match attFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
                     let profile = attRoster.Profiles[i]
-                    if profile.AttackingDepth > pc.ForwardDepthThreshold || profile.CreativityWeight > pc.ForwardCreativityThreshold then
+
+                    if
+                        profile.AttackingDepth > pc.ForwardDepthThreshold
+                        || profile.CreativityWeight > pc.ForwardCreativityThreshold
+                    then
                         if bestFwdIdx < 0 then
                             bestFwdIdx <- i
-                            bestFwdX <- attFrame.PosX[i]
-                            bestFwdY <- attFrame.PosY[i]
+                            bestFwdX <- attFrame.Physics.PosX[i]
+                            bestFwdY <- attFrame.Physics.PosY[i]
                 | _ -> ()
 
             let longMean =
                 pc.LongBallBaseMean
-                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.LongShots) * pc.LongBallLongShotsWeight
-                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Technical.Passing) * pc.LongBallPassingWeight
-                + PhysicsContract.toScalar (PhysicsContract.normaliseAttr passer.Mental.Vision) * pc.LongBallVisionWeight
+                + toScalar (normaliseAttr passer.Technical.LongShots) * pc.LongBallLongShotsWeight
+                + toScalar (normaliseAttr passer.Technical.Passing) * pc.LongBallPassingWeight
+                + toScalar (normaliseAttr passer.Mental.Vision) * pc.LongBallVisionWeight
                 + actx.Att.Bonus.SetPlay
-                - (if bestFwdIdx >= 0 && bPos.DistTo2D { X = float bestFwdX * 1.0<meter>; Y = float bestFwdY * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> } > 30.0<meter> then 0.2 else 0.0)
+                - (if
+                       bestFwdIdx >= 0
+                       && bPos.DistTo2D
+                           { X = float bestFwdX * 1.0<meter>
+                             Y = float bestFwdY * 1.0<meter>
+                             Z = 0.0<meter>
+                             Vx = 0.0<meter / second>
+                             Vy = 0.0<meter / second>
+                             Vz = 0.0<meter / second> } > 30.0<meter>
+                   then
+                       0.2
+                   else
+                       0.0)
 
             let quality =
                 betaSample longMean (pc.LongBallSuccessShapeAlpha + condNorm * pc.LongBallSuccessConditionMultiplier)
@@ -229,34 +351,62 @@ module PassAction =
                 let target = attRoster.Players[bestFwdIdx]
                 let targetCurrX = float bestFwdX * 1.0<meter>
                 let targetCurrY = float bestFwdY * 1.0<meter>
-                let targetVx = float attFrame.VelX[bestFwdIdx] * 1.0<meter/second>
-                let targetVy = float attFrame.VelY[bestFwdIdx] * 1.0<meter/second>
+                let targetVx = float attFrame.Physics.VelX[bestFwdIdx] * 1.0<meter / second>
+                let targetVy = float attFrame.Physics.VelY[bestFwdIdx] * 1.0<meter / second>
                 let targetIdx = bestFwdIdx
-                let offside = isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
+
+                let offside =
+                    isOffsideFrame targetIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
                     losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.LongBallOffsideMomentum) state
                     [ createEvent subTick passer.Id attClubId (LongBall false) ]
                 else
-                    let snapshot = snapshotAtPassFrame passerIdx targetIdx attFrame attRoster defFrame state actx.Att.AttackDir
+                    let snapshot =
+                        snapshotAtPassFrame passerIdx targetIdx attFrame attRoster defFrame state actx.Att.AttackDir
 
-                    let accuracyNoise = pc.JitterStdDev * pc.LongBallScrambleJitterMult * (1.0 - quality)
-                    let heavyTouchChance = (1.0 - float target.Technical.BallControl / pc.HeavyTouchDivisor) * pc.HeavyTouchMultiplier
+                    let accuracyNoise =
+                        pc.JitterStdDev * pc.LongBallScrambleJitterMult * (1.0 - quality)
 
-                    let leadX, leadY = predictLeadPosition pc.PassLeadFactor passerSp.X passerSp.Y targetCurrX targetCurrY targetVx targetVy pc.LongBallSpeed
+                    let heavyTouchChance =
+                        (1.0 - float target.Technical.BallControl / pc.HeavyTouchDivisor)
+                        * pc.HeavyTouchMultiplier
+
+                    let leadX, leadY =
+                        predictLeadPosition
+                            pc.PassLeadFactor
+                            passerSp.X
+                            passerSp.Y
+                            targetCurrX
+                            targetCurrY
+                            targetVx
+                            targetVy
+                            pc.LongBallSpeed
 
                     let actualTargetX, actualTargetY =
                         if bernoulli heavyTouchChance then
-                            PhysicsContract.clamp (leadX + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PhysicsContract.PitchLength,
-                            PhysicsContract.clamp (leadY + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PhysicsContract.PitchWidth
+                            clamp (leadX + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PitchLength,
+                            clamp (leadY + normalSample 0.0 accuracyNoise * 1.0<meter>) 0.0<meter> PitchWidth
                         else
                             leadX, leadY
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.LongBallSpeed pc.LongBallVz state
 
                     let actionKind = BallActionKind.LongBall(passer.Id, target.Id, quality)
-                    let traj = makeTrajectory subTick clock passer.Id passerSp.X passerSp.Y actualTargetX actualTargetY pc.LongBallSpeed pc.LongBallVz actionKind
+
+                    let traj =
+                        makeTrajectory
+                            subTick
+                            clock
+                            passer.Id
+                            passerSp.X
+                            passerSp.Y
+                            actualTargetX
+                            actualTargetY
+                            pc.LongBallSpeed
+                            pc.LongBallVz
+                            actionKind
 
                     state.Ball <-
                         { state.Ball with
@@ -269,29 +419,46 @@ module PassAction =
 
     /// Resolve a pass into space — ball goes to a grid cell, not a player.
     /// The best teammate converging on that cell becomes the receiver.
-    let resolveIntoSpace (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) (targetCell: int) : MatchEvent list =
+    let resolveIntoSpace
+        (subTick: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        (clock: SimulationClock)
+        (targetCell: int)
+        : MatchEvent list =
         let actx = ActionContext.build ctx state
         let pc = ctx.Config.Pass
         let attClubId = actx.Att.ClubId
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
 
         // Get the target cell center position
         let targetX, targetY = InfluenceTypes.cellToCenter targetCell
-        let targetSpatial = { X = float targetX * 1.0<meter>; Y = float targetY * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+        let targetSpatial =
+            { X = float targetX * 1.0<meter>
+              Y = float targetY * 1.0<meter>
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
 
         // Find the passer
         let passerIdx =
             match state.Ball.Possession with
             | Owned(_, ctrlId) ->
-                match SimStateOps.findIdxByPid ctrlId attFrame attRoster with
+                match findIdxByPid ctrlId attFrame attRoster with
                 | ValueSome i -> Some i
                 | ValueNone -> None
-            | Loose | InFlight | SetPiece _ | Contest _ | Transition _ ->
+            | Loose
+            | InFlight
+            | Possession.SetPiece _
+            | Contest _
+            | Transition _ ->
                 match state.Ball.LastTouchBy with
                 | Some pid ->
-                    match SimStateOps.findIdxByPid pid attFrame attRoster with
+                    match findIdxByPid pid attFrame attRoster with
                     | ValueSome i -> Some i
                     | ValueNone -> None
                 | None -> None
@@ -299,9 +466,19 @@ module PassAction =
         match passerIdx with
         | None -> []
         | Some pIdx ->
-            SimStateOps.updateMatchStats state actx.Att.ClubSide (fun s -> { s with PassAttempts = s.PassAttempts + 1 })
+            updateMatchStats state actx.Att.ClubSide (fun s ->
+                { s with
+                    PassAttempts = s.PassAttempts + 1 })
+
             let passer = attRoster.Players[pIdx]
-            let passerSp = { X = float attFrame.PosX[pIdx] * 1.0<meter>; Y = float attFrame.PosY[pIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+            let passerSp =
+                { X = float attFrame.Physics.PosX[pIdx] * 1.0<meter>
+                  Y = float attFrame.Physics.PosY[pIdx] * 1.0<meter>
+                  Z = 0.0<meter>
+                  Vx = 0.0<meter / second>
+                  Vy = 0.0<meter / second>
+                  Vz = 0.0<meter / second> }
 
             // Find the best teammate converging on the target cell
             let mutable bestReceiverIdx = -1
@@ -309,14 +486,18 @@ module PassAction =
 
             for i = 0 to attFrame.SlotCount - 1 do
                 if i <> pIdx then
-                    match attFrame.Occupancy[i] with
+                    match attFrame.Physics.Occupancy[i] with
                     | OccupancyKind.Active _ ->
-                        let px = float attFrame.PosX[i] * 1.0<meter>
-                        let py = float attFrame.PosY[i] * 1.0<meter>
-                        let vx = float attFrame.VelX[i] * 1.0<meter/second>
-                        let vy = float attFrame.VelY[i] * 1.0<meter/second>
+                        let px = float attFrame.Physics.PosX[i] * 1.0<meter>
+                        let py = float attFrame.Physics.PosY[i] * 1.0<meter>
+                        let vx = float attFrame.Physics.VelX[i] * 1.0<meter / second>
+                        let vy = float attFrame.Physics.VelY[i] * 1.0<meter / second>
 
-                        let dist = sqrt ((px - targetSpatial.X) * (px - targetSpatial.X) + (py - targetSpatial.Y) * (py - targetSpatial.Y))
+                        let dist =
+                            sqrt (
+                                (px - targetSpatial.X) * (px - targetSpatial.X)
+                                + (py - targetSpatial.Y) * (py - targetSpatial.Y)
+                            )
 
                         // Proximity score
                         let proximityScore = max 0.0 (1.0 - float (dist / 40.0<meter>))
@@ -325,8 +506,10 @@ module PassAction =
                         let toTargetX = float (targetSpatial.X - px)
                         let toTargetY = float (targetSpatial.Y - py)
                         let toTargetDist = sqrt (toTargetX * toTargetX + toTargetY * toTargetY)
+
                         let velAlign =
-                            if toTargetDist < 0.01 then 0.0
+                            if toTargetDist < 0.01 then
+                                0.0
                             else
                                 let dot = float vx * toTargetX / toTargetDist + float vy * toTargetY / toTargetDist
                                 max 0.0 (dot / 8.0)
@@ -348,14 +531,16 @@ module PassAction =
             if bestReceiverScore < 0.15 then
                 // Fallback to regular pass to nearest teammate
                 let mutable nearestIdx = -1
-                let mutable nearestDist = System.Double.MaxValue
+                let mutable nearestDist = Double.MaxValue
+
                 for i = 0 to attFrame.SlotCount - 1 do
                     if i <> pIdx then
-                        match attFrame.Occupancy[i] with
+                        match attFrame.Physics.Occupancy[i] with
                         | OccupancyKind.Active _ ->
-                            let dx = float attFrame.PosX[i] - float attFrame.PosX[pIdx]
-                            let dy = float attFrame.PosY[i] - float attFrame.PosY[pIdx]
+                            let dx = float attFrame.Physics.PosX[i] - float attFrame.Physics.PosX[pIdx]
+                            let dy = float attFrame.Physics.PosY[i] - float attFrame.Physics.PosY[pIdx]
                             let d = dx * dx + dy * dy
+
                             if d < nearestDist then
                                 nearestDist <- d
                                 nearestIdx <- i
@@ -370,38 +555,61 @@ module PassAction =
             else
                 // Execute space pass
                 let receiver = attRoster.Players[bestReceiverIdx]
-                let receiverCurrX = float attFrame.PosX[bestReceiverIdx] * 1.0<meter>
-                let receiverCurrY = float attFrame.PosY[bestReceiverIdx] * 1.0<meter>
+                let receiverCurrX = float attFrame.Physics.PosX[bestReceiverIdx] * 1.0<meter>
+                let receiverCurrY = float attFrame.Physics.PosY[bestReceiverIdx] * 1.0<meter>
 
                 // Offside check using receiver's current position
-                let offside = isOffsideFrame bestReceiverIdx attFrame attRoster defFrame state actx.Att.ClubSide
+                let offside =
+                    isOffsideFrame bestReceiverIdx attFrame attRoster defFrame state actx.Att.ClubSide
 
                 if offside then
                     losePossession state
                     adjustMomentum actx.Att.AttackDir (-pc.OffsideMomentum) state
                     [ createEvent subTick receiver.Id attClubId (PassIncomplete receiver.Id) ]
                 else
-                    let snapshot = snapshotAtPassFrame pIdx bestReceiverIdx attFrame attRoster defFrame state actx.Att.AttackDir
+                    let snapshot =
+                        snapshotAtPassFrame pIdx bestReceiverIdx attFrame attRoster defFrame state actx.Att.AttackDir
 
                     // Ball trajectory targets the space cell, not the receiver
                     let actualTargetX, actualTargetY =
-                        PhysicsContract.clamp (targetSpatial.X + normalSample 0.0 (pc.JitterStdDev * 0.5) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchLength,
-                        PhysicsContract.clamp (targetSpatial.Y + normalSample 0.0 (pc.JitterStdDev * 0.5) * 1.0<meter>) 0.0<meter> PhysicsContract.PitchWidth
+                        clamp
+                            (targetSpatial.X + normalSample 0.0 (pc.JitterStdDev * 0.5) * 1.0<meter>)
+                            0.0<meter>
+                            PitchLength,
+                        clamp
+                            (targetSpatial.Y + normalSample 0.0 (pc.JitterStdDev * 0.5) * 1.0<meter>)
+                            0.0<meter>
+                            PitchWidth
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz state
 
                     let actionKind = BallActionKind.Pass(passer.Id, receiver.Id, 0.7)
-                    let traj = makeTrajectory subTick clock passer.Id passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz actionKind
+
+                    let traj =
+                        makeTrajectory
+                            subTick
+                            clock
+                            passer.Id
+                            passerSp.X
+                            passerSp.Y
+                            actualTargetX
+                            actualTargetY
+                            pc.Speed
+                            pc.Vz
+                            actionKind
 
                     state.Ball <-
                         { state.Ball with
-                            Spin = { Top = 0.0<radianPerSecond>; Side = 0.0<radianPerSecond> }
+                            Spin =
+                                { Top = 0.0<radianPerSecond>
+                                  Side = 0.0<radianPerSecond> }
                             Possession = InFlight
                             PendingOffsideSnapshot = Some snapshot
                             Trajectory = Some traj }
 
                     // Create RunAssignment for the receiver to run toward the ball landing position
                     let runDuration = max 60 (traj.EstimatedArrivalSubTick - subTick + 20)
+
                     let assignment =
                         RunAssignment.create
                             RunType.DeepRun
@@ -414,12 +622,15 @@ module PassAction =
                             runDuration
 
                     // Update the assignment trigger to SpaceDetected
-                    let spaceAssignment = { assignment with Trigger = SpaceDetected; Priority = 2 }
+                    let spaceAssignment =
+                        { assignment with
+                            Trigger = SpaceDetected
+                            Priority = 2 }
 
                     // Add the run to the team's active runs
-                    let team = SimStateOps.getTeam state actx.Att.ClubSide
+                    let team = getTeam state actx.Att.ClubSide
                     team.ActiveRuns <- spaceAssignment :: team.ActiveRuns
 
                     adjustMomentum actx.Att.AttackDir pc.SuccessMomentum state
-                    MatchMemory.recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
+                    recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
                     [ createEvent subTick passer.Id attClubId (PassLaunched(passer.Id, receiver.Id)) ]

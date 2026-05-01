@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Movement
 open FootballEngine.Stats
 open FootballEngine.PhysicsContract
 open SimStateOps
@@ -109,7 +110,7 @@ module ManagerAgent =
             let mutable bestCond = 100
 
             for i = 0 to frame.SlotCount - 1 do
-                match frame.Occupancy[i] with
+                match frame.Physics.Occupancy[i] with
                 | OccupancyKind.Active rosterIdx ->
                     let p = roster.Players[rosterIdx]
                     let cond = int frame.Condition[i]
@@ -195,7 +196,7 @@ module ManagerAgent =
               let mutable homeBestCond = 100
 
               for i = 0 to homeFrame.SlotCount - 1 do
-                  match homeFrame.Occupancy[i] with
+                  match homeFrame.Physics.Occupancy[i] with
                   | OccupancyKind.Active rosterIdx ->
                       let p = homeRoster.Players[rosterIdx]
                       let cond = int homeFrame.Condition[i]
@@ -235,7 +236,7 @@ module ManagerAgent =
               let mutable awayBestCond = 100
 
               for i = 0 to awayFrame.SlotCount - 1 do
-                  match awayFrame.Occupancy[i] with
+                  match awayFrame.Physics.Occupancy[i] with
                   | OccupancyKind.Active rosterIdx ->
                       let p = awayRoster.Players[rosterIdx]
                       let cond = int awayFrame.Condition[i]
@@ -259,12 +260,7 @@ module ManagerAgent =
                   | None -> yield ManagerIdle
               | None -> yield ManagerIdle ]
 
-    let decide
-        (subTick: int)
-        (ctx: MatchContext)
-        (state: SimState)
-        (clock: SimulationClock)
-        : ManagerAction list =
+    let decide (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : ManagerAction list =
         let elapsedSec = int (subTicksToSeconds clock subTick)
 
         let isSubMinute =
@@ -294,7 +290,7 @@ module ManagerAgent =
                 let frame = team.Frame
                 let roster = getRoster ctx side
 
-                match frame.Occupancy[outIdx] with
+                match frame.Physics.Occupancy[outIdx] with
                 | OccupancyKind.Active _ ->
                     let playerOut =
                         match tryGetPlayerFromFrame frame roster outIdx with
@@ -302,18 +298,18 @@ module ManagerAgent =
                         | None -> incoming
 
                     let inheritedPos =
-                        { X = float frame.PosX[outIdx] * 1.0<meter>
-                          Y = float frame.PosY[outIdx] * 1.0<meter>
+                        { X = float frame.Physics.PosX[outIdx] * 1.0<meter>
+                          Y = float frame.Physics.PosY[outIdx] * 1.0<meter>
                           Z = 0.0<meter>
                           Vx = 0.0<meter / second>
                           Vy = 0.0<meter / second>
                           Vz = 0.0<meter / second> }
 
-                    FrameMutate.setPos frame outIdx inheritedPos.X inheritedPos.Y
+                    FrameMutate.setPos frame.Physics outIdx inheritedPos.X inheritedPos.Y
                     FrameMutate.setCondition frame outIdx incoming.Condition
-                    FrameMutate.setIntent frame outIdx IntentKind.Idle 0.0f 0.0f 0
+                    FrameMutate.setIntent frame.Intent outIdx IntentKind.Idle 0.0f 0.0f 0
 
-                    let team = SimStateOps.getTeam state side
+                    let team = getTeam state side
                     team.SubsUsed <- team.SubsUsed + 1
                     team.Sidelined <- Map.add playerOut.Id SidelinedBySub team.Sidelined
 
@@ -325,6 +321,36 @@ module ManagerAgent =
 
         | AdjustTactics(clubId, newTactics) ->
             setTacticsByClubId clubId ctx state newTactics
+            // Phase 3: update directive kind when tactics change
+            let side = if clubId = ctx.Home.Id then HomeClub else AwayClub
+            let newKind = FootballEngine.Movement.TeamDirectiveOps.kindFromTactics newTactics
+
+            let tactics =
+                SimStateOps.tacticsConfig newTactics (SimStateOps.getInstructions state side)
+
+            let emergent = SimStateOps.getEmergentState state side
+
+            let directiveParams = SimStateOps.defaultParams tactics emergent
+
+            let current = SimStateOps.getDirective state side
+
+            let updated =
+                match current with
+                | TeamDirectiveState.Active d
+                | TeamDirectiveState.Suspended d ->
+                    TeamDirectiveState.Active
+                        { d with
+                            Kind = newKind
+                            Params = directiveParams
+                            ActiveSince = state.SubTick }
+                | TeamDirectiveState.Transitioning(from, _, _) ->
+                    TeamDirectiveState.Active
+                        { from with
+                            Kind = newKind
+                            Params = directiveParams
+                            ActiveSince = state.SubTick }
+
+            SimStateOps.setDirective state side updated
             []
 
     let agent ctx (state: SimState) (clock: SimulationClock) : PlayerResult =

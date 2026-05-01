@@ -638,21 +638,26 @@ module HudRenderer =
         let x = PitchW / 2.0f - w / 2.0f
         let y = PitchH / 2.0f - h / 2.0f - 60.0f
 
-        use bgPaint = new SKPaint(
-            Color = SKColor(15uy, 23uy, 42uy, 220uy),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill)
-        use borderPaint = new SKPaint(
-            Color = color,
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 2.0f)
-        use textPaint = new SKPaint(
-            Color = color,
-            IsAntialias = true,
-            TextSize = 20.0f,
-            TextAlign = SKTextAlign.Center,
-            Typeface = SKTypeface.FromFamilyName("Inter", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright))
+        use bgPaint =
+            new SKPaint(Color = SKColor(15uy, 23uy, 42uy, 220uy), IsAntialias = true, Style = SKPaintStyle.Fill)
+
+        use borderPaint =
+            new SKPaint(Color = color, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2.0f)
+
+        use textPaint =
+            new SKPaint(
+                Color = color,
+                IsAntialias = true,
+                TextSize = 20.0f,
+                TextAlign = SKTextAlign.Center,
+                Typeface =
+                    SKTypeface.FromFamilyName(
+                        "Inter",
+                        SKFontStyleWeight.Bold,
+                        SKFontStyleWidth.Normal,
+                        SKFontStyleSlant.Upright
+                    )
+            )
 
         canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 10.0f, 10.0f, bgPaint)
         canvas.DrawRoundRect(SKRect(x, y, x + w, y + h), 10.0f, 10.0f, borderPaint)
@@ -770,46 +775,41 @@ type MatchDrawOp
                             1.0f
 
                     if progress >= 0.0f && progress <= 1.0f then
-                        use trajPaint =
-                            new SKPaint(
-                                Color = SKColor(255uy, 200uy, 50uy, 80uy),
-                                IsAntialias = true,
-                                Style = SKPaintStyle.Stroke,
-                                StrokeWidth = 2.0f,
-                                PathEffect = SKPathEffect.CreateDash([| 4.0f; 4.0f |], 0.0f)
-                            )
+                        // Verificar que la pelota interpolada esté cerca del origen de la trayectoria
+                        // Si no lo está, significa que el interpolador la movió antes de que se lance
+                        // y la línea quedaría desconectada visualmente
+                        let bx = float renderFrame.Ball.Position.X
+                        let by = float renderFrame.Ball.Position.Y
+                        let odx = bx - float traj.OriginX
+                        let ody = by - float traj.OriginY
+                        let distFromOriginSq = odx * odx + ody * ody
 
-                        let path = new SKPath()
-                        let ox, oy = PitchCoords.toCanvas (float traj.OriginX) (float traj.OriginY)
-                        let tx, ty = PitchCoords.toCanvas (float traj.TargetX) (float traj.TargetY)
-                        path.MoveTo(ox, oy)
-                        path.LineTo(tx, ty)
-                        canvas.DrawPath(path, trajPaint)
+                        if distFromOriginSq < 25.0 then // solo dibujar si la pelota está dentro de ~5m del origen
+                            use trajPaint =
+                                new SKPaint(
+                                    Color = SKColor(255uy, 200uy, 50uy, 80uy),
+                                    IsAntialias = true,
+                                    Style = SKPaintStyle.Stroke,
+                                    StrokeWidth = 2.0f,
+                                    PathEffect = SKPathEffect.CreateDash([| 4.0f; 4.0f |], 0.0f)
+                                )
+
+                            let path = new SKPath()
+                            let ox, oy = PitchCoords.toCanvas (float traj.OriginX) (float traj.OriginY)
+                            let tx, ty = PitchCoords.toCanvas (float traj.TargetX) (float traj.TargetY)
+                            path.MoveTo(ox, oy)
+                            path.LineTo(tx, ty)
+                            canvas.DrawPath(path, trajPaint)
                 | None -> ()
 
                 // ── Ball ───────────────────────────────────────────────────────
 
-                let ballX, ballY, ballHeight, ballVx, ballVy, ballVz =
-                    match snapshot.Possession with
-                    | Owned(club, pid) ->
-                        let carrier = renderFrame.Players |> Array.tryFind (fun rp -> rp.Id = pid)
-
-                        match carrier with
-                        | Some rp -> rp.Position.X, rp.Position.Y, 0.0, rp.Velocity.X, rp.Velocity.Y, 0.0
-                        | None ->
-                            renderFrame.Ball.Position.X,
-                            renderFrame.Ball.Position.Y,
-                            renderFrame.Ball.Height,
-                            renderFrame.Ball.Velocity.X,
-                            renderFrame.Ball.Velocity.Y,
-                            renderFrame.Ball.VelocityZ
-                    | _ ->
-                        renderFrame.Ball.Position.X,
-                        renderFrame.Ball.Position.Y,
-                        renderFrame.Ball.Height,
-                        renderFrame.Ball.Velocity.X,
-                        renderFrame.Ball.Velocity.Y,
-                        renderFrame.Ball.VelocityZ
+                let ballX = renderFrame.Ball.Position.X
+                let ballY = renderFrame.Ball.Position.Y
+                let ballHeight = renderFrame.Ball.Height
+                let ballVx = renderFrame.Ball.Velocity.X
+                let ballVy = renderFrame.Ball.Velocity.Y
+                let ballVz = renderFrame.Ball.VelocityZ
 
                 BallRenderer.draw canvas ballX ballY ballHeight ballVx ballVy ballVz renderFrame.Ball.Spin.Y 0.0333
 
@@ -837,10 +837,10 @@ type MatchDrawOp
                 HudRenderer.drawMomentum canvas renderFrame.Momentum renderFrame.HomeName renderFrame.AwayName
 
                 let bannerYellow = SKColor(245uy, 158uy, 11uy, 255uy)
-                let bannerGreen  = SKColor(16uy, 185uy, 129uy, 255uy)
+                let bannerGreen = SKColor(16uy, 185uy, 129uy, 255uy)
+
                 match snapshot.Flow with
-                | MatchFlow.GoalPause _ ->
-                    HudRenderer.drawSituationBanner canvas "⚽  GOAL!" bannerGreen
+                | MatchFlow.GoalPause _ -> HudRenderer.drawSituationBanner canvas "⚽  GOAL!" bannerGreen
                 | MatchFlow.RestartDelay { Kind = SetPieceKind.Corner } ->
                     HudRenderer.drawSituationBanner canvas "Corner Kick" bannerYellow
                 | MatchFlow.RestartDelay { Kind = SetPieceKind.GoalKick } ->
@@ -851,8 +851,7 @@ type MatchDrawOp
                     HudRenderer.drawSituationBanner canvas "Free Kick" bannerYellow
                 | MatchFlow.RestartDelay { Kind = SetPieceKind.KickOff } ->
                     HudRenderer.drawSituationBanner canvas "Kick Off" bannerYellow
-                | MatchFlow.InjuryPause _ ->
-                    HudRenderer.drawSituationBanner canvas "Injury" bannerYellow
+                | MatchFlow.InjuryPause _ -> HudRenderer.drawSituationBanner canvas "Injury" bannerYellow
                 | _ -> ()
 
                 canvas.Restore()
@@ -864,7 +863,7 @@ type MatchDrawOp
 // ---------------------------------------------------------------------------
 
 type MatchPitchControl() =
-    inherit Avalonia.Controls.Control()
+    inherit Control()
 
     static let ctxProp =
         AvaloniaProperty.Register<MatchPitchControl, MatchContext option>("MatchCtx", None)
@@ -958,7 +957,7 @@ module MatchViewer =
         (userClubId: ClubId option)
         : IView =
         let pitch =
-            MatchPitchView.create
+            create
                 [ MatchPitchControl.matchCtx (Some ctx)
                   MatchPitchControl.renderFrame (Some renderFrame)
                   MatchPitchControl.snapshot snapshot
@@ -981,7 +980,7 @@ module MatchDayView =
               TextBlock.verticalAlignment VerticalAlignment.Center ]
         :> IView
 
-    let view (state: State) (dispatch: AppMsgs.Msg -> unit) : IView =
+    let view (state: State) (dispatch: Msg -> unit) : IView =
         match state.ActiveMatchReplay with
         | None -> noMatchView ()
         | Some replay ->
@@ -998,7 +997,7 @@ module MatchDayView =
                 let clock = defaultClock
 
                 let currFrame =
-                    MatchProjection.project ctx currSnap (SimulationClock.subTicksToSeconds clock currSnap.SubTick)
+                    MatchProjection.project ctx currSnap (subTicksToSeconds clock currSnap.SubTick)
 
                 let renderFrame =
                     let t = float32 state.InterpolationT
@@ -1007,10 +1006,7 @@ module MatchDayView =
                         let nextSnap = replay.Snapshots[snapIdx + 1]
 
                         let nextFrame =
-                            MatchProjection.project
-                                ctx
-                                nextSnap
-                                (SimulationClock.subTicksToSeconds clock nextSnap.SubTick)
+                            MatchProjection.project ctx nextSnap (subTicksToSeconds clock nextSnap.SubTick)
 
                         let actualDt =
                             float (nextSnap.SubTick - currSnap.SubTick) / float clock.SubTicksPerSecond
@@ -1073,7 +1069,7 @@ module MatchDayView =
                                   Border.background "#0f172a"
                                   Border.child (
                                       StackPanel.create
-                                          [ StackPanel.orientation Avalonia.Layout.Orientation.Horizontal
+                                          [ StackPanel.orientation Orientation.Horizontal
                                             StackPanel.spacing 8.0
                                             StackPanel.horizontalAlignment HorizontalAlignment.Center
                                             StackPanel.children

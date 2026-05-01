@@ -36,13 +36,13 @@ module SnapshotBuilder =
 
     let private positionsFromFrame (frame: TeamFrame) : Spatial[] =
         Array.init frame.SlotCount (fun i ->
-            match frame.Occupancy[i] with
+            match frame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                { X = float frame.PosX[i] * 1.0<meter>
-                  Y = float frame.PosY[i] * 1.0<meter>
+                { X = float frame.Physics.PosX[i] * 1.0<meter>
+                  Y = float frame.Physics.PosY[i] * 1.0<meter>
                   Z = 0.0<meter>
-                  Vx = float frame.VelX[i] * 1.0<meter / second>
-                  Vy = float frame.VelY[i] * 1.0<meter / second>
+                  Vx = float frame.Physics.VelX[i] * 1.0<meter / second>
+                  Vy = float frame.Physics.VelY[i] * 1.0<meter / second>
                   Vz = 0.0<meter / second> }
             | _ -> SimStateOps.kickOffSpatial)
 

@@ -93,9 +93,9 @@ module PlayerSteering =
                 let desiredVy = (dy / dist) * desiredSpeed
                 let desiredVz = (dz / dist) * desiredSpeed
 
-                { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringSeekTimeConstant
-                  Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringSeekTimeConstant
-                  Fz = (desiredVz - agent.Vz) / PhysicsContract.SteeringSeekTimeConstant }
+                { Fx = (desiredVx - agent.Vx) / SteeringSeekTimeConstant
+                  Fy = (desiredVy - agent.Vy) / SteeringSeekTimeConstant
+                  Fz = (desiredVz - agent.Vz) / SteeringSeekTimeConstant }
 
         let arrive (agent: Spatial) (target: SteeringTarget) (maxSpeed: float<meter / second>) : Force =
             let targetPos =
@@ -125,18 +125,18 @@ module PlayerSteering =
                 let dz = targetPos.Z - agent.Z
 
                 let speed =
-                    if dist > PhysicsContract.SteeringSlowRadius then
+                    if dist > SteeringSlowRadius then
                         maxSpeed
                     else
-                        maxSpeed * (dist / PhysicsContract.SteeringSlowRadius)
+                        maxSpeed * (dist / SteeringSlowRadius)
 
                 let desiredVx = (dx / dist) * speed
                 let desiredVy = (dy / dist) * speed
                 let desiredVz = (dz / dist) * speed
 
-                { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringArriveTimeConstant
-                  Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringArriveTimeConstant
-                  Fz = (desiredVz - agent.Vz) / PhysicsContract.SteeringArriveTimeConstant }
+                { Fx = (desiredVx - agent.Vx) / SteeringArriveTimeConstant
+                  Fy = (desiredVy - agent.Vy) / SteeringArriveTimeConstant
+                  Fz = (desiredVz - agent.Vz) / SteeringArriveTimeConstant }
 
         let pursuit (agent: Spatial) (target: SteeringTarget) (maxSpeed: float<meter / second>) : Force =
             match target with
@@ -187,7 +187,7 @@ module PlayerSteering =
             elif dist < 0.01<meter> then
                 let desiredVx = 1.0 * maxSpeed
 
-                { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringFleeTimeConstant
+                { Fx = (desiredVx - agent.Vx) / SteeringFleeTimeConstant
                   Fy = 0.0<meter / second^2>
                   Fz = 0.0<meter / second^2> }
             else
@@ -199,9 +199,9 @@ module PlayerSteering =
                 let desiredVy = (dy / dist) * desiredSpeed
                 let desiredVz = (dz / dist) * desiredSpeed
 
-                { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringFleeTimeConstant
-                  Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringFleeTimeConstant
-                  Fz = (desiredVz - agent.Vz) / PhysicsContract.SteeringFleeTimeConstant }
+                { Fx = (desiredVx - agent.Vx) / SteeringFleeTimeConstant
+                  Fy = (desiredVy - agent.Vy) / SteeringFleeTimeConstant
+                  Fz = (desiredVz - agent.Vz) / SteeringFleeTimeConstant }
 
         let separation (agent: Spatial) (positions: Spatial[]) (myIdx: int) (minDist: float<meter>) : Force =
             let mutable fx = 0.0
@@ -219,8 +219,8 @@ module PlayerSteering =
                         fx <- fx + ((agent.X - tm.X) / dist) * strength
                         fy <- fy + ((agent.Y - tm.Y) / dist) * strength
             // Convert separation influence (unitless) into acceleration using PlayerAccelMax
-            { Fx = fx * PhysicsContract.PlayerAccelMax
-              Fy = fy * PhysicsContract.PlayerAccelMax
+            { Fx = fx * PlayerAccelMax
+              Fy = fy * PlayerAccelMax
               Fz = 0.0<meter / second^2> }
 
         let alignment (config: PhysicsConfig) (agent: Spatial) (reference: Spatial) : Force =
@@ -228,11 +228,11 @@ module PlayerSteering =
             let dvyRaw = (reference.Vy - agent.Vy)
             // Convert velocity difference into acceleration using alignment time constant
             let dvx =
-                (dvxRaw / PhysicsContract.SteeringAlignmentTimeConstant)
+                (dvxRaw / SteeringAlignmentTimeConstant)
                 * config.SteeringAlignmentWeight
 
             let dvy =
-                (dvyRaw / PhysicsContract.SteeringAlignmentTimeConstant)
+                (dvyRaw / SteeringAlignmentTimeConstant)
                 * config.SteeringAlignmentWeight
 
             { Fx = dvx
@@ -267,16 +267,16 @@ module PlayerSteering =
                     Force.zero
                 else
                     let speed =
-                        if dist > PhysicsContract.SteeringSlowRadius then
+                        if dist > SteeringSlowRadius then
                             maxSpeed
                         else
-                            maxSpeed * (dist / PhysicsContract.SteeringSlowRadius)
+                            maxSpeed * (dist / SteeringSlowRadius)
 
                     let desiredVx = ((target.X - agent.X) / dist) * speed
                     let desiredVy = ((target.Y - agent.Y) / dist) * speed
 
-                    { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringCohesionTimeConstant
-                      Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringCohesionTimeConstant
+                    { Fx = (desiredVx - agent.Vx) / SteeringCohesionTimeConstant
+                      Fy = (desiredVy - agent.Vy) / SteeringCohesionTimeConstant
                       Fz = 0.0<meter / second^2> }
 
         let separationSoA
@@ -306,8 +306,8 @@ module PlayerSteering =
                         fx <- fx + (float dx / float dist) * float strength
                         fy <- fy + (float dy / float dist) * float strength
 
-            { Fx = fx * PhysicsContract.PlayerAccelMax
-              Fy = fy * PhysicsContract.PlayerAccelMax
+            { Fx = fx * PlayerAccelMax
+              Fy = fy * PlayerAccelMax
               Fz = 0.0<meter / second^2> }
 
         let cohesionSoA
@@ -349,16 +349,16 @@ module PlayerSteering =
                     Force.zero
                 else
                     let speed =
-                        if dist > PhysicsContract.SteeringSlowRadius then
+                        if dist > SteeringSlowRadius then
                             maxSpeed
                         else
-                            maxSpeed * (dist / PhysicsContract.SteeringSlowRadius)
+                            maxSpeed * (dist / SteeringSlowRadius)
 
                     let desiredVx = ((targetX - agent.X) / dist) * speed
                     let desiredVy = ((targetY - agent.Y) / dist) * speed
 
-                    { Fx = (desiredVx - agent.Vx) / PhysicsContract.SteeringCohesionTimeConstant
-                      Fy = (desiredVy - agent.Vy) / PhysicsContract.SteeringCohesionTimeConstant
+                    { Fx = (desiredVx - agent.Vx) / SteeringCohesionTimeConstant
+                      Fy = (desiredVy - agent.Vy) / SteeringCohesionTimeConstant
                       Fz = 0.0<meter / second^2> }
 
         let boundaryAvoidance (agent: Spatial) (maxSpeed: float<meter / second>) : Force =
@@ -368,8 +368,8 @@ module PlayerSteering =
             let fx =
                 if agent.X < margin then
                     float (margin - agent.X) / float margin * float strength
-                elif agent.X > PhysicsContract.PitchLength - margin then
-                    -float(agent.X - (PhysicsContract.PitchLength - margin)) / float margin
+                elif agent.X > PitchLength - margin then
+                    -float(agent.X - (PitchLength - margin)) / float margin
                     * float strength
                 else
                     0.0
@@ -377,8 +377,8 @@ module PlayerSteering =
             let fy =
                 if agent.Y < margin then
                     float (margin - agent.Y) / float margin * float strength
-                elif agent.Y > PhysicsContract.PitchWidth - margin then
-                    -float(agent.Y - (PhysicsContract.PitchWidth - margin)) / float margin
+                elif agent.Y > PitchWidth - margin then
+                    -float(agent.Y - (PitchWidth - margin)) / float margin
                     * float strength
                 else
                     0.0
@@ -401,17 +401,17 @@ module PlayerSteering =
             : float<meter / second^2> =
             let agilityFactor =
                 1.0
-                - PhysicsContract.normaliseAttr p.Physical.Agility
+                - normaliseAttr p.Physical.Agility
                   * config.TurnConstraintAgilityCoeff
 
             let speedRatio = currentSpeed / config.MoveSpeedMax
-            let speedFactor = PhysicsContract.clampFloat speedRatio 0.0 1.0
+            let speedFactor = clampFloat speedRatio 0.0 1.0
 
             // Convert dimensionless limit into acceleration by scaling with PlayerAccelMax
             config.TurnConstraintBaseLimit
             * agilityFactor
             * (1.0 - speedFactor * 0.5)
-            * PhysicsContract.PlayerAccelMax
+            * PlayerAccelMax
 
         let maxSpeed (p: Player) (condition: int) : float<meter / second> =
             ActionMath.playerMaxSpeed p.Physical.Pace condition
@@ -482,8 +482,8 @@ module PlayerSteering =
 
             let nextX = current.X + newVx * dt
             let nextY = current.Y + newVy * dt
-            let clampedX = PhysicsContract.clamp nextX 0.0<meter> PhysicsContract.PitchLength
-            let clampedY = PhysicsContract.clamp nextY 0.0<meter> PhysicsContract.PitchWidth
+            let clampedX = clamp nextX 0.0<meter> PitchLength
+            let clampedY = clamp nextY 0.0<meter> PitchWidth
             let finalVx = if clampedX <> nextX then 0.0<meter / second> else newVx
             let finalVy = if clampedY <> nextY then 0.0<meter / second> else newVy
 
@@ -525,6 +525,7 @@ module PlayerSteering =
                     config.SeparationMinDistance
 
             let sepForce = Behaviours.separationSoA current posX posY count myIdx sepDist
+            let sepForce = Force.scale 1.5 sepForce
 
             let boundaryForce = Behaviours.boundaryAvoidance current ms
 
@@ -565,8 +566,8 @@ module PlayerSteering =
 
             let nextX = current.X + newVx * dt
             let nextY = current.Y + newVy * dt
-            let clampedX = PhysicsContract.clamp nextX 0.0<meter> PhysicsContract.PitchLength
-            let clampedY = PhysicsContract.clamp nextY 0.0<meter> PhysicsContract.PitchWidth
+            let clampedX = clamp nextX 0.0<meter> PitchLength
+            let clampedY = clamp nextY 0.0<meter> PitchWidth
             let finalVx = if clampedX <> nextX then 0.0<meter / second> else newVx
             let finalVy = if clampedY <> nextY then 0.0<meter / second> else newVy
 

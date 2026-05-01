@@ -16,8 +16,8 @@ type IntentionInput = { Vision: int; Composure: int; Condition: int; Pressure: f
 type ExecutionInput = { TechnicalA: int; TechnicalB: int; PhysicalA: int; Condition: int }
 
 module ActionMath =
-    let private norm v = PhysicsContract.normaliseAttr v
-    let private cond = PhysicsContract.normaliseCondition
+    let private norm v = normaliseAttr v
+    let private cond = normaliseCondition
     let private sigmoid x = 1.0 / (1.0 + System.Math.Exp(-x))
 
     // Probability helpers (using unique names to avoid collisions with Stats.fs)
@@ -53,18 +53,18 @@ module ActionMath =
         (base' * sqrt (cond condition)) |> clampFloat 0.05 1.0 |> LanguagePrimitives.FloatWithMeasure<execution>
 
     let playerMaxSpeed (pace: int) (condition: int) : float<meter / second> =
-        let paceNorm = PhysicsContract.normaliseAttr pace
-        let condFactor = sqrt (PhysicsContract.normaliseCondition condition)
-        (PhysicsContract.PlayerSpeedMin + (PhysicsContract.PlayerSpeedMax - PhysicsContract.PlayerSpeedMin) * paceNorm) * condFactor
+        let paceNorm = normaliseAttr pace
+        let condFactor = sqrt (normaliseCondition condition)
+        (PlayerSpeedMin + (PlayerSpeedMax - PlayerSpeedMin) * paceNorm) * condFactor
 
     let playerAccel (acceleration: int) (condition: int) : float<meter / second^2> =
-        let aNorm = PhysicsContract.normaliseAttr acceleration
-        let condFactor = PhysicsContract.normaliseCondition condition
-        (PhysicsContract.PlayerAccelMin + (PhysicsContract.PlayerAccelMax - PhysicsContract.PlayerAccelMin) * aNorm) * condFactor
+        let aNorm = normaliseAttr acceleration
+        let condFactor = normaliseCondition condition
+        (PlayerAccelMin + (PlayerAccelMax - PlayerAccelMin) * aNorm) * condFactor
 
     let shotSpeed (finishing: int) : float<meter / second> =
-        let fNorm = PhysicsContract.normaliseAttr finishing
-        PhysicsContract.ShotSpeedMin + (PhysicsContract.ShotSpeedMax - PhysicsContract.ShotSpeedMin) * fNorm
+        let fNorm = normaliseAttr finishing
+        ShotSpeedMin + (ShotSpeedMax - ShotSpeedMin) * fNorm
 
     let evalPerformance (config: PerformanceConfig) (stat: float) (condition: int) (morale: int) : float =
         let normCond = float condition / 100.0

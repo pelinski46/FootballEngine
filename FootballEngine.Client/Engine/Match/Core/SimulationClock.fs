@@ -17,8 +17,8 @@ module SimulationClock =
         { SubTicksPerSecond = sps
           PhysicsRate = 1
           SteeringRate = 2
-          CognitiveRate = 40
-          ActionRate = 8
+          CognitiveRate = 20
+          ActionRate = 120
           AdaptiveRate = 1200 }
 
     let dt (c: SimulationClock) : float<second> =

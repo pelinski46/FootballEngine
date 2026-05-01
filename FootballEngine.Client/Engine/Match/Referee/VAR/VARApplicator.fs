@@ -15,7 +15,7 @@ module VARApplicator =
                 state.AwayScore <- max 0 (state.AwayScore - 1)
             state.Ball <-
                 { state.Ball with
-                    Position = SimStateOps.kickOffSpatial
+                    Position = kickOffSpatial
                     Spin = Spin.zero
                     Possession = SetPiece(ClubSide.flip scoringClub, SetPieceKind.KickOff)
                     LastTouchBy = None

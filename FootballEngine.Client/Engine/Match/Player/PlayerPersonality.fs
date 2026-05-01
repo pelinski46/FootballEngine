@@ -54,7 +54,7 @@ module OpponentModel =
         let mutable count = 0
 
         for i = 0 to opponentFrame.SlotCount - 1 do
-            match opponentFrame.Occupancy[i] with
+            match opponentFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active rosterIdx ->
                 let p = opponentRoster.Players[rosterIdx]
                 avgPace <- avgPace + float p.Physical.Pace

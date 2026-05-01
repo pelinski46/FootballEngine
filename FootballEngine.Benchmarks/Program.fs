@@ -50,7 +50,7 @@ let main _args =
     printfn $"  Warm-up: %d{hs}-%d{as_} (%d{ms} ms)"
 
     printfn "=== Starting infinite loop..."
-    printfn $"PID: %d{System.Diagnostics.Process.GetCurrentProcess().Id}"
+    printfn $"PID: %d{Process.GetCurrentProcess().Id}"
     printfn ""
 
     let mutable iter = 1

@@ -242,7 +242,7 @@ module Db =
                           PendingEvents = [] }
 
                     let activeMods: (string * string) list =
-                        if System.String.IsNullOrEmpty meta.ActiveModsJson then []
+                        if String.IsNullOrEmpty meta.ActiveModsJson then []
                         else
                             meta.ActiveModsJson.Split(',')
                             |> Array.toList

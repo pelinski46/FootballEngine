@@ -18,19 +18,19 @@ module SetPieceAgent =
                 let isHome = clubSide = HomeClub
                 let kickingClub = if isHome then HomeClub else AwayClub
                 let kickingClubId = if isHome then ctx.Home.Id else ctx.Away.Id
-                let frame = SimStateOps.getFrame state kickingClub
-                let roster = SimStateOps.getRoster ctx kickingClub
+                let frame = getFrame state kickingClub
+                let roster = getRoster ctx kickingClub
                 let pc = ctx.Config.Pass
 
-                let gkX = if isHome then PhysicsContract.GoalAreaDepth else PhysicsContract.PitchLength - PhysicsContract.GoalAreaDepth
-                let centerY = PhysicsContract.PitchWidth / 2.0
+                let gkX = if isHome then GoalAreaDepth else PitchLength - GoalAreaDepth
+                let centerY = PitchWidth / 2.0
 
                 state.Ball <- { state.Ball with Position = { defaultSpatial gkX centerY with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.GoalKick) }
 
                 let gkIdx =
                     let mutable idx = -1
                     for i = 0 to frame.SlotCount - 1 do
-                        match frame.Occupancy[i] with
+                        match frame.Physics.Occupancy[i] with
                         | OccupancyKind.Active _ when roster.Players[i].Position = GK -> idx <- i
                         | _ -> ()
                     idx
@@ -38,12 +38,12 @@ module SetPieceAgent =
                 if gkIdx < 0 then ActionResult.empty
                 else
                     let gk = roster.Players[gkIdx]
-                    let gkXf = float frame.PosX[gkIdx] * 1.0<meter>
-                    let gkYf = float frame.PosY[gkIdx] * 1.0<meter>
+                    let gkXf = float frame.Physics.PosX[gkIdx] * 1.0<meter>
+                    let gkYf = float frame.Physics.PosY[gkIdx] * 1.0<meter>
 
                     let targetX, targetY =
                         match nearestActiveSlotInFrameExcluding frame gkIdx gkXf gkYf with
-                        | ValueSome tmIdx -> float frame.PosX[tmIdx] * 1.0<meter>, float frame.PosY[tmIdx] * 1.0<meter>
+                        | ValueSome tmIdx -> float frame.Physics.PosX[tmIdx] * 1.0<meter>, float frame.Physics.PosY[tmIdx] * 1.0<meter>
                         | ValueNone -> (if isHome then ctx.Config.SetPiece.GoalKickFallbackDistHome else ctx.Config.SetPiece.GoalKickFallbackDistAway), centerY
 
                     let dx = targetX - gkXf
@@ -79,7 +79,7 @@ module SetPieceAgent =
                     ActionResult.ofEvents [ createEvent state.SubTick gk.Id kickingClubId MatchEventType.GoalKick ]
 
             | SetPieceKind.Penalty ->
-                let roster = SimStateOps.getRoster ctx clubSide
+                let roster = getRoster ctx clubSide
                 let kickerPlayer = roster.Players[0]
                 let penaltyScored = SetPlayAction.resolvePenalty state.SubTick ctx state kickerPlayer clubSide clock
                 if penaltyScored then
@@ -90,14 +90,14 @@ module SetPieceAgent =
                     ActionResult.empty
 
             | SetPieceKind.KickOff ->
-                let centerX = PhysicsContract.HalfwayLineX
-                let centerY = PhysicsContract.PitchWidth / 2.0
+                let centerX = HalfwayLineX
+                let centerY = PitchWidth / 2.0
                 let kickOffSide = clubSide
                 let isHomeKickOff = kickOffSide = HomeClub
                 let kickingClub = if isHomeKickOff then HomeClub else AwayClub
                 let kickingClubId = if isHomeKickOff then ctx.Home.Id else ctx.Away.Id
-                let frame = SimStateOps.getFrame state kickingClub
-                let roster = SimStateOps.getRoster ctx kickingClub
+                let frame = getFrame state kickingClub
+                let roster = getRoster ctx kickingClub
                 let pc = ctx.Config.Pass
 
                 state.Ball <- { state.Ball with Position = { X = centerX; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.KickOff) }
@@ -106,7 +106,7 @@ module SetPieceAgent =
                     let rec findPos pred i =
                         if i >= frame.SlotCount then None
                         else
-                            match frame.Occupancy[i] with
+                            match frame.Physics.Occupancy[i] with
                             | OccupancyKind.Active _ when pred roster.Players[i] -> Some i
                             | _ -> findPos pred (i + 1)
                     findPos (fun p -> p.Position = ST) 0
@@ -122,7 +122,7 @@ module SetPieceAgent =
                         let rec findPartner i =
                             if i >= frame.SlotCount then None
                             else
-                                match frame.Occupancy[i] with
+                                match frame.Physics.Occupancy[i] with
                                 | OccupancyKind.Active _ when i <> kIdx ->
                                     let p = roster.Players[i]
                                     if p.Position = AMC || p.Position = MC || p.Position = ST then Some i else findPartner (i + 1)
@@ -131,7 +131,7 @@ module SetPieceAgent =
 
                     let targetX, targetY =
                         match partnerIdx with
-                        | Some pIdx -> float frame.PosX[pIdx] * 1.0<meter>, float frame.PosY[pIdx] * 1.0<meter>
+                        | Some pIdx -> float frame.Physics.PosX[pIdx] * 1.0<meter>, float frame.Physics.PosY[pIdx] * 1.0<meter>
                         | None -> centerX + ctx.Config.SetPiece.KickOffPartnerOffsetX, centerY + ctx.Config.SetPiece.KickOffPartnerOffsetY
 
                     let partnerId = partnerIdx |> Option.map (fun i -> roster.Players[i].Id) |> Option.defaultValue kicker.Id

@@ -13,42 +13,42 @@ module CrossAction =
         let cc = ctx.Config.Cross
         let attFrame = actx.Att.OwnFrame
         let defFrame = actx.Def.OwnFrame
-        let attRoster = SimStateOps.getRoster ctx actx.Att.ClubSide
+        let attRoster = getRoster ctx actx.Att.ClubSide
         let bX, bY = state.Ball.Position.X, state.Ball.Position.Y
-        match SimStateOps.nearestActiveSlotInFrame attFrame bX bY with
+        match nearestActiveSlotInFrame attFrame bX bY with
         | ValueNone -> ActionResult.empty
         | ValueSome crosserIdx ->
             let crosser = attRoster.Players[crosserIdx]
             let crosserCond = int attFrame.Condition[crosserIdx]
-            let crosserPos = { X = float attFrame.PosX[crosserIdx] * 1.0<meter>; Y = float attFrame.PosY[crosserIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+            let crosserPos = { X = float attFrame.Physics.PosX[crosserIdx] * 1.0<meter>; Y = float attFrame.Physics.PosY[crosserIdx] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
             let attClubId = actx.Att.ClubId
-            let condNorm = PhysicsContract.normaliseCondition crosserCond
+            let condNorm = normaliseCondition crosserCond
 
             let crossMean =
                 cc.BaseMean
-                + PhysicsContract.normaliseAttr crosser.Technical.Crossing * cc.CrossingWeight
-                + PhysicsContract.normaliseAttr crosser.Technical.Passing * cc.PassingWeight
+                + normaliseAttr crosser.Technical.Crossing * cc.CrossingWeight
+                + normaliseAttr crosser.Technical.Passing * cc.PassingWeight
                 + actx.Att.Bonus.SetPlay
 
             let quality = betaSample crossMean (cc.SuccessShapeAlpha + condNorm * cc.SuccessConditionMultiplier)
 
-            let defRoster = SimStateOps.getRoster ctx actx.Def.ClubSide
+            let defRoster = getRoster ctx actx.Def.ClubSide
 
             let defOutfield =
                 [| for i = 0 to defFrame.SlotCount - 1 do
-                     match defFrame.Occupancy[i] with
+                     match defFrame.Physics.Occupancy[i] with
                      | OccupancyKind.Active _ when defRoster.Players[i].Position <> GK ->
-                         let sp = { X = float defFrame.PosX[i] * 1.0<meter>; Y = float defFrame.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                         let sp = { X = float defFrame.Physics.PosX[i] * 1.0<meter>; Y = float defFrame.Physics.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                          yield (defRoster.Players[i], sp)
                      | _ -> () |]
 
             let targets =
                 [| for i = 0 to attFrame.SlotCount - 1 do
-                     match attFrame.Occupancy[i] with
+                     match attFrame.Physics.Occupancy[i] with
                      | OccupancyKind.Active _ ->
                          let profile = attRoster.Profiles[i]
                          if profile.AerialThreat > cc.AerialThreatThreshold || profile.AttackingDepth > cc.AttackingDepthThreshold then
-                             let sp = { X = float attFrame.PosX[i] * 1.0<meter>; Y = float attFrame.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                             let sp = { X = float attFrame.Physics.PosX[i] * 1.0<meter>; Y = float attFrame.Physics.PosY[i] * 1.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                              let defDist =
                                  if defOutfield.Length = 0 then 999.0<meterSquared>
                                  else
@@ -64,9 +64,9 @@ module CrossAction =
                 |> Array.map (fun (p, sp, _) -> p, sp)
 
             if targets.Length = 0 then
-                let targetX = if actx.Att.AttackDir = LeftToRight then PhysicsContract.PitchLength - PhysicsContract.PenaltyAreaDepth else PhysicsContract.PenaltyAreaDepth
+                let targetX = if actx.Att.AttackDir = LeftToRight then PitchLength - PenaltyAreaDepth else PenaltyAreaDepth
                 let defClub = ClubSide.flip actx.Att.ClubSide
-                ballTowards crosserPos.X crosserPos.Y targetX (PhysicsContract.PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
+                ballTowards crosserPos.X crosserPos.Y targetX (PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
                 state.Ball <- { state.Ball with Possession = InFlight }
                 clearOffsideSnapshot state
                 ActionResult.ofEvents [ createEvent subTick crosser.Id attClubId (CrossLaunched(crosser.Id, crosser.Id)) ]
@@ -75,14 +75,14 @@ module CrossAction =
 
                 let accuracyNoise = 0.15 * (1.0 - quality)
 
-                let targetX = targetSp.X + normalSample 0.0 accuracyNoise * 1.0<meter> |> fun x -> PhysicsContract.clamp x 0.0<meter> PhysicsContract.PitchLength
-                let targetY = targetSp.Y + normalSample 0.0 accuracyNoise * 1.0<meter> |> fun y -> PhysicsContract.clamp y 0.0<meter> PhysicsContract.PitchWidth
+                let targetX = targetSp.X + normalSample 0.0 accuracyNoise * 1.0<meter> |> fun x -> clamp x 0.0<meter> PitchLength
+                let targetY = targetSp.Y + normalSample 0.0 accuracyNoise * 1.0<meter> |> fun y -> clamp y 0.0<meter> PitchWidth
 
                 let dist = sqrt ((targetX - crosserPos.X) * (targetX - crosserPos.X) + (targetY - crosserPos.Y) * (targetY - crosserPos.Y))
                 let flightTime = if cc.Speed > 0.0<meter/second> then dist / cc.Speed else 1.0<second>
                 let arrivalSubTick = subTick + int (float (flightTime / 1.0<second>) * float clock.SubTicksPerSecond)
 
-                let spin = { Top = -(PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>; Side = (PhysicsContract.normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
+                let spin = { Top = -(normaliseAttr crosser.Technical.Crossing) * cc.SpinTopMult * 1.0<radianPerSecond>; Side = (normaliseAttr crosser.Technical.Crossing) * cc.SpinSideMult * 1.0<radianPerSecond> }
 
                 let trajectory = {
                     OriginX = crosserPos.X

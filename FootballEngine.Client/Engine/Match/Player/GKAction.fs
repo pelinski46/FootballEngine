@@ -24,8 +24,8 @@ module GKAction =
         (gkc: GKConfig)
         : Player * Spatial * DistributionType =
 
-        let gkX = float gkFrame.PosX[gkIdx] * 1.0<meter>
-        let gkY = float gkFrame.PosY[gkIdx] * 1.0<meter>
+        let gkX = float gkFrame.Physics.PosX[gkIdx] * 1.0<meter>
+        let gkY = float gkFrame.Physics.PosY[gkIdx] * 1.0<meter>
         let gkPos = { X = gkX; Y = gkY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
         let mutable bestTarget: Player option = None
@@ -43,28 +43,28 @@ module GKAction =
         let dir = attackDirFor attClub state
 
         for i = 0 to gkFrame.SlotCount - 1 do
-            match gkFrame.Occupancy[i] with
+            match gkFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active rosterIdx when gkRoster.Players[rosterIdx].Position <> GK ->
                 let player = gkRoster.Players[rosterIdx]
-                let px = float gkFrame.PosX[i] * 1.0<meter>
-                let py = float gkFrame.PosY[i] * 1.0<meter>
+                let px = float gkFrame.Physics.PosX[i] * 1.0<meter>
+                let py = float gkFrame.Physics.PosY[i] * 1.0<meter>
                 let dist = gkPos.DistTo2D { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
 
                 let nearestDefDist =
                     let mutable minDist = 999.0<meter>
                     for j = 0 to defFrame.SlotCount - 1 do
-                        match defFrame.Occupancy[j] with
+                        match defFrame.Physics.Occupancy[j] with
                         | OccupancyKind.Active _ ->
-                            let dx = float defFrame.PosX[j] * 1.0<meter>
-                            let dy = float defFrame.PosY[j] * 1.0<meter>
+                            let dx = float defFrame.Physics.PosX[j] * 1.0<meter>
+                            let dy = float defFrame.Physics.PosY[j] * 1.0<meter>
                             let d = { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }.DistTo2D { X = dx; Y = dy; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                             if d < minDist then minDist <- d
                         | _ -> ()
                     minDist
 
                 let forwardBonus =
-                    if dir = LeftToRight then float px / float PhysicsContract.PitchLength
-                    else 1.0 - float px / float PhysicsContract.PitchLength
+                    if dir = LeftToRight then float px / float PitchLength
+                    else 1.0 - float px / float PitchLength
 
                 let safetyBonus = float nearestDefDist / 10.0
 
@@ -111,7 +111,7 @@ module GKAction =
             let gkIdx =
                 let mutable idx = -1
                 for i = 0 to frame.SlotCount - 1 do
-                    match frame.Occupancy[i] with
+                    match frame.Physics.Occupancy[i] with
                     | OccupancyKind.Active rosterIdx when roster.Players[rosterIdx].Id = gkId -> idx <- i
                     | _ -> ()
                 idx
@@ -136,8 +136,8 @@ module GKAction =
                         | GoalKick -> gkc.GoalKickSpeed
                         | Punt -> gkc.PuntSpeed
 
-                    let gkX = float frame.PosX[gkIdx] * 1.0<meter>
-                    let gkY = float frame.PosY[gkIdx] * 1.0<meter>
+                    let gkX = float frame.Physics.PosX[gkIdx] * 1.0<meter>
+                    let gkY = float frame.Physics.PosY[gkIdx] * 1.0<meter>
 
                     ballTowards gkX gkY targetSp.X targetSp.Y speed (speed * 0.15) state
 

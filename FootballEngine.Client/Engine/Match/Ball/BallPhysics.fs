@@ -21,7 +21,7 @@ module BallPhysics =
         { pos with
             X = pos.X + vx * dt
             Y = pos.Y + vy * dt
-            Z = PhysicsContract.clamp (pos.Z + vz * dt) 0.0<meter> 100.0<meter>
+            Z = clamp (pos.Z + vz * dt) 0.0<meter> 100.0<meter>
             Vx = vx
             Vy = vy
             Vz = vz }
@@ -38,39 +38,39 @@ module BallPhysics =
 
     let private clampToPitch (pos: Spatial) : Spatial =
         { pos with
-            X = PhysicsContract.clamp pos.X 0.0<meter> PhysicsContract.PitchLength
-            Y = PhysicsContract.clamp pos.Y 0.0<meter> PhysicsContract.PitchWidth }
+            X = clamp pos.X 0.0<meter> PitchLength
+            Y = clamp pos.Y 0.0<meter> PitchWidth }
 
     let private applyGoalPostHome (config: PhysicsConfig) (pos: Spatial) : Spatial =
         let inGoalY =
-            pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+            pos.Y >= PostNearY && pos.Y <= PostFarY
 
-        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= PhysicsContract.CrossbarHeight
+        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= CrossbarHeight
 
         let nearPost =
-            pos.X >= PhysicsContract.GoalLineHome - 0.2<meter>
-            && pos.X <= PhysicsContract.GoalLineHome
+            pos.X >= GoalLineHome - 0.2<meter>
+            && pos.X <= GoalLineHome
 
         if inGoalY && inGoalZ && nearPost then
             { pos with
-                X = clamp pos.X (PhysicsContract.GoalLineHome - 0.2<meter>) PhysicsContract.GoalLineHome
+                X = clamp pos.X (GoalLineHome - 0.2<meter>) GoalLineHome
                 Vx = -pos.Vx * config.PostRestitution }
         else
             pos
 
     let private applyGoalPostAway (config: PhysicsConfig) (pos: Spatial) : Spatial =
         let inGoalY =
-            pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+            pos.Y >= PostNearY && pos.Y <= PostFarY
 
-        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= PhysicsContract.CrossbarHeight
+        let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= CrossbarHeight
 
         let nearPost =
-            pos.X <= PhysicsContract.GoalLineAway + 0.2<meter>
-            && pos.X >= PhysicsContract.GoalLineAway
+            pos.X <= GoalLineAway + 0.2<meter>
+            && pos.X >= GoalLineAway
 
         if inGoalY && inGoalZ && nearPost then
             { pos with
-                X = clamp pos.X PhysicsContract.GoalLineAway (PhysicsContract.GoalLineAway + 0.2<meter>)
+                X = clamp pos.X GoalLineAway (GoalLineAway + 0.2<meter>)
                 Vx = -pos.Vx * config.PostRestitution }
         else
             pos

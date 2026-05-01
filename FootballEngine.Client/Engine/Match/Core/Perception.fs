@@ -84,10 +84,10 @@ module Perception =
 
         for i = 0 to ownCount - 1 do
             if i <> playerIdx then
-                match ownFrame.Occupancy[i] with
+                match ownFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let tx = float ownFrame.PosX[i] * 1.0<meter>
-                    let ty = float ownFrame.PosY[i] * 1.0<meter>
+                    let tx = float ownFrame.Physics.PosX[i] * 1.0<meter>
+                    let ty = float ownFrame.Physics.PosY[i] * 1.0<meter>
                     let targetPos = { X = tx; Y = ty; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     let dist = playerPos.DistTo2D targetPos
                     let inFloor = dist <= config.MinimumAwarenessFloor
@@ -104,10 +104,10 @@ module Perception =
                 | _ -> ()
 
         for i = 0 to oppCount - 1 do
-            match oppFrame.Occupancy[i] with
+            match oppFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let tx = float oppFrame.PosX[i] * 1.0<meter>
-                let ty = float oppFrame.PosY[i] * 1.0<meter>
+                let tx = float oppFrame.Physics.PosX[i] * 1.0<meter>
+                let ty = float oppFrame.Physics.PosY[i] * 1.0<meter>
                 let targetPos = { X = tx; Y = ty; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                 let dist = playerPos.DistTo2D targetPos
                 let inFloor = dist <= config.MinimumAwarenessFloor
@@ -151,12 +151,12 @@ module Perception =
 
         for i = 0 to attFrame.SlotCount - 1 do
             if i <> meIdx && mask.CanSeeTeammates[i] then
-                match attFrame.Occupancy[i] with
+                match attFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let mx = float attFrame.PosX[meIdx] * 1.0<meter>
-                    let my = float attFrame.PosY[meIdx] * 1.0<meter>
-                    let tx = float attFrame.PosX[i] * 1.0<meter>
-                    let ty = float attFrame.PosY[i] * 1.0<meter>
+                    let mx = float attFrame.Physics.PosX[meIdx] * 1.0<meter>
+                    let my = float attFrame.Physics.PosY[meIdx] * 1.0<meter>
+                    let tx = float attFrame.Physics.PosX[i] * 1.0<meter>
+                    let ty = float attFrame.Physics.PosY[i] * 1.0<meter>
                     let dx = tx - mx
                     let dy = ty - my
                     let dist = sqrt (dx * dx + dy * dy)
@@ -166,11 +166,11 @@ module Perception =
                         let backwardPenalty = if dx * forwardDir < -10.0<meter> then -0.25 else 0.0
                         let mutable laneClear = true
                         for j = 0 to defFrame.SlotCount - 1 do
-                            match defFrame.Occupancy[j] with
+                            match defFrame.Physics.Occupancy[j] with
                             | OccupancyKind.Active _ ->
-                                let ddx = float defFrame.PosX[j] * 1.0<meter>
-                                let ddy = float defFrame.PosY[j] * 1.0<meter>
-                                let t = PhysicsContract.clampFloat (((ddx - mx) * dx + (ddy - my) * dy) / (dx * dx + dy * dy)) 0.0 1.0
+                                let ddx = float defFrame.Physics.PosX[j] * 1.0<meter>
+                                let ddy = float defFrame.Physics.PosY[j] * 1.0<meter>
+                                let t = clampFloat (((ddx - mx) * dx + (ddy - my) * dy) / (dx * dx + dy * dy)) 0.0 1.0
                                 let closestX = mx + float t * dx
                                 let closestY = my + float t * dy
                                 let perpDistSq = (ddx - closestX) * (ddx - closestX) + (ddy - closestY) * (ddy - closestY)
@@ -197,10 +197,10 @@ module Perception =
 
         for i = 0 to oppFrame.SlotCount - 1 do
             if mask.CanSeeOpponents[i] then
-                match oppFrame.Occupancy[i] with
+                match oppFrame.Physics.Occupancy[i] with
                 | OccupancyKind.Active _ ->
-                    let ox = float oppFrame.PosX[i] * 1.0<meter>
-                    let oy = float oppFrame.PosY[i] * 1.0<meter>
+                    let ox = float oppFrame.Physics.PosX[i] * 1.0<meter>
+                    let oy = float oppFrame.Physics.PosY[i] * 1.0<meter>
                     let oppPos = { X = ox; Y = oy; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     let dist = myPos.DistTo2D oppPos
                     if dist < bestDist then

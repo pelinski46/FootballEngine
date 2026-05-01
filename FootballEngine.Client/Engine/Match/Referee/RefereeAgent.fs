@@ -1,7 +1,6 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.MatchSpatial
 open SimStateOps
 open SchedulingTypes
 open Stats
@@ -27,8 +26,8 @@ module RefereeAgent =
 
     let private ballOutOfBounds (ctx: MatchContext) (state: SimState) : BallOutResult =
         let pos = state.Ball.Position
-        let outY = pos.Y < 0.1<meter> || pos.Y > PhysicsContract.PitchWidth - 0.1<meter>
-        let outX = pos.X < 0.1<meter> || pos.X > PhysicsContract.PitchLength - 0.1<meter>
+        let outY = pos.Y < 0.1<meter> || pos.Y > PitchWidth - 0.1<meter>
+        let outX = pos.X < 0.1<meter> || pos.X > PitchLength - 0.1<meter>
 
         let lastTouchClubSide () =
             state.Ball.LastTouchBy
@@ -43,10 +42,9 @@ module RefereeAgent =
             | None -> NoOut
         elif outX then
             let behindHome = pos.X < 0.5<meter>
-            let behindAway = pos.X > PhysicsContract.PitchLength - 0.5<meter>
+            let behindAway = pos.X > PitchLength - 0.5<meter>
 
-            let inGoalY =
-                pos.Y >= PhysicsContract.PostNearY && pos.Y <= PhysicsContract.PostFarY
+            let inGoalY = pos.Y >= PostNearY && pos.Y <= PostFarY
 
             if inGoalY then
                 NoOut
@@ -72,6 +70,13 @@ module RefereeAgent =
                 | Corner team -> [ AwardCorner team ]
                 | GoalKick team -> [ AwardGoalKick team ]
                 | NoOut -> []
+
+            let goalIntent =
+                match GoalDetector.detect state.Ball with
+                | Some team ->
+                    let scorerId, isOwn = GoalDetector.scorer team state.Ball ctx state
+                    [ ConfirmGoal(team, scorerId, isOwn) ]
+                | None -> []
 
             let injuryIntent =
                 att
@@ -100,14 +105,11 @@ module RefereeAgent =
                     | _ -> []
                 | _ -> []
 
-            throwInIntent
-            @ injuryIntent
-            @ stuckBallIntent
-            @ gkTimeWastingIntent
+            throwInIntent @ goalIntent @ injuryIntent @ stuckBallIntent @ gkTimeWastingIntent
         | _ -> []
 
     let decideCard (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
-        let aggressionNorm = PhysicsContract.normaliseAttr fouler.Mental.Aggression
+        let aggressionNorm = normaliseAttr fouler.Mental.Aggression
 
         let isHome = playerOnSide ctx state HomeClub fouler.Id
 
@@ -128,22 +130,12 @@ module RefereeAgent =
         else
             []
 
-    let private defaultIntent: PlayerIntent =
-        { Movement =
-            MovementIntent.MaintainShape
-                { X = 0.0<meter>
-                  Y = 0.0<meter>
-                  Z = 0.0<meter>
-                  Vx = 0.0<meter / second>
-                  Vy = 0.0<meter / second>
-                  Vz = 0.0<meter / second> }
-          Action = None
-          Context = NormalPlay
-          Urgency = 0.0
-          Confidence = 0.5 }
 
     let agent ctx (state: SimState) (clock: SimulationClock) : RefereeResult =
-        let isLive = match state.Flow with Live -> true | _ -> false
+        let isLive =
+            match state.Flow with
+            | Live -> true
+            | _ -> false
 
         if not isLive then
             { Actions = []

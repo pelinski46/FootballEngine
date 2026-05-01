@@ -33,7 +33,7 @@ module WallBehavior =
         let by = float ballY
 
         defenders
-        |> Array.filter (fun d -> d.Position <> Domain.GK)
+        |> Array.filter (fun d -> d.Position <> GK)
         |> fun filtered ->
             let actualWallSize = min wallSize filtered.Length
             filtered
