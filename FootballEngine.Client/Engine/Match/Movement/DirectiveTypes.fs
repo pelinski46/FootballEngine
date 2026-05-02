@@ -16,7 +16,10 @@ type ShapeParams =
 type TransitionParams =
     { Tempo: float
       DirectnessThreshold: float
-      CounterTrigger: bool }
+      CounterTrigger: bool
+      WingBias: float        // -0.3 = forzar izquierda, 0.0 = neutro, 0.3 = forzar derecha
+      DirectnessBias: float  // >0 = más directo/longball, <0 = más corto
+    }
 
 type DirectiveParams =
     { Press: PressParams

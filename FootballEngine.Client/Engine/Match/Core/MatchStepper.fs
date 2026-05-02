@@ -444,11 +444,26 @@ module MatchStepper =
                 adaptiveState.Records
                 |> Array.map (fun r -> EventWindow.patternResults r.Pattern recent)
 
-            setAdaptiveState
-                state
-                clubSide
-                { AdaptiveTactics.initial with
-                    Records = updatedRecords }
+            let updatedAdaptive = { AdaptiveTactics.initial with Records = updatedRecords }
+            setAdaptiveState state clubSide updatedAdaptive
+
+            let rate (pattern: AttackPattern) =
+                updatedAdaptive.Records
+                |> Array.tryFind (fun r -> r.Pattern = pattern)
+                |> Option.map (fun r ->
+                    if r.Attempts > 3 then float r.Successes / float r.Attempts
+                    else 0.5)
+                |> Option.defaultValue 0.5
+
+            let wingBias    = System.Math.Clamp((rate AttackPattern.LeftFlank - rate AttackPattern.RightFlank) * 0.3, -0.3, 0.3)
+            let directnBias = System.Math.Clamp((rate AttackPattern.LongBall - 0.5) * 0.3, -0.3, 0.3)
+
+            match SimStateOps.getDirective state clubSide with
+            | TeamDirectiveState.Active d ->
+                let newTransition = { d.Params.Transition with WingBias = wingBias; DirectnessBias = directnBias }
+                let newParams     = { d.Params with Transition = newTransition }
+                SimStateOps.setDirective state clubSide (TeamDirectiveState.Active { d with Params = newParams })
+            | _ -> ()
 
             resetAdaptiveStats state clubSide
 

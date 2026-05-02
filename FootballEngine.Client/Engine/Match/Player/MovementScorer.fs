@@ -360,12 +360,13 @@ module MovementScorer =
                         0.8 - (float dist / 15.0) * 0.4
             | _ -> 0.0
 
-    let applyEmergentModifiers (emergent: EmergentState) (scores: MovementScores) : MovementScores =
+    let applyEmergentModifiers (emergent: EmergentState) (ctx: AgentContext) (scores: MovementScores) : MovementScores =
+        let transition = ctx.DirectiveParams.Transition
         { scores with
-            PressBall = scores.PressBall * emergent.PressingIntensity
-            MarkMan = scores.MarkMan * emergent.CompactnessLevel
-            CoverSpace = scores.CoverSpace * emergent.CompactnessLevel
-            SupportAttack = scores.SupportAttack * emergent.RiskAppetite }
+            PressBall     = scores.PressBall     * emergent.PressingIntensity
+            MarkMan       = scores.MarkMan       * emergent.CompactnessLevel
+            CoverSpace    = scores.CoverSpace    * emergent.CompactnessLevel * (1.0 - transition.DirectnessBias)
+            SupportAttack = scores.SupportAttack * emergent.RiskAppetite     * (1.0 + transition.WingBias) }
 
     let interceptPassScore (ctx: AgentContext) : float =
         if ctx.TeamHasBall then
@@ -470,7 +471,7 @@ module MovementScorer =
             else
                 raw
 
-        gkAdjusted |> applyEmergentModifiers emergent |> applyRoleModifiers ctx
+        gkAdjusted |> applyEmergentModifiers emergent ctx |> applyRoleModifiers ctx
 
     let private scoreForIntent (scores: MovementScores) (intent: MovementIntent) : float =
         match intent with

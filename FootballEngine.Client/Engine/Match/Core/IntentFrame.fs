@@ -36,5 +36,6 @@ module IntentFrame =
         | IntentKind.SupportAttack -> SupportAttack sp
         | IntentKind.RecoverBall -> RecoverBall sp
         | IntentKind.MoveToSetPiecePos -> MoveToSetPiecePos sp
+        | IntentKind.TackleAttempt     -> PressBall sp
         | IntentKind.Idle -> MaintainShape fallback
         | _ -> MaintainShape fallback

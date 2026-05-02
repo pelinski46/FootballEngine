@@ -68,23 +68,69 @@ module PlayerScorer =
         let braveryMod = normStat me.Mental.Bravery * d.ShootBraveryMod
         let concentrationMod = normStat me.Mental.Concentration * d.ShootConcentrationMod
 
+        let goalX =
+            if ctx.Team.AttackDir = LeftToRight then
+                PitchLength
+            else
+                0.0<meter>
+
+        let goalNearY = PostNearY
+        let goalFarY = PostFarY
+        let dx = float (abs (goalX - ctx.MyPos.X))
+        let dy1 = float (goalNearY - ctx.MyPos.Y)
+        let dy2 = float (goalFarY - ctx.MyPos.Y)
+
+        let angleToGoal =
+            if dx < 0.01 then
+                90.0
+            else
+                abs (atan2 dy2 dx - atan2 dy1 dx) * 180.0 / System.Math.PI
+
+        let pressureLevel =
+            match ctx.NearestOpponentIdx with
+            | ValueNone -> 0.0
+            | ValueSome oppIdx ->
+                let ox = float ctx.Team.OppFrame.Physics.PosX[oppIdx]
+                let oy = float ctx.Team.OppFrame.Physics.PosY[oppIdx]
+                let dx = float ctx.MyPos.X - ox
+                let dy = float ctx.MyPos.Y - oy
+                let dist = sqrt (dx * dx + dy * dy)
+                1.0 - clampFloat (dist / 10.0) 0.0 1.0
+
+        let isOneOnOne =
+            let mutable gkCount = 0
+
+            for i = 0 to ctx.Team.OppFrame.SlotCount - 1 do
+                match ctx.Team.OppFrame.Physics.Occupancy[i] with
+                | OccupancyKind.Active rosterIdx ->
+                    if ctx.Team.OppRoster.Players[rosterIdx].Position = GK then
+                        let ox = float ctx.Team.OppFrame.Physics.PosX[i] * 1.0<meter>
+
+                        let inPath =
+                            (ctx.Team.AttackDir = LeftToRight && ox > ctx.MyPos.X)
+                            || (ctx.Team.AttackDir = RightToLeft && ox < ctx.MyPos.X)
+
+                        if inPath then
+                            gkCount <- gkCount + 1
+                | _ -> ()
+
+            gkCount = 1
+
         let xgModel =
             { DistanceToGoal = ctx.DistToGoal
-              AngleToGoal = 0.0 
+              AngleToGoal = angleToGoal
               ShotType = ShotType.PlacedShot
               BodyPart = "foot"
               AssistType = ""
-              PressureLevel = 0.0 
-              IsOneOnOne = false
+              PressureLevel = pressureLevel
+              IsOneOnOne = isOneOnOne
               IsSetPiece = false }
 
         let xgValue = xGCalculator.calculate xgModel |> float
 
-        // CHANGE 7: Bravery pressure resistance
         let pressureResistance =
-            match ctx.NearestOpponentIdx with
-            | ValueSome oppIdx -> 0.0 // placeholder - would need opp distance calc
-            | ValueNone -> 0.0
+            let bravery = normStat me.Mental.Bravery
+            bravery * pressureLevel
 
         let scoreRaw =
             finishing + longShots + composure + distNorm + posBonus - distPenalty
@@ -114,7 +160,7 @@ module PlayerScorer =
             + d.ShootConcentrationMod
             + d.ShootXGWeight
             + d.ShootBraveryPressureMod
-            + 1.0 // approx for state mods
+            + 1.0
 
         ((scoreRaw / maxPossible) * condFactor ctx.MyCondition)
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>
@@ -190,12 +236,9 @@ module PlayerScorer =
         let passMemMod =
             MatchMemory.passFailureModifier ctx.Team.ClubSide ctx.MeIdx matchMemory
 
-        // CHANGE 1: Mental attribute modifiers for pass
         let passDecisionsWeight = normStat me.Mental.Positioning * d.PassDecisionsWeight
         let passConcentrationMod = normStat me.Mental.Concentration * d.PassConcentrationMod
 
-
-        // CHANGE 5: Trajectory bonus for forward-running targets
         let trajectoryBonus =
             match ctx.BestPassTargetIdx with
             | ValueSome targetIdx ->
@@ -205,7 +248,6 @@ module PlayerScorer =
                 if runningIntoSpace then d.PassTrajectoryBonus else 0.0
             | ValueNone -> 0.0
 
-        // CHANGE 8: Anticipation bonus
         let anticipationBonus =
             match ctx.BestPassTargetIdx with
             | ValueSome targetIdx ->
@@ -220,7 +262,6 @@ module PlayerScorer =
                     anticipation * 0.3
             | ValueNone -> 0.0
 
-        // Influence-based space bonus: check if target is in a favorable influence zone
         let influenceSpaceBonus =
             match ctx.BestPassTargetIdx with
             | ValueNone -> 0.0
@@ -232,7 +273,6 @@ module PlayerScorer =
 
                 let passSafety = float ctx.Influence.AttackerPassSafety[targetCell]
                 let defCoverage = float ctx.Influence.DefenderCoverage[targetCell]
-                // High pass safety + low defender coverage = good space for receiver
                 (passSafety - 0.5) * 0.15 + (1.0 - defCoverage) * 0.10
 
         let scoreRaw =
@@ -266,7 +306,7 @@ module PlayerScorer =
             + confidenceMod
             + riskMod
             + focusMod
-            + 0.25 // influenceSpaceBonus max contribution
+            + 0.25
             + d.PassDecisionsWeight
             + d.PassConcentrationMod
             + d.PassTrajectoryBonus

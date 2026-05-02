@@ -59,7 +59,7 @@ module MovementEngine =
                             FrameMutate.setIntent
                                 ownFrame.Intent
                                 i
-                                IntentKind.PressBall
+                                IntentKind.TackleAttempt
                                 oppFrame.Physics.PosX[oppSlot]
                                 oppFrame.Physics.PosY[oppSlot]
                                 oppSlot
@@ -108,6 +108,7 @@ module MovementEngine =
                 let chasingBall =
                     match frame.Intent.Kind[i] with
                     | IntentKind.PressBall
+                    | IntentKind.TackleAttempt
                     | IntentKind.RecoverBall -> true
                     | _ -> false
 

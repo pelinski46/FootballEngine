@@ -66,6 +66,7 @@ type IntentKind =
     | SupportAttack = 6uy
     | RecoverBall = 7uy
     | MoveToSetPiecePos = 8uy
+    | TackleAttempt     = 9uy
 
 type PhysicsFrame =
     { PosX: float32[]

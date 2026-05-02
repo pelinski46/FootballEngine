@@ -10,7 +10,7 @@ module IntentPhase =
 
         match intent with
         | MaintainShape _ -> secs 1.0, ExitTrigger.PossessionChanged
-        | PressBall _ -> secs 0.5, ExitTrigger.PossessionChanged
+        | PressBall _         -> secs 0.3, ExitTrigger.PossessionChanged
         | MarkMan _ -> secs 0.75, ExitTrigger.PossessionChanged
         | CoverSpace _ -> secs 1.2, ExitTrigger.PossessionChanged
         | SupportAttack _ -> secs 1.5, ExitTrigger.BallInFlight

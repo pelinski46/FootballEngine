@@ -93,7 +93,9 @@ module SimStateOps =
     let defaultTransitionParams (tactics: TacticsConfig) (emergent: EmergentState) =
         { Tempo = tactics.Tempo * 0.6 + emergent.TempoLevel * 0.4
           DirectnessThreshold = tactics.Directness
-          CounterTrigger = false }
+          CounterTrigger = false
+          WingBias       = 0.0
+          DirectnessBias = 0.0 }
 
     let defaultParams (tactics: TacticsConfig) (emergent: EmergentState) : DirectiveParams =
         { Press = defaultPressParams tactics emergent
