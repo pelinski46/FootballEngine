@@ -13,8 +13,9 @@ module ActionResolver =
         (ctx: MatchContext)
         (state: SimState)
         : Player option * PlayerRoster option * ClubSide option =
-        match state.Ball.Possession with
-        | Owned(_, pid) ->
+        match state.Ball.Control with
+        | Controlled(_, pid)
+        | Receiving(_, pid, _) ->
             let mutable result: Player option * PlayerRoster option * ClubSide option =
                 None, None, None
 
@@ -43,9 +44,7 @@ module ActionResolver =
                 | ValueNone -> ()
 
             result
-        // INVARIANT: ActionResolver retorna empty cuando Possession = InFlight.
-        // El arrival system (BallAgent) es la única autoridad durante el vuelo del balón.
-        | InFlight -> None, None, None
+        | Airborne -> None, None, None
         | _ ->
             let bx = state.Ball.Position.X
             let by = state.Ball.Position.Y
@@ -74,7 +73,14 @@ module ActionResolver =
                             bestClub <- Some clubSide
                     | _ -> ()
 
-            bestPlayer, bestRoster, bestClub
+
+            let maxControlDistSq =
+                ctx.Config.Physics.ContactRadius * ctx.Config.Physics.ContactRadius
+
+            if bestDist <= maxControlDistSq then
+                bestPlayer, bestRoster, bestClub
+            else
+                None, None, None
 
     let private decideAction
         (controller: Player)
@@ -110,7 +116,8 @@ module ActionResolver =
                 influence
 
         let scores = PlayerScorer.computeAll actx state.MatchMemory
-        PlayerDecision.decide actx scores
+        let mask   = ActionEligibility.evaluate actx
+        PlayerDecision.decide actx scores mask
 
     let private resolveIntent
         (subTick: int)
@@ -158,8 +165,8 @@ module ActionResolver =
                 match controller, rosterOpt, controllerClubSide with
                 | Some ctrl, Some roster, Some clubSide ->
                     if ctrl.Position = GK then
-                        match state.Ball.Possession with
-                        | Owned(side, gkId) when gkId = ctrl.Id ->
+                        match state.Ball.Control with
+                        | Controlled(side, gkId) when gkId = ctrl.Id ->
                             let events = GKAction.resolve subTick ctx state clock
                             ActionResult.ofEvents events, []
                         | _ ->
@@ -176,8 +183,9 @@ module ActionResolver =
                         match decideAction ctrl profile meIdx clubSide ctx state clock with
                         | Some action -> resolveIntent subTick action ctx state clock
                         | None ->
-                            match state.Ball.Possession with
-                            | Owned _ ->
+                            match state.Ball.Control with
+                            | Controlled _
+                            | Receiving _ ->
                                 let holdTimeout =
                                     match state.Ball.PlayerHoldSinceSubTick with
                                     | Some since -> subTick - since >= 12

@@ -41,8 +41,7 @@ module PlayerScorer =
         let composure = normStat me.Mental.Composure * d.ShootComposureWeight
 
         let distNorm =
-            (1.0
-             - clampFloat (float ctx.DistToGoal / d.ShootDistNormDivisor) 0.0 1.0)
+            (1.0 - clampFloat (float ctx.DistToGoal / d.ShootDistNormDivisor) 0.0 1.0)
             * d.ShootDistNormWeight
 
         let posBonus =
@@ -65,6 +64,28 @@ module PlayerScorer =
         let streakMod =
             MatchMemory.successStreakModifier ctx.Team.ClubSide ctx.MeIdx matchMemory
 
+        let decisionsWeight = normStat me.Mental.Positioning * d.ShootDecisionsWeight
+        let braveryMod = normStat me.Mental.Bravery * d.ShootBraveryMod
+        let concentrationMod = normStat me.Mental.Concentration * d.ShootConcentrationMod
+
+        let xgModel =
+            { DistanceToGoal = ctx.DistToGoal
+              AngleToGoal = 0.0 
+              ShotType = ShotType.PlacedShot
+              BodyPart = "foot"
+              AssistType = ""
+              PressureLevel = 0.0 
+              IsOneOnOne = false
+              IsSetPiece = false }
+
+        let xgValue = xGCalculator.calculate xgModel |> float
+
+        // CHANGE 7: Bravery pressure resistance
+        let pressureResistance =
+            match ctx.NearestOpponentIdx with
+            | ValueSome oppIdx -> 0.0 // placeholder - would need opp distance calc
+            | ValueNone -> 0.0
+
         let scoreRaw =
             finishing + longShots + composure + distNorm + posBonus - distPenalty
             + mentalityBonus
@@ -74,6 +95,11 @@ module PlayerScorer =
             + focusMod
             + riskBonus
             + streakMod
+            + decisionsWeight
+            + braveryMod
+            + concentrationMod
+            + (xgValue * d.ShootXGWeight)
+            + (pressureResistance * d.ShootBraveryPressureMod)
 
         let maxPossible =
             d.ShootFinishingWeight
@@ -83,12 +109,12 @@ module PlayerScorer =
             + d.ShootPosDirectnessWeight
             + d.ShootPosDepthWeight
             + d.ShootSTBonus
-            + mentalityBonus
-            + directnessBonus
-            + composureStateMod
-            + confidenceMod
-            + focusMod
-            + riskBonus
+            + d.ShootDecisionsWeight
+            + d.ShootBraveryMod
+            + d.ShootConcentrationMod
+            + d.ShootXGWeight
+            + d.ShootBraveryPressureMod
+            + 1.0 // approx for state mods
 
         ((scoreRaw / maxPossible) * condFactor ctx.MyCondition)
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>
@@ -164,12 +190,46 @@ module PlayerScorer =
         let passMemMod =
             MatchMemory.passFailureModifier ctx.Team.ClubSide ctx.MeIdx matchMemory
 
+        // CHANGE 1: Mental attribute modifiers for pass
+        let passDecisionsWeight = normStat me.Mental.Positioning * d.PassDecisionsWeight
+        let passConcentrationMod = normStat me.Mental.Concentration * d.PassConcentrationMod
+
+
+        // CHANGE 5: Trajectory bonus for forward-running targets
+        let trajectoryBonus =
+            match ctx.BestPassTargetIdx with
+            | ValueSome targetIdx ->
+                let rvx = float ctx.Team.OwnFrame.Physics.VelX[targetIdx] * 1.0<meter / second>
+                let forwardDir = if ctx.Team.AttackDir = LeftToRight then 1.0 else -1.0
+                let runningIntoSpace = forwardDir * rvx > 2.0<meter / second>
+                if runningIntoSpace then d.PassTrajectoryBonus else 0.0
+            | ValueNone -> 0.0
+
+        // CHANGE 8: Anticipation bonus
+        let anticipationBonus =
+            match ctx.BestPassTargetIdx with
+            | ValueSome targetIdx ->
+                let rvx = float ctx.Team.OwnFrame.Physics.VelX[targetIdx] * 1.0<meter / second>
+                let forwardDir = if ctx.Team.AttackDir = LeftToRight then 1.0 else -1.0
+                let runningIntoSpace = forwardDir * rvx > 2.0<meter / second>
+                let anticipation = normStat me.Mental.Positioning * d.PassAnticipationBonus
+
+                if runningIntoSpace then
+                    anticipation
+                else
+                    anticipation * 0.3
+            | ValueNone -> 0.0
+
         // Influence-based space bonus: check if target is in a favorable influence zone
         let influenceSpaceBonus =
             match ctx.BestPassTargetIdx with
             | ValueNone -> 0.0
             | ValueSome targetIdx ->
-                let targetCell = InfluenceTypes.posToCell ctx.Team.OwnFrame.Physics.PosX[targetIdx] ctx.Team.OwnFrame.Physics.PosY[targetIdx]
+                let targetCell =
+                    InfluenceTypes.posToCell
+                        ctx.Team.OwnFrame.Physics.PosX[targetIdx]
+                        ctx.Team.OwnFrame.Physics.PosY[targetIdx]
+
                 let passSafety = float ctx.Influence.AttackerPassSafety[targetCell]
                 let defCoverage = float ctx.Influence.DefenderCoverage[targetCell]
                 // High pass safety + low defender coverage = good space for receiver
@@ -189,18 +249,10 @@ module PlayerScorer =
             + riskMod
             + focusMod
             + influenceSpaceBonus
-
-        let maxPossible =
-            d.PassPassingWeight
-            + d.PassVisionWeight
-            + d.PassTargetBonus
-            + phaseBonusMax
-            + creativityBonusMax
-            + tempoBias
-            + abs directBias
-            + confidenceMod
-            + riskMod
-            + focusMod
+            + passDecisionsWeight
+            + passConcentrationMod
+            + trajectoryBonus
+            + anticipationBonus
 
         let maxPossible =
             d.PassPassingWeight
@@ -212,7 +264,14 @@ module PlayerScorer =
             + abs directBias
             + busMod
             + confidenceMod
+            + riskMod
+            + focusMod
             + 0.25 // influenceSpaceBonus max contribution
+            + d.PassDecisionsWeight
+            + d.PassConcentrationMod
+            + d.PassTrajectoryBonus
+            + d.PassAnticipationBonus
+            + d.PassHighPressPenalty
 
         ((scoreRaw / maxPossible) * condFactor ctx.MyCondition)
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>

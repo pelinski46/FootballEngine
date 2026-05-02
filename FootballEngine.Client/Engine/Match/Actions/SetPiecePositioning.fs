@@ -24,8 +24,8 @@ module SetPiecePositioning =
         // default: current positions
         let positions = Array.init slots (fun i -> fromFrame i)
 
-        match state.Ball.Possession with
-        | SetPiece(side, SetPieceKind.Corner) when side = clubSide ->
+        match state.Flow with
+        | RestartDelay { Kind = SetPieceKind.Corner; Team = side } when side = clubSide ->
             let ballPos = state.Ball.Position
             // nearest active slot is the natural taker
             match SimStateOps.nearestActiveSlotInFrame frame ballPos.X ballPos.Y with

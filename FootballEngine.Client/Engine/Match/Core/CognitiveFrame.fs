@@ -48,8 +48,14 @@ module CognitiveFrameModule =
         let phase = phaseFromBallZone dir state.Ball.Position.X
 
         let ballCarrierOppIdx =
-            match state.Ball.Possession with
-            | Owned(side, pid) when side <> clubSide ->
+            let ballControlledByOpp =
+                match state.Ball.Control with
+                | Controlled(side, pid) -> if side <> clubSide then Some pid else None
+                | Receiving(side, pid, _) -> if side <> clubSide then Some pid else None
+                | _ -> None
+            
+            match ballControlledByOpp with
+            | Some pid ->
                 let mutable found = -1s
                 let oppFrame = getFrame state (ClubSide.flip clubSide)
                 let oppRoster = getRoster ctx (ClubSide.flip clubSide)

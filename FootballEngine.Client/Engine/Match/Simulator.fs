@@ -216,7 +216,7 @@ module MatchSimulator =
 
         state.Ball <-
             { defaultBall with
-                Possession = Possession.SetPiece(HomeClub, SetPieceKind.KickOff) }
+                Control = Free }
 
         state.Momentum <- 0.0
         state.HomeBasePositions <- ctx.HomeBasePositions

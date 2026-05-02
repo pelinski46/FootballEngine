@@ -290,8 +290,8 @@ module BallAgent =
               GoalScored = None }
 
         | Some traj ->
-            match traj.ActionKind with
-            | BallActionKind.Pass(passerId, targetId, quality) ->
+            match traj.Intent with
+            | Aimed(passerId, targetId, quality, RegularPass) ->
                 let attClubId = passerClubId passerId
 
                 if player.Id = targetId then
@@ -313,7 +313,7 @@ module BallAgent =
 
                         state.Ball <-
                             { zeroVel withStationary with
-                                Possession = Loose
+                                Control = Free
                                 LastTouchBy = Some player.Id
                                 Trajectory = None }
 
@@ -347,7 +347,7 @@ module BallAgent =
 
                         state.Ball <-
                             { zeroVel withStationary with
-                                Possession = Loose
+                                Control = Free
                                 LastTouchBy = Some player.Id
                                 Trajectory = None }
 
@@ -377,7 +377,7 @@ module BallAgent =
 
                         state.Ball <-
                             { withStationary with
-                                Possession = Contest(playerClub)
+                                Control = Contesting playerClub
                                 Trajectory = None }
 
                         { Events = [ createEvent tick passerId attClubId (PassMisplaced(passerId, player.Id)) ]
@@ -388,7 +388,7 @@ module BallAgent =
                           ReceivedByPlayer = None
                           GoalScored = None }
 
-            | BallActionKind.LongBall(passerId, targetId, quality) ->
+            | Aimed(passerId, targetId, quality, AimedKind.LongBall) ->
                 let attClubId = passerClubId passerId
 
                 if player.Id = targetId then
@@ -411,7 +411,7 @@ module BallAgent =
 
                         state.Ball <-
                             { zeroVel withStationary with
-                                Possession = Loose
+                                Control = Free
                                 LastTouchBy = Some player.Id
                                 Trajectory = None }
 
@@ -442,7 +442,7 @@ module BallAgent =
 
                     state.Ball <-
                         { withStationary with
-                            Possession = Contest(playerClub)
+                            Control = Contesting playerClub
                             Trajectory = None }
 
                     { Events = []
@@ -453,7 +453,7 @@ module BallAgent =
                       ReceivedByPlayer = None
                       GoalScored = None }
 
-            | BallActionKind.Shot(shooterId, shotQuality) ->
+            | Struck(shooterId, shotQuality) ->
                 let shooterClub = passerClubSide shooterId
                 let shooterClubId = passerClubId shooterId
                 let shootingDir = attackDirFor shooterClub state
@@ -465,7 +465,7 @@ module BallAgent =
 
                     state.Ball <-
                         { withStationary with
-                            Possession = Possession.SetPiece(ClubSide.flip scoringClub, SetPieceKind.KickOff)
+                            Control = Free
                             Trajectory = None }
 
                     { Events = [ createEvent tick shooterId shooterClubId ShotOnTarget ]
@@ -527,7 +527,7 @@ module BallAgent =
                                             Vx = parryVx
                                             Vy = parryVy
                                             Vz = 2.0<meter / second> }
-                                    Possession = Loose
+                                    Control = Free
                                     LastTouchBy = Some player.Id
                                     GKHoldSinceSubTick = None
                                     Trajectory = None }
@@ -565,19 +565,14 @@ module BallAgent =
 
                     let defClub = ClubSide.flip shooterClub
 
-                    let setpiece =
-                        match lastTouchClub with
-                        | Some club when club = defClub -> Possession.SetPiece(shooterClub, SetPieceKind.Corner)
-                        | _ -> Possession.SetPiece(defClub, SetPieceKind.GoalKick)
-
                     state.Ball <-
                         { withStationary with
-                            Possession = setpiece
+                            Control = Free
                             Trajectory = None }
 
                     let transition =
-                        match setpiece with
-                        | Possession.SetPiece(_, SetPieceKind.Corner) ->
+                        match lastTouchClub with
+                        | Some club when club = defClub ->
                             MatchFlow.RestartDelay
                                 { Kind = SetPieceKind.Corner
                                   Team = shooterClub
@@ -608,7 +603,7 @@ module BallAgent =
                       ReceivedByPlayer = None
                       GoalScored = None }
 
-            | BallActionKind.Cross(crosserId, targetId, crossQuality) ->
+            | Aimed(crosserId, targetId, crossQuality, AimedKind.Cross) ->
                 clearOffside ()
                 let crossAttClub = passerClubSide crosserId
                 let crossAttClubId = passerClubId crosserId
@@ -659,7 +654,7 @@ module BallAgent =
                                             Vx = parryVx
                                             Vy = parryVy
                                             Vz = 2.0<meter / second> }
-                                    Possession = Loose
+                                    Control = Free
                                     LastTouchBy = Some player.Id
                                     GKHoldSinceSubTick = None
                                     Trajectory = None }
@@ -719,7 +714,7 @@ module BallAgent =
                                     Trajectory =
                                         Some
                                             { traj with
-                                                ActionKind = BallActionKind.Shot(player.Id, headerProb)
+                                                Intent = Struck(player.Id, headerProb)
                                                 TargetY = targetY } }
 
                             { Events =
@@ -752,7 +747,7 @@ module BallAgent =
                     else
                         state.Ball <-
                             { zeroVel withStationary with
-                                Possession = Loose
+                                Control = Free
                                 LastTouchBy = Some player.Id
                                 Trajectory = None }
 
@@ -785,12 +780,9 @@ module BallAgent =
                                         Vx = vx
                                         Vy = vy
                                         Vz = 3.0<meter / second> }
-                                Possession = InFlight
+                                Control = Airborne
                                 LastTouchBy = Some player.Id
-                                Trajectory =
-                                    Some
-                                        { traj with
-                                            ActionKind = BallActionKind.Clearance(player.Id) } }
+                                Trajectory = Some { traj with Intent = Cleared player.Id } }
 
                         { Events = [ createEvent tick crosserId crossAttClubId (CrossAttempt false) ]
                           Transition = None
@@ -802,7 +794,7 @@ module BallAgent =
                     else
                         state.Ball <-
                             { withStationary with
-                                Possession = Contest(playerClub)
+                                Control = Contesting playerClub
                                 Trajectory = None }
 
                         { Events = [ createEvent tick crosserId crossAttClubId (CrossAttempt false) ]
@@ -815,7 +807,7 @@ module BallAgent =
                 else
                     state.Ball <-
                         { withStationary with
-                            Possession = Contest(playerClub)
+                            Control = Contesting playerClub
                             Trajectory = None }
 
                     { Events = []
@@ -826,9 +818,8 @@ module BallAgent =
                       ReceivedByPlayer = None
                       GoalScored = None }
 
-            | BallActionKind.Clearance(_)
-            | BallActionKind.Deflection(_)
-            | BallActionKind.FreeBall ->
+            | Cleared(_)
+            | Uncontrolled ->
                 givePossessionTo playerClub player.Id (player.Position = GK) tick withStationary state
 
                 { Events = []
@@ -881,7 +872,7 @@ module BallAgent =
 
                 state.Ball <-
                     { ball with
-                        Possession = Possession.SetPiece(ClubSide.flip shooterClub, SetPieceKind.KickOff)
+                        Control = Free
                         Trajectory = None }
 
                 { BallResult.empty with
@@ -897,19 +888,14 @@ module BallAgent =
                         elif playerOnSide ctx state AwayClub pid then Some AwayClub
                         else None)
 
-                let setpiece =
-                    match lastTouchClub with
-                    | Some club when club = defClub -> Possession.SetPiece(shooterClub, SetPieceKind.Corner)
-                    | _ -> Possession.SetPiece(defClub, SetPieceKind.GoalKick)
-
                 state.Ball <-
                     { ball with
-                        Possession = setpiece
+                        Control = Free
                         Trajectory = None }
 
                 let transition =
-                    match setpiece with
-                    | Possession.SetPiece(_, SetPieceKind.Corner) ->
+                    match lastTouchClub with
+                    | Some club when club = defClub ->
                         MatchFlow.RestartDelay
                             { Kind = SetPieceKind.Corner
                               Team = ClubSide.flip defClub
@@ -930,6 +916,37 @@ module BallAgent =
                 state.Ball <- ball
                 BallResult.empty
 
+    let private resolveInterception
+        (tick: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        (ball: BallPhysicsState)
+        (interceptor: Player)
+        (interceptorClub: ClubSide)
+        (passerId: PlayerId)
+        (passerClub: ClubSide)
+        : BallResult =
+
+        let passerClubId = if passerClub = HomeClub then ctx.Home.Id else ctx.Away.Id
+        let passerFrame = getFrame state passerClub
+        let passerRoster = getRoster ctx passerClub
+
+        match findIdxByPid passerId passerFrame passerRoster with
+        | ValueSome idx -> MatchMemory.recordPassFailure passerClub idx state.MatchMemory
+        | ValueNone -> ()
+
+        clearOffsideSnapshot state
+
+        givePossessionTo interceptorClub interceptor.Id (interceptor.Position = GK) tick ball state
+
+        { Events = [ createEvent tick passerId passerClubId (PassIntercepted(passerId, interceptor.Id)) ]
+          Transition = Some Live
+          PossessionChanged = true
+          BallInFlight = false
+          SetPieceAwarded = false
+          ReceivedByPlayer = Some interceptor.Id
+          GoalScored = None }
+
     let private resolveArrival
         (tick: int)
         (ctx: MatchContext)
@@ -942,10 +959,10 @@ module BallAgent =
         let homeRoster = getRoster ctx HomeClub
         let awayRoster = getRoster ctx AwayClub
 
-        match traj.ActionKind with
-        | BallActionKind.Shot _ -> resolveShot tick ctx state ball traj
+        match traj.Intent with
+        | Struck _ -> resolveShot tick ctx state ball traj
 
-        | BallActionKind.Pass(passerId, targetId, quality) ->
+        | Aimed(passerId, targetId, quality, RegularPass) ->
             let arrivalCtx: ArrivalContext =
                 { BallPos = ball.Position
                   TargetId = targetId
@@ -968,7 +985,14 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
             | IntendedTarget(player, club) -> resolveInFlightOutcome tick ctx state ball player club
-            | Intercepted(player, club) -> resolveInFlightOutcome tick ctx state ball player club
+            | Intercepted(player, club) ->
+                let passerClub =
+                    if playerOnSide ctx state HomeClub passerId then
+                        HomeClub
+                    else
+                        AwayClub
+
+                resolveInterception tick ctx state ball player club passerId passerClub
             | Contested ->
                 let attClub =
                     if playerOnSide ctx state HomeClub passerId then
@@ -978,7 +1002,7 @@ module BallAgent =
 
                 state.Ball <-
                     { zeroVel ball with
-                        Possession = Contest(attClub)
+                        Control = Contesting attClub
                         Trajectory = None }
 
                 { Events = []
@@ -989,7 +1013,7 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
 
-        | BallActionKind.LongBall(passerId, targetId, quality) ->
+        | Aimed(passerId, targetId, quality, AimedKind.LongBall) ->
             let arrivalCtx: ArrivalContext =
                 { BallPos = ball.Position
                   TargetId = targetId
@@ -1012,7 +1036,14 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
             | IntendedTarget(player, club) -> resolveInFlightOutcome tick ctx state ball player club
-            | Intercepted(player, club) -> resolveInFlightOutcome tick ctx state ball player club
+            | Intercepted(player, club) ->
+                let passerClub =
+                    if playerOnSide ctx state HomeClub passerId then
+                        HomeClub
+                    else
+                        AwayClub
+
+                resolveInterception tick ctx state ball player club passerId passerClub
             | Contested ->
                 let attClub =
                     if playerOnSide ctx state HomeClub passerId then
@@ -1022,7 +1053,7 @@ module BallAgent =
 
                 state.Ball <-
                     { zeroVel ball with
-                        Possession = Contest(attClub)
+                        Control = Contesting attClub
                         Trajectory = None }
 
                 { Events = []
@@ -1033,7 +1064,7 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
 
-        | BallActionKind.Cross(crosserId, targetId, quality) ->
+        | Aimed(crosserId, targetId, quality, AimedKind.Cross) ->
             let arrivalCtx: ArrivalContext =
                 { BallPos = ball.Position
                   TargetId = targetId
@@ -1056,7 +1087,14 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
             | IntendedTarget(player, club) -> resolveInFlightOutcome tick ctx state ball player club
-            | Intercepted(player, club) -> resolveInFlightOutcome tick ctx state ball player club
+            | Intercepted(player, club) ->
+                let passerClub =
+                    if playerOnSide ctx state HomeClub crosserId then
+                        HomeClub
+                    else
+                        AwayClub
+
+                resolveInterception tick ctx state ball player club crosserId passerClub
             | Contested ->
                 let attClub =
                     if playerOnSide ctx state HomeClub crosserId then
@@ -1066,7 +1104,7 @@ module BallAgent =
 
                 state.Ball <-
                     { zeroVel ball with
-                        Possession = Contest(attClub)
+                        Control = Contesting attClub
                         Trajectory = None }
 
                 { Events = []
@@ -1077,9 +1115,8 @@ module BallAgent =
                   ReceivedByPlayer = None
                   GoalScored = None }
 
-        | BallActionKind.Clearance _
-        | BallActionKind.Deflection _
-        | BallActionKind.FreeBall ->
+        | Cleared _
+        | Uncontrolled ->
             state.Ball <- ball
 
             { Events = []
@@ -1094,7 +1131,6 @@ module BallAgent =
         let pcfg = ctx.Config.Physics
         let dt = SimulationClock.dt clock
 
-        // Phase 4: snapshot before to detect trajectory launch (BallInFlight trigger)
         let trajectoryBefore = state.Ball.Trajectory
 
         let homeFrame = getFrame state HomeClub
@@ -1103,8 +1139,9 @@ module BallAgent =
         let awayRoster = getRoster ctx AwayClub
 
         let result =
-            match state.Ball.Possession with
-            | Owned(_, pid) ->
+            match state.Ball.Control with
+            | Controlled(_, pid)
+            | Receiving(_, pid, _) ->
                 match findPlayerByPidSoA pid homeFrame awayFrame homeRoster awayRoster with
                 | Some(_, px, py) ->
                     state.Ball <-
@@ -1117,7 +1154,9 @@ module BallAgent =
                                   Vy = 0.0<meter / second>
                                   Vz = 0.0<meter / second> }
                             Trajectory = None }
-                | None -> state.Ball <- BallPhysics.update pcfg dt state.Ball
+                | None ->
+
+                    ()
 
                 { Events = []
                   Transition = None
@@ -1173,9 +1212,7 @@ module BallAgent =
                         | Some side ->
                             let restartTeam = ClubSide.flip side
 
-                            state.Ball <-
-                                { withStationary with
-                                    Possession = Possession.SetPiece(restartTeam, SetPieceKind.ThrowIn) }
+                            state.Ball <- { withStationary with Control = Free }
 
                             { Events = []
                               Transition =
@@ -1195,7 +1232,7 @@ module BallAgent =
                         | None ->
                             state.Ball <-
                                 { zeroVel withStationary with
-                                    Possession = Loose }
+                                    Control = Free }
 
                             { Events = []
                               Transition = Some MatchFlow.Live
@@ -1219,9 +1256,7 @@ module BallAgent =
                             | Some sc ->
                                 clearOffsideSnapshot state
 
-                                state.Ball <-
-                                    { withStationary with
-                                        Possession = Possession.SetPiece(ClubSide.flip sc, SetPieceKind.KickOff) }
+                                state.Ball <- { withStationary with Control = Free }
 
                                 let goalResult =
                                     { BallResult.empty with
@@ -1233,7 +1268,7 @@ module BallAgent =
                             | None ->
                                 state.Ball <-
                                     { zeroVel withStationary with
-                                        Possession = Loose }
+                                        Control = Free }
 
                                 { Events = []
                                   Transition = Some MatchFlow.Live
@@ -1250,9 +1285,7 @@ module BallAgent =
                             if behindHome then
                                 match lastTouchClub with
                                 | Some AwayClub ->
-                                    state.Ball <-
-                                        { withStationary with
-                                            Possession = Possession.SetPiece(HomeClub, SetPieceKind.Corner) }
+                                    state.Ball <- { withStationary with Control = Free }
 
                                     { Events = []
                                       Transition =
@@ -1270,9 +1303,7 @@ module BallAgent =
                                       ReceivedByPlayer = None
                                       GoalScored = None }
                                 | _ ->
-                                    state.Ball <-
-                                        { withStationary with
-                                            Possession = Possession.SetPiece(HomeClub, SetPieceKind.GoalKick) }
+                                    state.Ball <- { withStationary with Control = Free }
 
                                     { Events = []
                                       Transition =
@@ -1293,9 +1324,7 @@ module BallAgent =
                             elif behindAway then
                                 match lastTouchClub with
                                 | Some HomeClub ->
-                                    state.Ball <-
-                                        { withStationary with
-                                            Possession = Possession.SetPiece(AwayClub, SetPieceKind.Corner) }
+                                    state.Ball <- { withStationary with Control = Free }
 
                                     { Events = []
                                       Transition =
@@ -1314,9 +1343,7 @@ module BallAgent =
                                       GoalScored = None }
 
                                 | _ ->
-                                    state.Ball <-
-                                        { withStationary with
-                                            Possession = Possession.SetPiece(AwayClub, SetPieceKind.GoalKick) }
+                                    state.Ball <- { withStationary with Control = Free }
 
                                     { Events = []
                                       Transition =
@@ -1337,7 +1364,7 @@ module BallAgent =
                             else
                                 state.Ball <-
                                     { zeroVel withStationary with
-                                        Possession = Loose }
+                                        Control = Free }
 
                                 { Events = []
                                   Transition = Some MatchFlow.Live
@@ -1387,7 +1414,7 @@ module BallAgent =
                     elif ballNearlyStopped withStationary then
                         state.Ball <-
                             { zeroVel withStationary with
-                                Possession = Loose }
+                                Control = Free }
 
                         { Events = []
                           Transition = Some MatchFlow.Live
@@ -1398,21 +1425,8 @@ module BallAgent =
                           GoalScored = None }
 
                     else
-                        match state.Ball.Possession with
-                        | Possession.SetPiece _ ->
-                            state.Ball <-
-                                { zeroVel withStationary with
-                                    Possession = Loose }
-
-                            { Events = []
-                              Transition = Some MatchFlow.Live
-                              PossessionChanged = true
-                              BallInFlight = false
-                              SetPieceAwarded = false
-                              ReceivedByPlayer = None
-                              GoalScored = None }
-
-                        | Possession.Contest side ->
+                        match state.Ball.Control with
+                        | Contesting side ->
                             let isSameSide pid =
                                 match clubSideOf ctx state pid with
                                 | Some c -> c = side
@@ -1440,7 +1454,7 @@ module BallAgent =
                                 | None ->
                                     state.Ball <-
                                         { zeroVel withStationary with
-                                            Possession = Loose }
+                                            Control = Free }
 
                                     { Events = []
                                       Transition = Some MatchFlow.Live
@@ -1452,7 +1466,7 @@ module BallAgent =
                             | _ ->
                                 state.Ball <-
                                     { zeroVel withStationary with
-                                        Possession = Loose }
+                                        Control = Free }
 
                                 { Events = []
                                   Transition = Some MatchFlow.Live
@@ -1462,7 +1476,7 @@ module BallAgent =
                                   ReceivedByPlayer = None
                                   GoalScored = None }
 
-                        | Possession.Loose ->
+                        | Free ->
                             match nearestChaser with
                             | Some pid ->
                                 let club = clubSideOf ctx state pid |> Option.defaultValue state.AttackingSide
@@ -1520,7 +1534,7 @@ module BallAgent =
                                   ReceivedByPlayer = None
                                   GoalScored = None }
 
-                        | Possession.InFlight ->
+                        | Airborne ->
                             state.Ball <- withStationary
 
                             { Events = []
@@ -1531,7 +1545,8 @@ module BallAgent =
                               ReceivedByPlayer = None
                               GoalScored = None }
 
-                        | Possession.Owned _ ->
+                        | Controlled _
+                        | Receiving _ ->
                             state.Ball <- withStationary
 
                             { Events = []
@@ -1542,42 +1557,7 @@ module BallAgent =
                               ReceivedByPlayer = None
                               GoalScored = None }
 
-                        | Possession.Transition _ ->
-                            match nearestChaser with
-                            | Some pid ->
-                                let club = clubSideOf ctx state pid |> Option.defaultValue state.AttackingSide
 
-                                match findPlayerByPidSoA pid homeFrame awayFrame homeRoster awayRoster with
-                                | Some(s, _, _) ->
-                                    givePossessionTo club s.Id (s.Position = GK) state.SubTick withStationary state
-
-                                    { Events = []
-                                      Transition = Some MatchFlow.Live
-                                      PossessionChanged = true
-                                      BallInFlight = false
-                                      SetPieceAwarded = false
-                                      ReceivedByPlayer = None
-                                      GoalScored = None }
-                                | None ->
-                                    state.Ball <- withStationary
-
-                                    { Events = []
-                                      Transition = None
-                                      PossessionChanged = false
-                                      BallInFlight = false
-                                      SetPieceAwarded = false
-                                      ReceivedByPlayer = None
-                                      GoalScored = None }
-                            | None ->
-                                state.Ball <- withStationary
-
-                                { Events = []
-                                  Transition = None
-                                  PossessionChanged = false
-                                  BallInFlight = false
-                                  SetPieceAwarded = false
-                                  ReceivedByPlayer = None
-                                  GoalScored = None }
                 else
                     state.Ball <- withStationary
 

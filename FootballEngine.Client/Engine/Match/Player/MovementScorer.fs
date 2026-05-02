@@ -21,8 +21,8 @@ module MovementScorer =
     let private normCond (v: int) = float v / 100.0
 
     let private hasBall (ballState: BallPhysicsState) (pid: PlayerId) =
-        match ballState.Possession with
-        | Owned(_, p) -> p = pid
+        match ballState.Control with
+        | Controlled(_, p) | Receiving(_, p, _) -> p = pid
         | _ -> false
 
     let maintainShapeScore (ctx: AgentContext) =
@@ -297,9 +297,9 @@ module MovementScorer =
         if ctx.TeamHasBall then
             0.0
         else
-            match ctx.BallState.Possession with
-            | Loose
-            | Contest _ ->
+            match ctx.BallState.Control with
+            | Free
+            | Contesting _ ->
                 let dist = ctx.MyPos.DistTo2D ctx.BallState.Position
 
                 if dist > 20.0<meter> then
@@ -348,7 +348,7 @@ module MovementScorer =
                             1.0
 
                     baseScore * roleMod * positionalPenalty
-            | Owned(oppositeSide, _) ->
+            | Controlled(oppositeSide, _) | Receiving(oppositeSide, _, _) ->
                 if oppositeSide = ctx.Team.ClubSide then
                     0.0
                 else
@@ -495,9 +495,9 @@ module MovementScorer =
             let distToBall = ctx.MyPos.DistTo2D ctx.BallState.Position
 
             let ballIsLoose =
-                match ctx.BallState.Possession with
-                | Loose
-                | Contest _ -> true
+                match ctx.BallState.Control with
+                | Free
+                | Contesting _ -> true
                 | _ -> false
 
             if ballIsLoose && distToBall < 8.0<meter> then
@@ -707,8 +707,8 @@ module MovementScorer =
                 if bestScore > prevScore + 0.12 then bestIntent else prev
 
     let pickIntent (currentSubTick: int) (scores: MovementScores) (ctx: AgentContext) : MovementIntent =
-        match ctx.BallState.Possession with
-        | Possession.InFlight ->
+        match ctx.BallState.Control with
+        | Airborne ->
             match ctx.BallState.Trajectory with
             | Some traj ->
                 let landingPos =
@@ -719,9 +719,8 @@ module MovementScorer =
                       Vy = 0.0<meter / second>
                       Vz = 0.0<meter / second> }
 
-                match traj.ActionKind with
-                | BallActionKind.Pass(_, targetId, _)
-                | BallActionKind.LongBall(_, targetId, _) ->
+                match traj.Intent with
+                | Aimed(_, targetId, _, _) ->
                     if ctx.Me.Id = targetId then
                         SupportAttack landingPos
                     elif
@@ -740,11 +739,7 @@ module MovementScorer =
                               Vx = 0.0<meter / second>
                               Vy = 0.0<meter / second>
                               Vz = 0.0<meter / second> }
-                | BallActionKind.Cross(_, targetId, _) ->
-                    if ctx.Me.Id = targetId then SupportAttack landingPos
-                    elif ctx.Me.Position = GK then MaintainShape ctx.MyPos
-                    else RecoverBall landingPos
-                | BallActionKind.Shot _ ->
+                | Struck _ ->
                     if ctx.Me.Position = GK then
                         MaintainShape ctx.MyPos
                     else
@@ -758,8 +753,6 @@ module MovementScorer =
                               Vx = 0.0<meter / second>
                               Vy = 0.0<meter / second>
                               Vz = 0.0<meter / second> }
-                | BallActionKind.Clearance _
-                | BallActionKind.Deflection _
-                | BallActionKind.FreeBall -> RecoverBall landingPos
+                | Cleared _ | Uncontrolled -> RecoverBall landingPos
             | None -> pickIntentNormal currentSubTick scores ctx
         | _ -> pickIntentNormal currentSubTick scores ctx

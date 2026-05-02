@@ -34,9 +34,9 @@ module GKAction =
         let mutable bestDistType = Roll
 
         let attClub =
-            match state.Ball.Possession with
-            | Owned(side, _) -> side
-            | _ -> ClubSide.flip (state.AttackingSide)
+            match state.Ball.Control with
+            | Controlled(side, _) | Receiving(side, _, _) -> side
+            | _ -> ClubSide.flip state.AttackingSide
 
         let defClub = ClubSide.flip attClub
         let defFrame = getFrame state defClub
@@ -104,8 +104,8 @@ module GKAction =
         let gkc = ctx.Config.GK
         let actx = ActionContext.build ctx state
 
-        match state.Ball.Possession with
-        | Owned(side, gkId) ->
+        match state.Ball.Control with
+        | Controlled(side, gkId) ->
             let frame = getFrame state side
             let roster = getRoster ctx side
             let gkIdx =
@@ -160,12 +160,12 @@ module GKAction =
                         EstimatedArrivalSubTick = arrivalSubTick
                         KickerId = gkId
                         PeakHeight = peakHeight
-                        ActionKind = BallActionKind.Pass(gkId, target.Id, 0.5)
+                        Intent = Aimed(gkId, target.Id, 0.5, RegularPass)
                     }
 
                     state.Ball <-
                         { state.Ball with
-                            Possession = InFlight
+                            Control = Airborne
                             LastTouchBy = Some gkId
                             GKHoldSinceSubTick = None
                             PlayerHoldSinceSubTick = None

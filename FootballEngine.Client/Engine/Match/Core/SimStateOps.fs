@@ -284,7 +284,7 @@ module SimStateOps =
     let defaultBall =
         { Position = kickOffSpatial
           Spin = Spin.zero
-          Possession = Possession.SetPiece(HomeClub, SetPieceKind.KickOff)
+          Control = Free
           LastTouchBy = None
           PendingOffsideSnapshot = None
           StationarySinceSubTick = None
@@ -299,7 +299,7 @@ module SimStateOps =
             { state.Ball with
                 Position = kickOffSpatial
                 Spin = Spin.zero
-                Possession = Possession.SetPiece(receivingClub, SetPieceKind.KickOff)
+                Control = Free
                 PendingOffsideSnapshot = None
                 StationarySinceSubTick = None
                 GKHoldSinceSubTick = None
@@ -312,18 +312,18 @@ module SimStateOps =
                 PendingOffsideSnapshot = None }
 
     let hasPossession (state: SimState) (pid: PlayerId) : bool =
-        match state.Ball.Possession with
-        | Owned(_, p) -> p = pid
+        match state.Ball.Control with
+        | Controlled(_, p) | Receiving(_, p, _) -> p = pid
         | _ -> false
 
     let losePossession (state: SimState) =
-        match state.Ball.Possession with
-        | Owned(side, _) -> (getTeam state side).ActiveRuns <- []
+        match state.Ball.Control with
+        | Controlled(side, _) | Receiving(side, _, _) -> (getTeam state side).ActiveRuns <- []
         | _ -> ()
 
         state.Ball <-
             { state.Ball with
-                Possession = Loose
+                Control = Free
                 PendingOffsideSnapshot = None
                 GKHoldSinceSubTick = None
                 PlayerHoldSinceSubTick = None
@@ -337,21 +337,24 @@ module SimStateOps =
         (ballBase: BallPhysicsState)
         (state: SimState)
         =
-        match state.Ball.Possession with
-        | Owned(losingClub, _) when losingClub <> club -> (getTeam state losingClub).ActiveRuns <- []
+        match state.Ball.Control with
+        | Controlled(losingClub, _) | Receiving(losingClub, _, _) when losingClub <> club ->
+            (getTeam state losingClub).ActiveRuns <- []
         | _ -> ()
 
         state.LastAttackingClub <- club
 
         state.Ball <-
             { ballBase with
-                Possession = Owned(club, pid)
-                LastTouchBy = Some pid
-                PendingOffsideSnapshot = None
-                GKHoldSinceSubTick = if isGk then Some subTick else None
-                PlayerHoldSinceSubTick = if isGk then None else Some subTick
-                Trajectory = None
-                Position = ballBase.Position }
+                Control =
+                    if isGk then Controlled(club, pid)
+                    else Receiving(club, pid, subTick)
+                LastTouchBy              = Some pid
+                PendingOffsideSnapshot   = None
+                GKHoldSinceSubTick       = if isGk then Some subTick else None
+                PlayerHoldSinceSubTick   = if isGk then None else Some subTick
+                Trajectory               = None
+                Position                 = ballBase.Position }
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
         state.Momentum <- clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
@@ -517,3 +520,9 @@ module SimStateOps =
     let resumeDirective (state: SimState) (side: ClubSide) =
         let team = getTeam state side
         team.Directive <- FootballEngine.Movement.TeamDirectiveOps.resume team.Directive
+
+    let expireReceiving (subTick: int) (graceTicks: int) (state: SimState) =
+        match state.Ball.Control with
+        | Receiving(club, pid, since) when subTick - since >= graceTicks ->
+            state.Ball <- { state.Ball with Control = Controlled(club, pid) }
+        | _ -> ()

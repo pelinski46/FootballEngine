@@ -73,13 +73,10 @@ module AgentContext =
                 state.AwayScore - state.HomeScore
 
         let teamHasBall =
-            match ballState.Possession with
-            | Possession.Owned(side, _) -> side = team.ClubSide
-            | Possession.InFlight -> false
-            | Possession.SetPiece(side, _) -> side = team.ClubSide
-            | Possession.Contest(side) -> side = team.ClubSide
-            | Possession.Transition(side) -> side = team.ClubSide
-            | Possession.Loose -> false
+            match ballState.Control with
+            | Controlled(side, _) | Receiving(side, _, _) -> side = team.ClubSide
+            | Contesting(side)                             -> side = team.ClubSide
+            | Airborne | Free                              -> false
 
         let tacticsCfg =
             tacticsConfig (getTactics state team.ClubSide) (getInstructions state team.ClubSide)

@@ -100,8 +100,8 @@ module RefereeAgent =
             let gkTimeWastingIntent =
                 match state.Ball.GKHoldSinceSubTick with
                 | Some since when state.SubTick - since >= state.Config.GK.MaxHoldSubTicks ->
-                    match state.Ball.Possession with
-                    | Owned(side, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
+                    match state.Ball.Control with
+                    | Controlled(side, _) | Receiving(side, _, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
                     | _ -> []
                 | _ -> []
 

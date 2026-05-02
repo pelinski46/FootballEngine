@@ -180,7 +180,7 @@ type SimState() =
               Vz = 0.0<meter / second> }
           Spin = Spin.zero
           LastTouchBy = None
-          Possession = Possession.SetPiece(HomeClub, SetPieceKind.KickOff)
+          Control = Free
           PendingOffsideSnapshot = None
           StationarySinceSubTick = None
           GKHoldSinceSubTick = None
@@ -190,13 +190,10 @@ type SimState() =
     member val LastAttackingClub = HomeClub with get, set
 
     member this.AttackingClub =
-        match this.Ball.Possession with
-        | Owned(club, _) -> Some club
-        | InFlight -> None
-        | Possession.SetPiece(club, _) -> Some club
-        | Contest(club) -> Some club
-        | Transition(club) -> Some club
-        | Loose -> None
+        match this.Ball.Control with
+        | Controlled(club, _) | Receiving(club, _, _) -> Some club
+        | Contesting(club)                             -> Some club
+        | Airborne | Free                              -> None
 
     member this.AttackingSide =
         this.AttackingClub |> Option.defaultValue this.LastAttackingClub

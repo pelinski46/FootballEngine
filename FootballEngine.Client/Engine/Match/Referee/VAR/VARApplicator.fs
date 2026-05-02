@@ -17,7 +17,7 @@ module VARApplicator =
                 { state.Ball with
                     Position = kickOffSpatial
                     Spin = Spin.zero
-                    Possession = SetPiece(ClubSide.flip scoringClub, SetPieceKind.KickOff)
+                    Control = Free
                     LastTouchBy = None
                     PendingOffsideSnapshot = None
                     StationarySinceSubTick = None
@@ -34,7 +34,7 @@ module VARApplicator =
                     Position = { state.Ball.Position with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Loose
+                    Control = Free
                     PendingOffsideSnapshot = None
                     StationarySinceSubTick = None
                     GKHoldSinceSubTick = None
@@ -50,7 +50,7 @@ module VARApplicator =
 
         | OffsideCheck(_, _) ->
             clearOffsideSnapshot state
-            state.Ball <- { state.Ball with Possession = Loose; PendingOffsideSnapshot = None }
+            state.Ball <- { state.Ball with Control = Free; PendingOffsideSnapshot = None }
             []
 
     let applyCheckComplete (subTick: int) (incident: VARReviewableIncident) (ctx: MatchContext) (state: SimState) : MatchEvent list =

@@ -25,7 +25,7 @@ module SetPieceAgent =
                 let gkX = if isHome then GoalAreaDepth else PitchLength - GoalAreaDepth
                 let centerY = PitchWidth / 2.0
 
-                state.Ball <- { state.Ball with Position = { defaultSpatial gkX centerY with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.GoalKick) }
+                state.Ball <- { state.Ball with Position = { defaultSpatial gkX centerY with Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Control = Free }
 
                 let gkIdx =
                     let mutable idx = -1
@@ -66,13 +66,13 @@ module SetPieceAgent =
                         EstimatedArrivalSubTick = arrivalSubTick
                         KickerId = gk.Id
                         PeakHeight = 0.0<meter>
-                        ActionKind = BallActionKind.Pass(gk.Id, gk.Id, 0.5)
+                        Intent = Aimed(gk.Id, gk.Id, 0.5, RegularPass)
                     }
 
                     state.Ball <-
                         { state.Ball with
                             LastTouchBy = Some gk.Id
-                            Possession = InFlight
+                            Control = Airborne
                             Position = { state.Ball.Position with Vx = vx; Vy = vy; Vz = 0.0<meter/second> }
                             Trajectory = Some trajectory }
 
@@ -100,7 +100,7 @@ module SetPieceAgent =
                 let roster = getRoster ctx kickingClub
                 let pc = ctx.Config.Pass
 
-                state.Ball <- { state.Ball with Position = { X = centerX; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Possession = Possession.SetPiece(kickingClub, SetPieceKind.KickOff) }
+                state.Ball <- { state.Ball with Position = { X = centerX; Y = centerY; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }; Control = Free }
 
                 let kickerIdx =
                     let rec findPos pred i =

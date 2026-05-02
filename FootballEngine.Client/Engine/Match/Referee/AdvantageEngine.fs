@@ -23,16 +23,15 @@ module AdvantageEngine =
         (foulY: float<meter>)
         (dir: AttackDir)
         (fouledTeam: ClubSide)
-        (ballPossession: Possession)
+        (ballControl: BallControl)
         (zone: PitchZone)
         : AdvantageDecision =
 
         let hasPossession =
-            match ballPossession with
-            | Owned(side, _) -> side = fouledTeam
-            | Contest(side) -> side = fouledTeam
-            | Transition(side) -> side = fouledTeam
-            | _ -> false
+            match ballControl with
+            | Controlled(side, _) | Receiving(side, _, _) -> side = fouledTeam
+            | Contesting(side)                             -> side = fouledTeam
+            | _                                            -> false
 
         if not hasPossession then
             StopPlay "no possession"
@@ -57,7 +56,7 @@ module AdvantageEngine =
     let shouldCallBack
         (advSubTick: int)
         (currentSubTick: int)
-        (ballPossession: Possession)
+        (ballControl: BallControl)
         (fouledTeam: ClubSide)
         : bool =
 
@@ -65,8 +64,7 @@ module AdvantageEngine =
         if currentSubTick - advSubTick > window then
             true
         else
-            match ballPossession with
-            | Owned(side, _) -> side <> fouledTeam
-            | Contest(side) -> side <> fouledTeam
-            | Transition(side) -> side <> fouledTeam
-            | _ -> false
+            match ballControl with
+            | Controlled(side, _) | Receiving(side, _, _) -> side <> fouledTeam
+            | Contesting(side)                             -> side <> fouledTeam
+            | _                                            -> false

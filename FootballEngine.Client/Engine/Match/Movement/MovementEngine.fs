@@ -101,8 +101,8 @@ module MovementEngine =
                     | _ -> frame.Intent.TargetX[i], frame.Intent.TargetY[i]
 
                 let hasBall =
-                    match state.Ball.Possession with
-                    | Owned(_, pid) -> pid = player.Id
+                    match state.Ball.Control with
+                    | Controlled(_, pid) | Receiving(_, pid, _) -> pid = player.Id
                     | _ -> false
 
                 let chasingBall =
@@ -180,8 +180,8 @@ module MovementEngine =
         let clampedX = PhysicsContract.clamp state.Ball.Position.X 0.0<meter> PhysicsContract.PitchLength
         state.BallXSmooth <- smoothing * state.BallXSmooth + (1.0 - smoothing) * clampedX
 
-        match state.Ball.Possession with
-        | Possession.SetPiece _ ->
+        match state.Flow with
+        | RestartDelay _ ->
             // Do not apply reactive overrides during set-piece positioning
             updatePhysics ctx state clubSide currentSubTick dt
             refreshCache ctx state clubSide

@@ -44,11 +44,6 @@ module MatchStepper =
               Cause = cause
               RemainingTicks = setPieceDelay clock state.Config kind }
 
-    let private teamFromPossessionOrAttack (state: SimState) (kind: SetPieceKind) =
-        match state.Ball.Possession with
-        | Possession.SetPiece(team, k) when k = kind -> team
-        | Possession.SetPiece(team, _) -> team
-        | _ -> state.AttackingSide
 
     let private applyVARDecision
         (subTick: int)
@@ -91,12 +86,7 @@ module MatchStepper =
         (clock: SimulationClock)
         (events: ResizeArray<MatchEvent>)
         =
-        let receivingClub =
-            match state.Ball.Possession with
-            | Possession.SetPiece(club, _) -> club
-            | _ -> state.AttackingSide
-
-        let scoringClub = ClubSide.flip receivingClub
+        let scoringClub = state.AttackingSide
         let scorerId, isOwnGoal = GoalDetector.scorer scoringClub state.Ball ctx state
 
         RefereeApplicator.apply subTick (ConfirmGoal(scoringClub, scorerId, isOwnGoal)) ctx state
@@ -297,8 +287,8 @@ module MatchStepper =
                     | None -> h.LastBallReceivedTick
                 ChangedToSide =
                     if result.PossessionChanged then
-                        match state.Ball.Possession with
-                        | Owned(side, _) -> Some side
+                        match state.Ball.Control with
+                        | Controlled(side, _) | Receiving(side, _, _) -> Some side
                         | _ -> h.ChangedToSide
                     else
                         h.ChangedToSide }
@@ -495,6 +485,7 @@ module MatchStepper =
                 runCognition subTick ctx state clock
 
             if MatchRates.physics clock subTick then
+                SimStateOps.expireReceiving subTick ctx.Config.Physics.ReceivingGraceSubTicks state
                 if MatchRates.steering clock subTick then
                     let dtPlayer = SimulationClock.dtPlayer clock
 

@@ -55,7 +55,7 @@ module RefereeApplicator =
                     Position = defaultSpatial resetX (PitchWidth / 2.0)
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Loose }
+                    Control = Free }
 
             clearOffsideSnapshot state
             []
@@ -78,7 +78,7 @@ module RefereeApplicator =
                             Vz = 0.0<meter / second> }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Possession.SetPiece(team, SetPieceKind.ThrowIn) }
+                    Control = Free }
 
             clearOffsideSnapshot state
             []
@@ -101,7 +101,7 @@ module RefereeApplicator =
                             Vz = 0.0<meter / second> }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Possession.SetPiece(team, SetPieceKind.Corner) }
+                    Control = Free }
 
             clearOffsideSnapshot state
 
@@ -122,7 +122,7 @@ module RefereeApplicator =
                     Position = defaultSpatial gkX (PitchWidth / 2.0)
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Possession.SetPiece(team, SetPieceKind.GoalKick) }
+                    Control = Free }
 
             clearOffsideSnapshot state
             []
@@ -140,7 +140,7 @@ module RefereeApplicator =
                             Vz = 0.0<meter / second> }
                     Spin = Spin.zero
                     LastTouchBy = None
-                    Possession = Possession.SetPiece(team, SetPieceKind.FreeKick) }
+                    Control = Free }
 
             clearOffsideSnapshot state
 
@@ -162,7 +162,7 @@ module RefereeApplicator =
                             Vy = 0.0<meter / second>
                             Vz = 0.0<meter / second> }
                     Spin = Spin.zero
-                    Possession = Possession.Loose }
+                    Control = Free }
 
             clearOffsideSnapshot state
             []

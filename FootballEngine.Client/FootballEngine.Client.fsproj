@@ -96,6 +96,7 @@
         <Compile Include="Engine\Match\Player\PlayerScorer.fs"/>
         <Compile Include="Engine\Match\Player\PlayerPersonality.fs"/>
         <Compile Include="Engine\Match\Player\ChemistryTracker.fs"/>
+        <Compile Include="Engine\Match\Player\ActionEligibility.fs"/>
         <Compile Include="Engine\Match\Player\PlayerDecision.fs"/>
         <Compile Include="Engine\Match\Actions\SetPiecePositioning.fs"/>
         <Compile Include="Engine\Match\Player\BatchDecision.fs"/>

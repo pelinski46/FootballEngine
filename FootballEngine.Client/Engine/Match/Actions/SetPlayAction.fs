@@ -63,7 +63,7 @@ module SetPlayAction =
                 EstimatedArrivalSubTick = arrivalSubTick
                 KickerId = kicker.Id
                 PeakHeight = vz * vz / (2.0 * 9.80665<meter/second^2>)
-                ActionKind = BallActionKind.Shot(kicker.Id, quality / 2.0)
+                Intent = Struck(kicker.Id, quality / 2.0)
             }
 
             let wallSize = calculateWallSize distToGoal
@@ -76,7 +76,7 @@ module SetPlayAction =
                             Vx = vx * 1.0<meter / second>
                             Vy = vy * 1.0<meter / second>
                             Vz = vz }
-                    Possession = InFlight
+                    Control = Airborne
                     LastTouchBy = Some kicker.Id
                     Trajectory = Some trajectory }
 
@@ -119,7 +119,7 @@ module SetPlayAction =
             if attackersInBox.Length = 0 then
                 let targetX = if actx.Att.AttackDir = LeftToRight then PitchLength - PenaltyAreaDepth else PenaltyAreaDepth
                 ballTowards state.Ball.Position.X state.Ball.Position.Y targetX (PitchWidth / 2.0) spc.CornerSpeed spc.CornerVz state
-                state.Ball <- { state.Ball with Possession = InFlight }
+                state.Ball <- { state.Ball with Control = Airborne }
                 ActionResult.ofEvents [ createEvent subTick taker.Id attClubId Corner ]
             else
                 let bestAttacker, bestAttackerSp, _ = attackersInBox |> Array.maxBy (fun (p, _, _) -> p.Physical.Strength + p.Technical.Heading)
@@ -149,14 +149,14 @@ module SetPlayAction =
                     EstimatedArrivalSubTick = arrivalSubTick
                     KickerId = taker.Id
                     PeakHeight = spc.CornerVz * spc.CornerVz / (2.0 * 9.80665<meter/second^2>)
-                    ActionKind = BallActionKind.Cross(taker.Id, bestAttacker.Id, crossQuality)
+                    Intent = Aimed(taker.Id, bestAttacker.Id, crossQuality, AimedKind.Cross)
                 }
 
                 ballTowards state.Ball.Position.X state.Ball.Position.Y targetX targetY spc.CornerSpeed spc.CornerVz state
 
                 state.Ball <-
                     { state.Ball with
-                        Possession = InFlight
+                        Control = Airborne
                         LastTouchBy = Some taker.Id
                         Trajectory = Some trajectory }
 
@@ -276,7 +276,7 @@ module SetPlayAction =
             EstimatedArrivalSubTick = arrivalSubTick
             KickerId = kicker.Id
             PeakHeight = vz * vz / (2.0 * 9.80665<meter/second^2>)
-            ActionKind = BallActionKind.Shot(kicker.Id, kickerPower)
+            Intent = Struck(kicker.Id, kickerPower)
         }
 
         state.Ball <-
@@ -286,7 +286,7 @@ module SetPlayAction =
                         Vx = vx * 1.0<meter / second>
                         Vy = vy * 1.0<meter / second>
                         Vz = vz }
-                Possession = InFlight
+                Control = Airborne
                 LastTouchBy = Some kicker.Id
                 Trajectory = Some trajectory }
 

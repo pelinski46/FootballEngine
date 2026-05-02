@@ -145,7 +145,7 @@ module ShotAction =
                         EstimatedArrivalSubTick = arrivalSubTick
                         KickerId = shooter.Id
                         PeakHeight = peakHeight
-                        ActionKind = BallActionKind.Shot(shooter.Id, quality)
+                        Intent = Struck(shooter.Id, quality)
                     }
 
                     let angleToGoal =
@@ -176,7 +176,7 @@ module ShotAction =
                                     X = bX }
                             Spin = spin
                             LastTouchBy = Some shooter.Id
-                            Possession = InFlight
+                            Control = Airborne
                             Trajectory = Some trajectory }
 
                     adjustMomentum actx.Att.AttackDir ctx.Config.Duel.MomentumBonus state

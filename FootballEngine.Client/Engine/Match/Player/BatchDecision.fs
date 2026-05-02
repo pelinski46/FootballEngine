@@ -10,7 +10,7 @@ module BatchDecision =
     let private computeSupportPositions
         (team: TeamPerspective)
         (ballPos: Spatial)
-        (ballPossession: Possession)
+        (ballControl: BallControl)
         (phase: MatchPhase)
         (tactics: TacticsConfig)
         (desiredWidth: float)
@@ -21,8 +21,8 @@ module BatchDecision =
         let result = Array.zeroCreate<Spatial> n
 
         let ballCarrierId =
-            match ballPossession with
-            | Owned(_, pid) -> Some pid
+            match ballControl with
+            | Controlled(_, pid) | Receiving(_, pid, _) -> Some pid
             | _ -> None
 
         for i = 0 to n - 1 do
@@ -59,7 +59,7 @@ module BatchDecision =
     let private pickRunner
         (team: TeamPerspective)
         (ballPos: Spatial)
-        (ballPossession: Possession)
+        (ballControl: BallControl)
         (emergent: EmergentState)
         (influence: InfluenceTypes.InfluenceFrame)
         : PlayerId option * RunType option * Spatial option =
@@ -67,8 +67,8 @@ module BatchDecision =
         let roster = team.OwnRoster
 
         let ballCarrierId =
-            match ballPossession with
-            | Owned(_, pid) -> Some pid
+            match ballControl with
+            | Controlled(_, pid) | Receiving(_, pid, _) -> Some pid
             | _ -> None
 
         let dir = team.AttackDir
@@ -219,7 +219,7 @@ module BatchDecision =
         let ballPos = state.Ball.Position
 
         let supportPositions =
-            computeSupportPositions team ballPos state.Ball.Possession phase tacticsCfg tacticsCfg.Width basePositions
+            computeSupportPositions team ballPos state.Ball.Control phase tacticsCfg tacticsCfg.Width basePositions
 
         let influence =
             if clubSide = HomeClub then
@@ -228,7 +228,7 @@ module BatchDecision =
                 state.AwayInfluenceFrame
 
         let runnerId, runType, runTarget =
-            pickRunner team ballPos state.Ball.Possession emergent influence
+            pickRunner team ballPos state.Ball.Control emergent influence
 
         let defAssignments =
             computeDefensiveShape team cFrame currentSubTick (getTeam state clubSide).TransitionPressExpiry
@@ -349,8 +349,8 @@ module BatchDecision =
                 false
 
         let isSetPiece =
-            match state.Ball.Possession with
-            | Possession.SetPiece _ -> true
+            match state.Flow with
+            | RestartDelay _ -> true
             | _ -> false
 
         let setPiecePositions =

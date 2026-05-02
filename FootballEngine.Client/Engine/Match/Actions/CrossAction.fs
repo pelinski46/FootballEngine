@@ -67,7 +67,7 @@ module CrossAction =
                 let targetX = if actx.Att.AttackDir = LeftToRight then PitchLength - PenaltyAreaDepth else PenaltyAreaDepth
                 let defClub = ClubSide.flip actx.Att.ClubSide
                 ballTowards crosserPos.X crosserPos.Y targetX (PitchWidth / 2.0) cc.FallbackSpeed cc.FallbackVz state
-                state.Ball <- { state.Ball with Possession = InFlight }
+                state.Ball <- { state.Ball with Control = Airborne }
                 clearOffsideSnapshot state
                 ActionResult.ofEvents [ createEvent subTick crosser.Id attClubId (CrossLaunched(crosser.Id, crosser.Id)) ]
             else
@@ -93,14 +93,14 @@ module CrossAction =
                     EstimatedArrivalSubTick = arrivalSubTick
                     KickerId = crosser.Id
                     PeakHeight = cc.Vz * cc.Vz / (2.0 * 9.80665<meter/second^2>)
-                    ActionKind = BallActionKind.Cross(crosser.Id, target.Id, quality)
+                    Intent = Aimed(crosser.Id, target.Id, quality, AimedKind.Cross)
                 }
 
                 ballTowards crosserPos.X crosserPos.Y targetX targetY cc.Speed cc.Vz state
 
                 state.Ball <-
                     { state.Ball with
-                        Possession = InFlight
+                        Control = Airborne
                         Spin = spin
                         LastTouchBy = Some crosser.Id
                         Trajectory = Some trajectory }

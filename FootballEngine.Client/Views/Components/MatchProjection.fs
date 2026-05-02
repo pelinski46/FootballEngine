@@ -67,8 +67,8 @@ module MatchProjection =
 
     let project (ctx: MatchContext) (snapshot: SimSnapshot) (timeSeconds: float) : RenderFrame =
         let controlledBy =
-            match snapshot.Possession with
-            | Owned(_, pid) -> Some pid
+            match snapshot.Control with
+            | Controlled(_, pid) | Receiving(_, pid, _) -> Some pid
             | _ -> None
 
         let projectTeam
@@ -129,17 +129,20 @@ module MatchProjection =
               Height = float snapshot.BallZ }
 
         let attackingClubId =
-            match snapshot.Possession with
-            | Owned(club, _)
-            | SetPiece(club, _)
-            | Contest club
-            | Transition club ->
+            match snapshot.Control with
+            | Controlled(club, _) | Receiving(club, _, _) | Contesting(club) ->
                 if club = HomeClub then
                     Some ctx.Home.Id
                 else
                     Some ctx.Away.Id
-            | InFlight
-            | Loose -> None
+            | Airborne | Free ->
+                match snapshot.Flow with
+                | RestartDelay r ->
+                    if r.Team = HomeClub then
+                        Some ctx.Home.Id
+                    else
+                        Some ctx.Away.Id
+                | _ -> None
 
         { Players = Array.append homePlayers awayPlayers
           Ball = renderBall

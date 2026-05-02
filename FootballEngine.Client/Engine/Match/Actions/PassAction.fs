@@ -47,7 +47,7 @@ module PassAction =
         (ty: float<meter>)
         (speed: float<meter / second>)
         (vz: float<meter / second>)
-        (actionKind: BallActionKind)
+        (intent: InFlightIntent)
         : BallTrajectory =
         let dist = sqrt ((tx - ox) * (tx - ox) + (ty - oy) * (ty - oy))
 
@@ -74,7 +74,7 @@ module PassAction =
           EstimatedArrivalSubTick = arrivalSubTick
           KickerId = passerId
           PeakHeight = peakHeight
-          ActionKind = actionKind }
+          Intent = intent }
 
     let resolve
         (subTick: int)
@@ -112,16 +112,12 @@ module PassAction =
                   Vz = 0.0<meter / second> }
 
             let passerIdx =
-                match state.Ball.Possession with
-                | Owned(_, ctrlId) ->
+                match state.Ball.Control with
+                | Controlled(_, ctrlId) ->
                     match findIdxByPid ctrlId attFrame attRoster with
                     | ValueSome i -> Some i
                     | ValueNone -> None
-                | Loose
-                | InFlight
-                | Possession.SetPiece _
-                | Contest _
-                | Transition _ ->
+                | _ ->
                     match state.Ball.LastTouchBy with
                     | Some pid ->
                         match findIdxByPid pid attFrame attRoster with
@@ -246,7 +242,7 @@ module PassAction =
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz state
 
-                    let actionKind = BallActionKind.Pass(passer.Id, target.Id, quality)
+                    let intent = Aimed(passer.Id, target.Id, quality, RegularPass)
 
                     let traj =
                         makeTrajectory
@@ -259,14 +255,14 @@ module PassAction =
                             actualTargetY
                             pc.Speed
                             pc.Vz
-                            actionKind
+                            intent
 
                     state.Ball <-
                         { state.Ball with
                             Spin =
                                 { Top = 0.0<radianPerSecond>
                                   Side = 0.0<radianPerSecond> }
-                            Possession = InFlight
+                            Control = Airborne
                             PendingOffsideSnapshot = Some snapshot
                             Trajectory = Some traj }
 
@@ -393,7 +389,7 @@ module PassAction =
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.LongBallSpeed pc.LongBallVz state
 
-                    let actionKind = BallActionKind.LongBall(passer.Id, target.Id, quality)
+                    let intent = Aimed(passer.Id, target.Id, quality, AimedKind.LongBall)
 
                     let traj =
                         makeTrajectory
@@ -406,11 +402,11 @@ module PassAction =
                             actualTargetY
                             pc.LongBallSpeed
                             pc.LongBallVz
-                            actionKind
+                            intent
 
                     state.Ball <-
                         { state.Ball with
-                            Possession = InFlight
+                            Control = Airborne
                             PendingOffsideSnapshot = Some snapshot
                             Trajectory = Some traj }
 
@@ -446,16 +442,12 @@ module PassAction =
 
         // Find the passer
         let passerIdx =
-            match state.Ball.Possession with
-            | Owned(_, ctrlId) ->
+            match state.Ball.Control with
+            | Controlled(_, ctrlId) ->
                 match findIdxByPid ctrlId attFrame attRoster with
                 | ValueSome i -> Some i
                 | ValueNone -> None
-            | Loose
-            | InFlight
-            | Possession.SetPiece _
-            | Contest _
-            | Transition _ ->
+            | _ ->
                 match state.Ball.LastTouchBy with
                 | Some pid ->
                     match findIdxByPid pid attFrame attRoster with
@@ -583,7 +575,7 @@ module PassAction =
 
                     ballTowards passerSp.X passerSp.Y actualTargetX actualTargetY pc.Speed pc.Vz state
 
-                    let actionKind = BallActionKind.Pass(passer.Id, receiver.Id, 0.7)
+                    let intent = Aimed(passer.Id, receiver.Id, 0.7, RegularPass)
 
                     let traj =
                         makeTrajectory
@@ -596,14 +588,14 @@ module PassAction =
                             actualTargetY
                             pc.Speed
                             pc.Vz
-                            actionKind
+                            intent
 
                     state.Ball <-
                         { state.Ball with
                             Spin =
                                 { Top = 0.0<radianPerSecond>
                                   Side = 0.0<radianPerSecond> }
-                            Possession = InFlight
+                            Control = Airborne
                             PendingOffsideSnapshot = Some snapshot
                             Trajectory = Some traj }
 

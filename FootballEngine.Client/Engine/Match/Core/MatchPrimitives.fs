@@ -62,13 +62,6 @@ type MatchFlow =
     | FullTimeReview
     | MatchEnded
 
-type Possession =
-    | Loose
-    | Owned of ClubSide * PlayerId
-    | InFlight
-    | Contest of ClubSide
-    | Transition of ClubSide
-    | SetPiece of ClubSide * SetPieceKind
 
 type ArrivalWinner =
     | IntendedTarget of player: Player * club: ClubSide

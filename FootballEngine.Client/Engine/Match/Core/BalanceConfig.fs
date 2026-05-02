@@ -324,7 +324,8 @@ type PhysicsConfig =
       ArrivalAnticipationQuality: float
       ArrivalCompetitionRadius: float<meter>
       ArrivalConvergenceThreshold: float<meter / second>
-      ArrivalContestThreshold: float }
+      ArrivalContestThreshold: float
+      ReceivingGraceSubTicks: int }
 
 type GKConfig =
     { CatchHandlingMult: float
@@ -429,7 +430,71 @@ type DecisionConfig =
       LongBallDirectnessBonus: float
       CreativityWeight: float
       DirectnessWeight: float
-      DecisionTemperature: float }
+      DecisionTemperature: float
+      // ----------------------------------------------------------
+      // Decision thresholds — calibrated against PlayerScorer output
+      // ranges. Moving these here removes all magic numbers from
+      // PlayerDecision.fs. Tune here, never in logic code.
+      // ----------------------------------------------------------
+      // Shoot: scorer output ~0.20 (25m, avg) to ~0.82 (8m, elite ST).
+      // 0.35 lets decent strikers shoot from medium range; direct teams
+      // get a further reduction via ShootDirectnessThresholdMod.
+      ShootMinThreshold: float // base minimum to attempt a shot
+      ShootDirectnessThresholdMod: float // subtracted × t.Directness
+      // Pass: scorer output reliably ~0.40-0.65 for any player with a
+      // target. 0.25 blocks only truly broken passes (no vision, pressed,
+      // bad target). Direct teams raise the bar slightly.
+      PassMinThreshold: float
+      PassDirectnessThresholdMod: float
+      // Dribble: scorer output ~0.20-0.70. 0.15 blocks only the worst
+      // cases; tactical gates (zone, tempo) add further context.
+      DribbleMinThreshold: float
+      DribbleDefZoneDirectnessMin: float // min profile.Directness to dribble in def zone
+      DribbleHighTempo: float // t.Tempo above which directness check kicks in
+      DribbleHighTempoDirectnessMin: float // min profile.Directness when tempo is high
+      // Long ball: scorer output ~0.20-0.55. 0.15 lets pressed defenders
+      // hoof it; direct teams lower bar further.
+      LongBallMinThreshold: float
+      LongBallDirectnessThresholdMod: float
+      // Space pass: minimum SpaceScorer score to enter as candidate.
+      SpacePassMinScore: float
+      // ----------------------------------------------------------
+      // Mental attribute modifiers (Change 1)
+      // ----------------------------------------------------------
+      ShootDecisionsWeight: float
+      ShootBraveryMod: float
+      ShootConcentrationMod: float
+      PassDecisionsWeight: float
+      PassConcentrationMod: float
+      DribbleBraveryMod: float
+      // ----------------------------------------------------------
+      // xG integration (Change 3)
+      // ----------------------------------------------------------
+      ShootXGWeight: float
+      // ----------------------------------------------------------
+      // OpponentModel impact (Change 4)
+      // ----------------------------------------------------------
+      PassHighPressPenalty: float
+      DribbleAggressivePenalty: float
+      LongBallSlowTargetBonus: float
+      // ----------------------------------------------------------
+      // Pass trajectory (Change 5)
+      // ----------------------------------------------------------
+      PassTrajectoryBonus: float
+      // ----------------------------------------------------------
+      // Personality weights (Change 6)
+      // ----------------------------------------------------------
+      PersonalityFlairWeight: float
+      PersonalityTeamworkWeight: float
+      PersonalityConsistencyMod: float
+      // ----------------------------------------------------------
+      // Bravery pressure resistance (Change 7)
+      // ----------------------------------------------------------
+      ShootBraveryPressureMod: float
+      // ----------------------------------------------------------
+      // Anticipation bonus (Change 8)
+      // ----------------------------------------------------------
+      PassAnticipationBonus: float }
 
 type PerceptionConfig =
     { VisionRadiusBase: float<meter>
@@ -749,7 +814,8 @@ module BalanceConfig =
               ArrivalAnticipationQuality = 0.8
               ArrivalCompetitionRadius = 2.0<meter>
               ArrivalConvergenceThreshold = -2.0<meter / second>
-              ArrivalContestThreshold = 0.1 }
+              ArrivalContestThreshold = 0.1
+              ReceivingGraceSubTicks = 6 }
           Timing =
             { DuelChainDelay = TickDelay.ofSeconds clock 4.0 1.0 2.0 7.0
               DuelNextDelay = TickDelay.ofSeconds clock 24.0 5.0 12.0 38.0
@@ -823,7 +889,42 @@ module BalanceConfig =
               LongBallDirectnessBonus = 0.20
               CreativityWeight = 0.10
               DirectnessWeight = 0.06
-              DecisionTemperature = 0.15 }
+              DecisionTemperature = 0.15
+              // Decision thresholds — see DecisionConfig comments for derivation
+              ShootMinThreshold = 0.35 // ~avg striker from 20m passes
+              ShootDirectnessThresholdMod = 0.10 // directness=1.0 -> threshold=0.25
+              PassMinThreshold = 0.25 // only blocks truly broken passes
+              PassDirectnessThresholdMod = 0.08 // directness=1.0 -> threshold=0.17
+              DribbleMinThreshold = 0.15
+              DribbleDefZoneDirectnessMin = 0.20
+              DribbleHighTempo = 0.70
+              DribbleHighTempoDirectnessMin = 0.40
+              LongBallMinThreshold = 0.15
+              LongBallDirectnessThresholdMod = 0.06 // directness=1.0 -> threshold=0.09
+              SpacePassMinScore = 0.25
+              // Mental attribute modifiers (Change 1)
+              ShootDecisionsWeight = 0.15
+              ShootBraveryMod = 0.12
+              ShootConcentrationMod = 0.08
+              PassDecisionsWeight = 0.12
+              PassConcentrationMod = 0.08
+              DribbleBraveryMod = 0.15
+              // xG integration (Change 3)
+              ShootXGWeight = 0.20
+              // OpponentModel impact (Change 4)
+              PassHighPressPenalty = 0.07
+              DribbleAggressivePenalty = 0.08
+              LongBallSlowTargetBonus = 0.12
+              // Pass trajectory (Change 5)
+              PassTrajectoryBonus = 0.15
+              // Personality weights (Change 6)
+              PersonalityFlairWeight = 0.60
+              PersonalityTeamworkWeight = 0.45
+              PersonalityConsistencyMod = 0.30
+              // Bravery pressure resistance (Change 7)
+              ShootBraveryPressureMod = 0.20
+              // Anticipation bonus (Change 8)
+              PassAnticipationBonus = 0.12 }
           Perception =
             { VisionRadiusBase = 20.0<meter>
               VisionRadiusMax = 45.0<meter>

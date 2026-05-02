@@ -34,6 +34,10 @@ module DuelAction =
         let attRoster = getRoster ctx actx.Att.ClubSide
         let defRoster = getRoster ctx actx.Def.ClubSide
 
+        match state.Ball.Control with
+        | Receiving _ -> [], []
+        | _ ->
+
         match
             nearestActiveSlotInFrame attFrame bX bY, nearestActiveSlotInFrame defFrame bX bY
         with
@@ -57,7 +61,7 @@ module DuelAction =
             if bernoulli foulChance then
                 state.Ball <-
                     { state.Ball with
-                        Possession = Contest(actx.Def.ClubSide) }
+                        Control = Contesting(actx.Def.ClubSide) }
 
                 adjustMomentum actx.Att.AttackDir (-ctx.Config.Tackle.FoulMomentum) state
 
@@ -239,7 +243,7 @@ module DuelAction =
                 if bernoulli foulChance then
                     state.Ball <-
                         { state.Ball with
-                            Possession = SetPiece(actx.Att.ClubSide, SetPieceKind.FreeKick) }
+                            Control = Free }
 
                     adjustMomentum actx.Att.AttackDir (-tCfg.FoulMomentum) state
 

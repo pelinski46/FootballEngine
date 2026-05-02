@@ -3,14 +3,16 @@ namespace FootballEngine
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
 
-type BallActionKind =
-    | Pass of passerId: PlayerId * targetId: PlayerId * quality: float
-    | Shot of shooterId: PlayerId * quality: float
-    | Cross of crosserId: PlayerId * targetId: PlayerId * quality: float
-    | LongBall of passerId: PlayerId * targetId: PlayerId * quality: float
-    | Clearance of playerId: PlayerId
-    | Deflection of playerId: PlayerId
-    | FreeBall
+type AimedKind =
+    | RegularPass
+    | LongBall
+    | Cross
+
+type InFlightIntent =
+    | Aimed of passerId: PlayerId * targetId: PlayerId * quality: float * kind: AimedKind
+    | Struck of shooterId: PlayerId * quality: float
+    | Cleared of playerId: PlayerId
+    | Uncontrolled
 
 type BallTrajectory =
     { OriginX: float<meter>
@@ -21,12 +23,19 @@ type BallTrajectory =
       EstimatedArrivalSubTick: int
       KickerId: PlayerId
       PeakHeight: float<meter>
-      ActionKind: BallActionKind }
+      Intent: InFlightIntent }
+
+type BallControl =
+    | Free
+    | Receiving of ClubSide * PlayerId * sinceSubTick: int
+    | Controlled of ClubSide * PlayerId
+    | Airborne
+    | Contesting of ClubSide
 
 type BallPhysicsState =
     { Position: Spatial
       Spin: Spin
-      Possession: Possession
+      Control: BallControl
       LastTouchBy: PlayerId option
       PendingOffsideSnapshot: OffsideSnapshot option
       StationarySinceSubTick: int option

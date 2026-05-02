@@ -15,7 +15,7 @@ type SimSnapshot =
       BallVz: float<meter / second>
       BallSpinTop: float<radianPerSecond>
       BallSpinSide: float<radianPerSecond>
-      Possession: Possession
+      Control: BallControl
       BallTrajectory: BallTrajectory option
       HomeScore: int
       AwayScore: int
@@ -63,7 +63,7 @@ module SnapshotBuilder =
           BallVz = state.Ball.Position.Vz
           BallSpinTop = state.Ball.Spin.Top
           BallSpinSide = state.Ball.Spin.Side
-          Possession = state.Ball.Possession
+          Control = state.Ball.Control
           BallTrajectory = state.Ball.Trajectory
           HomeScore = state.HomeScore
           AwayScore = state.AwayScore
