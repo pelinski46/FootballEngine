@@ -1,14 +1,15 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
-open FootballEngine.ActionMath
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
+open FootballEngine.Player.Decision.ActionMath
+
 
 module Interception =
     let estimateTimeToBall (config: PhysicsConfig) (player: Player) (pPos: Spatial) (ballPos: Spatial) : float =
         let captureRadius =
-            config.ContactRadius
-            + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+            config.ContactRadius + (float player.Technical.BallControl / 20.0) * 0.20<meter>
 
         let dist = float (ballPos.DistTo2D pPos)
 
@@ -16,8 +17,11 @@ module Interception =
             0.0
         else
             let maxSpeed = float (playerMaxSpeed player.Physical.Pace player.Condition)
-            if maxSpeed <= 1e-6 then System.Double.PositiveInfinity
-            else (dist - float captureRadius) / maxSpeed
+
+            if maxSpeed <= 1e-6 then
+                System.Double.PositiveInfinity
+            else
+                (dist - float captureRadius) / maxSpeed
 
     let evaluateArrival (ctx: ArrivalContext) : ArrivalWinner =
         let anticipationBonus =
@@ -40,49 +44,80 @@ module Interception =
                     let player = roster.Players[i]
                     let px = float frame.Physics.PosX[i] * 1.0<meter>
                     let py = float frame.Physics.PosY[i] * 1.0<meter>
-                    let pPos = { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+                    let pPos =
+                        { X = px
+                          Y = py
+                          Z = 0.0<meter>
+                          Vx = 0.0<meter / second>
+                          Vy = 0.0<meter / second>
+                          Vz = 0.0<meter / second> }
 
                     let distToBall = ballPos.DistTo2D pPos
 
-                    if distToBall > competitionRadius then ()
-                    elif ballSpeed < 0.5<meter/second> then
+                    if distToBall > competitionRadius then
+                        ()
+                    elif ballSpeed < 0.5<meter / second> then
                         let projectedTime = estimateTimeToBall ctx.PhysicsCfg player pPos ballPos
-                        let adjustedTime = if player.Id = ctx.TargetId then projectedTime - anticipationBonus else projectedTime
+
+                        let adjustedTime =
+                            if player.Id = ctx.TargetId then
+                                projectedTime - anticipationBonus
+                            else
+                                projectedTime
+
                         competitors.Add(player, side, adjustedTime)
                     else
                         let toPlayerX = px - ballPos.X
                         let toPlayerY = py - ballPos.Y
                         let toPlayerLen = sqrt (toPlayerX * toPlayerX + toPlayerY * toPlayerY)
 
-                        if toPlayerLen < 0.001<meter> then ()
+                        if toPlayerLen < 0.001<meter> then
+                            ()
                         else
                             let toPlayerNormX = toPlayerX / toPlayerLen
                             let toPlayerNormY = toPlayerY / toPlayerLen
-                            let convergenceSpeed = float (ballPos.Vx * toPlayerNormX + ballPos.Vy * toPlayerNormY)
 
-                            if convergenceSpeed > float convergenceThreshold then ()
+                            let convergenceSpeed =
+                                float (ballPos.Vx * toPlayerNormX + ballPos.Vy * toPlayerNormY)
+
+                            if convergenceSpeed > float convergenceThreshold then
+                                ()
                             else
                                 let projectedTime = estimateTimeToBall ctx.PhysicsCfg player pPos ballPos
-                                let adjustedTime = if player.Id = ctx.TargetId then projectedTime - anticipationBonus else projectedTime
+
+                                let adjustedTime =
+                                    if player.Id = ctx.TargetId then
+                                        projectedTime - anticipationBonus
+                                    else
+                                        projectedTime
+
                                 competitors.Add(player, side, adjustedTime)
                 | _ -> ()
 
         checkPlayer ctx.HomeFrame ctx.HomeRoster HomeClub
         checkPlayer ctx.AwayFrame ctx.AwayRoster AwayClub
 
-        if competitors.Count = 0 then NoOneInRange
+        if competitors.Count = 0 then
+            NoOneInRange
         else
             let sorted = Seq.sortBy (fun (_, _, time) -> time) competitors |> Seq.toList
             let bestPlayer, bestSide, bestTime = sorted.Head
 
             if sorted.Length = 1 then
-                if bestPlayer.Id = ctx.TargetId then IntendedTarget(bestPlayer, bestSide)
-                else Intercepted(bestPlayer, bestSide)
+                if bestPlayer.Id = ctx.TargetId then
+                    IntendedTarget(bestPlayer, bestSide)
+                else
+                    Intercepted(bestPlayer, bestSide)
             else
                 let secondTime = (sorted.Item 1 |> fun (_, _, t) -> t)
-                if secondTime - bestTime <= contestThreshold then Contested
-                else if bestPlayer.Id = ctx.TargetId then IntendedTarget(bestPlayer, bestSide)
-                else Intercepted(bestPlayer, bestSide)
+
+                if secondTime - bestTime <= contestThreshold then
+                    Contested
+                else if bestPlayer.Id = ctx.TargetId then
+                    IntendedTarget(bestPlayer, bestSide)
+                else
+                    Intercepted(bestPlayer, bestSide)
 
     let chooseBestInterceptorSoA
         (config: PhysicsConfig)
@@ -94,27 +129,61 @@ module Interception =
         : Player option * Spatial option * bool =
         let mutable touchingCount = 0
         let mutable touchingPlayer1 = Unchecked.defaultof<Player>
-        let mutable touchingPos1 = { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+        let mutable touchingPos1 =
+            { X = 0.0<meter>
+              Y = 0.0<meter>
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
+
         let mutable touchingPlayer2 = Unchecked.defaultof<Player>
-        let mutable touchingPos2 = { X = 0.0<meter>; Y = 0.0<meter>; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+
+        let mutable touchingPos2 =
+            { X = 0.0<meter>
+              Y = 0.0<meter>
+              Z = 0.0<meter>
+              Vx = 0.0<meter / second>
+              Vy = 0.0<meter / second>
+              Vz = 0.0<meter / second> }
 
         for i = 0 to homeFrame.SlotCount - 1 do
             match homeFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
                 let player = homeRoster.Players[i]
+
                 let captureRadius =
-                    config.ContactRadius
-                    + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+                    config.ContactRadius + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+
                 let px = float homeFrame.Physics.PosX[i] * 1.0<meter>
                 let py = float homeFrame.Physics.PosY[i] * 1.0<meter>
                 let dx = ballPos.X - px
                 let dy = ballPos.Y - py
                 let dist = sqrt (dx * dx + dy * dy)
+
                 if dist <= captureRadius then
                     if touchingCount = 0 then
-                        touchingPlayer1 <- player; touchingPos1 <- { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        touchingPlayer1 <- player
+
+                        touchingPos1 <-
+                            { X = px
+                              Y = py
+                              Z = 0.0<meter>
+                              Vx = 0.0<meter / second>
+                              Vy = 0.0<meter / second>
+                              Vz = 0.0<meter / second> }
                     elif touchingCount = 1 then
-                        touchingPlayer2 <- player; touchingPos2 <- { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        touchingPlayer2 <- player
+
+                        touchingPos2 <-
+                            { X = px
+                              Y = py
+                              Z = 0.0<meter>
+                              Vx = 0.0<meter / second>
+                              Vy = 0.0<meter / second>
+                              Vz = 0.0<meter / second> }
+
                     touchingCount <- touchingCount + 1
             | _ -> ()
 
@@ -122,19 +191,38 @@ module Interception =
             match awayFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
                 let player = awayRoster.Players[i]
+
                 let captureRadius =
-                    config.ContactRadius
-                    + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+                    config.ContactRadius + (float player.Technical.BallControl / 20.0) * 0.20<meter>
+
                 let px = float awayFrame.Physics.PosX[i] * 1.0<meter>
                 let py = float awayFrame.Physics.PosY[i] * 1.0<meter>
                 let dx = ballPos.X - px
                 let dy = ballPos.Y - py
                 let dist = sqrt (dx * dx + dy * dy)
+
                 if dist <= captureRadius then
                     if touchingCount = 0 then
-                        touchingPlayer1 <- player; touchingPos1 <- { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        touchingPlayer1 <- player
+
+                        touchingPos1 <-
+                            { X = px
+                              Y = py
+                              Z = 0.0<meter>
+                              Vx = 0.0<meter / second>
+                              Vy = 0.0<meter / second>
+                              Vz = 0.0<meter / second> }
                     elif touchingCount = 1 then
-                        touchingPlayer2 <- player; touchingPos2 <- { X = px; Y = py; Z = 0.0<meter>; Vx = 0.0<meter/second>; Vy = 0.0<meter/second>; Vz = 0.0<meter/second> }
+                        touchingPlayer2 <- player
+
+                        touchingPos2 <-
+                            { X = px
+                              Y = py
+                              Z = 0.0<meter>
+                              Vx = 0.0<meter / second>
+                              Vy = 0.0<meter / second>
+                              Vz = 0.0<meter / second> }
+
                     touchingCount <- touchingCount + 1
             | _ -> ()
 

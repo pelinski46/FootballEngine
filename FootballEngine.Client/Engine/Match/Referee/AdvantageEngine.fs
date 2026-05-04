@@ -1,7 +1,9 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open PhysicsContract
+
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 open Stats
 
 type AdvantageState =
@@ -29,9 +31,10 @@ module AdvantageEngine =
 
         let hasPossession =
             match ballControl with
-            | Controlled(side, _) | Receiving(side, _, _) -> side = fouledTeam
-            | Contesting(side)                             -> side = fouledTeam
-            | _                                            -> false
+            | Controlled(side, _)
+            | Receiving(side, _, _) -> side = fouledTeam
+            | Contesting(side) -> side = fouledTeam
+            | _ -> false
 
         if not hasPossession then
             StopPlay "no possession"
@@ -61,10 +64,12 @@ module AdvantageEngine =
         : bool =
 
         let window = 5 * 40
+
         if currentSubTick - advSubTick > window then
             true
         else
             match ballControl with
-            | Controlled(side, _) | Receiving(side, _, _) -> side <> fouledTeam
-            | Contesting(side)                             -> side <> fouledTeam
-            | _                                            -> false
+            | Controlled(side, _)
+            | Receiving(side, _, _) -> side <> fouledTeam
+            | Contesting(side) -> side <> fouledTeam
+            | _ -> false

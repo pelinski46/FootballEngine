@@ -1,8 +1,9 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.Movement
+
 open FootballEngine.PhysicsContract
+open FootballEngine.TeamOrchestrator
 open SimStateOps
 
 [<Struct>]
@@ -22,7 +23,8 @@ module MovementScorer =
 
     let private hasBall (ballState: BallPhysicsState) (pid: PlayerId) =
         match ballState.Control with
-        | Controlled(_, p) | Receiving(_, p, _) -> p = pid
+        | Controlled(_, p)
+        | Receiving(_, p, _) -> p = pid
         | _ -> false
 
     let maintainShapeScore (ctx: AgentContext) =
@@ -228,7 +230,7 @@ module MovementScorer =
 
             let buildUpSide =
                 match ctx.DirectiveKind with
-                | FootballEngine.Movement.DirectiveKind.DirectAttack -> BuildUpSide.Central
+                | DirectiveKind.DirectAttack -> BuildUpSide.Central
                 | _ -> BuildUpSide.Balanced
 
             let buildUpSideBonus =
@@ -307,48 +309,51 @@ module MovementScorer =
                 else
                     let baseScore = 1.5 - (float dist / 20.0)
 
-                    let roleMod =
+                    let role =
                         if ctx.MeIdx < ctx.Team.OwnFrame.SlotCount then
-                            let role =
-                                LanguagePrimitives.EnumOfValue<byte, DefensiveRole>
-                                    ctx.Team.OwnFrame.DefensiveRole[ctx.MeIdx]
-
-                            match role with
-                            | DefensiveRole.FirstDefender -> 1.2
-                            | _ -> if dist < 5.0<meter> then 0.8 else 0.3
+                            LanguagePrimitives.EnumOfValue<byte, DefensiveRole>
+                                ctx.Team.OwnFrame.DefensiveRole[ctx.MeIdx]
                         else
-                            0.3
+                            DefensiveRole.Marker
 
-                    baseScore * roleMod
+                    let roleMod =
+                        match role with
+                        | DefensiveRole.FirstDefender -> 1.2
+                        | _ -> if dist < 5.0<meter> then 0.8 else 0.3
 
-                    let frame = ctx.Team.OwnFrame
+                    if role = DefensiveRole.FirstDefender then
+                        // The primary chaser is not constrained by tactical shape
+                        baseScore * roleMod
+                    else
+                        let frame = ctx.Team.OwnFrame
 
-                    let shapeDist =
-                        if ctx.MeIdx < frame.SlotCount then
-                            let spX = float frame.SupportPositionX[ctx.MeIdx] * 1.0<meter>
-                            let spY = float frame.SupportPositionY[ctx.MeIdx] * 1.0<meter>
+                        let shapeDist =
+                            if ctx.MeIdx < frame.SlotCount then
+                                let spX = float frame.SupportPositionX[ctx.MeIdx] * 1.0<meter>
+                                let spY = float frame.SupportPositionY[ctx.MeIdx] * 1.0<meter>
 
-                            if spX <> 0.0<meter> || spY <> 0.0<meter> then
-                                ctx.MyPos.DistTo2D
-                                    { X = spX
-                                      Y = spY
-                                      Z = 0.0<meter>
-                                      Vx = 0.0<meter / second>
-                                      Vy = 0.0<meter / second>
-                                      Vz = 0.0<meter / second> }
+                                if spX <> 0.0<meter> || spY <> 0.0<meter> then
+                                    ctx.MyPos.DistTo2D
+                                        { X = spX
+                                          Y = spY
+                                          Z = 0.0<meter>
+                                          Vx = 0.0<meter / second>
+                                          Vy = 0.0<meter / second>
+                                          Vz = 0.0<meter / second> }
+                                else
+                                    0.0<meter>
                             else
                                 0.0<meter>
-                        else
-                            0.0<meter>
 
-                    let positionalPenalty =
-                        if shapeDist > 12.0<meter> then
-                            1.0 - (float shapeDist - 12.0) / 25.0
-                        else
-                            1.0
+                        let positionalPenalty =
+                            if shapeDist > 12.0<meter> then
+                                1.0 - (float shapeDist - 12.0) / 25.0
+                            else
+                                1.0
 
-                    baseScore * roleMod * positionalPenalty
-            | Controlled(oppositeSide, _) | Receiving(oppositeSide, _, _) ->
+                        baseScore * roleMod * positionalPenalty
+            | Controlled(oppositeSide, _)
+            | Receiving(oppositeSide, _, _) ->
                 if oppositeSide = ctx.Team.ClubSide then
                     0.0
                 else
@@ -362,11 +367,15 @@ module MovementScorer =
 
     let applyEmergentModifiers (emergent: EmergentState) (ctx: AgentContext) (scores: MovementScores) : MovementScores =
         let transition = ctx.DirectiveParams.Transition
+
         { scores with
-            PressBall     = scores.PressBall     * emergent.PressingIntensity
-            MarkMan       = scores.MarkMan       * emergent.CompactnessLevel
-            CoverSpace    = scores.CoverSpace    * emergent.CompactnessLevel * (1.0 - transition.DirectnessBias)
-            SupportAttack = scores.SupportAttack * emergent.RiskAppetite     * (1.0 + transition.WingBias) }
+            PressBall = scores.PressBall * emergent.PressingIntensity
+            MarkMan = scores.MarkMan * emergent.CompactnessLevel
+            CoverSpace =
+                scores.CoverSpace
+                * emergent.CompactnessLevel
+                * (1.0 - transition.DirectnessBias)
+            SupportAttack = scores.SupportAttack * emergent.RiskAppetite * (1.0 + transition.WingBias) }
 
     let interceptPassScore (ctx: AgentContext) : float =
         if ctx.TeamHasBall then
@@ -705,7 +714,8 @@ module MovementScorer =
             | ValueNone -> bestIntent
             | ValueSome prev ->
                 let prevScore = scoreForIntent scores prev
-                if bestScore > prevScore + 0.12 then bestIntent else prev
+                // Threshold increased to 0.40 and a small persistence bonus (0.05) to current intent
+                if bestScore > prevScore + 0.40 then bestIntent else prev
 
     let pickIntent (currentSubTick: int) (scores: MovementScores) (ctx: AgentContext) : MovementIntent =
         match ctx.BallState.Control with
@@ -754,6 +764,7 @@ module MovementScorer =
                               Vx = 0.0<meter / second>
                               Vy = 0.0<meter / second>
                               Vz = 0.0<meter / second> }
-                | Cleared _ | Uncontrolled -> RecoverBall landingPos
+                | Cleared _
+                | Uncontrolled -> RecoverBall landingPos
             | None -> pickIntentNormal currentSubTick scores ctx
         | _ -> pickIntentNormal currentSubTick scores ctx

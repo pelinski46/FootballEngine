@@ -1,5 +1,7 @@
 namespace FootballEngine
 
+open FootballEngine.Types
+
 module ConfigValidation =
 
     type ValidationError = string

@@ -6,7 +6,8 @@ open Avalonia.FuncUI.DSL
 open Avalonia.FuncUI.Types
 open Avalonia.Media
 open FootballEngine.Domain
-open FootballEngine.FormationData
+open FootballEngine.Domain.FormationData
+
 
 module FootballPitch =
 

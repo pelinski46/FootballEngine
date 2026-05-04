@@ -4,6 +4,7 @@ open Elmish
 open FootballEngine.AppMsgs
 open FootballEngine.Domain
 open AppTypes
+open FootballEngine.Types
 open FootballEngine.World
 open FootballEngine.Data
 
@@ -168,6 +169,7 @@ module AppState =
                 match ModLoader.loadAll ModPaths.builtinsDir ModPaths.modsDir with
                 | Ok data ->
                     DataRegistry.setLoadedData data
+
                     { state with
                         Mode = InGame(gs, managerEmployment gs)
                         CurrentPage = HomePage
@@ -531,6 +533,7 @@ module AppState =
             else
                 let dt = 16.67 // 60 FPS
                 let newAccumulator = state.RenderAccumulator + dt
+
                 let effectiveSpeed =
                     match state.ActiveMatchReplay with
                     | Some replay when state.ActiveMatchSnapshot < replay.Snapshots.Length ->
@@ -538,6 +541,7 @@ module AppState =
                         | MatchFlow.Live -> state.PlaybackSpeed
                         | _ -> max 1 (state.PlaybackSpeed / 4)
                     | _ -> state.PlaybackSpeed
+
                 let snapInterval = 125.0 / float effectiveSpeed // ms between snapshots (each snapshot = 125ms game time = 5 subticks at 40Hz)
 
                 if newAccumulator >= snapInterval then
@@ -565,6 +569,7 @@ module AppState =
             match ModLoader.loadAll ModPaths.builtinsDir ModPaths.modsDir with
             | Ok data ->
                 DataRegistry.setLoadedData data
+
                 { state with
                     ModLoadErrors = data.Errors |> List.map string },
                 Cmd.none

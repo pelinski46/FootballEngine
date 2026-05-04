@@ -1,7 +1,9 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
+open FootballEngine.MatchSpatial
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 open FootballEngine.Stats
 open SchedulingTypes
 open SimStateOps
@@ -1493,7 +1495,7 @@ module BallAgent =
 
                                     let timeToBall = Interception.estimateTimeToBall pcfg s pPos withStationary.Position
 
-                                    if timeToBall < 2.0 then
+                                    if timeToBall < 1.0 then
                                         givePossessionTo club s.Id (s.Position = GK) state.SubTick withStationary state
 
                                         { Events = []

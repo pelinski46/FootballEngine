@@ -1,45 +1,54 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open PhysicsContract
-open Stats
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 
 type FoulIntent =
     | Accidental
     | Tactical
     | Aggressive
 
-type FoulContext = {
-    Zone: PitchZone
-    DistanceToGoal: float<meter>
-    AttackersBetweenFoulAndGoal: int
-    BallDirection: AttackDir
-    FoulPosition: float<meter> * float<meter>
-    Reckless: bool
-    ExcessiveForce: bool
-    Intent: FoulIntent
-    LastMan: bool
-    PromisingAttack: bool
-    BallMovingTowardGoal: bool
-}
+type FoulContext =
+    { Zone: PitchZone
+      DistanceToGoal: float<meter>
+      AttackersBetweenFoulAndGoal: int
+      BallDirection: AttackDir
+      FoulPosition: float<meter> * float<meter>
+      Reckless: bool
+      ExcessiveForce: bool
+      Intent: FoulIntent
+      LastMan: bool
+      PromisingAttack: bool
+      BallMovingTowardGoal: bool }
 
 module FoulAnalysis =
 
-    let private countAttackersBetween (foulX: float<meter>) (goalX: float<meter>) (dir: AttackDir)
-        (defFrame: TeamFrame) (defRoster: PlayerRoster) : int =
+    let private countAttackersBetween
+        (foulX: float<meter>)
+        (goalX: float<meter>)
+        (dir: AttackDir)
+        (defFrame: TeamFrame)
+        (defRoster: PlayerRoster)
+        : int =
         let mutable count = 0
         let forward = dir = LeftToRight
+
         for i = 0 to defFrame.SlotCount - 1 do
             match defFrame.Physics.Occupancy[i] with
             | OccupancyKind.Active rosterIdx ->
                 let playerX = float defFrame.Physics.PosX[i] * 1.0<meter>
+
                 let between =
                     if forward then
                         foulX < playerX && playerX <= goalX
                     else
                         goalX <= playerX && playerX < foulX
-                if between then count <- count + 1
+
+                if between then
+                    count <- count + 1
             | _ -> ()
+
         count
 
     let assess
@@ -64,8 +73,10 @@ module FoulAnalysis =
         let distToGoal = distToGoal foulX dir
 
         let (defFrame, defRoster) =
-            if fouledTeam = HomeClub then (awayFrame, awayRoster)
-            else (homeFrame, homeRoster)
+            if fouledTeam = HomeClub then
+                (awayFrame, awayRoster)
+            else
+                (homeFrame, homeRoster)
 
         let attackersBetween = countAttackersBetween foulX goalX dir defFrame defRoster
 
@@ -74,6 +85,7 @@ module FoulAnalysis =
                 match dir with
                 | LeftToRight -> foulX
                 | RightToLeft -> PitchLength - foulX
+
             if effectiveX < 30.0<meter> then DefensiveZone
             elif effectiveX <= 70.0<meter> then MidfieldZone
             else AttackingZone
@@ -84,10 +96,14 @@ module FoulAnalysis =
             zone = AttackingZone || (zone = MidfieldZone && distToGoal < 40.0<meter>)
 
         let intent =
-            if excessiveForce then Aggressive
-            elif reckless then Aggressive
-            elif distToGoal < 30.0<meter> && attackersBetween <= 1 then Tactical
-            else Accidental
+            if excessiveForce then
+                Aggressive
+            elif reckless then
+                Aggressive
+            elif distToGoal < 30.0<meter> && attackersBetween <= 1 then
+                Tactical
+            else
+                Accidental
 
         { Zone = zone
           DistanceToGoal = distToGoal
@@ -108,7 +124,11 @@ module FoulAnalysis =
             DOGSO
         elif ctx.LastMan && ctx.PromisingAttack && ctx.DistanceToGoal < 25.0<meter> then
             DOGSO
-        elif ctx.PromisingAttack && ctx.AttackersBetweenFoulAndGoal <= 1 && ctx.Intent = Tactical then
+        elif
+            ctx.PromisingAttack
+            && ctx.AttackersBetweenFoulAndGoal <= 1
+            && ctx.Intent = Tactical
+        then
             ProfessionalFoul
         elif ctx.PromisingAttack && ctx.Intent = Tactical then
             TacticalFoul
@@ -117,7 +137,9 @@ module FoulAnalysis =
         else
             Trivial
 
-    type CardDecision = Yellow | Red
+    type CardDecision =
+        | Yellow
+        | Red
 
     let decideCard (severity: FoulSeverity) (existingYellows: int) : CardDecision option =
         match severity, existingYellows with

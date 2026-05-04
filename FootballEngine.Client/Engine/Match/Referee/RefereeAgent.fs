@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Types
 open SimStateOps
 open SchedulingTypes
 open Stats
@@ -101,11 +102,16 @@ module RefereeAgent =
                 match state.Ball.GKHoldSinceSubTick with
                 | Some since when state.SubTick - since >= state.Config.GK.MaxHoldSubTicks ->
                     match state.Ball.Control with
-                    | Controlled(side, _) | Receiving(side, _, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
+                    | Controlled(side, _)
+                    | Receiving(side, _, _) -> [ AwardIndirectFreeKick(ClubSide.flip side) ]
                     | _ -> []
                 | _ -> []
 
-            throwInIntent @ goalIntent @ injuryIntent @ stuckBallIntent @ gkTimeWastingIntent
+            throwInIntent
+            @ goalIntent
+            @ injuryIntent
+            @ stuckBallIntent
+            @ gkTimeWastingIntent
         | _ -> []
 
     let decideCard (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =

@@ -82,8 +82,11 @@ module PlayerSteering =
 
             let dist = agent.DistTo targetPos
 
-            if dist < 0.01<meter> then
-                Force.zero
+            if dist < 0.25<meter> then
+                // Braking force to reach zero velocity
+                { Fx = -agent.Vx / (SteeringSeekTimeConstant * 0.5)
+                  Fy = -agent.Vy / (SteeringSeekTimeConstant * 0.5)
+                  Fz = -agent.Vz / (SteeringSeekTimeConstant * 0.5) }
             else
                 let dx = targetPos.X - agent.X
                 let dy = targetPos.Y - agent.Y
@@ -117,8 +120,11 @@ module PlayerSteering =
 
             let dist = agent.DistTo targetPos
 
-            if dist < 0.01<meter> then
-                Force.zero
+            if dist < 0.25<meter> then
+                // Braking force to reach zero velocity
+                { Fx = -agent.Vx / (SteeringArriveTimeConstant * 0.5)
+                  Fy = -agent.Vy / (SteeringArriveTimeConstant * 0.5)
+                  Fz = -agent.Vz / (SteeringArriveTimeConstant * 0.5) }
             else
                 let dx = targetPos.X - agent.X
                 let dy = targetPos.Y - agent.Y

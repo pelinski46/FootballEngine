@@ -1,6 +1,8 @@
 namespace FootballEngine
 
-open SchedulingTypes
+open FootballEngine.Types
+open FootballEngine.Types.SchedulingTypes
+
 
 module PlayerActionOps =
 

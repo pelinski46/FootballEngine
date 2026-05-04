@@ -1,6 +1,7 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+open FootballEngine.Simulation
 open FootballEngine.World
 open ModEditorTypes
 

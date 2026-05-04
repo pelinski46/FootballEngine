@@ -1,7 +1,8 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 open SimStateOps
 
 module GoalDetector =

@@ -1,7 +1,6 @@
 namespace FootballEngine.World.Phases
 
 open System
-open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Stats
 open FootballEngine.World
@@ -81,7 +80,7 @@ module SeasonPhase =
         gs.Clubs
         |> Map.toList
         |> List.filter (fun (id, _) -> id <> gs.UserClubId)
-        |> List.fold (fun acc (clubId, _) -> Lineup.ensureForClub clubId acc) gs
+        |> List.fold (fun acc (clubId, _) -> LineupOps.ensureForClub clubId acc) gs
 
     let private applyLeagueConsequences (gs: GameState) : GameState =
         let objective (rank: int) (total: int) =

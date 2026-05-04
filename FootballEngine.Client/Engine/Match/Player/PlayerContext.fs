@@ -1,47 +1,15 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.Movement
-open FootballEngine.PhysicsContract
+
+
+open FootballEngine.Player.Perception
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 open SimStateOps
 open MatchSpatial
 
-[<Struct>]
-type AgentContext =
-    { MeIdx: int
-      Me: Player
-      Profile: BehavioralProfile
-      MentalState: MentalState
-      MyCondition: int
-      MyPos: Spatial
-      BallState: BallPhysicsState
-      Team: TeamPerspective
-      TeamHasBall: bool
-      Phase: MatchPhase
-      Zone: PitchZone
-      NearestTeammateIdx: int voption
-      NearestOpponentIdx: int voption
-      BestPassTargetIdx: int voption
-      BestPassTargetPos: Spatial voption
-      BallCarrierOppIdx: int16
-      DistToGoal: float<meter>
-      GoalDiff: int
-      Minute: int
-      Urgency: float
-      Tactics: TacticsConfig
-      Decision: DecisionConfig
-      BuildUp: BuildUpConfig
-      Dribble: DribbleConfig
-      DirectiveKind: FootballEngine.Movement.DirectiveKind
-      DirectiveParams: FootballEngine.Movement.DirectiveParams
-      TargetRunner: PlayerId option
-      RunType: RunType option
-      RunTarget: Spatial option
-      PreviousIntent: MovementIntent voption
-      VisibilityMask: VisibilityMask voption
-      CurrentSubTick: int
-      TransitionPressExpiry: int
-      Influence: InfluenceTypes.InfluenceFrame }
+
 
 module AgentContext =
 
@@ -74,9 +42,11 @@ module AgentContext =
 
         let teamHasBall =
             match ballState.Control with
-            | Controlled(side, _) | Receiving(side, _, _) -> side = team.ClubSide
-            | Contesting(side)                             -> side = team.ClubSide
-            | Airborne | Free                              -> false
+            | Controlled(side, _)
+            | Receiving(side, _, _) -> side = team.ClubSide
+            | Contesting(side) -> side = team.ClubSide
+            | Airborne
+            | Free -> false
 
         let tacticsCfg =
             tacticsConfig (getTactics state team.ClubSide) (getInstructions state team.ClubSide)
@@ -198,8 +168,8 @@ module AgentContext =
         let directiveState = SimStateOps.getDirective state team.ClubSide
 
         let directive =
-            FootballEngine.Movement.TeamDirectiveOps.currentDirective directiveState
-            |> Option.defaultValue (FootballEngine.Movement.TeamDirectiveOps.empty state.SubTick)
+            TeamDirectiveOps.currentDirective directiveState
+            |> Option.defaultValue (TeamDirectiveOps.empty state.SubTick)
 
         { MeIdx = meIdx
           Me = me

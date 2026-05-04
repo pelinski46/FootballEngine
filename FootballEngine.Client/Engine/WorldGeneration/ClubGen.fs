@@ -2,8 +2,7 @@ namespace FootballEngine.Generation
 
 open System
 open FootballEngine.Domain
-open FootballEngine.Data
-open FootballEngine.Lineup
+open FootballEngine.Domain.LineupOps
 open FootballEngine.Stats
 
 module ClubGen =
@@ -61,7 +60,8 @@ module ClubGen =
         function
         | 0 ->
             normalFloat 50_000_000.0 8_000_000.0 20_000_000.0 120_000_000.0
-            |> fun baseBudget -> Math.Clamp(baseBudget * (0.7 + float reputation / 9999.0 * 0.6), 1_000_000.0, 200_000_000.0)
+            |> fun baseBudget ->
+                Math.Clamp(baseBudget * (0.7 + float reputation / 9999.0 * 0.6), 1_000_000.0, 200_000_000.0)
             |> decimal
         | 1 -> normalFloat 15_000_000.0 3_000_000.0 5_000_000.0 35_000_000.0 |> decimal
         | _ -> normalFloat 3_000_000.0 800_000.0 500_000.0 8_000_000.0 |> decimal

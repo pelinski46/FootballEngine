@@ -1,6 +1,7 @@
 namespace FootballEngine
 
-open FootballEngine.PhysicsContract
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 
 module BallPhysics =
 
@@ -9,8 +10,7 @@ module BallPhysics =
 
         let magnusX = float spin.Side * config.MagnusCoeff * pos.Vy / 1.0<second>
 
-        let magnusY =
-            float spin.Side * config.MagnusCoeff * (-pos.Vx) / 1.0<second>
+        let magnusY = float spin.Side * config.MagnusCoeff * (-pos.Vx) / 1.0<second>
 
         let magnusZ = float spin.Top * config.MagnusCoeff * speed / 1.0<second>
 
@@ -42,14 +42,11 @@ module BallPhysics =
             Y = clamp pos.Y 0.0<meter> PitchWidth }
 
     let private applyGoalPostHome (config: PhysicsConfig) (pos: Spatial) : Spatial =
-        let inGoalY =
-            pos.Y >= PostNearY && pos.Y <= PostFarY
+        let inGoalY = pos.Y >= PostNearY && pos.Y <= PostFarY
 
         let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= CrossbarHeight
 
-        let nearPost =
-            pos.X >= GoalLineHome - 0.2<meter>
-            && pos.X <= GoalLineHome
+        let nearPost = pos.X >= GoalLineHome - 0.2<meter> && pos.X <= GoalLineHome
 
         if inGoalY && inGoalZ && nearPost then
             { pos with
@@ -59,14 +56,11 @@ module BallPhysics =
             pos
 
     let private applyGoalPostAway (config: PhysicsConfig) (pos: Spatial) : Spatial =
-        let inGoalY =
-            pos.Y >= PostNearY && pos.Y <= PostFarY
+        let inGoalY = pos.Y >= PostNearY && pos.Y <= PostFarY
 
         let inGoalZ = pos.Z >= 0.0<meter> && pos.Z <= CrossbarHeight
 
-        let nearPost =
-            pos.X <= GoalLineAway + 0.2<meter>
-            && pos.X >= GoalLineAway
+        let nearPost = pos.X <= GoalLineAway + 0.2<meter> && pos.X >= GoalLineAway
 
         if inGoalY && inGoalZ && nearPost then
             { pos with

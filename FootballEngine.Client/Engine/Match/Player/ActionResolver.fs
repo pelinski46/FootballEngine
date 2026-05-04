@@ -1,9 +1,15 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.PhysicsContract
+
+open FootballEngine.Player.Actions
+open FootballEngine.Player.Decision
+open FootballEngine.Referee
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
+open FootballEngine.Types.SchedulingTypes
 open SimStateOps
-open SchedulingTypes
+
 
 module ActionResolver =
 
@@ -116,7 +122,7 @@ module ActionResolver =
                 influence
 
         let scores = PlayerScorer.computeAll actx state.MatchMemory
-        let mask   = ActionEligibility.evaluate actx
+        let mask = ActionEligibility.evaluate actx
         PlayerDecision.decide actx scores mask
 
     let private resolveIntent

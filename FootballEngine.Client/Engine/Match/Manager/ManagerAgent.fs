@@ -1,12 +1,16 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open FootballEngine.Movement
+open FootballEngine.Player
 open FootballEngine.Stats
-open FootballEngine.PhysicsContract
+
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
+open FootballEngine.Types.SchedulingTypes
+open FootballEngine.Types.SimulationClock
+open FootballEngine.Types.TacticsConfig
 open SimStateOps
-open SchedulingTypes
-open SimulationClock
+
 
 module ManagerAgent =
 
@@ -323,14 +327,14 @@ module ManagerAgent =
             setTacticsByClubId clubId ctx state newTactics
             // Phase 3: update directive kind when tactics change
             let side = if clubId = ctx.Home.Id then HomeClub else AwayClub
-            let newKind = FootballEngine.Movement.TeamDirectiveOps.kindFromTactics newTactics
+            let newKind = TeamDirectiveOps.kindFromTactics newTactics
 
             let tactics =
                 SimStateOps.tacticsConfig newTactics (SimStateOps.getInstructions state side)
 
             let emergent = SimStateOps.getEmergentState state side
 
-            let directiveParams = SimStateOps.defaultParams tactics emergent
+            let directiveParams = defaultParams tactics emergent
 
             let current = SimStateOps.getDirective state side
 

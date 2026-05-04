@@ -2,6 +2,8 @@ namespace FootballEngine.Client.Views.Components
 
 open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.Simulation
+open FootballEngine.Types
 
 type Vector2 = { X: float; Y: float }
 
@@ -68,7 +70,8 @@ module MatchProjection =
     let project (ctx: MatchContext) (snapshot: SimSnapshot) (timeSeconds: float) : RenderFrame =
         let controlledBy =
             match snapshot.Control with
-            | Controlled(_, pid) | Receiving(_, pid, _) -> Some pid
+            | Controlled(_, pid)
+            | Receiving(_, pid, _) -> Some pid
             | _ -> None
 
         let projectTeam
@@ -130,12 +133,15 @@ module MatchProjection =
 
         let attackingClubId =
             match snapshot.Control with
-            | Controlled(club, _) | Receiving(club, _, _) | Contesting(club) ->
+            | Controlled(club, _)
+            | Receiving(club, _, _)
+            | Contesting(club) ->
                 if club = HomeClub then
                     Some ctx.Home.Id
                 else
                     Some ctx.Away.Id
-            | Airborne | Free ->
+            | Airborne
+            | Free ->
                 match snapshot.Flow with
                 | RestartDelay r ->
                     if r.Team = HomeClub then

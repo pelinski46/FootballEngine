@@ -8,7 +8,8 @@ type SimulationClock =
       SteeringRate: int
       CognitiveRate: int
       ActionRate: int
-      AdaptiveRate: int }
+      ReactiveRate: int
+      StrategicRate: int }
 
 module SimulationClock =
     let defaultClock =
@@ -19,7 +20,8 @@ module SimulationClock =
           SteeringRate = 2
           CognitiveRate = 20
           ActionRate = 120
-          AdaptiveRate = 1200 }
+          ReactiveRate = 120
+          StrategicRate = 1200 }
 
     let dt (c: SimulationClock) : float<second> =
         float c.PhysicsRate / float c.SubTicksPerSecond * 1.0<second>

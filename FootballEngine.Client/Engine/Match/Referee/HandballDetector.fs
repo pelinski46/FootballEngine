@@ -1,7 +1,8 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open PhysicsContract
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
 open Stats
 
 type HandballResult =
@@ -10,16 +11,15 @@ type HandballResult =
     | HandballFreeKick of position: float<meter> * float<meter>
     | HandballPenalty of position: float<meter> * float<meter>
 
-type HandballContext = {
-    BallPos: Spatial
-    PlayerPos: Spatial
-    PlayerId: PlayerId
-    IsGK: bool
-    ArmPosition: float
-    DeliberateMovement: bool
-    DistanceFromShot: float<meter>
-    InPenaltyArea: bool
-}
+type HandballContext =
+    { BallPos: Spatial
+      PlayerPos: Spatial
+      PlayerId: PlayerId
+      IsGK: bool
+      ArmPosition: float
+      DeliberateMovement: bool
+      DistanceFromShot: float<meter>
+      InPenaltyArea: bool }
 
 module HandballDetector =
 
@@ -36,11 +36,11 @@ module HandballDetector =
 
     let private armUnnaturalProbability (armPos: float) (deliberate: bool) : float =
         let baseProb = 0.15 + armPos * 0.3
-        if deliberate then baseProb * 2.0
-        else baseProb
+        if deliberate then baseProb * 2.0 else baseProb
 
     let private closeToShotProbability (dist: float<meter>) : float =
         let d = float dist
+
         if d < 5.0 then 0.8
         elif d < 10.0 then 0.5
         elif d < 15.0 then 0.2
@@ -58,6 +58,7 @@ module HandballDetector =
                 NoHandball
             else
                 let inArea = isInPenaltyArea ctx.PlayerPos.X ctx.PlayerPos.Y defendingSide
+
                 if inArea && ctx.DeliberateMovement then
                     HandballPenalty(ctx.PlayerPos.X, ctx.PlayerPos.Y)
                 elif inArea then
@@ -76,14 +77,14 @@ module HandballDetector =
         (defendingSide: ClubSide)
         : HandballResult =
 
-        let ctx = {
-            BallPos = ballPos
-            PlayerPos = playerPos
-            PlayerId = playerId
-            IsGK = isGK
-            ArmPosition = armPosition
-            DeliberateMovement = deliberate
-            DistanceFromShot = distanceFromShot
-            InPenaltyArea = false
-        }
+        let ctx =
+            { BallPos = ballPos
+              PlayerPos = playerPos
+              PlayerId = playerId
+              IsGK = isGK
+              ArmPosition = armPosition
+              DeliberateMovement = deliberate
+              DistanceFromShot = distanceFromShot
+              InPenaltyArea = false }
+
         assess ctx defendingSide

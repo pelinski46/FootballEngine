@@ -1,9 +1,12 @@
 namespace FootballEngine.World
 
-open BalanceCalibrator
-open FootballEngine
+
 open FootballEngine.Domain
-open FootballEngine.MatchSimulator
+
+open FootballEngine.Simulation
+open FootballEngine.Simulation.BalanceCalibrator
+open FootballEngine.Simulation.MatchSimulator
+open FootballEngine.Types
 open FootballEngine.World.Phases
 open MatchOutcome
 
@@ -104,7 +107,7 @@ module WorldRunner =
             for date in sortedDates do
                 if errors.IsEmpty then
                     let dayFixtures = fixturesByDate[date]
-                    let gsReady = Lineup.ensureForFixtures dayFixtures currentGs
+                    let gsReady = LineupOps.ensureForFixtures dayFixtures currentGs
 
                     let outcomes, errs =
                         dayFixtures
@@ -187,8 +190,8 @@ module WorldRunner =
         | Some(fixtureId, fixture) ->
             let gsReady =
                 gs
-                |> Lineup.ensureForClub fixture.HomeClubId
-                |> Lineup.ensureForClub fixture.AwayClubId
+                |> LineupOps.ensureForClub fixture.HomeClubId
+                |> LineupOps.ensureForClub fixture.AwayClubId
 
             let home = gsReady.Clubs[fixture.HomeClubId]
             let away = gsReady.Clubs[fixture.AwayClubId]
@@ -225,13 +228,7 @@ module WorldRunner =
                 let metrics =
                     MatchMetrics.extract replay.Events fixture.HomeClubId fixture.AwayClubId
 
-                ignore (
-                    calibrateOnce
-                        (getConfig ())
-                        metrics
-                        CalibrationTargets.targetsDefault
-                        0.1
-                )
+                ignore (calibrateOnce (getConfig ()) metrics CalibrationTargets.targetsDefault 0.1)
 
                 let clock1 = WorldClockOps.advance clock
 

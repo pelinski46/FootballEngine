@@ -1,11 +1,16 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
-open Stats
+open FootballEngine.Types
 
 module VARDetector =
 
-    let detectGoalCheck (scoringClub: ClubSide) (scorerId: PlayerId option) (isOwnGoal: bool) (subTick: int) : VARReviewableIncident option =
+    let detectGoalCheck
+        (scoringClub: ClubSide)
+        (scorerId: PlayerId option)
+        (isOwnGoal: bool)
+        (subTick: int)
+        : VARReviewableIncident option =
         Some(GoalCheck(scoringClub, scorerId, isOwnGoal, subTick))
 
     let detectPenaltyCheck (awardedTo: ClubSide) (foulX: float) (foulY: float) : VARReviewableIncident option =

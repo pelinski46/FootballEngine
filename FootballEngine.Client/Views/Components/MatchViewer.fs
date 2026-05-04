@@ -10,10 +10,12 @@ open Avalonia.FuncUI.Types
 open Avalonia.Platform
 open Avalonia.Rendering.SceneGraph
 open Avalonia.Skia
+open FootballEngine.Simulation
+open FootballEngine.Types
+open FootballEngine.Types.SimulationClock
 open SkiaSharp
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.SimulationClock
 open FootballEngine.AppTypes
 open FootballEngine.AppMsgs
 open FootballEngine.Icons

@@ -3,117 +3,18 @@ namespace FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Domain.TacticalInstructions
 
-open FootballEngine.PhysicsContract
-open FootballEngine.Movement
-open FootballEngine.SimulationClock
+
+open FootballEngine.MatchSpatial
+open FootballEngine.TeamOrchestrator
+open FootballEngine.Types
+open FootballEngine.Types.PhysicsContract
+open FootballEngine.Types.SimulationClock
 
 module SimStateOps =
 
-    [<Struct>]
-    type TacticsConfig =
-        { PressureDistance: float
-          UrgencyMultiplier: float
-          ForwardPush: float
-          DefensiveDrop: float
-          PressingIntensity: float
-          Width: float
-          Tempo: float
-          Directness: float
-          PressTriggerZone: PitchZone
-          DefensiveShape: float }
-
-    let private baseTacticsConfig =
-        function
-        | TeamTactics.Balanced ->
-            { PressureDistance = 0.0
-              UrgencyMultiplier = 1.0
-              ForwardPush = 0.0
-              DefensiveDrop = 0.0
-              PressingIntensity = 1.0
-              Width = 0.5
-              Tempo = 0.5
-              Directness = 0.5
-              PressTriggerZone = MidfieldZone
-              DefensiveShape = 0.5 }
-        | TeamTactics.Attacking ->
-            { PressureDistance = 8.0
-              UrgencyMultiplier = 1.15
-              ForwardPush = 10.0
-              DefensiveDrop = -5.0
-              PressingIntensity = 1.2
-              Width = 0.6
-              Tempo = 0.6
-              Directness = 0.4
-              PressTriggerZone = AttackingZone
-              DefensiveShape = 0.4 }
-        | TeamTactics.Defensive ->
-            { PressureDistance = -10.0
-              UrgencyMultiplier = 0.9
-              ForwardPush = -5.0
-              DefensiveDrop = 8.0
-              PressingIntensity = 0.7
-              Width = 0.4
-              Tempo = 0.3
-              Directness = 0.6
-              PressTriggerZone = DefensiveZone
-              DefensiveShape = 0.6 }
-        | TeamTactics.Pressing ->
-            { PressureDistance = 12.0
-              UrgencyMultiplier = 1.1
-              ForwardPush = 8.0
-              DefensiveDrop = -3.0
-              PressingIntensity = 1.5
-              Width = 0.5
-              Tempo = 0.7
-              Directness = 0.5
-              PressTriggerZone = AttackingZone
-              DefensiveShape = 0.5 }
-        | TeamTactics.Counter ->
-            { PressureDistance = -6.0
-              UrgencyMultiplier = 1.2
-              ForwardPush = -8.0
-              DefensiveDrop = 6.0
-              PressingIntensity = 0.8
-              Width = 0.3
-              Tempo = 0.8
-              Directness = 0.8
-              PressTriggerZone = MidfieldZone
-              DefensiveShape = 0.4 }
-
-    let defaultPressParams (tactics: TacticsConfig) (emergent: EmergentState) =
-        { Intensity = tactics.PressingIntensity * emergent.PressingIntensity
-          TriggerZone = tactics.PressTriggerZone
-          MinPresserCount = int (3.0 + tactics.PressingIntensity * 3.0) }
-
-    let defaultShapeParams (tactics: TacticsConfig) (emergent: EmergentState) =
-        { Width = tactics.Width * 0.5 + emergent.WingPlayPreference * 0.5
-          DefensiveLineHeight = tactics.DefensiveDrop
-          Compactness = emergent.CompactnessLevel }
-
-    let defaultTransitionParams (tactics: TacticsConfig) (emergent: EmergentState) =
-        { Tempo = tactics.Tempo * 0.6 + emergent.TempoLevel * 0.4
-          DirectnessThreshold = tactics.Directness
-          CounterTrigger = false
-          WingBias       = 0.0
-          DirectnessBias = 0.0 }
-
-    let defaultParams (tactics: TacticsConfig) (emergent: EmergentState) : DirectiveParams =
-        { Press = defaultPressParams tactics emergent
-          Shape = defaultShapeParams tactics emergent
-          Transition = defaultTransitionParams tactics emergent }
-
-    let ofBallX (x: float<meter>) (dir: AttackDir) : PitchZone =
-        let effectiveX =
-            match dir with
-            | LeftToRight -> x
-            | RightToLeft -> PitchLength - x
-
-        if effectiveX < 30.0<meter> then DefensiveZone
-        elif effectiveX <= 70.0<meter> then MidfieldZone
-        else AttackingZone
 
     let tacticsConfig (teamTactics: TeamTactics) (instructions: TacticalInstructions option) =
-        let baseCfg = baseTacticsConfig teamTactics
+        let baseCfg = TacticsConfig.baseTacticsConfig teamTactics
         let instr = instructions |> Option.defaultValue defaultInstructions
         let mentalityMod = float (instr.Mentality - 2) * 0.08
         let defensiveLineMod = float (instr.DefensiveLine - 2) * 3.0
@@ -136,15 +37,9 @@ module SimStateOps =
           PressTriggerZone = pressTriggerZone
           DefensiveShape = baseCfg.DefensiveShape * 0.5 + float instr.DefensiveShape / 4.0 * 0.5 }
 
-    let defaultSpatial (x: float<meter>) (y: float<meter>) : Spatial =
-        { X = x
-          Y = y
-          Z = 0.0<meter>
-          Vx = 0.0<meter / second>
-          Vy = 0.0<meter / second>
-          Vz = 0.0<meter / second> }
 
-    let kickOffSpatial = defaultSpatial HalfwayLineX (PitchWidth / 2.0)
+
+
 
     let getTeam (state: SimState) (side: ClubSide) =
         if side = HomeClub then state.Home else state.Away
@@ -315,12 +210,14 @@ module SimStateOps =
 
     let hasPossession (state: SimState) (pid: PlayerId) : bool =
         match state.Ball.Control with
-        | Controlled(_, p) | Receiving(_, p, _) -> p = pid
+        | Controlled(_, p)
+        | Receiving(_, p, _) -> p = pid
         | _ -> false
 
     let losePossession (state: SimState) =
         match state.Ball.Control with
-        | Controlled(side, _) | Receiving(side, _, _) -> (getTeam state side).ActiveRuns <- []
+        | Controlled(side, _)
+        | Receiving(side, _, _) -> (getTeam state side).ActiveRuns <- []
         | _ -> ()
 
         state.Ball <-
@@ -340,8 +237,8 @@ module SimStateOps =
         (state: SimState)
         =
         match state.Ball.Control with
-        | Controlled(losingClub, _) | Receiving(losingClub, _, _) when losingClub <> club ->
-            (getTeam state losingClub).ActiveRuns <- []
+        | Controlled(losingClub, _)
+        | Receiving(losingClub, _, _) when losingClub <> club -> (getTeam state losingClub).ActiveRuns <- []
         | _ -> ()
 
         state.LastAttackingClub <- club
@@ -349,14 +246,16 @@ module SimStateOps =
         state.Ball <-
             { ballBase with
                 Control =
-                    if isGk then Controlled(club, pid)
-                    else Receiving(club, pid, subTick)
-                LastTouchBy              = Some pid
-                PendingOffsideSnapshot   = None
-                GKHoldSinceSubTick       = if isGk then Some subTick else None
-                PlayerHoldSinceSubTick   = if isGk then None else Some subTick
-                Trajectory               = None
-                Position                 = ballBase.Position }
+                    if isGk then
+                        Controlled(club, pid)
+                    else
+                        Receiving(club, pid, subTick)
+                LastTouchBy = Some pid
+                PendingOffsideSnapshot = None
+                GKHoldSinceSubTick = if isGk then Some subTick else None
+                PlayerHoldSinceSubTick = if isGk then None else Some subTick
+                Trajectory = None
+                Position = ballBase.Position }
 
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
         state.Momentum <- clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
@@ -396,13 +295,7 @@ module SimStateOps =
         elif effectiveX < third * 2.0 then Midfield
         else Attack
 
-    let attackDirFor (clubSide: ClubSide) (state: SimState) =
-        match clubSide with
-        | HomeClub -> state.HomeAttackDir
-        | AwayClub ->
-            match state.HomeAttackDir with
-            | LeftToRight -> RightToLeft
-            | RightToLeft -> LeftToRight
+
 
     let currentPhase (state: SimState) =
         let dir = attackDirFor state.AttackingSide state
@@ -509,22 +402,29 @@ module SimStateOps =
         else
             state.AwayCognitiveFrame <- cf
 
-    let getDirective (state: SimState) (side: ClubSide) : FootballEngine.Movement.TeamDirectiveState =
-        (getTeam state side).Directive
+    let getDirective (state: SimState) (side: ClubSide) : TeamDirectiveState = (getTeam state side).Directive
 
-    let setDirective (state: SimState) (side: ClubSide) (d: FootballEngine.Movement.TeamDirectiveState) =
-        (getTeam state side).Directive <- d
+    let setDirective (state: SimState) (side: ClubSide) (d: TeamDirectiveState) = (getTeam state side).Directive <- d
 
     let suspendDirective (state: SimState) (side: ClubSide) =
         let team = getTeam state side
-        team.Directive <- FootballEngine.Movement.TeamDirectiveOps.suspend team.Directive
+        team.Directive <- TeamDirectiveOps.suspend team.Directive
 
     let resumeDirective (state: SimState) (side: ClubSide) =
         let team = getTeam state side
-        team.Directive <- FootballEngine.Movement.TeamDirectiveOps.resume team.Directive
+        team.Directive <- TeamDirectiveOps.resume team.Directive
+
+    let setDirectiveKind (state: SimState) (side: ClubSide) (kind: DirectiveKind) =
+        match getDirective state side with
+        | TeamDirectiveState.Active d -> setDirective state side (TeamDirectiveState.Active { d with Kind = kind })
+        | TeamDirectiveState.Suspended d ->
+            setDirective state side (TeamDirectiveState.Suspended { d with Kind = kind })
+        | _ -> () // Transitioning or other states — don't interrupt
 
     let expireReceiving (subTick: int) (graceTicks: int) (state: SimState) =
         match state.Ball.Control with
         | Receiving(club, pid, since) when subTick - since >= graceTicks ->
-            state.Ball <- { state.Ball with Control = Controlled(club, pid) }
+            state.Ball <-
+                { state.Ball with
+                    Control = Controlled(club, pid) }
         | _ -> ()

@@ -6,8 +6,9 @@ open FootballEngine.Domain
 open FootballEngine.Icons
 open AppTypes
 open AppMsgs
+open FootballEngine.Types.SimulationClock
 open FootballEngine.World.WorldRunner
-open SimulationClock
+
 
 module UpdateSim =
 

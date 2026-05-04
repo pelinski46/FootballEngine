@@ -3,7 +3,9 @@ namespace FootballEngine
 open System
 open FootballEngine.Domain
 open FootballEngine.PhysicsContract
+open FootballEngine.Player.Actions
 open FootballEngine.SimStateOps
+open FootballEngine.TeamOrchestrator
 
 [<Struct>]
 type ActionScores =
@@ -21,10 +23,10 @@ module PlayerScorer =
     let private directnessFactor (t: TacticsConfig) (profile: BehavioralProfile) =
         t.Directness * 0.6 + profile.Directness * 0.4
 
-    let private buildUpSideBonus (directiveKind: FootballEngine.Movement.DirectiveKind) (pos: Position) =
+    let private buildUpSideBonus (directiveKind: DirectiveKind) (pos: Position) =
         let buildUpSide =
             match directiveKind with
-            | FootballEngine.Movement.DirectiveKind.DirectAttack -> BuildUpSide.Central
+            | DirectiveKind.DirectAttack -> BuildUpSide.Central
             | _ -> BuildUpSide.Balanced
 
         match buildUpSide with

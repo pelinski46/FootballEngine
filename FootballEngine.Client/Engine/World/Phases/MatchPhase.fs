@@ -1,11 +1,10 @@
 namespace FootballEngine.World.Phases
 
-open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.Simulation.MatchSimulator
 open FootballEngine.Stats
+open FootballEngine.Types
 open FootballEngine.World
-open FootballEngine.MatchSimulator
-open FootballEngine.Domain
 
 module MatchOutcome =
 
@@ -31,17 +30,30 @@ module MatchOutcome =
         for e in events do
             match e.Type with
             | MatchEventType.Goal ->
-                goals[e.PlayerId] <- match goals.TryGetValue(e.PlayerId) with true, v -> v + 1 | _ -> 1
+                goals[e.PlayerId] <-
+                    match goals.TryGetValue(e.PlayerId) with
+                    | true, v -> v + 1
+                    | _ -> 1
             | MatchEventType.Assist ->
                 let scorer = e.PlayerId
-                assists[scorer] <- match assists.TryGetValue(scorer) with true, v -> v + 1 | _ -> 1
+
+                assists[scorer] <-
+                    match assists.TryGetValue(scorer) with
+                    | true, v -> v + 1
+                    | _ -> 1
             | _ -> ()
 
         goals.Keys
         |> Seq.map (fun pid ->
             { PlayerId = pid
-              GoalsScored = match goals.TryGetValue(pid) with true, v -> v | _ -> 0
-              AssistsGiven = match assists.TryGetValue(pid) with true, v -> v | _ -> 0
+              GoalsScored =
+                match goals.TryGetValue(pid) with
+                | true, v -> v
+                | _ -> 0
+              AssistsGiven =
+                match assists.TryGetValue(pid) with
+                | true, v -> v
+                | _ -> 0
               MinutesPlayed = 90 })
         |> Array.ofSeq
 
@@ -120,8 +132,20 @@ module MatchOutcome =
         |> Map.ofList
 
     let private isHighPressureMatch (events: MatchEvent list) : bool =
-        let hasGoal = events |> List.exists (fun e -> match e.Type with MatchEventType.Goal -> true | _ -> false)
-        let hasRedCard = events |> List.exists (fun e -> match e.Type with MatchEventType.RedCard -> true | _ -> false)
+        let hasGoal =
+            events
+            |> List.exists (fun e ->
+                match e.Type with
+                | MatchEventType.Goal -> true
+                | _ -> false)
+
+        let hasRedCard =
+            events
+            |> List.exists (fun e ->
+                match e.Type with
+                | MatchEventType.RedCard -> true
+                | _ -> false)
+
         hasGoal || hasRedCard
 
     let private updatePlayerExperiences (gs: GameState) (outcome: FixtureOutcome) : GameState =
@@ -131,22 +155,27 @@ module MatchOutcome =
         let wasHighPressure = isHighPressureMatch fixture.Events
 
         let homeStatsMap =
-            outcome.HomePlayerStats
-            |> Array.map (fun st -> st.PlayerId, st)
-            |> Map.ofArray
+            outcome.HomePlayerStats |> Array.map (fun st -> st.PlayerId, st) |> Map.ofArray
+
         let awayStatsMap =
-            outcome.AwayPlayerStats
-            |> Array.map (fun st -> st.PlayerId, st)
-            |> Map.ofArray
+            outcome.AwayPlayerStats |> Array.map (fun st -> st.PlayerId, st) |> Map.ofArray
 
         let processSide (clubId: ClubId) (rivalId: ClubId) (gs: GameState) : GameState =
             let club = gs.Clubs[clubId]
             let mutable acc = gs
+
             for playerId in club.PlayerIds do
                 let goals =
-                    homeStatsMap |> Map.tryFind playerId |> Option.map _.GoalsScored |> Option.defaultValue 0
+                    homeStatsMap
+                    |> Map.tryFind playerId
+                    |> Option.map _.GoalsScored
+                    |> Option.defaultValue 0
+
                 let assists =
-                    homeStatsMap |> Map.tryFind playerId |> Option.map _.AssistsGiven |> Option.defaultValue 0
+                    homeStatsMap
+                    |> Map.tryFind playerId
+                    |> Option.map _.AssistsGiven
+                    |> Option.defaultValue 0
 
                 let exp =
                     match acc.PlayerExperiences |> Map.tryFind playerId with
@@ -154,15 +183,12 @@ module MatchOutcome =
                     | None -> PlayerExperience.empty
 
                 let newExp =
-                    PlayerExperience.recordMatch
-                        goals
-                        assists
-                        wasHighPressure
-                        rivalId
-                        won
-                        drew
-                        exp
-                acc <- { acc with PlayerExperiences = acc.PlayerExperiences |> Map.add playerId newExp }
+                    PlayerExperience.recordMatch goals assists wasHighPressure rivalId won drew exp
+
+                acc <-
+                    { acc with
+                        PlayerExperiences = acc.PlayerExperiences |> Map.add playerId newExp }
+
             acc
 
         let gs1 = processSide fixture.HomeClubId fixture.AwayClubId gs
@@ -256,7 +282,7 @@ module MatchPhase =
         |> List.ofSeq
 
     let private runFixtures (fixtures: (MatchId * MatchFixture) list) (state: GameState) =
-        let gsReady = Lineup.ensureForFixtures fixtures state
+        let gsReady = LineupOps.ensureForFixtures fixtures state
 
         let outcomes =
             fixtures

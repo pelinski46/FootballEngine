@@ -2,12 +2,19 @@ namespace FootballEngine
 
 open FootballEngine.Domain
 open FootballEngine.MatchSpatial
+open FootballEngine.Types
 open SimStateOps
 open PhysicsContract
 
 module RefereeApplicator =
 
-    let private awardGoal (scoringClub: ClubSide) (scorerId: PlayerId option) (subTick: int) (ctx: MatchContext) (state: SimState) : MatchEvent list =
+    let private awardGoal
+        (scoringClub: ClubSide)
+        (scorerId: PlayerId option)
+        (subTick: int)
+        (ctx: MatchContext)
+        (state: SimState)
+        : MatchEvent list =
         state.StoppageTime.Add(subTick, StoppageReason.GoalDelay) |> ignore
 
         if scoringClub = HomeClub then
