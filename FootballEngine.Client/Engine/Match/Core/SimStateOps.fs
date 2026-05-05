@@ -214,10 +214,20 @@ module SimStateOps =
         | Receiving(_, p, _) -> p = pid
         | _ -> false
 
+    let emitSemantic (event: SemanticEvent) (state: SimState) =
+        state.PendingSemanticEvents <- event :: state.PendingSemanticEvents
+
+    let drainSemanticEvents (state: SimState) : SemanticEvent list =
+        let events = state.PendingSemanticEvents
+        state.PendingSemanticEvents <- []
+        events
+
     let losePossession (state: SimState) =
         match state.Ball.Control with
-        | Controlled(side, _)
-        | Receiving(side, _, _) -> (getTeam state side).ActiveRuns <- []
+        | Controlled(side, pid)
+        | Receiving(side, pid, _) ->
+            emitSemantic (BallLost(side, pid)) state
+            (getTeam state side).ActiveRuns <- []
         | _ -> ()
 
         state.Ball <-
@@ -237,8 +247,10 @@ module SimStateOps =
         (state: SimState)
         =
         match state.Ball.Control with
-        | Controlled(losingClub, _)
-        | Receiving(losingClub, _, _) when losingClub <> club -> (getTeam state losingClub).ActiveRuns <- []
+        | Controlled(losingClub, losingPid)
+        | Receiving(losingClub, losingPid, _) when losingClub <> club ->
+            (getTeam state losingClub).ActiveRuns <- []
+            emitSemantic (BallLost(losingClub, losingPid)) state
         | _ -> ()
 
         state.LastAttackingClub <- club
@@ -257,8 +269,17 @@ module SimStateOps =
                 Trajectory = None
                 Position = ballBase.Position }
 
+        emitSemantic (BallSecured(club, pid)) state
+
     let adjustMomentum (dir: AttackDir) (delta: float) (state: SimState) =
+        let prev = state.Momentum
         state.Momentum <- clampFloat (state.Momentum + momentumDelta dir delta) -10.0 10.0
+        let next = state.Momentum
+
+        if prev > 0.0 && next < -3.0 then
+            emitSemantic (MomentumShifted AwayClub) state
+        elif prev < 0.0 && next > 3.0 then
+            emitSemantic (MomentumShifted HomeClub) state
 
     let goalDiff (clubId: ClubId) (ctx: MatchContext) (state: SimState) =
         if clubId = ctx.Home.Id then

@@ -103,6 +103,7 @@
         <Compile Include="Engine\Match\Core\ConfigValidation.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
         <Compile Include="Engine\Match\Core\StoppageTimeTracker.fs"/>
+        <Compile Include="Engine\Match\Core\SemanticEvent.fs"/>
         <Compile Include="Engine\Match\Core\SimState.fs"/>
         <Compile Include="Engine\Match\Core\MatchSpatial.fs"/>
         <Compile Include="Engine\Match\Core\MatchContext.fs"/>
@@ -121,7 +122,7 @@
 
         <!-- ── Core — scheduling y rates ─────────────────────────────────── -->
         <!--   SchedulingTypes ya está en Types/                                          -->
-        <Compile Include="Engine\Match\Core\MatchRates.fs"/>
+        <Compile Include="Engine\Match\Core\EventRouter.fs"/>
         <Compile Include="Engine\Match\Core\MatchCommands.fs"/>
 
         <!-- ── Simulation ─────────────────────────────────────────────────── -->

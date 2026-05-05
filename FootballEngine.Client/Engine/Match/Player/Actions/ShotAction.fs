@@ -191,11 +191,12 @@ module ShotAction =
 
                     adjustMomentum actx.Att.AttackDir ctx.Config.Duel.MomentumBonus state
                     clearOffsideSnapshot state
+                    emitSemantic (SemanticEvent.ShotLaunched shooter.Id) state
 
                     [ { SubTick = subTick
                         PlayerId = shooter.Id
                         ClubId = attClubId
-                        Type = ShotLaunched
+                        Type = MatchEventType.ShotLaunched
                         Context =
                           EventContext.at (float bX) (float bY)
                           |> fun c -> { c with ExpectedGoal = Some xgValue } } ]

@@ -276,7 +276,8 @@ module PassAction =
 
                     adjustMomentum actx.Att.AttackDir pc.SuccessMomentum state
                     recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
-                    [ createEvent subTick passer.Id attClubId (PassLaunched(passer.Id, target.Id)) ]
+                    emitSemantic (SemanticEvent.PassLaunched(passer.Id, target.Id)) state
+                    [ createEvent subTick passer.Id attClubId (MatchEventType.PassLaunched(passer.Id, target.Id)) ]
 
     let resolveLong (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : MatchEvent list =
         let actx = ActionContext.build ctx state
@@ -633,4 +634,4 @@ module PassAction =
 
                     adjustMomentum actx.Att.AttackDir pc.SuccessMomentum state
                     recordSuccess actx.Att.ClubSide pIdx state.MatchMemory
-                    [ createEvent subTick passer.Id attClubId (PassLaunched(passer.Id, receiver.Id)) ]
+                    [ createEvent subTick passer.Id attClubId (MatchEventType.PassLaunched(passer.Id, receiver.Id)) ]

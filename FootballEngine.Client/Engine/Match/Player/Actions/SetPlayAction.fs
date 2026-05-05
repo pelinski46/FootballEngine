@@ -318,7 +318,7 @@ module SetPlayAction =
                 let tY = float throwFrame.Physics.PosY[tmIdx] * 1.0<meter>
                 ballTowards state.Ball.Position.X state.Ball.Position.Y tX tY spc.ThrowInSpeed spc.ThrowInVz state
                 adjustMomentum actx.Att.AttackDir spc.ThrowInMomentum state
-                ActionResult.ofEvents [ createEvent subTick teammate.Id clubId (PassLaunched(thrower.Id, teammate.Id)) ]
+                ActionResult.ofEvents [ createEvent subTick teammate.Id clubId (MatchEventType.PassLaunched(thrower.Id, teammate.Id)) ]
 
     let resolvePenalty
         (subTick: int)

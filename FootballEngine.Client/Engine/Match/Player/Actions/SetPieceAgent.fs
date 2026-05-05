@@ -137,10 +137,8 @@ module SetPieceAgent =
                     SetPlayAction.resolvePenalty state.SubTick ctx state kickerPlayer clubSide clock
 
                 if penaltyScored then
-                    RefereeApplicator.apply state.SubTick (ConfirmGoal(clubSide, Some kickerPlayer.Id, false)) ctx state
-                    |> ignore
-
-                    ActionResult.empty
+                    { Events = []
+                      PendingRefereeActions = [ConfirmGoal(clubSide, Some kickerPlayer.Id, false)] }
                 else
                     ActionResult.empty
 
@@ -234,4 +232,5 @@ module SetPieceAgent =
                             Context = EventContext.empty } ]
 
         { Events = result.Events
-          Transition = Some MatchFlow.Live }
+          Transition = Some MatchFlow.Live
+          PendingRefereeActions = [] }

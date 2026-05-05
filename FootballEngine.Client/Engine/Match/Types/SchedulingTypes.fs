@@ -28,7 +28,8 @@ module SchedulingTypes =
 
     type PlayerResult =
         { Events: MatchEvent list
-          Transition: MatchFlow option }
+          Transition: MatchFlow option
+          PendingRefereeActions: RefereeAction list }
 
     type BallResult =
         { Events: MatchEvent list

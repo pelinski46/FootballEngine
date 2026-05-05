@@ -647,69 +647,64 @@ module MatchStepper =
             processTransition state result.Transition
 
     let private runLiveSystems
-        (ctx: MatchContext)
-        (clock: SimulationClock)
-        (state: SimState)
-        (events: ResizeArray<MatchEvent>)
+        (ctx    : MatchContext)
+        (clock  : SimulationClock)
+        (state  : SimState)
+        (events : ResizeArray<MatchEvent>)
         =
         match state.Flow with
         | Live ->
             let subTick = state.SubTick
 
-            if MatchRates.cognition clock subTick then
-                runCognition subTick ctx state clock
+            // Física: siempre corre
+            SimStateOps.expireReceiving subTick ctx.Config.Physics.ReceivingGraceSubTicks state
+            let dtPlayer = SimulationClock.dtPlayer clock
+            MovementEngine.updateTeamSide subTick ctx state HomeClub dtPlayer clock
+            MovementEngine.updateTeamSide subTick ctx state AwayClub dtPlayer clock
 
-            if MatchRates.physics clock subTick then
-                SimStateOps.expireReceiving subTick ctx.Config.Physics.ReceivingGraceSubTicks state
+            let ballResult = BallAgent.agent ctx state clock
+            updatePossessionHistory ballResult subTick state
+            ballResult.Events |> List.iter (appendEvent state events)
 
-                if MatchRates.steering clock subTick then
-                    let dtPlayer = SimulationClock.dtPlayer clock
+            match ballResult.GoalScored with
+            | Some _ -> startGoalFlow subTick ctx state clock events
+            | None   -> processTransition state ballResult.Transition
 
-                    MovementEngine.updateTeamSide
-                        subTick
-                        ctx
-                        state
-                        HomeClub
-                        dtPlayer
-                        clock.SteeringRate
-                        clock.CognitiveRate
+            // Drenar semánticos acumulados por BallAgent y RefereeApplicator
+            let semanticEvents = SimStateOps.drainSemanticEvents state
 
-                    MovementEngine.updateTeamSide
-                        subTick
-                        ctx
-                        state
-                        AwayClub
-                        dtPlayer
-                        clock.SteeringRate
-                        clock.CognitiveRate
+            // Router decide qué agentes corren
+            let activations = EventRouter.route semanticEvents subTick clock
 
-                let ballResult = BallAgent.agent ctx state clock
-                updatePossessionHistory ballResult subTick state
+            for activation in activations do
+                match activation with
+                | ActivatePhysics -> ()
 
-                ballResult.Events |> List.iter (appendEvent state events)
+                | ActivateCognition ->
+                    runCognition subTick ctx state clock
 
-                match ballResult.GoalScored with
-                | Some _ -> startGoalFlow subTick ctx state clock events
-                | None -> processTransition state ballResult.Transition
+                | ActivateAction _ ->
+                    let frameHome = getFrame state HomeClub
+                    let frameAway = getFrame state AwayClub
+                    if frameHome.SlotCount > 0 && frameAway.SlotCount > 0 then
+                        let actionResult, pendingRefActions = ActionResolver.run subTick ctx state clock
+                        actionResult.Events |> List.iter (appendEvent state events)
+                        pendingRefActions
+                        |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
+                        |> List.iter (appendEvent state events)
 
-            if MatchRates.referee clock subTick then
-                let refResult = RefereeAgent.agent ctx state clock
+                | ActivateReferee _ ->
+                    let refResult = RefereeAgent.agent ctx state clock
+                    refResult.Actions
+                    |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
+                    |> List.iter (appendEvent state events)
+                    processTransition state refResult.Transition
 
-                refResult.Actions
-                |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
-                |> List.iter (appendEvent state events)
+                | ActivateTeam _ ->
+                    TeamOrchestrator.tick subTick ctx state clock
 
-                processTransition state refResult.Transition
-
-            if MatchRates.action clock subTick then
-                let frameHome = getFrame state HomeClub
-                let frameAway = getFrame state AwayClub
-
-                if frameHome.SlotCount > 0 && frameAway.SlotCount > 0 then
-                    let actionResult = ActionResolver.run subTick ctx state clock
-                    actionResult.Events |> List.iter (appendEvent state events)
-
-            maybeRunManagerWindow subTick ctx state clock events
+                | ActivateManager _ ->
+                    maybeRunManagerWindow subTick ctx state clock events
 
             runAdaptive state
         | _ -> () // Si es VAR, Pausa, Gol, etc., los sistemas de juego no corren

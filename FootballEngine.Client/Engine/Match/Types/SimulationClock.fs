@@ -3,33 +3,18 @@ namespace FootballEngine.Types
 open FootballEngine
 open FootballEngine.Types.PhysicsContract
 
-
 type SimulationClock =
-    { SubTicksPerSecond: int
-      PhysicsRate: int
-      SteeringRate: int
-      CognitiveRate: int
-      ActionRate: int
-      ReactiveRate: int
-      StrategicRate: int }
+    { SubTicksPerSecond: int }
 
 module SimulationClock =
     let defaultClock =
-        let sps = 40
-
-        { SubTicksPerSecond = sps
-          PhysicsRate = 1
-          SteeringRate = 2
-          CognitiveRate = 20
-          ActionRate = 120
-          ReactiveRate = 120
-          StrategicRate = 1200 }
+        { SubTicksPerSecond = 40 }
 
     let dt (c: SimulationClock) : float<second> =
-        float c.PhysicsRate / float c.SubTicksPerSecond * 1.0<second>
+        1.0 / float c.SubTicksPerSecond * 1.0<second>
 
     let dtPlayer (c: SimulationClock) : float<second> =
-        float c.SteeringRate / float c.SubTicksPerSecond * 1.0<second>
+        2.0 / float c.SubTicksPerSecond * 1.0<second>
 
     let secondsToSubTicks (c: SimulationClock) (s: float) = int (s * float c.SubTicksPerSecond)
 

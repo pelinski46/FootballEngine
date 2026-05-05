@@ -8,7 +8,7 @@ open FootballEngine.Types.PhysicsContract
 open FootballEngine.Types.TacticsConfig
 open FootballEngine.Types.TeamDirectiveOps
 open SimStateOps
-open MatchRates
+
 
 // ── Pipeline colectivo por equipo ────────────────────────────────────────────
 //
@@ -514,11 +514,12 @@ module TeamOrchestrator =
     // El Stepper llama esto — no sabe qué loop corrió adentro.
 
     let tick (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : unit =
-
+        let isStrategicTick = subTick % (clock.SubTicksPerSecond * 30) = 0
+        let isReactiveTick  = subTick % (clock.SubTicksPerSecond * 3) = 0
         for clubSide in bothSides do
             let read = readTeam clubSide ctx state
 
-            if strategic clock subTick then
+            if isStrategicTick then
                 // Ciclo estratégico: evalúa situación global, adapta estado emergente
                 let mode = StrategicLoop.run ctx state clock
 
@@ -532,7 +533,7 @@ module TeamOrchestrator =
                 let plan = buildPlan subTick clubSide read kind ctx state clock
                 writePlan subTick clubSide read plan state
 
-            elif reactive clock subTick then
+            elif isReactiveTick then
                 // Ciclo reactivo: detecta desviación, ajusta si es crítico
                 let deviation = ReactiveLoop.run ctx state clock
 

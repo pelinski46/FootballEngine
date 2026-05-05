@@ -121,3 +121,4 @@ type SimState() =
     member val StoppageTime: StoppageTimeTracker = StoppageTimeTracker() with get, set
     member val HomePendingSubstitutions: SubstitutionRequest list = [] with get, set
     member val AwayPendingSubstitutions: SubstitutionRequest list = [] with get, set
+    member val PendingSemanticEvents: SemanticEvent list = [] with get, set

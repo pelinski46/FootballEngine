@@ -369,4 +369,4 @@ module ManagerAgent =
                 []
             |> List.rev
 
-        { Events = events; Transition = None }
+        { Events = events; Transition = None; PendingRefereeActions = [] }

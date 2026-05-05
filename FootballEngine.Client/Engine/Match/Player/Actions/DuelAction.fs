@@ -109,15 +109,15 @@ module DuelAction =
                     let cardActions =
                         match FoulAnalysis.decideCard severity yellows with
                         | Some FoulAnalysis.CardDecision.Yellow ->
+                            emitSemantic (FoulOccurred(defP.Id, attP.Id)) state
                             let side = actx.Def.ClubSide
                             let clubId = if side = HomeClub then ctx.Home.Id else ctx.Away.Id
-                            RefereeApplicator.apply subTick (IssueYellow(defP, clubId)) ctx state |> ignore
-                            []
+                            [ IssueYellow(defP, clubId) ]
                         | Some FoulAnalysis.CardDecision.Red ->
+                            emitSemantic (FoulOccurred(defP.Id, attP.Id)) state
                             let side = actx.Def.ClubSide
                             let clubId = if side = HomeClub then ctx.Home.Id else ctx.Away.Id
-                            RefereeApplicator.apply subTick (IssueRed(defP, clubId)) ctx state |> ignore
-                            []
+                            [ IssueRed(defP, clubId) ]
                         | None -> []
 
                     [ createEvent subTick defP.Id defClubId FoulCommitted ], cardActions
@@ -310,16 +310,13 @@ module DuelAction =
                     let cardActions =
                         match FoulAnalysis.decideCard severity yellows with
                         | Some FoulAnalysis.CardDecision.Yellow ->
+                            emitSemantic (FoulOccurred(defender.Id, attacker.Id)) state
                             let clubId = actx.Def.ClubId
-
-                            RefereeApplicator.apply subTick (IssueYellow(defender, clubId)) ctx state
-                            |> ignore
-
-                            []
+                            [ IssueYellow(defender, clubId) ]
                         | Some FoulAnalysis.CardDecision.Red ->
+                            emitSemantic (FoulOccurred(defender.Id, attacker.Id)) state
                             let clubId = actx.Def.ClubId
-                            RefereeApplicator.apply subTick (IssueRed(defender, clubId)) ctx state |> ignore
-                            []
+                            [ IssueRed(defender, clubId) ]
                         | None -> []
 
                     [ createEvent subTick defender.Id defClubId FoulCommitted ], cardActions

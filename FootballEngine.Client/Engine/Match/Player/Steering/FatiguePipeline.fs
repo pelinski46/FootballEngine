@@ -78,7 +78,7 @@ module FatiguePipeline =
         // Base decay: higher for low stamina, high work rate
         let staminaFactor = 1.0 - PhysicsContract.normaliseAttr stamina
         let workFactor = PhysicsContract.normaliseAttr workRate
-        let baseDecay = 0.03 + staminaFactor * 0.02 + workFactor * 0.03
+        let baseDecay = 0.0008 + staminaFactor * 0.003 + workFactor * 0.001
 
         // Pressing multiplier
         let pressingMultiplier = if isPressing then 1.8 else 1.0
@@ -90,7 +90,11 @@ module FatiguePipeline =
             else
                 1.0
 
-        let totalDecay = baseDecay * pressingMultiplier * lateMultiplier
+        // Time factor: starts low, increases with match time
+        let timeFactor =
+            0.4 + 0.6 * (matchMinute / 90.0)
+
+        let totalDecay = baseDecay * pressingMultiplier * lateMultiplier * timeFactor
 
         // Decay pulls toward natural condition
         let diff = float currentCondition - float naturalCondition

@@ -42,9 +42,9 @@ module RefereeApplicator =
         | RefereeIdle -> []
 
         | ConfirmGoal(scoringClub, scorerId, isOwnGoal) ->
+            emitSemantic (GoalScored(scoringClub, scorerId)) state
             let goalEvents = awardGoal scoringClub scorerId subTick ctx state
             clearOffsideSnapshot state
-
 
             if isOwnGoal then
                 goalEvents |> List.map (fun e -> { e with Type = OwnGoal })
@@ -68,6 +68,7 @@ module RefereeApplicator =
             []
 
         | AwardThrowIn team ->
+            emitSemantic (SetPieceAwarded(SetPieceKind.ThrowIn, team)) state
             let throwX =
                 match team with
                 | HomeClub -> PenaltyAreaDepth
@@ -91,6 +92,7 @@ module RefereeApplicator =
             []
 
         | AwardCorner team ->
+            emitSemantic (SetPieceAwarded(SetPieceKind.Corner, team)) state
             let cornerX =
                 match team with
                 | HomeClub -> PitchLength - 0.5<meter>
@@ -119,6 +121,7 @@ module RefereeApplicator =
                 Context = EventContext.empty } ]
 
         | AwardGoalKick team ->
+            emitSemantic (SetPieceAwarded(SetPieceKind.GoalKick, team)) state
             let gkX =
                 match team with
                 | HomeClub -> GoalAreaDepth
@@ -135,6 +138,7 @@ module RefereeApplicator =
             []
 
         | AwardIndirectFreeKick team ->
+            emitSemantic (SetPieceAwarded(SetPieceKind.FreeKick, team)) state
             let ballX = state.Ball.Position.X
             let ballY = state.Ball.Position.Y
 
@@ -184,6 +188,7 @@ module RefereeApplicator =
             if count >= 1 then
                 setYellows state side (Map.add player.Id (count + 1) (getYellows state side))
                 setSidelined state side (Map.add player.Id SidelinedByRedCard (getSidelined state side))
+                emitSemantic (RedCardIssued player.Id) state
 
                 [ createEvent subTick player.Id clubId YellowCard
                   createEvent subTick player.Id clubId RedCard ]
@@ -193,6 +198,7 @@ module RefereeApplicator =
                 [ createEvent subTick player.Id clubId YellowCard ]
 
         | IssueRed(player, clubId) ->
+            emitSemantic (RedCardIssued player.Id) state
             state.StoppageTime.Add(subTick, StoppageReason.CardDelay) |> ignore
             let isHome = clubId = ctx.Home.Id
             let side = if isHome then HomeClub else AwayClub

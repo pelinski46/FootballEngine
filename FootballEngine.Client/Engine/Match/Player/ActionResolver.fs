@@ -162,7 +162,7 @@ module ActionResolver =
                 ActionResult.ofEvents events, actions
             | None -> ActionResult.empty, []
 
-    let run (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : ActionResult =
+    let run (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : ActionResult * RefereeAction list =
         match state.Flow with
         | Live ->
             let controller, rosterOpt, controllerClubSide = findController ctx state
@@ -205,9 +205,5 @@ module ActionResolver =
                             | _ -> ActionResult.empty, []
                 | _ -> ActionResult.empty, []
 
-            let refereeEvents =
-                actionRefereeActions
-                |> List.collect (fun a -> RefereeApplicator.apply subTick a ctx state)
-
-            { Events = actionResult.Events @ refereeEvents }
-        | _ -> { Events = [] }
+            actionResult, actionRefereeActions
+        | _ -> ActionResult.empty, []
