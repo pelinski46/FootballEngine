@@ -34,7 +34,42 @@ module OutcomeResolver =
     let private clamp (v: float) (min: float) (max: float) =
         System.Math.Max(min, System.Math.Min(max, v))
 
+    let private goalCenterX (dir: AttackDir) : float<meter> =
+        match dir with
+        | LeftToRight -> PitchLength
+        | RightToLeft -> 0.0<meter>
+
+    let private shotAngle (ballPos: Spatial) (dir: AttackDir) : float =
+        let goalX = goalCenterX dir
+        let goalY = (PostNearY + PostFarY) / 2.0
+        let dx = float (goalX - ballPos.X)
+        let dy = float (goalY - ballPos.Y)
+        let dist = sqrt (dx * dx + dy * dy)
+        if dist < 0.01 then 180.0
+        else
+            let halfWidth = (PostFarY - PostNearY) / 2.0<meter>
+            let angleRad = atan (float halfWidth / dist)
+            angleRad * 180.0 / System.Math.PI * 2.0
+
+    let private shotDistance (ballPos: Spatial) (dir: AttackDir) : float<meter> =
+        let goalX = goalCenterX dir
+        let goalY = (PostNearY + PostFarY) / 2.0
+        let dx = goalX - ballPos.X
+        let dy = goalY - ballPos.Y
+        sqrt (dx * dx + dy * dy)
+
+    let private trackXG (state: SimState) (shooterClub: ClubSide) (ballPos: Spatial) (shootingDir: AttackDir) =
+        let dist = shotDistance ballPos shootingDir
+        let angle = shotAngle ballPos shootingDir
+        let xg = Player.Actions.xGCalculator.baseXG dist angle
+
+        if shooterClub = HomeClub then
+            state.HomeXG <- state.HomeXG + xg
+        else
+            state.AwayXG <- state.AwayXG + xg
+
     let resolve
+        (state: SimState)
         (contact: ContactResolver.Contact)
         (ball: BallPhysicsState)
         (subTick: int)
@@ -157,15 +192,16 @@ module OutcomeResolver =
                             LastTouchBy = Some player.Id }
                 | Struck(shooterId, quality) ->
                     let shootingDir = attDir
+                    let shooterClub =
+                        if homeRoster.Players |> Array.exists (fun p -> p.Id = shooterId) then
+                            HomeClub
+                        else
+                            AwayClub
+
+                    trackXG state shooterClub ball.Position shootingDir
 
                     if isInGoal ball.Position.X ball.Position.Y ball.Position.Z shootingDir then
-                        GoalScored(
-                            (if homeRoster.Players |> Array.exists (fun p -> p.Id = shooterId) then
-                                 HomeClub
-                             else
-                                 AwayClub),
-                            Some shooterId
-                        ),
+                        GoalScored(shooterClub, Some shooterId),
                         { ball with
                             Control = Free
                             Trajectory = None }

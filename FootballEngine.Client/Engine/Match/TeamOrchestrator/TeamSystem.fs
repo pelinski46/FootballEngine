@@ -71,6 +71,10 @@ module TeamSystem =
     let run (ctx: MatchContext) (state: SimState) (clock: SimulationClock) (time: MatchTime) : DomainEvent[] =
         let events = ResizeArray<DomainEvent>(4)
         for clubSide in [| HomeClub; AwayClub |] do
+            let teamState = getTeam state clubSide
+            let blackboard = BlackboardBuilder.build state clubSide ctx
+            teamState.Blackboard <- blackboard
+
             let frame   = getFrame state clubSide
             let roster  = getRoster ctx clubSide
             let emergent = getEmergentState state clubSide

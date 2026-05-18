@@ -268,7 +268,15 @@ module MatchOutcome =
 module MatchPhase =
     open MatchOutcome
 
-    let private getAiFixturesToday (state: GameState) =
+    let private parallelMapLimited (f: 'T -> 'U) (arr: 'T[]) : 'U[] =
+        let maxThreads = max 1 (System.Environment.ProcessorCount - 1)
+        let options = System.Threading.Tasks.ParallelOptions(MaxDegreeOfParallelism = maxThreads)
+        let results = Array.zeroCreate arr.Length
+        System.Threading.Tasks.Parallel.For(0, arr.Length, options, fun i ->
+            results[i] <- f arr[i]) |> ignore
+        results
+
+    let getAiFixturesToday (state: GameState) =
         state.Competitions
         |> Map.toSeq
         |> Seq.collect (fun (_, comp) ->
@@ -281,13 +289,13 @@ module MatchPhase =
                 && f.AwayClubId <> state.UserClubId))
         |> List.ofSeq
 
-    let private runFixtures (fixtures: (MatchId * MatchFixture) list) (state: GameState) =
+    let runFixtures (fixtures: (MatchId * MatchFixture) list) (state: GameState) =
         let gsReady = LineupOps.ensureForFixtures fixtures state
 
         let outcomes =
             fixtures
             |> Array.ofList
-            |> Array.Parallel.map (fun (id, fixture) ->
+            |> parallelMapLimited (fun (id, fixture) ->
                 let home = gsReady.Clubs[fixture.HomeClubId]
                 let away = gsReady.Clubs[fixture.AwayClubId]
                 id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
@@ -319,7 +327,8 @@ module MatchPhase =
         applyOutcomes (fixtureToCompMap gsReady) outcomes gsReady
 
     let make: WorldPhase =
-        { Frequency = OnDemand
+        { Tag = Match
+          Frequency = OnDemand
           Run =
             fun _clock state ->
                 match getAiFixturesToday state with

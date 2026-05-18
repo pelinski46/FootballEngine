@@ -26,6 +26,8 @@ module AppMsgs =
         | SimulateSeason
         | SimulateUserFixture
         | UserMatchDone of Result<UserMatchResult, string>
+        | SimulateAiFixtures
+        | AiMatchesDone of DayResult
 
     type TransferMsg =
         | Load

@@ -11,7 +11,6 @@ type FamiliarityPair =
 type TeamCohesion =
     { OverallCohesion: float
       PressingCoordination: float
-      OffsideTrapEffectiveness: float
       TransitionSpeed: float }
 
 module ChemistryTracker =
@@ -36,5 +35,4 @@ module ChemistryTracker =
 
         { OverallCohesion = avgFam
           PressingCoordination = avgFam * 0.8 + 0.1
-          OffsideTrapEffectiveness = avgFam * 0.7 + 0.15
           TransitionSpeed = avgFam * 0.9 + 0.05 }

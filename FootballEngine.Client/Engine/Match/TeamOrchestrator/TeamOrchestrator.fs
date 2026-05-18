@@ -14,7 +14,7 @@ open SimStateOps
 //
 // TeamOrchestrator.tick corre a dos frecuencias distintas:
 //   strategic (~30s) — WinProbability + StrategicLoop + EmergentLoops
-//   reactive  (~3s)  — ReactiveLoop + DirectiveResolver + SlotRoles + Shape
+//   reactive  (~3s)  — ReactiveLoop + UtilityActions + SlotRoles + Shape
 //
 // Output: escribe en TeamFrame. BatchDecision solo lee — no decide nada colectivo.
 //
@@ -23,83 +23,6 @@ open SimStateOps
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-module private DirectiveResolver =
-
-    [<Literal>]
-    let private MinCommitmentTicks = 90
-
-    type private Situation =
-        | JustWonBall
-        | JustLostBall
-        | OpponentBuilding
-        | Dominating
-        | Chasing
-        | Balanced
-        | Scramble
-
-    let private classifySituation (state: SimState) (clubSide: ClubSide) (pressingCoordination: float) =
-        let weHaveBall =
-            match state.Ball.Control with
-            | Controlled(side, _)
-            | Receiving(side, _, _) -> side = clubSide
-            | _ -> false
-
-        let ballIsLoose =
-            match state.Ball.Control with
-            | Free
-            | Contesting _ -> true
-            | _ -> false
-
-        if ballIsLoose then
-            Scramble
-        else
-            let scoreDiff =
-                if clubSide = HomeClub then
-                    state.HomeScore - state.AwayScore
-                else
-                    state.AwayScore - state.HomeScore
-
-            let justChanged = state.PossessionHistory.LastChangeTick > int state.SubTick - 30
-
-            if justChanged && weHaveBall then JustWonBall
-            elif justChanged && not weHaveBall then JustLostBall
-            elif not weHaveBall && scoreDiff < 0 then Chasing
-            elif weHaveBall && scoreDiff > 0 then Dominating
-            elif not weHaveBall then OpponentBuilding
-            else Balanced
-
-    let resolve
-        (state: SimState)
-        (clubSide: ClubSide)
-        (pressingCoordination: float)
-        (currentDirective: TeamDirective)
-        : DirectiveKind =
-        let situation = classifySituation state clubSide pressingCoordination
-        let isCommitted = state.SubTick - currentDirective.ActiveSince < MinCommitmentTicks * 1<subtick>
-
-        if situation = Scramble then
-            ContestBall
-        elif isCommitted then
-            currentDirective.Kind
-        else
-            let managerIntent = kindFromTactics (getTactics state clubSide)
-
-            match situation with
-            | JustWonBall -> CounterReady
-            | JustLostBall -> PressingBlock
-            | Chasing -> DirectAttack
-            | Dominating ->
-                match managerIntent with
-                | DefensiveBlock -> DefensiveBlock
-                | _ -> Structured
-            | OpponentBuilding ->
-                if pressingCoordination > 0.65 then
-                    PressingBlock
-                else
-                    DefensiveBlock
-            | Balanced -> managerIntent
-            | Scramble -> ContestBall
 
 module BatchDecisionSupport =
 
@@ -316,7 +239,9 @@ module TeamOrchestrator =
         { Cohesion: TeamCohesion
           EventRates: EventWindow.EventRates
           AvgCondition: float
-          CurrentDirective: TeamDirective }
+          CurrentDirective: TeamDirective
+          Blackboard: TeamBlackboard
+          CollectiveAction: CollectiveAction }
 
     let private readTeam (clubSide: ClubSide) (ctx: MatchContext) (state: SimState) : OrchestratorRead =
         let chemistry =
@@ -331,7 +256,7 @@ module TeamOrchestrator =
             ChemistryTracker.calculateCohesion chemistry.Familiarity roster.Players.Length
 
         let rates, _ =
-            EventWindow.computeRates (state.Config.Timing.EventWindowSubTicks) state.MatchEvents
+            EventWindow.computeRates (state.Config.Timing.EventWindowSubTicks) state.MatchEvents (int state.SubTick)
 
         let frame = getFrame state clubSide
         let condition = avgCondition frame
@@ -341,17 +266,25 @@ module TeamOrchestrator =
             |> TeamDirectiveOps.currentDirective
             |> Option.defaultValue (TeamDirectiveOps.empty state.SubTick)
 
+        let blackboard = BlackboardBuilder.build state clubSide ctx
+
+        let prevAction = (getTeam state clubSide).LastCollectiveAction
+        let emergent = getEmergentState state clubSide
+        let action = UtilityActions.resolve blackboard prevAction emergent state clubSide ctx
+
+        let teamState = getTeam state clubSide
+        teamState.Blackboard <- blackboard
+        teamState.LastCollectiveAction <- Some action
+
         { Cohesion = cohesion
           EventRates = rates
           AvgCondition = condition
-          CurrentDirective = directive }
+          CurrentDirective = directive
+          Blackboard = blackboard
+          CollectiveAction = action }
 
-    // ── Paso 2 — Resolve DirectiveKind ───────────────────────────────────────
-    // Inteligencia colectiva sobre qué está haciendo el equipo AHORA.
-    // Para cambiar cuándo el equipo presiona, defiende, contraataca: acá.
-
-    let private resolveKind (clubSide: ClubSide) (read: OrchestratorRead) (state: SimState) : DirectiveKind =
-        DirectiveResolver.resolve state clubSide read.Cohesion.PressingCoordination read.CurrentDirective
+    let private resolveKind (read: OrchestratorRead) : DirectiveKind =
+        UtilityActions.toDirectiveKind read.CollectiveAction
 
     // ── Paso 3 — Plan por slot ───────────────────────────────────────────────
     // Dado el DirectiveKind, calcula qué hace cada jugador DENTRO del plan colectivo.
@@ -525,27 +458,29 @@ module TeamOrchestrator =
     // El Stepper llama esto — no sabe qué loop corrió adentro.
 
     let tick (subTick: int) (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : unit =
-        let isStrategicTick = subTick % (clock.SubTicksPerSecond * 30) = 0
-        let isReactiveTick  = subTick % (clock.SubTicksPerSecond * 3) = 0
+        let time = Scheduler.buildMatchTime state clock
+        let strategicFreq = EveryMinute(30<matchMin>, 0<matchMin>)
+        let reactiveFreq  = EveryMinute(3<matchMin>, 0<matchMin>)
+        let isStrategicTick = Scheduler.shouldRun strategicFreq time state.PendingSemanticEvents
+        let isReactiveTick  = Scheduler.shouldRun reactiveFreq time state.PendingSemanticEvents
+
         for clubSide in bothSides do
             let read = readTeam clubSide ctx state
 
             if isStrategicTick then
-                // Ciclo estratégico: evalúa situación global, adapta estado emergente
                 let mode = StrategicLoop.run ctx state clock
 
                 adaptEmergent clubSide read state
 
                 let kind =
                     match mode with
-                    | ExecutingPlan _ -> resolveKind clubSide read state
+                    | ExecutingPlan _ -> resolveKind read
                     | Recovering(_, target) -> target
 
                 let plan = buildPlan subTick clubSide read kind ctx state clock
                 writePlan subTick clubSide read plan state
 
             elif isReactiveTick then
-                // Ciclo reactivo: detecta desviación, ajusta si es crítico
                 let deviation = ReactiveLoop.run ctx state clock
 
                 let kind =
@@ -555,8 +490,8 @@ module TeamOrchestrator =
 
                         match mode with
                         | Recovering(_, target) -> target
-                        | ExecutingPlan _ -> resolveKind clubSide read state
-                    | _ -> resolveKind clubSide read state
+                        | ExecutingPlan _ -> resolveKind read
+                    | _ -> resolveKind read
 
                 let plan = buildPlan subTick clubSide read kind ctx state clock
                 writePlan subTick clubSide read plan state

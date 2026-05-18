@@ -2,6 +2,7 @@ namespace FootballEngine.Player.Intent
 
 open FootballEngine
 open FootballEngine.Domain
+open FootballEngine.Types
 
 module IntentPhaseTypes =
     [<Literal>]

@@ -23,5 +23,6 @@ module FinancePhase =
         { gs with Clubs = updatedClubs }
 
     let make: WorldPhase =
-        { Frequency = Daily
+        { Tag = Finance
+          Frequency = Daily
           Run = fun _clock state -> deductDailyWages state }

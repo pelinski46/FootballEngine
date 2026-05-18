@@ -11,39 +11,39 @@ type PlanDeviation =
 
 module ReactiveLoop =
 
-    let run (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : PlanDeviation =
-        let emergentHome = SimStateOps.getEmergentState state HomeClub
-        let emergentAway = SimStateOps.getEmergentState state AwayClub
+    let private intendedPressIntensity (state: SimState) (clubSide: ClubSide) : float =
+        match SimStateOps.getDirective state clubSide with
+        | TeamDirectiveState.Active d -> d.Params.Press.Intensity
+        | TeamDirectiveState.Transitioning(_, d, _) -> d.Params.Press.Intensity
+        | TeamDirectiveState.Suspended d -> d.Params.Press.Intensity
 
-        // Compactness: ¿el equipo está manteniendo la forma?
-        let shapeDeviation = 1.0 - emergentHome.CompactnessLevel
+    let private deviationFor (state: SimState) (clubSide: ClubSide) =
+        let emergent = SimStateOps.getEmergentState state clubSide
+        let frame = SimStateOps.getFrame state clubSide
 
-        // Pressing: ¿se está ejecutando el pressing planeado?
-        let pressDeviation =
-            abs (emergentHome.PressingIntensity - emergentAway.PressingIntensity)
+        let shapeDev = 1.0 - emergent.CompactnessLevel
 
-        // Fatigue: leer Condition del frame directamente (igual que runAdaptive)
-        let frame = SimStateOps.getFrame state HomeClub
-        let mutable totalCondition = 0
-        let mutable activeCount = 0
+        let intendedPress = intendedPressIntensity state clubSide
+        let pressDev = abs (emergent.PressingIntensity - intendedPress)
 
+        let mutable totalCond = 0
+        let mutable active = 0
         for i = 0 to frame.SlotCount - 1 do
             match frame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                totalCondition <- totalCondition + int frame.Condition[i]
-                activeCount <- activeCount + 1
+                totalCond <- totalCond + int frame.Condition[i]
+                active <- active + 1
             | _ -> ()
+        let avgCond = if active > 0 then float totalCond / float active else 50.0
+        let fatigueDev = 1.0 - avgCond / 100.0
 
-        let avgCondition =
-            if activeCount > 0 then
-                float totalCondition / float activeCount
-            else
-                50.0
+        shapeDev * 0.4 + pressDev * 0.3 + fatigueDev * 0.3
 
-        let fatigueDeviation = 1.0 - (avgCondition / 100.0)
+    let run (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : PlanDeviation =
+        let homeDev = deviationFor state HomeClub
+        let awayDev = deviationFor state AwayClub
+        let totalDeviation = max homeDev awayDev
 
-        let total = shapeDeviation * 0.4 + pressDeviation * 0.3 + fatigueDeviation * 0.3
-
-        if total < 0.15 then OnTrack
-        elif total < 0.35 then Drifting total
-        else Critical total
+        if totalDeviation < 0.15 then OnTrack
+        elif totalDeviation < 0.35 then Drifting totalDeviation
+        else Critical totalDeviation

@@ -144,5 +144,6 @@ module SeasonPhase =
         |> FootballEngine.Generation.SeasonGen.regenerateFixtures
 
     let make: WorldPhase =
-        { Frequency = Seasonal
+        { Tag = Season
+          Frequency = Seasonal
           Run = fun _clock state -> runEndOfSeason state }

@@ -313,5 +313,6 @@ module PlayerDevelopment =
 module DevelopmentPhase =
 
     let make: WorldPhase =
-        { Frequency = Monthly
+        { Tag = Development
+          Frequency = Monthly
           Run = fun _clock state -> PlayerDevelopment.developAll state }

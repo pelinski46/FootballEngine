@@ -111,11 +111,6 @@ type AttackDir =
     | RightToLeft
 
 
-type PitchZone =
-    | AttackingZone
-    | MidfieldZone
-    | DefensiveZone
-
 type FoulSeverity =
     | Trivial
     | TacticalFoul

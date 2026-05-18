@@ -42,6 +42,7 @@
         <Compile Include="Engine\Stats.fs"/>
 
         <Compile Include="Engine\Match\Types\PhysicsContract.fs"/>
+        <Compile Include="Engine\Match\Types\PitchZone.fs"/>
         <Compile Include="Engine\Match\Types\SimulationClock.fs"/>
         <Compile Include="Engine\Match\Types\Probability.fs"/>
 
@@ -59,7 +60,7 @@
 
 
         <Compile Include="Engine\Match\Types\IntentTypes.fs"/>
-
+        <Compile Include="Engine\Match\Types\TeamBlackboard.fs"/>
         <Compile Include="Engine\Match\Types\MatchMemory.fs"/>
 
         <Compile Include="Engine\Match\Types\DirectiveTypes.fs"/>
@@ -81,6 +82,7 @@
         <Compile Include="Engine\Match\Types\SemanticEvent.fs"/>
         <Compile Include="Engine\Match\Types\StoppageTimeTracker.fs"/>
         <Compile Include="Engine\Match\Types\SystemOutput.fs"/>
+        <Compile Include="Engine\Match\Types\UtilityTypes.fs"/>
 
         <Compile Include="Engine\Match\Core\ConfigValidation.fs"/>
         <Compile Include="Engine\Match\Core\HomeBonus.fs"/>
@@ -113,6 +115,7 @@
         <Compile Include="Engine\Match\Player\Decision\ActionContext.fs"/>
         <Compile Include="Engine\Match\Player\Decision\ActionMath.fs"/>
         <Compile Include="Engine\Match\Player\Decision\ActionEligibility.fs"/>
+        <Compile Include="Engine\Match\Player\Decision\CollectiveModifiers.fs"/>
         <Compile Include="Engine\Match\Player\Decision\MovementScorer.fs"/>
         <Compile Include="Engine\Match\Player\Decision\SpaceScorer.fs"/>
         <Compile Include="Engine\Match\Player\Decision\xGCalculator.fs"/>
@@ -142,7 +145,8 @@
         <Compile Include="Engine\Match\Player\PlayerContext.fs"/>
         <Compile Include="Engine\Match\Player\ActionResolver.fs"/>
         <Compile Include="Engine\Match\Player\PlayerAgent.fs"/>
-
+        <Compile Include="Engine\Match\TeamOrchestrator\UtilityActions.fs"/>
+        <Compile Include="Engine\Match\TeamOrchestrator\BlackboardBuilder.fs"/>
         <Compile Include="Engine\Match\TeamOrchestrator\EmergentLoops.fs"/>
         <Compile Include="Engine\Match\TeamOrchestrator\EventWindow.fs"/>
         <Compile Include="Engine\Match\TeamOrchestrator\ChemistryTracker.fs"/>

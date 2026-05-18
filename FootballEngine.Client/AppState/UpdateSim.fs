@@ -272,7 +272,7 @@ module UpdateSim =
 
                 nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateUserFixture) ]
             else
-                nextState, baseCmd
+                nextState, Cmd.batch [ baseCmd; Cmd.ofMsg (SimMsg SimulateAiFixtures) ]
 
         | SimulateUserFixture ->
 
@@ -303,11 +303,37 @@ module UpdateSim =
                     [ Cmd.ofMsg (SimMsg AdvanceSeason)
                       saveCmd matchDay.DayResult.GameState state.WorldClock ]
             else
-                withMatch, saveCmd matchDay.DayResult.GameState state.WorldClock
+                withMatch,
+                Cmd.batch
+                    [ saveCmd matchDay.DayResult.GameState state.WorldClock
+                      Cmd.ofMsg (SimMsg SimulateAiFixtures) ]
 
         | UserMatchDone(Error e) ->
 
             { state with IsProcessing = false }, Cmd.none
+
+        | SimulateAiFixtures ->
+
+            state,
+            Cmd.OfTask.perform
+                (fun () -> Task.Run(fun () -> runAiFixtures state.WorldClock (getGs ())))
+                ()
+                (SimMsg << AiMatchesDone)
+
+        | AiMatchesDone result ->
+            match state.Mode with
+            | InGame(currentGs, employment) ->
+                if result.GameState.CurrentDate.Date = currentGs.CurrentDate.Date then
+                    let nextState =
+                        { state with
+                            Mode = InGame(result.GameState, employment)
+                            WorldClock = result.WorldClock }
+                        |> applyMatchNotifs result.GameState result.PlayedMatches
+
+                    nextState, saveCmd result.GameState result.WorldClock
+                else
+                    state, Cmd.none
+            | _ -> state, Cmd.none
 
         | SimulateSeason ->
 

@@ -33,6 +33,14 @@ module WorldRunner =
         { DayResult: DayResult
           MatchReplay: MatchReplay }
 
+    let private parallelMapLimited (f: 'T -> 'U) (arr: 'T[]) : 'U[] =
+        let maxThreads = max 1 (System.Environment.ProcessorCount - 1)
+        let options = System.Threading.Tasks.ParallelOptions(MaxDegreeOfParallelism = maxThreads)
+        let results = Array.zeroCreate arr.Length
+        System.Threading.Tasks.Parallel.For(0, arr.Length, options, fun i ->
+            results[i] <- f arr[i]) |> ignore
+        results
+
     let private isSeasonComplete (gs: GameState) =
         let hasUnplayed (comp: Competition) =
             comp.Fixtures |> Map.exists (fun _ f -> not f.Played)
@@ -65,7 +73,11 @@ module WorldRunner =
                     { gs with
                         CurrentDate = gs.CurrentDate.AddDays(1.0) }
 
-                let gs2, clock1 = WorldScheduler.tick clock gs1
+                let gs2, clock1 =
+                    if remaining = 1 then
+                        WorldScheduler.tickWith (Set.singleton Match) clock gs1
+                    else
+                        WorldScheduler.tick clock gs1
 
                 let todayPlayed =
                     gs2.Competitions
@@ -112,7 +124,7 @@ module WorldRunner =
                     let outcomes, errs =
                         dayFixtures
                         |> Array.ofList
-                        |> Array.Parallel.map (fun (id, fixture) ->
+                        |> parallelMapLimited (fun (id, fixture) ->
                             let home = gsReady.Clubs[fixture.HomeClubId]
                             let away = gsReady.Clubs[fixture.AwayClubId]
                             id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
@@ -249,3 +261,24 @@ module WorldRunner =
                 f.ScheduledDate.Date = gs.CurrentDate.Date
                 && MatchFixture.isPending f
                 && MatchFixture.involves gs.UserClubId f))
+
+    let runAiFixtures (clock: WorldClock) (gs: GameState) : DayResult =
+        let nextGs =
+            match MatchPhase.getAiFixturesToday gs with
+            | [] -> gs
+            | fixtures -> MatchPhase.runFixtures fixtures gs
+
+        let todayPlayed =
+            nextGs.Competitions
+            |> Map.toSeq
+            |> Seq.collect (fun (_, comp) ->
+                comp.Fixtures
+                |> Map.toSeq
+                |> Seq.filter (fun (_, f) -> f.Played && f.ScheduledDate.Date = gs.CurrentDate.Date))
+            |> List.ofSeq
+
+        { GameState = nextGs
+          WorldClock = WorldClockOps.advance clock
+          PlayedMatches = todayPlayed
+          Logs = []
+          SeasonComplete = isSeasonComplete nextGs }

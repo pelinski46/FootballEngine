@@ -36,8 +36,17 @@ type Agent<'Intent> =
       Project: GameState -> AgentView
       Decide: AgentView -> Intent<'Intent> list }
 
+type PhaseTag =
+    | Finance
+    | Match
+    | Transfer
+    | Development
+    | Youth
+    | Season
+
 type WorldPhase =
-    { Frequency: WorldTick
+    { Tag: PhaseTag
+      Frequency: WorldTick
       Run: WorldClock -> GameState -> GameState }
 
 and WorldClock =
@@ -53,9 +62,11 @@ module AgentTypes =
     let mkPhase
         (agents: Agent<'Intent> list)
         (supervisor: GameState -> Intent<'Intent> list -> GameState)
+        (tag: PhaseTag)
         (frequency: WorldTick)
         : WorldPhase =
-        { Frequency = frequency
+        { Tag = tag
+          Frequency = frequency
           Run =
             fun clock state ->
                 agents

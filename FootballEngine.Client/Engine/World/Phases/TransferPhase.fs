@@ -16,9 +16,10 @@ module TransferPhase =
         let clubAgents = clubIds |> List.map ClubAgent.makeFinance
         let playerAgents = playerIds |> List.map PlayerAgent.make
 
-        let managerPhase = mkPhase managerAgents TransferSupervisor.resolve Weekly
-        let clubPhase = mkPhase clubAgents FinanceSupervisor.resolve OnDemand
-        let playerPhase = mkPhase playerAgents (fun s _ -> s) OnDemand
+        let managerPhase = mkPhase managerAgents TransferSupervisor.resolve Transfer Weekly
+        let clubPhase = mkPhase clubAgents FinanceSupervisor.resolve Finance OnDemand
+        let playerPhase = mkPhase playerAgents (fun s _ -> s) Finance OnDemand
 
-        { Frequency = Weekly
+        { Tag = Transfer
+          Frequency = Weekly
           Run = fun clock state -> state |> managerPhase.Run clock |> clubPhase.Run clock |> playerPhase.Run clock }

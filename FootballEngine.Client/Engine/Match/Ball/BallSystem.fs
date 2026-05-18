@@ -1,9 +1,12 @@
 namespace FootballEngine
 
 open FootballEngine.Domain
+
+
 open FootballEngine.Types
 open FootballEngine.Types.PhysicsContract
 open OutcomeResolver
+
 
 module BallSystem =
 
@@ -54,7 +57,7 @@ module BallSystem =
                 (int subTick)
 
         let (outcome, updatedBall) =
-            OutcomeResolver.resolve contact withStationary (int subTick) attDir defDir homeRoster awayRoster ctx clock
+            OutcomeResolver.resolve state contact withStationary (int subTick) attDir defDir homeRoster awayRoster ctx clock
 
         let trajectoryAfter = updatedBall.Trajectory
 

@@ -162,11 +162,9 @@ module CognitionSystem =
                                 influence
 
                         let individual = individualPipeline actx
-                        let collective = frame.CollectiveIntents[i]
-                        let w = compliance player actx.MyCondition actx.Urgency
-                        let merged = CollectiveIntent.merge individual collective w
-
-                        let rawIntent = MovementScorer.pickIntent (int time.Subtick) merged actx
+                        let blackboard = (getTeam state clubSide).Blackboard
+                        let contextual = CollectiveModifiers.applyModifiers blackboard actx individual
+                        let rawIntent = MovementScorer.pickIntent (int time.Subtick) contextual actx
 
                         let mutable finalIntent =
                             match rawIntent with

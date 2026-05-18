@@ -26,7 +26,10 @@ module EventWindow =
           PressRate: float
           FlankRate: float }
 
-    let computeRates (windowSubTicks: int) (events: ResizeArray<MatchEvent>) : EventRates * MatchEvent list =
+    let computeRates (windowSubTicks: int) (events: ResizeArray<MatchEvent>) (currentSubTick: int) : EventRates * MatchEvent list =
+        let halfLife = 10.0 * 40.0
+        let weight age = System.Math.Exp(-float age / halfLife)
+
         let n = events.Count
 
         if n = 0 then
@@ -35,45 +38,50 @@ module EventWindow =
               FlankRate = 0.5 },
             []
         else
-            let cutoff = events[n - 1].SubTick - windowSubTicks
-            let mutable spTotal, spSuccess = 0, 0
-            let mutable pressTotal, pressSuccess = 0, 0
-            let mutable flankTotal, flankSuccess = 0, 0
+            let mutable spTotal = 0.0
+            let mutable spSuccess = 0.0
+            let mutable prTotal = 0.0
+            let mutable prSuccess = 0.0
+            let mutable flTotal = 0.0
+            let mutable flSuccess = 0.0
 
             let recentList = System.Collections.Generic.List<MatchEvent>()
 
             for i = n - 1 downto 0 do
                 let e = events.[i]
+                let age = currentSubTick - e.SubTick
 
-                if e.SubTick >= cutoff then
+                if age <= windowSubTicks then
                     recentList.Add(e)
+
+                    let w = weight age
 
                     match e.Type with
                     | MatchEventType.PassCompleted _ ->
-                        spTotal <- spTotal + 1
-                        spSuccess <- spSuccess + 1
-                    | MatchEventType.PassIncomplete _ -> spTotal <- spTotal + 1
+                        spTotal <- spTotal + w
+                        spSuccess <- spSuccess + w
+                    | MatchEventType.PassIncomplete _ -> spTotal <- spTotal + w
                     | MatchEventType.TackleSuccess ->
-                        pressTotal <- pressTotal + 1
-                        pressSuccess <- pressSuccess + 1
-                    | MatchEventType.TackleFail -> pressTotal <- pressTotal + 1
+                        prTotal <- prTotal + w
+                        prSuccess <- prSuccess + w
+                    | MatchEventType.TackleFail -> prTotal <- prTotal + w
                     | MatchEventType.DribbleFail ->
-                        pressTotal <- pressTotal + 1
-                        pressSuccess <- pressSuccess + 1
+                        prTotal <- prTotal + w
+                        prSuccess <- prSuccess + w
                     | MatchEventType.CrossAttempt true ->
-                        flankTotal <- flankTotal + 1
-                        flankSuccess <- flankSuccess + 1
-                    | MatchEventType.CrossAttempt false -> flankTotal <- flankTotal + 1
+                        flTotal <- flTotal + w
+                        flSuccess <- flSuccess + w
+                    | MatchEventType.CrossAttempt false -> flTotal <- flTotal + w
                     | _ -> ()
 
             let result = List.ofSeq recentList |> List.rev
 
             let calcRate total success =
-                if total = 0 then 0.5 else float success / float total
+                if total > 0.0 then success / total else 0.5
 
             { ShortPassRate = calcRate spTotal spSuccess
-              PressRate = calcRate pressTotal pressSuccess
-              FlankRate = calcRate flankTotal flankSuccess },
+              PressRate = calcRate prTotal prSuccess
+              FlankRate = calcRate flTotal flSuccess },
             result
 
 
