@@ -95,6 +95,7 @@
         <Compile Include="Engine\Match\Core\SimStateOps.fs"/>
         <Compile Include="Engine\Match\Core\MathPipelines.fs"/>
 
+        <Compile Include="Engine\Match\ML\EngineWeights.fs"/>
 
         <Compile Include="Engine\Match\Referee\FoulAnalysis.fs"/>
         <Compile Include="Engine\Match\Referee\AdvantageEngine.fs"/>
