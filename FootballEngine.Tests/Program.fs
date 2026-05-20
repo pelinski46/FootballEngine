@@ -26,6 +26,7 @@ open FootballEngine.Tests.Layer3.GKEdgeCaseTests
 open FootballEngine.Tests.Layer3.PassEdgeCaseTests
 open FootballEngine.Tests.Layer3.PlayerPersonalityTests
 open FootballEngine.Tests.Layer3.MathPipelinesTests
+open FootballEngine.Tests.Layer3.WeightsLoaderTests
 
 [<EntryPoint>]
 let main argv =
@@ -50,6 +51,7 @@ let main argv =
               gkEdgeCaseTests
               passEdgeCaseTests
               playerPersonalityTests
+              weightsLoaderTests
               tests ]
 
     let engineTests =
