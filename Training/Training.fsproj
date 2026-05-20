@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="CalibrationTypes.fs"/>
+    <Compile Include="SimulatorRunner.fs"/>
+    <Compile Include="MetricsAggregator.fs"/>
+    <Compile Include="ErrorCalculator.fs"/>
+    <Compile Include="GradientTuner.fs"/>
+    <Compile Include="Validator.fs"/>
+    <Compile Include="Program.fs"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FootballEngine.Client/FootballEngine.Client.fsproj"/>
+    <PackageReference Update="FSharp.Core" Version="10.1.201"/>
+    <PackageReference Include="FSharp.Stats" Version="0.6.0"/>
+  </ItemGroup>
+</Project>
