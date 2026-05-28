@@ -19,7 +19,7 @@ module ReactiveLoop =
         | TeamDirectiveState.Suspended d -> d.Params.Press.Intensity
 
     let private deviationFor (state: SimState) (clubSide: ClubSide) =
-        let w = EngineWeightDefaults.defaults.Collective.ReactiveLoop
+        let w = BalanceConfig.defaultConfig.Collective.ReactiveLoop
         let emergent = SimStateOps.getEmergentState state clubSide
         let frame = SimStateOps.getFrame state clubSide
 
@@ -42,7 +42,7 @@ module ReactiveLoop =
         shapeDev * w.ShapeDevWeight + pressDev * w.PressDevWeight + fatigueDev * w.FatigueDevWeight
 
     let run (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : PlanDeviation =
-        let w = EngineWeightDefaults.defaults.Collective.ReactiveLoop
+        let w = BalanceConfig.defaultConfig.Collective.ReactiveLoop
         let homeDev = deviationFor state HomeClub
         let awayDev = deviationFor state AwayClub
         let totalDeviation = max homeDev awayDev

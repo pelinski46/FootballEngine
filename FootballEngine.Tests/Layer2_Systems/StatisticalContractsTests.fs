@@ -3,6 +3,7 @@ module FootballEngine.Tests.Layer2.StatisticalContractsTests
 open Expecto
 open FootballEngine.Domain
 open FootballEngine.Simulation
+open FootballEngine.Types
 open FootballEngine.Tests.Helpers
 
 
@@ -32,7 +33,7 @@ let statisticalContractsTests =
                   Array.Parallel.init 20 (fun i ->
                       let hi = i % clubs.Length
                       let ai = (hi + 1) % clubs.Length
-                      MatchSimulator.trySimulateMatchFull clubs[hi] clubs[ai] game.Players game.Staff game.ProfileCache)
+                      MatchSimulator.trySimulateMatchFull BalanceConfig.defaultConfig clubs[hi] clubs[ai] game.Players game.Staff game.ProfileCache)
 
               let okReplays =
                   replays

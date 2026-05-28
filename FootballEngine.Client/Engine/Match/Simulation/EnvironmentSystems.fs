@@ -2,6 +2,7 @@ namespace FootballEngine.Simulation
 
 open FootballEngine.Domain
 open FootballEngine.ML
+open FootballEngine.Types
 
 type WeatherCondition =
     | Clear
@@ -19,7 +20,7 @@ type PitchCondition =
 module WeatherSystem =
 
     let ballSpeedModifier (weather: WeatherCondition) : float =
-        let ew = EngineWeightDefaults.defaults.Environment
+        let ew = BalanceConfig.defaultConfig.Environment
         match weather with
         | Clear -> ew.WeatherClearModifier
         | LightRain -> ew.WeatherLightRainModifier
@@ -28,7 +29,7 @@ module WeatherSystem =
         | Windy -> ew.WeatherWindyModifier
 
     let slipProbability (pitch: PitchCondition) (player: Player) : float =
-        let ew = EngineWeightDefaults.defaults.Environment
+        let ew = BalanceConfig.defaultConfig.Environment
         let agility = float player.Physical.Agility / 20.0
 
         let baseSlip =
@@ -49,7 +50,7 @@ type CrowdInfluence =
 module CrowdSystem =
 
     let homeAdvantage (crowd: CrowdInfluence) : float =
-        let ew = EngineWeightDefaults.defaults.Environment
+        let ew = BalanceConfig.defaultConfig.Environment
         let capacityFactor = float crowd.StadiumCapacity / ew.CrowdMaxCapacity
         let supportFactor = crowd.HomeSupport
         let momentumFactor = max 0.0 crowd.CurrentMomentum / 10.0
@@ -63,5 +64,5 @@ module CrowdSystem =
 
     let pressureOnAwayTeam (crowd: CrowdInfluence) : float =
         let homeAdv = homeAdvantage crowd
-        let ew = EngineWeightDefaults.defaults.Environment
+        let ew = BalanceConfig.defaultConfig.Environment
         homeAdv * ew.AwayPressureCrowdMult

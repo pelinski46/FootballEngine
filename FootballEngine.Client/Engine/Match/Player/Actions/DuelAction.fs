@@ -111,7 +111,7 @@ module DuelAction =
                         0
 
                 let aggressionNorm = float defFrame.AggressionLevel[defIdx]
-                let rw = EngineWeightDefaults.defaults.Referee
+                let rw = BalanceConfig.defaultConfig.Referee
                 let foulChance = rw.CardBaseProb + aggressionNorm * rw.CardAggressionMult * 100.0
 
                 if bernoulli foulChance then
@@ -349,7 +349,7 @@ module DuelAction =
                             PendingOffsideSnapshot = None }
 
                     let mDelta = forwardX actx.Att.AttackDir * (-tCfg.FoulMomentum)
-                    let rw = EngineWeightDefaults.defaults.Referee
+                    let rw = BalanceConfig.defaultConfig.Referee
                     let reckless = bernoulli (aggressionNorm * rw.FoulAggressionBase)
                     let excessiveForce = bernoulli (aggressionNorm * rw.FoulAggressionMult)
                     let ballPos = state.Ball.Position

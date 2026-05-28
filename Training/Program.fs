@@ -7,14 +7,9 @@ open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.ML
 open FootballEngine.Simulation
+open FootballEngine.Types
 
 module Program =
-
-    let private saveWeights (path: string) (weights: EngineWeights) : unit =
-        let opts = JsonSerializerOptions(WriteIndented = true)
-        let json = JsonSerializer.Serialize(weights, opts)
-        File.WriteAllText(path, json)
-        printfn "Saved trained weights to %s" path
 
     let private makeTestPlayer (id: PlayerId) (pos: Position) (skill: int) : Player =
         let s = Math.Clamp(skill, 1, 20)
@@ -36,14 +31,35 @@ module Program =
           BoardObjective = LeagueObjective MidTable
           CoordinationMemory = CoordinationMemory.defaultMemory }
 
-    let private makeTestStaff (id: StaffId) (clubId: ClubId) : Staff =
+    let private makeTestStaff (id: StaffId) (clubId: ClubId) (playerIds: PlayerId list) : Staff =
+        let slots =
+            playerIds
+            |> List.mapi (fun i pid ->
+                { Index = i
+                  Role = match i with
+                         | 0 -> GK | 1 -> DL | 2 -> DC | 3 -> DC | 4 -> DR
+                         | 5 -> ML | 6 -> MC | 7 -> MC | 8 -> MR
+                         | 9 -> ST | 10 -> ST
+                         | _ -> MC
+                  X = 0.5
+                  Y = 0.5
+                  PlayerId = Some pid })
+            |> List.take 11
+
+        let lineup = {
+            Formation = F442
+            Tactics = Balanced
+            Instructions = Some TacticalInstructions.defaultInstructions
+            Slots = slots
+        }
+
         { Id = id; Name = $"Coach{id}"; Birthday = System.DateTime(1970, 1, 1); Nationality = "AR"
           Role = HeadCoach
           Attributes = {
               Coaching = {
                   Attacking = 15; Defending = 14; Fitness = 12; Goalkeeping = 10
                   Mental = 14; SetPieces = 13; Tactical = 15; Technical = 14
-                  WorkingWithYoungsters = 10; PreferredFormation = None; Lineup = None
+                  WorkingWithYoungsters = 10; PreferredFormation = None; Lineup = Some lineup
               }
               Scouting = { NetworkReach = 10; DataAnalysis = 10; MarketKnowledge = 10 }
               Medical = { Physiotherapy = 10; SportsScience = 10 }
@@ -58,7 +74,7 @@ module Program =
           Badge = ProLicense
           Reputation = 1500
           Contract = Some { ClubId = clubId; Salary = 50000m; ExpiryYear = 2030 }
-          Status = Active
+          Status = StaffStatus.Active
           TrophiesWon = 0; SeasonsManaged = 5 }
 
     let private createTestData () =
@@ -79,17 +95,20 @@ module Program =
         let allPlayers = Array.append homePlayers awayPlayers
         let players = allPlayers |> Array.map (fun p -> p.Id, p) |> Map.ofArray
 
-        let homeCoach = makeTestStaff 1000 homeClub.Id
-        let awayCoach = makeTestStaff 1001 awayClub.Id
+        let homePlayerIds = homePlayers |> Array.map _.Id |> Array.toList
+        let awayPlayerIds = awayPlayers |> Array.map _.Id |> Array.toList
+        let homeCoach = makeTestStaff 1000 homeClub.Id homePlayerIds
+        let awayCoach = makeTestStaff 1001 awayClub.Id awayPlayerIds
         let staff = [homeCoach; awayCoach] |> List.map (fun s -> s.Id, s) |> Map.ofList
 
+        let pw = BalanceConfig.defaultConfig.ProfileWeights
         let profileMap =
             players
-            |> Map.map (fun _ p -> Player.profile p EngineWeightDefaults.defaults.ProfileWeights)
+            |> Map.map (fun _ p -> Player.profile p pw)
 
         homeClub, awayClub, players, staff, profileMap
 
-    let runTrainingLoop
+    let runCuration
         (weightsPath: string)
         (outputPath: string)
         (iterations: int)
@@ -98,97 +117,75 @@ module Program =
         (epsilon: float)
         (learningRate: float)
         : unit =
-        printfn "=== Training Loop C ==="
-        printfn "Iterations: %d" iterations
-        printfn "Matches per iteration: %d" matchesPerIteration
-        printfn "Validation matches: %d" validationMatches
 
-        let weights =
+        printfn "=== Curation Tool ==="
+        printfn "Input:  %s" weightsPath
+        printfn "Output: %s" outputPath
+
+        let initialConfig =
             match WeightsLoader.load weightsPath with
-            | Ok w ->
-                printfn "Loaded weights from %s" weightsPath
-                w
-            | Error _ ->
-                printfn "Using default weights (file not found: %s)" weightsPath
-                EngineWeightDefaults.defaults
+            | Ok w -> printfn "Loaded %s" weightsPath; w
+            | Error e -> printfn "WARNING: %s — using defaults" e; BalanceConfig.defaultConfig
 
         let home, away, players, staff, profileMap = createTestData ()
-        let targets: Training.CalibrationTargets = Training.CalibrationTargets.targetsDefault
+        let targets = Training.CalibrationTargets.targetsDefault
 
-        let errorFn (w: EngineWeights) : float =
-            let results = SimulatorRunner.runBatch 10 home away players staff profileMap
+        let errorFn (config: BalanceConfig) : float =
+            let results = SimulatorRunner.runBatch config 5 home away players staff profileMap
             if List.isEmpty results then 999.0
             else
-                let matchMetrics, _ = MetricsAggregator.aggregate results
-                let error, _ = ErrorCalculator.computeError matchMetrics targets
-                error
+                let m, _ = MetricsAggregator.aggregate results
+                fst (ErrorCalculator.computeError m targets)
 
-        let initialResults = SimulatorRunner.runBatch matchesPerIteration home away players staff profileMap
+        let initialResults = SimulatorRunner.runBatch initialConfig matchesPerIteration home away players staff profileMap
         let initialMetrics, _ = MetricsAggregator.aggregate initialResults
-        let baseError, _ = ErrorCalculator.computeError initialMetrics targets
-        printfn "Initial error: %.4f" baseError
+        let baseError, baseDeltas = ErrorCalculator.computeError initialMetrics targets
 
-        let rec loop iteration currentWeights currentError =
-            if iteration >= iterations then
-                printfn "\nTraining complete after %d iterations" iterations
-                printfn "Final error: %.4f" currentError
-                saveWeights outputPath currentWeights
+        printfn "\n=== Baseline ==="
+        for d in baseDeltas do
+            let status = if d.IsHigh then "HIGH" elif d.IsLow then "LOW" else "OK"
+            printfn "  %-25s %.3f (target: %.2f-%.2f) %s"
+                d.Metric d.Observed d.TargetMin d.TargetMax status
+        printfn "  Error: %.4f" baseError
+
+        let rec loop i config currentError =
+            if i >= iterations then
+                printfn "\nDone after %d iterations. Error: %.4f" iterations currentError
+                config
             else
-                printfn "\n--- Iteration %d/%d (error: %.4f) ---" (iteration + 1) iterations currentError
+                printfn "\n--- Iteration %d/%d (error: %.4f) ---" (i+1) iterations currentError
+                let tuned = GradientTuner.tune epsilon learningRate config errorFn
 
-                let tuned =
-                    GradientTuner.tune epsilon learningRate currentWeights (fun w ->
-                        let results = SimulatorRunner.runBatch 5 home away players staff profileMap
-                        if List.isEmpty results then 999.0
-                        else
-                            let m, _ = MetricsAggregator.aggregate results
-                            let e, _ = ErrorCalculator.computeError m targets
-                            e)
+                let valResults = SimulatorRunner.runBatch tuned validationMatches home away players staff profileMap
+                let newError, deltas = ErrorCalculator.computeError (fst (MetricsAggregator.aggregate valResults)) targets
 
-                let validationResults =
-                    SimulatorRunner.runBatch validationMatches home away players staff profileMap
+                let significant = Calibrator.getSignificant 0.1 deltas
+                for d in significant do
+                    printfn "  %s: %.3f (target: %.2f-%.2f)" d.Metric d.Observed d.TargetMin d.TargetMax
 
-                if List.isEmpty validationResults then
-                    printfn "  Validation: no results, keeping current weights"
-                    loop (iteration + 1) currentWeights currentError
+                if newError < currentError then
+                    printfn "  Improved: %.4f -> %.4f" currentError newError
+                    loop (i+1) tuned newError
                 else
-                    let valMetrics, _ = MetricsAggregator.aggregate validationResults
-                    let newError, deltas = ErrorCalculator.computeError valMetrics targets
+                    printfn "  No improvement, keeping current"
+                    loop (i+1) config currentError
 
-                    let significant = Calibrator.getSignificant 0.1 deltas
-                    for d in significant do
-                        printfn "  %s: %.3f (target: %.2f-%.2f)" d.Metric d.Observed d.TargetMin d.TargetMax
+        let finalConfig = loop 0 initialConfig baseError
 
-                    if newError < currentError then
-                        printfn "  Improved: %.4f -> %.4f" currentError newError
-                        loop (iteration + 1) tuned newError
-                    else
-                        printfn "  No improvement (%.4f >= %.4f), reducing learning rate" currentError newError
-                        let halfLR = learningRate * 0.5
-                        if halfLR < 0.0001 then
-                            printfn "  Learning rate too small, stopping"
-                            saveWeights outputPath currentWeights
-                        else
-                            loop (iteration + 1) currentWeights currentError
-
-        loop 0 weights baseError
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(finalConfig, opts)
+        File.WriteAllText(outputPath, json)
+        printfn "\nSaved suggested weights to %s" outputPath
+        printfn "Review and promote to weights.json manually if satisfied."
 
     [<EntryPoint>]
     let main argv =
-        let weightsPath =
-            if argv.Length > 0 then argv.[0]
-            else "weights.json"
-        let outputPath =
-            if argv.Length > 1 then argv.[1]
-            else "weights_trained.json"
-
-        runTrainingLoop
-            weightsPath
-            outputPath
-            20
-            20
-            10
-            0.01
-            0.05
-
+        let weightsPath  = if argv.Length > 0 then argv.[0] else "weights.json"
+        let outputPath   = if argv.Length > 1 then argv.[1] else "weights_curated.json"
+        let iterations   = if argv.Length > 2 then int argv.[2] else 10
+        let matchesPerIt = if argv.Length > 3 then int argv.[3] else 20
+        let valMatches   = if argv.Length > 4 then int argv.[4] else 10
+        let epsilon      = if argv.Length > 5 then float argv.[5] else 0.01
+        let learningRate = if argv.Length > 6 then float argv.[6] else 0.05
+        runCuration weightsPath outputPath iterations matchesPerIt valMatches epsilon learningRate
         0

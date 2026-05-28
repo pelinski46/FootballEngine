@@ -10,7 +10,7 @@ open PhysicsContract
 module RefereeAgent =
 
     let cardProbability (config: HomeAdvantageConfig) (playerClub: ClubSide) (p: Player) =
-        let rw = EngineWeightDefaults.defaults.Referee
+        let rw = BalanceConfig.defaultConfig.Referee
         let baseProb = rw.CardBaseProb + float p.Mental.Aggression * rw.CardAggressionMult
 
         match playerClub with
@@ -18,7 +18,7 @@ module RefereeAgent =
         | AwayClub -> baseProb
 
     let injuryProbability (p: Player) =
-        let rw = EngineWeightDefaults.defaults.Referee
+        let rw = BalanceConfig.defaultConfig.Referee
         rw.InjuryBaseProb + float (100 - p.Physical.Strength) * rw.InjuryStrengthInverseMult
 
     type BallOutResult =
@@ -118,7 +118,7 @@ module RefereeAgent =
 
     let decideCard (fouler: Player) (ctx: MatchContext) (state: SimState) : RefereeAction list =
         let aggressionNorm = normaliseAttr fouler.Mental.Aggression
-        let rw = EngineWeightDefaults.defaults.Referee
+        let rw = BalanceConfig.defaultConfig.Referee
 
         let isHome = playerOnSide ctx state HomeClub fouler.Id
 

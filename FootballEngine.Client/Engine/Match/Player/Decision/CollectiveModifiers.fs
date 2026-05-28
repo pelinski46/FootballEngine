@@ -22,7 +22,7 @@ module CollectiveModifiers =
         (_defRole: DefensiveRole)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         if bb.OurPhase = Transition && bb.JustLostBall then
             let distToBall = ctx.MyPos.DistTo2D ctx.BallState.Position
             let multiplier =
@@ -40,7 +40,7 @@ module CollectiveModifiers =
         (myFlank: FlankZone)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         let flankMatch =
             bb.WeaknessZones
             |> Array.exists (fun z -> z = myFlank)
@@ -56,7 +56,7 @@ module CollectiveModifiers =
         (slotRole: SlotRole)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         if bb.OurPhase = Attacking && slotRole = AnchorDefense then
             { scores with
                 SupportAttack = scores.SupportAttack * w.RestDefenseSupportMult
@@ -70,7 +70,7 @@ module CollectiveModifiers =
         (myFlank: FlankZone)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         let threatMatch =
             bb.ThreatZones
             |> Array.exists (fun z -> z = myFlank)
@@ -85,7 +85,7 @@ module CollectiveModifiers =
         (ctx: AgentContext)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         match bb.OpponentShape with
         | HighLine when ctx.TeamHasBall ->
             { scores with SupportAttack = scores.SupportAttack * w.HighLineSupportMult }
@@ -100,7 +100,7 @@ module CollectiveModifiers =
         (_ctx: AgentContext)
         (scores: MovementScores)
         : MovementScores =
-        let w = EngineWeightDefaults.defaults.Collective.Modifiers
+        let w = BalanceConfig.defaultConfig.Collective.Modifiers
         if bb.Urgency > w.UrgencyThreshold then
             { scores with
                 PressBall = scores.PressBall * (1.0 + bb.Urgency * w.UrgencyPressMult)

@@ -125,7 +125,7 @@ module PlayerDecision =
         let candidates: (float * OnBallIntent) list =
             [ if not shootBlocked then
                   let flairBonus = personality.Flair * 0.2
-                  let s = float scores.Shoot * (1.0 + ctx.Urgency * 0.5 + flairBonus)
+                  let s = float scores.Shoot * (1.0 + ctx.Urgency * 0.2 + flairBonus)
                   yield s, OnBallIntent.Shoot
 
               if not passBlocked then

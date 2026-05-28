@@ -35,10 +35,15 @@ module WorldRunner =
 
     let private parallelMapLimited (f: 'T -> 'U) (arr: 'T[]) : 'U[] =
         let maxThreads = max 1 (System.Environment.ProcessorCount - 1)
-        let options = System.Threading.Tasks.ParallelOptions(MaxDegreeOfParallelism = maxThreads)
+
+        let options =
+            System.Threading.Tasks.ParallelOptions(MaxDegreeOfParallelism = maxThreads)
+
         let results = Array.zeroCreate arr.Length
-        System.Threading.Tasks.Parallel.For(0, arr.Length, options, fun i ->
-            results[i] <- f arr[i]) |> ignore
+
+        System.Threading.Tasks.Parallel.For(0, arr.Length, options, fun i -> results[i] <- f arr[i])
+        |> ignore
+
         results
 
     let private isSeasonComplete (gs: GameState) =
@@ -127,7 +132,16 @@ module WorldRunner =
                         |> parallelMapLimited (fun (id, fixture) ->
                             let home = gsReady.Clubs[fixture.HomeClubId]
                             let away = gsReady.Clubs[fixture.AwayClubId]
-                            id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
+
+                            id,
+                            fixture,
+                            trySimulateMatch
+                                BalanceConfig.defaultConfig
+                                home
+                                away
+                                gsReady.Players
+                                gsReady.Staff
+                                gsReady.ProfileCache)
                         |> Array.fold
                             (fun (outs, errs) (id, fixture, result) ->
                                 match result with
@@ -208,7 +222,15 @@ module WorldRunner =
             let home = gsReady.Clubs[fixture.HomeClubId]
             let away = gsReady.Clubs[fixture.AwayClubId]
 
-            match trySimulateMatchFull home away gsReady.Players gsReady.Staff gsReady.ProfileCache with
+            match
+                trySimulateMatchFull
+                    BalanceConfig.defaultConfig
+                    home
+                    away
+                    gsReady.Players
+                    gsReady.Staff
+                    gsReady.ProfileCache
+            with
             | Error e -> Error $"Match simulation failed: {e}"
             | Ok replay ->
                 let h = replay.Final.HomeScore
@@ -240,7 +262,7 @@ module WorldRunner =
                 let metrics =
                     MatchMetrics.extract replay.Events fixture.HomeClubId fixture.AwayClubId
 
-                let w = FootballEngine.ML.EngineWeightDefaults.defaults.Collective
+                let w = BalanceConfig.defaultConfig.Collective
 
                 let homeCoord =
                     CoordinationLoop.updateFromMatch
@@ -264,19 +286,29 @@ module WorldRunner =
                 let awayInjured = outcome.InjuredPlayers |> Set.count
 
                 let finalHomeCoord =
-                    if homeInjured > 0 then CoordinationLoop.applySquadChangeDecay homeInjured homeCoord
-                    else homeCoord
+                    if homeInjured > 0 then
+                        CoordinationLoop.applySquadChangeDecay homeInjured homeCoord
+                    else
+                        homeCoord
 
                 let finalAwayCoord =
-                    if awayInjured > 0 then CoordinationLoop.applySquadChangeDecay awayInjured awayCoord
-                    else awayCoord
+                    if awayInjured > 0 then
+                        CoordinationLoop.applySquadChangeDecay awayInjured awayCoord
+                    else
+                        awayCoord
 
                 let gsWithCoord =
                     { finalGs with
                         Clubs =
                             finalGs.Clubs
-                            |> Map.add fixture.HomeClubId { finalGs.Clubs[fixture.HomeClubId] with CoordinationMemory = finalHomeCoord }
-                            |> Map.add fixture.AwayClubId { finalGs.Clubs[fixture.AwayClubId] with CoordinationMemory = finalAwayCoord } }
+                            |> Map.add
+                                fixture.HomeClubId
+                                { finalGs.Clubs[fixture.HomeClubId] with
+                                    CoordinationMemory = finalHomeCoord }
+                            |> Map.add
+                                fixture.AwayClubId
+                                { finalGs.Clubs[fixture.AwayClubId] with
+                                    CoordinationMemory = finalAwayCoord } }
 
                 let clock1 = WorldClockOps.advance clock
 

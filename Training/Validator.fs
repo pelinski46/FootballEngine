@@ -2,7 +2,7 @@ namespace Training
 
 open FootballEngine
 open FootballEngine.Domain
-open FootballEngine.ML
+open FootballEngine.Types
 open FootballEngine.Simulation
 
 module Validator =
@@ -15,14 +15,12 @@ module Validator =
         (staff: Map<StaffId, Staff>)
         (profileMap: Map<PlayerId, BehavioralProfile>)
         (targets: Training.CalibrationTargets)
-        (originalWeights: EngineWeights)
-        (candidateWeights: EngineWeights)
+        (originalWeights: BalanceConfig)
+        (candidateWeights: BalanceConfig)
         (originalError: float)
-        : Result<EngineWeights, string> =
-        let _config = WeightsLoader.toBalanceConfig candidateWeights
-
+        : Result<BalanceConfig, string> =
         let results =
-            SimulatorRunner.runBatch validationMatches home away players staff profileMap
+            SimulatorRunner.runBatch candidateWeights validationMatches home away players staff profileMap
 
         if List.isEmpty results then
             Error "Validator: no matches simulated"

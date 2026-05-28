@@ -323,7 +323,7 @@ module WorldGen =
         let userManager =
             createUserManager userStaffId managerName primaryCountry userClubId year
 
-        let profileCache = world.Players |> Map.map (fun _ p -> Player.profile p EngineWeightDefaults.defaults.ProfileWeights)
+        let profileCache = world.Players |> Map.map (fun _ p -> Player.profile p FootballEngine.Types.BalanceConfig.defaultConfig.ProfileWeights)
 
         let activeMods = DataRegistry.activeMods () |> List.map (fun m -> m.Id, m.Version)
 

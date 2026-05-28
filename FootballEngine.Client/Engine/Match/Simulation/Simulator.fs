@@ -139,6 +139,7 @@ module MatchSimulator =
             | None -> failwithf $"Position missing for player %s{p.Name} (%A{p.Id})")
 
     let private initSimState
+        (config: BalanceConfig)
         home
         homeCoach
         hp
@@ -163,7 +164,7 @@ module MatchSimulator =
                     |> Map.tryFind p.Id
                     |> Option.defaultValue (HalfwayLineX, PitchWidth / 2.0)
 
-                let prof = profileMap |> Map.tryFind p.Id |> Option.defaultValue (Player.profile p EngineWeightDefaults.defaults.ProfileWeights)
+                let prof = profileMap |> Map.tryFind p.Id |> Option.defaultValue (Player.profile p BalanceConfig.defaultConfig.ProfileWeights)
 
                 let kx =
                     match p.Position with
@@ -213,7 +214,7 @@ module MatchSimulator =
               HomeChemistry = ChemistryGraph.init hCount
               AwayChemistry = ChemistryGraph.init aCount
               IsKnockoutMatch = isKnockout
-              Config = BalanceConfig.defaultConfig
+              Config = config
               HomeRoster = homeRoster
               AwayRoster = awayRoster }
 
@@ -221,7 +222,7 @@ module MatchSimulator =
         state.SubTick <- 0<subtick>
         state.HomeScore <- 0
         state.AwayScore <- 0
-        state.Config <- BalanceConfig.defaultConfig
+        state.Config <- config
 
         state.Ball <- { defaultBall with Control = Free }
 
@@ -343,6 +344,7 @@ module MatchSimulator =
         }
 
     let setup
+        (config: BalanceConfig)
         home
         away
         players
@@ -365,6 +367,7 @@ module MatchSimulator =
 
             let ctx, state =
                 initSimState
+                    config
                     home
                     homeCoach
                     hp
@@ -387,6 +390,7 @@ module MatchSimulator =
         }
 
     let trySimulateMatch
+        (config: BalanceConfig)
         home
         away
         players
@@ -394,38 +398,38 @@ module MatchSimulator =
         profileMap
         : Result<int * int * MatchEvent list * SimState, SimulationError> =
         result {
-            let validationErrors = ConfigValidation.validateAll (BalanceConfig.defaultConfig)
+            let validationErrors = ConfigValidation.validateAll config
 
             if not validationErrors.IsEmpty then
                 let msg = validationErrors |> String.concat "\n"
                 return failwithf $"BalanceConfig validation failed:\n%s{msg}"
 
-            let! ctx, state, _, _ = setup home away players staff false profileMap
+            let! ctx, state, _, _ = setup config home away players staff false profileMap
             let final, events = runLoopFast ctx state defaultClock
             return final.HomeScore, final.AwayScore, events, final
         }
 
-    let trySimulateMatchFull home away players staff profileMap : Result<MatchReplay, SimulationError> =
+    let trySimulateMatchFull (config: BalanceConfig) home away players staff profileMap : Result<MatchReplay, SimulationError> =
         result {
-            let validationErrors = ConfigValidation.validateAll (BalanceConfig.defaultConfig)
+            let validationErrors = ConfigValidation.validateAll config
 
             if not validationErrors.IsEmpty then
                 let msg = validationErrors |> String.concat "\n"
                 return failwithf $"BalanceConfig validation failed:\n%s{msg}"
 
-            let! ctx, state, _, _ = setup home away players staff false profileMap
+            let! ctx, state, _, _ = setup config home away players staff false profileMap
             return runLoopFull ctx state defaultClock
         }
 
-    let trySimulateMatchKnockout home away players staff profileMap : Result<MatchReplay * bool, SimulationError> =
+    let trySimulateMatchKnockout (config: BalanceConfig) home away players staff profileMap : Result<MatchReplay * bool, SimulationError> =
         result {
-            let validationErrors = ConfigValidation.validateAll (BalanceConfig.defaultConfig)
+            let validationErrors = ConfigValidation.validateAll config
 
             if not validationErrors.IsEmpty then
                 let msg = validationErrors |> String.concat "\n"
                 return failwithf $"BalanceConfig validation failed:\n%s{msg}"
 
-            let! ctx, state, _, _ = setup home away players staff true profileMap
+            let! ctx, state, _, _ = setup config home away players staff true profileMap
             let replay = runLoopFull ctx state defaultClock
 
             if replay.Final.HomeScore = replay.Final.AwayScore then
@@ -435,7 +439,7 @@ module MatchSimulator =
                 return replay, false
         }
 
-    let buildInitState home away players staff profileMap =
-        match setup home away players staff false profileMap with
+    let buildInitState (config: BalanceConfig) home away players staff profileMap =
+        match setup config home away players staff false profileMap with
         | Ok(ctx, state, homeSquad, awaySquad) -> Some(ctx, state, homeSquad, awaySquad)
         | Error _ -> None

@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CalibrationTypes.fs"/>
+    <Compile Include="ExperienceMetrics.fs"/>
     <Compile Include="SimulatorRunner.fs"/>
     <Compile Include="MetricsAggregator.fs"/>
     <Compile Include="ErrorCalculator.fs"/>

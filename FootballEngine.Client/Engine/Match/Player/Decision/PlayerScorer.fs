@@ -30,7 +30,14 @@ module PlayerScorer =
     let private expMax = 1.15
     let private influenceSpaceBonusMax = 0.25
 
-    let private buildUpSideBonus (_pos: Position) = 0.0
+    let private buildUpSideBonus (pos: Position) =
+        match pos with
+        | GK -> 0.05
+        | DC | DM -> 0.10
+        | MC | AMC -> 0.08
+        | DL | DR | WBL | WBR -> 0.06
+        | ML | MR | AML | AMR -> 0.04
+        | ST -> 0.02
 
     let private shootScore (ctx: AgentContext) (matchMemory: MatchMemory) (exp: ExperienceModifiers) (sw: ShootWeights) : float<decisionScore> =
         let me = ctx.Me
@@ -52,9 +59,8 @@ module PlayerScorer =
         let distPenalty =
             clampFloat (float ctx.DistToGoal / d.ShootDistPenaltyDivisor) 0.0 d.ShootDistPenaltyMax
 
-        let iw = EngineWeightDefaults.defaults.Individual
+        let iw = BalanceConfig.defaultConfig.Individual
         let df = directnessFactor t ctx.Profile iw
-        let mentalityBonus = t.UrgencyMultiplier * sw.XGInfluence
         let directnessBonus = df * d.ShootDirectnessBonus
 
         let composureStateMod = ctx.MentalState.ComposureLevel * sw.ComposureStateMod
@@ -126,7 +132,6 @@ module PlayerScorer =
 
         let scoreRaw =
             finishing + longShots + composure + distNorm + posBonus - distPenalty
-            + mentalityBonus
             + directnessBonus
             + composureStateMod
             + confidenceMod
@@ -215,7 +220,7 @@ module PlayerScorer =
             ctx.Profile.CreativityWeight * d.CreativityWeight
             + (1.0 - ctx.Profile.Directness) * d.DirectnessWeight
 
-        let iw = EngineWeightDefaults.defaults.Individual
+        let iw = BalanceConfig.defaultConfig.Individual
         let df = directnessFactor t ctx.Profile iw
         let tempoBias = t.Tempo * iw.Pass.AttackPhasePenalty
         let directBias = -(df * iw.Pass.TargetBonus)
@@ -329,7 +334,7 @@ module PlayerScorer =
             | Midfield -> 0.0
             | Attack -> d.DribbleAttackPhaseBonus
 
-        let iw = EngineWeightDefaults.defaults.Individual
+        let iw = BalanceConfig.defaultConfig.Individual
         let df = directnessFactor t ctx.Profile iw
         let tempoPenalty = t.Tempo * (1.0 - df) * d.DribbleTempoPenalty
 
@@ -392,7 +397,7 @@ module PlayerScorer =
         let passing = normStat me.Technical.Passing * d.LongBallPassingWeight
         let vision = normStat me.Mental.Vision * d.LongBallVisionWeight
 
-        let iw = EngineWeightDefaults.defaults.Individual
+        let iw = BalanceConfig.defaultConfig.Individual
         let df = directnessFactor t ctx.Profile iw
         let directnessBonus = df * d.LongBallDirectnessBonus
 
@@ -419,7 +424,7 @@ module PlayerScorer =
         |> LanguagePrimitives.FloatWithMeasure<decisionScore>
 
     let computeAll (ctx: AgentContext) (matchMemory: MatchMemory) (exp: ExperienceModifiers) : ActionScores =
-        let sw = EngineWeightDefaults.defaults.Individual.Shoot
+        let sw = BalanceConfig.defaultConfig.Individual.Shoot
         { Shoot = shootScore ctx matchMemory exp sw
           Pass = passScore ctx matchMemory exp
           Dribble = dribbleScore ctx matchMemory exp

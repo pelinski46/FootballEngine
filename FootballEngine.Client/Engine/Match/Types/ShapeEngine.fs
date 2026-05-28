@@ -10,6 +10,7 @@ module ShapeEngine =
 
     let computeShapeTargets
         (basePositions: Spatial[])
+        (currentPositions: PhysicsFrame)
         (profiles: BehavioralProfile[])
         (dir: AttackDir)
         (phase: MatchPhase)
@@ -27,12 +28,10 @@ module ShapeEngine =
 
         let tacticalPush = tacticsCfg.ForwardPush * 0.5<meter> * forwardDir
         let defensiveDrop = tacticsCfg.DefensiveDrop * 0.5<meter> * forwardDir
-        let ballPullBase = (ballX - HalfwayLineX) * 0.08 * forwardDir
+        let ballPullBase = (ballX - HalfwayLineX) * 0.35 * forwardDir
         let pressureCoeff = tacticsCfg.PressureDistance * 0.008
 
         let widthSpread = 0.7 + tacticsCfg.Width * 0.6
-
-        let damping = 0.15
 
         for i = 0 to n - 1 do
             let basePos = basePositions[i]
@@ -40,16 +39,22 @@ module ShapeEngine =
 
             let phaseShift =
                 match phase with
-                | BuildUp -> (-4.0<meter> + pressMod * 2.0<meter>) * forwardDir * profile.DefensiveHeight
-                | Midfield -> (pressMod * 1.0<meter>) * forwardDir * profile.PressingIntensity
-                | Attack -> (3.0<meter> + pressMod * 2.0<meter>) * forwardDir * profile.AttackingDepth
+                | BuildUp -> (-12.0<meter> + pressMod * 4.0<meter>) * forwardDir * profile.DefensiveHeight
+                | Midfield -> (pressMod * 2.0<meter>) * forwardDir * profile.PressingIntensity
+                | Attack -> (10.0<meter> + pressMod * 4.0<meter>) * forwardDir * profile.AttackingDepth
 
-            let targetPullX =
-                clamp (ballPullBase * (float i / float (n - 1))) -6.0<meter> 6.0<meter>
+            let playerDepthRatio =
+                let minX = 2.0<meter>
+                let maxX = PitchLength - 7.0<meter>
+                let ratio = (basePos.X - minX) / (maxX - minX)
+                clamp ratio 0.0 1.0
 
-            let ballPullX = targetPullX * damping * profile.PositionalFreedom
+            let targetPullX = clamp (ballPullBase * playerDepthRatio) -8.0<meter> 8.0<meter>
 
-            let compactShift = (basePos.Y - 34.0<meter>) * pressureCoeff
+            let ballPullX = targetPullX * profile.PositionalFreedom
+
+            let currentY = float currentPositions.PosY[i] * 1.0<meter>
+            let compactShift = (currentY - 34.0<meter>) * pressureCoeff
 
             let widthShift =
                 (basePos.Y - 34.0<meter>) * (widthSpread - 1.0) * (abs profile.LateralTendency + 0.5)

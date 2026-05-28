@@ -513,6 +513,370 @@ type PerceptionConfig =
       BlindPassComposureThreshold: int
       BlindPassSuccessPenalty: float }
 
+type ShootWeights =
+    { FinishingWeight: float
+      LongShotsWeight: float
+      ComposureWeight: float
+      XGInfluence: float
+      ComposureStateMod: float
+      ConfidenceMod: float
+      FocusMod: float
+      RiskBonus: float
+      DistPenaltyDivisor: float
+      DistPenaltyMax: float }
+
+type PassWeights =
+    { PassingWeight: float
+      VisionWeight: float
+      ComposureWeight: float
+      TargetBonus: float
+      AttackPhasePenalty: float }
+
+type DribbleWeights =
+    { DribblingWeight: float
+      AgilityWeight: float
+      BalanceWeight: float
+      ZoneBonusAttacking: float
+      ZoneBonusMidfield: float
+      TempoPenalty: float
+      PressurePenalty: float }
+
+type CrossWeights =
+    { CrossingWeight: float
+      LateralTendencyWeight: float
+      LateralTendencyBase: float
+      ZoneBonus: float
+      WidthBonus: float }
+
+type LongBallWeights =
+    { LongShotsWeight: float
+      PassingWeight: float
+      VisionWeight: float
+      PressDistBase: float
+      PressMin: float
+      PressMax: float
+      PressNoOpponent: float
+      AttackPhaseBonus: float
+      DirectnessBonus: float }
+
+type IndividualWeights =
+    { Shoot: ShootWeights
+      Pass: PassWeights
+      Dribble: DribbleWeights
+      Cross: CrossWeights
+      LongBall: LongBallWeights
+      SoftmaxTemperature: float
+      DirectnessBlendTactic: float
+      DirectnessBlendProfile: float }
+
+type DevelopmentWeights =
+    { AgeBracket_MaxDelta_U21: int
+      AgeBracket_MaxDelta_U25: int
+      AgeBracket_MaxDelta_U28: int
+      AgeBracket_MaxDelta_U31: int
+      AgeBracket_MaxDelta_U34: int
+      FocusMultiplier_Goalkeeping: float
+      FocusMultiplier_PhysicalBase: float
+      FocusMultiplier_Physical_Pressing: float
+      FocusMultiplier_Physical_Positional: float
+      FocusMultiplier_Mental: float
+      FocusMultiplier_TechnicalBase: float
+      FocusMultiplier_Technical_Creativity: float
+      FocusMultiplier_Technical_Directness: float
+      WeeklyDeltaDivisor: float
+      StatFocus_DirectnessThreshold: float
+      StatFocus_AttackingDepthThreshold: float
+      StatFocus_DefensiveHeightThreshold: float
+      StatFocus_CreativityThreshold: float
+      MaybeStat_PositiveThreshold: float
+      MaybeStat_NegativeThreshold: float }
+
+type CalibrationTargets =
+    { GoalsPerMatch: float
+      ShotsPerMatch: float
+      PassSuccessRate: float
+      CrossSuccessRate: float
+      HomeWinPct: float
+      DrawPct: float
+      AwayWinPct: float
+      CardsPerMatch: float
+      InjuriesPerMatch: float
+      DribblesPerMatch: float
+      CrossesPerMatch: float
+      LongBallsPerMatch: float
+      DuelTicksPerMatch: float }
+
+[<CLIMutable>]
+type PersonalityWeights = {
+    FlairVisionWeight: float
+    FlairDribblingWeight: float
+    ConsistencyConcentrationWeight: float
+    ConsistencyComposureWeight: float
+    LeadershipWeight: float
+    ControversyAggressionWeight: float
+    ControversyComposureWeight: float
+    TeamworkWorkRateWeight: float
+    TeamworkPositioningWeight: float
+    AmbitionMoraleWeight: float
+    AmbitionWorkRateWeight: float
+    PressureComposureWeight: float
+    PressureConcentrationWeight: float
+    SportsmanshipAggressionWeight: float
+    TemperamentComposureWeight: float
+    TemperamentConcentrationWeight: float
+}
+
+[<CLIMutable>]
+type DirectiveParamsMap = {
+    CompactnessSuccessDelta: float
+    CompactnessFailDelta: float
+    CompactnessSuccessThreshold: float
+    CompactnessFailThreshold: float
+    PressingSuccessDelta: float
+    PressingFailDelta: float
+    PressingSuccessThreshold: float
+    PressingFailThreshold: float
+    WingPlaySuccessDelta: float
+    WingPlayFailDelta: float
+    WingPlaySuccessThreshold: float
+    WingPlayFailThreshold: float
+}
+
+[<CLIMutable>]
+type EmergentWeights = {
+    CompactnessSuccessDelta: float
+    CompactnessFailDelta: float
+    CompactnessSuccessThreshold: float
+    CompactnessFailThreshold: float
+    PressingSuccessDelta: float
+    PressingFailDelta: float
+    PressingSuccessThreshold: float
+    PressingFailThreshold: float
+    WingPlaySuccessDelta: float
+    WingPlayFailDelta: float
+    WingPlaySuccessThreshold: float
+    WingPlayFailThreshold: float
+    ConsecutiveLossPenalty: float
+    FatigueSpiralCompactnessFactor: float
+    FatigueSpiralPressingFactor: float
+    FatigueSpiralTempoFactor: float
+    FatigueSpiralRiskFactor: float
+    FatigueSpiralThreshold: float
+}
+
+[<CLIMutable>]
+type ModifierWeights = {
+    TransitionNearMult: float
+    TransitionFarMult: float
+    TransitionNearDistance: float
+    WeaknessSupportMult: float
+    RestDefenseSupportMult: float
+    RestDefenseCoverMult: float
+    ThreatCoverMult: float
+    HighLineSupportMult: float
+    LowBlockPressMult: float
+    LowBlockCoverMult: float
+    UrgencyPressMult: float
+    UrgencySupportMult: float
+    UrgencyThreshold: float
+}
+
+[<CLIMutable>]
+type ChemistryWeights = {
+    FamiliarityPassBonus: float
+    FamiliarityFailPenalty: float
+    FamiliarityTimeBonus: float
+    PressingCoordinationBase: float
+    PressingCoordinationFamiliarityMult: float
+    TransitionSpeedBase: float
+    TransitionSpeedFamiliarityMult: float
+}
+
+[<CLIMutable>]
+type TeamDirectorWeights = {
+    WorkRateWeight: float
+    PositioningWeight: float
+    AdvancedBonus: float
+}
+
+[<CLIMutable>]
+type ReactiveLoopWeights = {
+    ShapeDevWeight: float
+    PressDevWeight: float
+    FatigueDevWeight: float
+    OnTrackThreshold: float
+    DriftingThreshold: float
+}
+
+[<CLIMutable>]
+type CollectiveWeights = {
+    DirectiveParams: DirectiveParamsMap
+    Emergent: EmergentWeights
+    Modifiers: ModifierWeights
+    Chemistry: ChemistryWeights
+    TeamDirector: TeamDirectorWeights
+    ReactiveLoop: ReactiveLoopWeights
+}
+
+[<CLIMutable>]
+type XGWeights = {
+    DistanceFactor: float
+    AngleExponent: float
+    BaseMultiplier: float
+    OneOnOneMultiplier: float
+    SetPieceMultiplier: float
+    PressureReduction: float
+    HeaderMultiplier: float
+    VolleyMultiplier: float
+    HalfVolleyMultiplier: float
+    ChipShotMultiplier: float
+    CurlerMultiplier: float
+    DrivenShotMultiplier: float
+    PlacedShotMultiplier: float
+    FirstTimeShotMultiplier: float
+}
+
+[<CLIMutable>]
+type InterceptionWeights = {
+    BallControlRadiusMult: float
+    PressIntentFactor: float
+    RecoverIntentFactor: float
+    MaintainShapeIntentFactor: float
+    CoverSpaceIntentFactor: float
+}
+
+[<CLIMutable>]
+type WinProbabilityWeights = {
+    GoalLeadBase: float
+    DrawBase: float
+    GoalDiffFactor: float
+    XGFactor: float
+    HomeAdvantage: float
+    GoalDiffSteepness: float
+    XGDiffSteepness: float
+    MinutePressure: float
+    ComebackBonus: float
+    MomentumPositiveThreshold: float
+    MomentumNegativeThreshold: float
+    MomentumPositiveBonus: float
+    MomentumNegativePenalty: float
+    MomentumLinearFactor: float
+}
+
+[<CLIMutable>]
+type UtilityWeights = {
+    PressZoneBonus_HighAttacking: float
+    PressZoneBonus_HighMidfield: float
+    PressZoneBonus_HighDefensive: float
+    PressZoneBonus_MidAttackingMidfield: float
+    PressZoneBonus_MidDefensive: float
+    PressZoneBonus_Low: float
+    PossessionChangeWindow: float
+    ScoreDiffPressStep: float
+    WingSpaceBase: float
+    StaminaWingMult: float
+    StructuredBase: float
+    DirectiveChangeThreshold: float
+    DropDeepHighLinePenalty: float
+    DropDeepLeadBonus: float
+    DropDeepTimeBonus: float
+    DropDeepBase: float
+    CounterPressStaminaFactor: float
+    CounterPressIntensityBonus: float
+    CounterPressBase: float
+    BuildFromBackNoPressBonus: float
+    BuildFromBackMidPressBonus: float
+    BuildFromBackHighPressPenalty: float
+    BuildFromBackLowBlockBonus: float
+    BuildFromBackBase: float
+    DirectPlayUrgencyBonus: float
+    DirectPlayUrgencyBonusAny: float
+    DirectPlayHighLineBonus: float
+    DirectPlayBase: float
+    SitAndCounterBase: float
+    SitAndCounterLeadBonus: float
+    SitAndCounterStaminaFactor: float
+    HoldPossessionLeadBonus: float
+    HoldPossessionDrawBonus: float
+    HoldPossessionLosingPenalty: float
+    HoldPossessionTimeBonus: float
+    HoldPossessionPressPenalty: float
+    HoldPossessionBase: float
+    CompactBlockLosingBonus: float
+    CompactBlockWinningPenalty: float
+    CompactBlockOpponentBonus: float
+    CompactBlockTimeBonus: float
+    CompactBlockBase: float
+    HighLineCohesionBonus: float
+    HighLineStaminaFactor: float
+    HighLineRiskPenalty: float
+    HighLineBase: float
+    PressingSuccessBonus: float
+    OpponentHighLineNoPressBonus: float
+    OverloadWeaknessBonus: float
+    OverloadFlankBase: float
+}
+
+[<CLIMutable>]
+type PerformanceWeightsMap = {
+    DuelStatWeight: float
+    DuelConditionWeight: float
+    DuelMoraleWeight: float
+    DuelCurveSteepness: float
+    DuelCurveInflection: float
+    TechnicalStatWeight: float
+    TechnicalConditionWeight: float
+    TechnicalMoraleWeight: float
+    TechnicalCurveSteepness: float
+    TechnicalCurveInflection: float
+    DecisionStatWeight: float
+    DecisionConditionWeight: float
+    DecisionMoraleWeight: float
+    DecisionCurveSteepness: float
+    DecisionCurveInflection: float
+}
+
+[<CLIMutable>]
+type RefereeWeights = {
+    CardBaseProb: float
+    CardAggressionMult: float
+    CardHomeReduction: float
+    InjuryBaseProb: float
+    InjuryStrengthInverseMult: float
+    FoulAggressionBase: float
+    FoulAggressionMult: float
+}
+
+[<CLIMutable>]
+type EnvironmentWeights = {
+    WeatherClearModifier: float
+    WeatherLightRainModifier: float
+    WeatherHeavyRainModifier: float
+    WeatherSnowModifier: float
+    WeatherWindyModifier: float
+    PitchDrySlipBase: float
+    PitchDampSlipBase: float
+    PitchWetSlipBase: float
+    PitchWaterloggedSlipBase: float
+    SlipAgilityReduction: float
+    CrowdMaxCapacity: float
+    CrowdCapacityWeight: float
+    CrowdSupportWeight: float
+    CrowdMomentumWeight: float
+    CrowdImportanceWeight: float
+    CrowdMaxAdvantage: float
+    AwayPressureCrowdMult: float
+}
+
+[<CLIMutable>]
+type MomentumWeights = {
+    EventDelta: float
+    Decay: float
+    Min: float
+    Max: float
+    HalfLifeSeconds: float
+}
+
 type BalanceConfig =
     { Duel: DuelConfig
       Shot: ShotConfig
@@ -529,7 +893,21 @@ type BalanceConfig =
       Manager: ManagerConfig
       BuildUp: BuildUpConfig
       Decision: DecisionConfig
-      Perception: PerceptionConfig }
+      Perception: PerceptionConfig
+      Individual: IndividualWeights
+      ProfileWeights: FootballEngine.Domain.ProfileWeights
+      Development: DevelopmentWeights
+      CalibrationTargets: CalibrationTargets
+      Collective: CollectiveWeights
+      Personality: PersonalityWeights
+      Utility: UtilityWeights
+      Referee: RefereeWeights
+      Environment: EnvironmentWeights
+      Momentum: MomentumWeights
+      XG: XGWeights
+      Interception: InterceptionWeights
+      WinProbability: WinProbabilityWeights
+      Performance: PerformanceWeightsMap }
 
 // ============================================================================
 // Default config value
@@ -894,7 +1272,7 @@ module BalanceConfig =
               LongBallDirectnessBonus = 0.20
               CreativityWeight = 0.10
               DirectnessWeight = 0.06
-              DecisionTemperature = 0.15
+              DecisionTemperature = 0.25
               // Decision thresholds — see DecisionConfig comments for derivation
               ShootMinThreshold = 0.35 // ~avg striker from 20m passes
               ShootDirectnessThresholdMod = 0.10 // directness=1.0 -> threshold=0.25
@@ -942,4 +1320,355 @@ module BalanceConfig =
               SetPieceSimplifiedRadius = 30.0<meter>
               BlindPassVisionThreshold = 15
               BlindPassComposureThreshold = 14
-              BlindPassSuccessPenalty = 0.30 } }
+              BlindPassSuccessPenalty = 0.30 }
+          Individual =
+            { Shoot =
+                { FinishingWeight = 0.35
+                  LongShotsWeight = 0.15
+                  ComposureWeight = 0.20
+                  XGInfluence = 0.20
+                  ComposureStateMod = 0.12
+                  ConfidenceMod = 0.08
+                  FocusMod = 0.06
+                  RiskBonus = 0.075
+                  DistPenaltyDivisor = 50.0
+                  DistPenaltyMax = 0.5 }
+              Pass =
+                { PassingWeight = 0.40
+                  VisionWeight = 0.30
+                  ComposureWeight = 0.08
+                  TargetBonus = 0.10
+                  AttackPhasePenalty = -0.03 }
+              Dribble =
+                { DribblingWeight = 0.50
+                  AgilityWeight = 0.30
+                  BalanceWeight = 0.20
+                  ZoneBonusAttacking = 0.1
+                  ZoneBonusMidfield = 0.05
+                  TempoPenalty = 0.20
+                  PressurePenalty = 0.15 }
+              Cross =
+                { CrossingWeight = 0.60
+                  LateralTendencyWeight = 0.60
+                  LateralTendencyBase = 0.10
+                  ZoneBonus = 0.15
+                  WidthBonus = 0.25 }
+              LongBall =
+                { LongShotsWeight = 0.0
+                  PassingWeight = 0.30
+                  VisionWeight = 0.20
+                  PressDistBase = 10.0
+                  PressMin = 0.3
+                  PressMax = 1.0
+                  PressNoOpponent = 0.7
+                  AttackPhaseBonus = 0.05
+                  DirectnessBonus = 0.20 }
+              SoftmaxTemperature = 0.15
+              DirectnessBlendTactic = 0.6
+              DirectnessBlendProfile = 0.4 }
+          ProfileWeights =
+            { PositionalFreedom_PositioningWeight = 0.15
+              PositionalFreedom_VisionWeight = 0.15
+              PositionalFreedom_StaminaWeight = 0.20
+              PositionalFreedom_ConcentrationWeight = 0.10
+              PositionalFreedom_BalanceWeight = 0.15
+              PositionalFreedom_AgilityWeight = 0.25
+              AttackingDepth_PaceWeight = 0.15
+              AttackingDepth_AccelerationWeight = 0.12
+              AttackingDepth_FinishingWeight = 0.08
+              AttackingDepth_ComposureWeight = 0.05
+              AttackingDepth_StaminaWeight = 0.10
+              AttackingDepth_PositionBaseMultiplier = 0.50
+              LateralTendency_CrossingWeight = 0.15
+              LateralTendency_PaceWeight = 0.10
+              DefensiveHeight_WorkRateWeight = 0.15
+              DefensiveHeight_TacklingWeight = 0.10
+              DefensiveHeight_PositioningWeight = 0.12
+              DefensiveHeight_StaminaWeight = 0.08
+              DefensiveHeight_PositionBaseMultiplier = 0.55
+              PressingIntensity_StaminaWeight = 0.30
+              PressingIntensity_WorkRateWeight = 0.25
+              PressingIntensity_AggressionWeight = 0.20
+              PressingIntensity_PaceWeight = 0.15
+              PressingIntensity_ConcentrationWeight = 0.10
+              RiskAppetite_PassingWeight = 0.15
+              RiskAppetite_LongShotsWeight = 0.15
+              RiskAppetite_VisionWeight = 0.20
+              RiskAppetite_ComposureWeight = 0.20
+              RiskAppetite_DribblingWeight = 0.15
+              RiskAppetite_BraveryWeight = 0.15
+              Directness_FinishingWeight = 0.20
+              Directness_PaceWeight = 0.20
+              Directness_AccelerationWeight = 0.15
+              Directness_AggressionWeight = 0.15
+              Directness_DribblingWeight = 0.10
+              Directness_StrengthWeight = 0.10
+              Directness_InversePassingWeight = 0.10
+              CreativityWeight_PassingWeight = 0.25
+              CreativityWeight_VisionWeight = 0.30
+              CreativityWeight_BallControlWeight = 0.15
+              CreativityWeight_DribblingWeight = 0.10
+              CreativityWeight_ComposureWeight = 0.10
+              CreativityWeight_CrossingWeight = 0.10
+              AerialThreat_JumpingReachWeight = 0.35
+              AerialThreat_HeadingWeight = 0.30
+              AerialThreat_StrengthWeight = 0.20
+              AerialThreat_BraveryWeight = 0.15
+              HoldUpPlay_StrengthWeight = 0.25
+              HoldUpPlay_BallControlWeight = 0.20
+              HoldUpPlay_ComposureWeight = 0.15
+              HoldUpPlay_PassingWeight = 0.15
+              HoldUpPlay_HeadingWeight = 0.10
+              HoldUpPlay_BalanceWeight = 0.15 }
+          Development =
+            { AgeBracket_MaxDelta_U21 = 4
+              AgeBracket_MaxDelta_U25 = 3
+              AgeBracket_MaxDelta_U28 = 2
+              AgeBracket_MaxDelta_U31 = 1
+              AgeBracket_MaxDelta_U34 = 0
+              FocusMultiplier_Goalkeeping = 1.5
+              FocusMultiplier_PhysicalBase = 0.5
+              FocusMultiplier_Physical_Pressing = 1.0
+              FocusMultiplier_Physical_Positional = 0.5
+              FocusMultiplier_Mental = 1.2
+              FocusMultiplier_TechnicalBase = 0.5
+              FocusMultiplier_Technical_Creativity = 1.0
+              FocusMultiplier_Technical_Directness = 0.5
+              WeeklyDeltaDivisor = 120.0
+              StatFocus_DirectnessThreshold = 0.5
+              StatFocus_AttackingDepthThreshold = 0.5
+              StatFocus_DefensiveHeightThreshold = 0.5
+              StatFocus_CreativityThreshold = 0.5
+              MaybeStat_PositiveThreshold = 0.35
+              MaybeStat_NegativeThreshold = 0.50 }
+          CalibrationTargets =
+            { GoalsPerMatch = 2.75
+              ShotsPerMatch = 14.0
+              PassSuccessRate = 0.65
+              CrossSuccessRate = 0.50
+              HomeWinPct = 0.475
+              DrawPct = 0.25
+              AwayWinPct = 0.275
+              CardsPerMatch = 3.0
+              InjuriesPerMatch = 0.5
+              DribblesPerMatch = 25.0
+              CrossesPerMatch = 20.0
+              LongBallsPerMatch = 40.0
+              DuelTicksPerMatch = 228.0 }
+          Collective =
+            { DirectiveParams =
+                { CompactnessSuccessDelta = 0.05
+                  CompactnessFailDelta = -0.05
+                  CompactnessSuccessThreshold = 0.7
+                  CompactnessFailThreshold = 0.5
+                  PressingSuccessDelta = 0.05
+                  PressingFailDelta = -0.08
+                  PressingSuccessThreshold = 0.6
+                  PressingFailThreshold = 0.4
+                  WingPlaySuccessDelta = 0.05
+                  WingPlayFailDelta = -0.05
+                  WingPlaySuccessThreshold = 0.55
+                  WingPlayFailThreshold = 0.4 }
+              Emergent =
+                { CompactnessSuccessDelta = 0.05
+                  CompactnessFailDelta = -0.05
+                  CompactnessSuccessThreshold = 0.7
+                  CompactnessFailThreshold = 0.5
+                  PressingSuccessDelta = 0.05
+                  PressingFailDelta = -0.08
+                  PressingSuccessThreshold = 0.6
+                  PressingFailThreshold = 0.4
+                  WingPlaySuccessDelta = 0.05
+                  WingPlayFailDelta = -0.05
+                  WingPlaySuccessThreshold = 0.55
+                  WingPlayFailThreshold = 0.4
+                  ConsecutiveLossPenalty = 0.03
+                  FatigueSpiralCompactnessFactor = 0.2
+                  FatigueSpiralPressingFactor = 1.2
+                  FatigueSpiralTempoFactor = 0.6
+                  FatigueSpiralRiskFactor = 0.5
+                  FatigueSpiralThreshold = 0.0 }
+              Modifiers =
+                { TransitionNearMult = 2.5
+                  TransitionFarMult = 0.7
+                  TransitionNearDistance = 15.0
+                  WeaknessSupportMult = 1.4
+                  RestDefenseSupportMult = 0.3
+                  RestDefenseCoverMult = 1.5
+                  ThreatCoverMult = 1.5
+                  HighLineSupportMult = 1.3
+                  LowBlockPressMult = 0.7
+                  LowBlockCoverMult = 1.2
+                  UrgencyPressMult = 0.5
+                  UrgencySupportMult = 0.3
+                  UrgencyThreshold = 0.7 }
+              Chemistry =
+                { FamiliarityPassBonus = 0.02
+                  FamiliarityFailPenalty = -0.005
+                  FamiliarityTimeBonus = 0.001
+                  PressingCoordinationBase = 0.1
+                  PressingCoordinationFamiliarityMult = 0.8
+                  TransitionSpeedBase = 0.05
+                  TransitionSpeedFamiliarityMult = 0.9 }
+              TeamDirector =
+                { WorkRateWeight = 0.3
+                  PositioningWeight = 0.4
+                  AdvancedBonus = 0.5 }
+              ReactiveLoop =
+                { ShapeDevWeight = 0.4
+                  PressDevWeight = 0.3
+                  FatigueDevWeight = 0.3
+                  OnTrackThreshold = 0.15
+                  DriftingThreshold = 0.35 } }
+          Personality =
+            { FlairVisionWeight = 0.6
+              FlairDribblingWeight = 0.4
+              ConsistencyConcentrationWeight = 0.5
+              ConsistencyComposureWeight = 0.5
+              LeadershipWeight = 1.0
+              ControversyAggressionWeight = 0.5
+              ControversyComposureWeight = 0.5
+              TeamworkWorkRateWeight = 0.6
+              TeamworkPositioningWeight = 0.4
+              AmbitionMoraleWeight = 0.5
+              AmbitionWorkRateWeight = 0.5
+              PressureComposureWeight = 0.7
+              PressureConcentrationWeight = 0.3
+              SportsmanshipAggressionWeight = 0.6
+              TemperamentComposureWeight = 0.5
+              TemperamentConcentrationWeight = 0.5 }
+          Utility =
+            { PressZoneBonus_HighAttacking = 0.4
+              PressZoneBonus_HighMidfield = 0.1
+              PressZoneBonus_HighDefensive = -0.3
+              PressZoneBonus_MidAttackingMidfield = 0.3
+              PressZoneBonus_MidDefensive = -0.1
+              PressZoneBonus_Low = 0.1
+              PossessionChangeWindow = 80.0
+              ScoreDiffPressStep = 0.35
+              WingSpaceBase = 0.3
+              StaminaWingMult = 0.2
+              StructuredBase = 0.25
+              DirectiveChangeThreshold = 0.15
+              DropDeepHighLinePenalty = -0.2
+              DropDeepLeadBonus = 0.2
+              DropDeepTimeBonus = 0.3
+              DropDeepBase = 0.3
+              CounterPressStaminaFactor = 0.5
+              CounterPressIntensityBonus = 0.3
+              CounterPressBase = 0.5
+              BuildFromBackNoPressBonus = 0.4
+              BuildFromBackMidPressBonus = 0.1
+              BuildFromBackHighPressPenalty = -0.2
+              BuildFromBackLowBlockBonus = 0.2
+              BuildFromBackBase = 0.3
+              DirectPlayUrgencyBonus = 0.4
+              DirectPlayUrgencyBonusAny = 0.2
+              DirectPlayHighLineBonus = 0.3
+              DirectPlayBase = 0.2
+              SitAndCounterBase = 0.1
+              SitAndCounterLeadBonus = 0.15
+              SitAndCounterStaminaFactor = 0.2
+              HoldPossessionLeadBonus = 0.3
+              HoldPossessionDrawBonus = 0.1
+              HoldPossessionLosingPenalty = -0.2
+              HoldPossessionTimeBonus = 0.3
+              HoldPossessionPressPenalty = -0.2
+              HoldPossessionBase = 0.3
+              CompactBlockLosingBonus = 0.2
+              CompactBlockWinningPenalty = -0.1
+              CompactBlockOpponentBonus = 0.2
+              CompactBlockTimeBonus = 0.2
+              CompactBlockBase = 0.3
+              HighLineCohesionBonus = 0.3
+              HighLineStaminaFactor = 0.2
+              HighLineRiskPenalty = -0.2
+              HighLineBase = 0.2
+              PressingSuccessBonus = 0.2
+              OpponentHighLineNoPressBonus = 0.3
+              OverloadWeaknessBonus = 0.4
+              OverloadFlankBase = 0.3 }
+          Referee =
+            { CardBaseProb = 0.010
+              CardAggressionMult = 0.0004
+              CardHomeReduction = 0.20
+              InjuryBaseProb = 0.0008
+              InjuryStrengthInverseMult = 0.00002
+              FoulAggressionBase = 0.25
+              FoulAggressionMult = 0.35 }
+          Environment =
+            { WeatherClearModifier = 1.0
+              WeatherLightRainModifier = 0.95
+              WeatherHeavyRainModifier = 0.85
+              WeatherSnowModifier = 0.8
+              WeatherWindyModifier = 0.9
+              PitchDrySlipBase = 0.01
+              PitchDampSlipBase = 0.03
+              PitchWetSlipBase = 0.08
+              PitchWaterloggedSlipBase = 0.15
+              SlipAgilityReduction = 0.5
+              CrowdMaxCapacity = 80000.0
+              CrowdCapacityWeight = 0.3
+              CrowdSupportWeight = 0.3
+              CrowdMomentumWeight = 0.2
+              CrowdImportanceWeight = 0.2
+              CrowdMaxAdvantage = 0.15
+              AwayPressureCrowdMult = 0.5 }
+          Momentum =
+            { EventDelta = 0.5
+              Decay = 0.02
+              Min = -10.0
+              Max = 10.0
+              HalfLifeSeconds = 15.0 }
+          XG =
+            { DistanceFactor = 0.033
+              AngleExponent = 1.0
+              BaseMultiplier = 0.8
+              OneOnOneMultiplier = 1.3
+              SetPieceMultiplier = 0.8
+              PressureReduction = 0.5
+              HeaderMultiplier = 0.7
+              VolleyMultiplier = 0.6
+              HalfVolleyMultiplier = 0.75
+              ChipShotMultiplier = 0.85
+              CurlerMultiplier = 0.9
+              DrivenShotMultiplier = 1.1
+              PlacedShotMultiplier = 1.0
+              FirstTimeShotMultiplier = 0.8 }
+          Interception =
+            { BallControlRadiusMult = 0.20
+              PressIntentFactor = 0.7
+              RecoverIntentFactor = 0.7
+              MaintainShapeIntentFactor = 1.4
+              CoverSpaceIntentFactor = 1.2 }
+          WinProbability =
+            { GoalLeadBase = 0.55
+              DrawBase = 0.50
+              GoalDiffFactor = 0.1
+              XGFactor = 0.15
+              HomeAdvantage = 0.0
+              GoalDiffSteepness = 0.1
+              XGDiffSteepness = 0.15
+              MinutePressure = 0.0
+              ComebackBonus = 0.0
+              MomentumPositiveThreshold = 2.0
+              MomentumNegativeThreshold = -2.0
+              MomentumPositiveBonus = 0.08
+              MomentumNegativePenalty = -0.08
+              MomentumLinearFactor = 0.04 }
+          Performance =
+            { DuelStatWeight = 0.70
+              DuelConditionWeight = 0.20
+              DuelMoraleWeight = 0.10
+              DuelCurveSteepness = 8.0
+              DuelCurveInflection = 0.5
+              TechnicalStatWeight = 0.75
+              TechnicalConditionWeight = 0.15
+              TechnicalMoraleWeight = 0.10
+              TechnicalCurveSteepness = 10.0
+              TechnicalCurveInflection = 0.5
+              DecisionStatWeight = 0.85
+              DecisionConditionWeight = 0.10
+              DecisionMoraleWeight = 0.05
+              DecisionCurveSteepness = 6.0
+              DecisionCurveInflection = 0.4 } }

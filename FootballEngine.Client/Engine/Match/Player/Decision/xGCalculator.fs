@@ -3,7 +3,7 @@ namespace FootballEngine.Player.Actions
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.ML
-
+open FootballEngine.Types
 open FootballEngine.Types.PhysicsContract
 
 
@@ -49,9 +49,9 @@ module xGCalculator =
         min 1.0 (max 0.0 xg5)
 
     let calculateWithDefaults (model: xGModel) : float =
-        let w = EngineWeightDefaults.defaults.Outcomes.XG
+        let w = BalanceConfig.defaultConfig.XG
         calculate model w
 
     let baseXGWithDefaults (dist: float<meter>) (angle: float) : float =
-        let w = EngineWeightDefaults.defaults.Outcomes.XG
+        let w = BalanceConfig.defaultConfig.XG
         baseXG dist angle w

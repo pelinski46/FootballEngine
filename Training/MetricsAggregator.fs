@@ -1,7 +1,6 @@
 namespace Training
 
 open FootballEngine.Domain
-open FootballEngine.ML
 open FSharp.Stats
 
 module MetricsAggregator =
@@ -53,9 +52,11 @@ module MetricsAggregator =
             float lateGoals / float totalGoals
 
     let private leadChanges (results: SimResult list) : int =
-        let changes =
-            results
-            |> List.averageBy (fun r ->
+        if List.isEmpty results then 0
+        else
+            let changes =
+                results
+                |> List.averageBy (fun r ->
                 let mutable homeLead = 0
                 let mutable changes = 0
                 let mutable lastLeader = 0
@@ -70,7 +71,7 @@ module MetricsAggregator =
                         lastLeader <- currentLeader
                     | _ -> ()
                 float changes)
-        int changes
+            int changes
 
     let private comebackRate (results: SimResult list) : float =
         let comebacks =

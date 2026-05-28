@@ -75,16 +75,6 @@ module TeamExecutor =
             let dir = attackDirFor clubSide state
             let phase = phaseFromBallZone dir state.Ball.Position.X
             let team = buildTeamPerspective clubSide ctx state
-            BatchDecisionSupport.computeSupportPositionsInto
-                team
-                state.Ball.Position
-                state.Ball.Control
-                phase
-                tacticsCfg
-                tacticsCfg.Width
-                basePositions
-                frame.SupportPositionX
-                frame.SupportPositionY
 
             if teamState.ShapeTargetX.Length <> frame.SlotCount then
                 teamState.ShapeTargetX <- Array.zeroCreate frame.SlotCount
@@ -94,7 +84,19 @@ module TeamExecutor =
                 System.Array.Clear(teamState.ShapeTargetY, 0, frame.SlotCount)
             let shapeTargetX = teamState.ShapeTargetX
             let shapeTargetY = teamState.ShapeTargetY
-            ShapeEngine.computeShapeTargets basePositions roster.Profiles dir phase state.Ball.Position.X tacticsCfg shapeTargetX shapeTargetY
+            ShapeEngine.computeShapeTargets basePositions frame.Physics roster.Profiles dir phase state.Ball.Position.X tacticsCfg shapeTargetX shapeTargetY
+
+            BatchDecisionSupport.computeSupportPositionsInto
+                team
+                state.Ball.Position
+                state.Ball.Control
+                phase
+                tacticsCfg
+                tacticsCfg.Width
+                basePositions
+                shapeTargetX shapeTargetY roster.Profiles
+                frame.SupportPositionX
+                frame.SupportPositionY
 
             let cFrame = if clubSide = HomeClub then state.HomeCognitiveFrame else state.AwayCognitiveFrame
             let defRoles = BatchDecisionSupport.computeDefensiveShape team state.Ball.Position cFrame (int time.Subtick) (int teamState.TransitionPressExpiry)

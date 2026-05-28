@@ -39,7 +39,7 @@ module PlayerPersonality =
           Temperament = norm mental.Composure * pw.TemperamentComposureWeight + norm mental.Concentration * pw.TemperamentConcentrationWeight }
 
     let deriveWithDefaults (player: Player) : PlayerPersonality =
-        derive player EngineWeightDefaults.defaults.Personality
+        derive player BalanceConfig.defaultConfig.Personality
 
     let defaultPersonality =
         { Flair = 0.5

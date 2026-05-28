@@ -25,7 +25,7 @@ module CalibrationTargets =
 
     let targetMid ((a, b): float * float) = (a + b) / 2.0
 
-    let fromEngineTargets (t: FootballEngine.ML.CalibrationTargets) : CalibrationTargets =
+    let fromEngineTargets (t: FootballEngine.Types.CalibrationTargets) : CalibrationTargets =
         let range pct v = (v * (1.0 - pct), v * (1.0 + pct))
         { GoalsPerMatch = range 0.2 t.GoalsPerMatch
           Possession = (0.45, 0.55)

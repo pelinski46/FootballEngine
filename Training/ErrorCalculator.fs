@@ -1,7 +1,6 @@
 namespace Training
 
 open FootballEngine.Domain
-open FootballEngine.ML
 
 module ErrorCalculator =
 

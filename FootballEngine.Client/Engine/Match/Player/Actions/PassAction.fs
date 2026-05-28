@@ -210,10 +210,10 @@ module PassAction =
                        else
                            0.0)
                      - distPenalty
-                     + (familiarity - 0.5) * EngineWeightDefaults.defaults.Collective.Chemistry.FamiliarityPassBonus
+                     + (familiarity - 0.5) * BalanceConfig.defaultConfig.Collective.Chemistry.FamiliarityPassBonus
 
                 let passMeanCapped = Math.Clamp(passMean, pc.MeanMin, pc.MeanMax)
-                let chemBonus = familiarity * EngineWeightDefaults.defaults.Collective.Chemistry.FamiliarityPassBonus
+                let chemBonus = familiarity * BalanceConfig.defaultConfig.Collective.Chemistry.FamiliarityPassBonus
 
                 let quality =
                     betaSample
@@ -560,7 +560,7 @@ module PassAction =
 
                         let convergence = proximityScore * 0.4 + velAlign * 0.6
                         let receiver = attRoster.Players[i]
-                        let ballControlBonus = float receiver.Technical.BallControl / 20.0 * EngineWeightDefaults.defaults.Collective.Chemistry.FamiliarityTimeBonus * 100.0
+                        let ballControlBonus = float receiver.Technical.BallControl / 20.0 * BalanceConfig.defaultConfig.Collective.Chemistry.FamiliarityTimeBonus * 100.0
                         let totalScore = convergence + ballControlBonus
 
                         if totalScore > bestReceiverScore then

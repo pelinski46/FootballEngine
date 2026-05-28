@@ -14,8 +14,8 @@
         <Compile Include="Domain\ExperienceModifiers.fs"/>
         <Compile Include="Domain\Player.fs"/>
         <Compile Include="Domain\PlayerExperience.fs"/>
-        <Compile Include="Domain\Lineup.fs" />
-        <Compile Include="Domain\CoordinationMemory.fs" />
+        <Compile Include="Domain\Lineup.fs"/>
+        <Compile Include="Domain\CoordinationMemory.fs"/>
         <Compile Include="Domain\Club.fs"/>
         <Compile Include="Domain\Staff.fs"/>
         <Compile Include="Domain\Match.fs"/>
@@ -46,6 +46,7 @@
         <Compile Include="Engine\Match\Types\PhysicsContract.fs"/>
         <Compile Include="Engine\Match\Types\PitchZone.fs"/>
         <Compile Include="Engine\Match\Types\SimulationClock.fs"/>
+        <Compile Include="Engine\Match\Types\BalanceConfig.fs"/>
         <Compile Include="Engine\Match\Types\Probability.fs"/>
 
 
@@ -66,8 +67,6 @@
         <Compile Include="Engine\Match\Types\MatchMemory.fs"/>
 
         <Compile Include="Engine\Match\Types\DirectiveTypes.fs"/>
-        <Compile Include="Engine\Match\Types\BalanceConfig.fs"/>
-        <Compile Include="Tools\ConfigExtractor.fs"/>
 
         <Compile Include="Engine\Match\Types\RefereeAction.fs"/>
         <Compile Include="Engine\Match\Types\SchedulingTypes.fs"/>
@@ -95,7 +94,6 @@
         <Compile Include="Engine\Match\Core\SimStateOps.fs"/>
         <Compile Include="Engine\Match\Core\MathPipelines.fs"/>
 
-        <Compile Include="Engine\Match\ML\EngineWeights.fs"/>
         <Compile Include="Engine\Match\ML\WeightsLoader.fs"/>
 
         <Compile Include="Engine\Match\Referee\FoulAnalysis.fs"/>
@@ -275,7 +273,6 @@
         <PackageReference Include="Avalonia.Skia" Version="11.3.12"/>
         <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12"/>
         <PackageReference Include="Elmish" Version="5.0.2"/>
-        <PackageReference Update="FSharp.Core" Version="10.1.201"/>
         <PackageReference Include="FSharp.Stats" Version="0.6.0"/>
         <PackageReference Include="FsToolkit.ErrorHandling" Version="5.2.0"/>
         <PackageReference Include="Material.Icons.Avalonia" Version="3.0.0"/>

@@ -127,7 +127,7 @@ module Mappers =
           ContractExpiry = contractExpiry
           TrainingFocus = trainingFocusToString player.TrainingSchedule.Focus
           TrainingIntensity = trainingIntensityToString player.TrainingSchedule.Intensity
-          BehavioralProfile = behavioralProfileToString (Player.profile player EngineWeightDefaults.defaults.ProfileWeights) }
+          BehavioralProfile = behavioralProfileToString (Player.profile player FootballEngine.Types.BalanceConfig.defaultConfig.ProfileWeights) }
 
     let toPlayerDomain (e: PlayerEntity) : Player =
         let status =

@@ -5,10 +5,11 @@ open FootballEngine.Domain
 open FootballEngine.Stats
 open FootballEngine.World
 open FootballEngine.ML
+open FootballEngine.Types
 
 module TrainingEngine =
 
-    let private dev = EngineWeightDefaults.defaults.Development
+    let private dev = BalanceConfig.defaultConfig.Development
 
     let focusMultiplier (focus: TrainingFocus) (profile: BehavioralProfile) : float =
         match focus with
@@ -126,7 +127,7 @@ module TrainingEngine =
             age
             playerWithCondition.CurrentSkill
             playerWithCondition.PotentialSkill
-            (Player.profile playerWithCondition EngineWeightDefaults.defaults.ProfileWeights)
+            (Player.profile playerWithCondition BalanceConfig.defaultConfig.ProfileWeights)
             playerWithCondition
 
     let applyRemainingSeasonTraining
@@ -164,7 +165,7 @@ module TrainingEngine =
 
 module PlayerDevelopment =
 
-    let private dev = EngineWeightDefaults.defaults.Development
+    let private dev = BalanceConfig.defaultConfig.Development
 
     let private skillDelta
         (age: int)
@@ -317,7 +318,7 @@ module PlayerDevelopment =
 
     let developPlayer (currentDate: DateTime) (schedule: TrainingSchedule option) (p: Player) : Player =
         let a = Player.age currentDate p
-        let prof = Player.profile p EngineWeightDefaults.defaults.ProfileWeights
+        let prof = Player.profile p BalanceConfig.defaultConfig.ProfileWeights
         let delta = skillDelta a p.CurrentSkill p.PotentialSkill schedule prof
         let newCA = clamp 1 p.PotentialSkill (p.CurrentSkill + delta)
 

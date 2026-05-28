@@ -21,6 +21,9 @@ module BatchDecisionSupport =
         (_tactics: TacticsConfig)
         (desiredWidth: float)
         (basePositions: Spatial[])
+        (shapeTargetX: float32[])
+        (shapeTargetY: float32[])
+        (profiles: BehavioralProfile[])
         (targetX: float32[])
         (targetY: float32[])
         : unit =
@@ -33,11 +36,14 @@ module BatchDecisionSupport =
             | Receiving(_, pid, _) -> Some pid
             | _ -> None
 
+        let forwardX = if team.AttackDir = LeftToRight then 1.0 else -1.0
+
         for i = 0 to n - 1 do
             match frame.Physics.Occupancy[i] with
             | OccupancyKind.Active _ ->
-                let px = basePositions[i].X
-                let py = basePositions[i].Y
+                let shapeX = float shapeTargetX[i] * 1.0<meter>
+                let shapeY = float shapeTargetY[i] * 1.0<meter>
+                let profile = profiles[i]
 
                 let isCarrier =
                     match ballCarrierId with
@@ -45,15 +51,14 @@ module BatchDecisionSupport =
                     | None -> false
 
                 if isCarrier then
-                    targetX[i] <- float32 px
-                    targetY[i] <- float32 py
+                    let carrierX = shapeX + 3.0<meter> * forwardX
+                    targetX[i] <- float32 (clamp carrierX 2.0<meter> 98.0<meter>)
+                    targetY[i] <- float32 (clamp shapeY 2.0<meter> 98.0<meter>)
                 else
-                    let forwardX = if team.AttackDir = LeftToRight then 1.0 else -1.0
-                    let baseX = px + 8.0<meter> * forwardX
-                    let centerY = 34.0<meter>
-                    let widthOffset = (py - centerY) * desiredWidth
-                    targetX[i] <- float32 (clamp baseX 2.0<meter> 98.0<meter>)
-                    targetY[i] <- float32 (clamp (centerY + widthOffset) 2.0<meter> 98.0<meter>)
+                    let offensiveBias = profile.AttackingDepth * 6.0<meter> * forwardX
+                    let supportX = shapeX + offensiveBias
+                    targetX[i] <- float32 (clamp supportX 2.0<meter> 98.0<meter>)
+                    targetY[i] <- float32 (clamp shapeY 2.0<meter> 98.0<meter>)
             | _ ->
                 targetX[i] <- 52.5f
                 targetY[i] <- 34.0f
@@ -66,11 +71,14 @@ module BatchDecisionSupport =
         (tactics: TacticsConfig)
         (desiredWidth: float)
         (basePositions: Spatial[])
+        (shapeTargetX: float32[])
+        (shapeTargetY: float32[])
+        (profiles: BehavioralProfile[])
         : Spatial[] =
         let frame = team.OwnFrame
         let resultX = Array.zeroCreate<float32> frame.SlotCount
         let resultY = Array.zeroCreate<float32> frame.SlotCount
-        computeSupportPositionsInto team ballPos ballControl phase tactics desiredWidth basePositions resultX resultY
+        computeSupportPositionsInto team ballPos ballControl phase tactics desiredWidth basePositions shapeTargetX shapeTargetY profiles resultX resultY
         Array.init frame.SlotCount (fun i ->
             defaultSpatial (float resultX[i] * 1.0<meter>) (float resultY[i] * 1.0<meter>))
 
@@ -123,7 +131,7 @@ module BatchDecisionSupport =
                     let px = float frame.Physics.PosX[i] * 1.0<meter>
                     let isAdvanced = (px - 52.5<meter>) * forwardX > 5.0<meter>
 
-                    let w = EngineWeightDefaults.defaults.Collective.TeamDirector
+                    let w = BalanceConfig.defaultConfig.Collective.TeamDirector
                     let score =
                         float player.Mental.WorkRate / 20.0 * w.WorkRateWeight
                         + float player.Mental.Positioning / 20.0 * w.PositioningWeight

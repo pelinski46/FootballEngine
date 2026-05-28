@@ -2,6 +2,7 @@ namespace FootballEngine.Simulation
 
 open FootballEngine.Domain
 open FootballEngine.ML
+open FootballEngine.Types
 
 type MatchMomentum =
     { HomeMomentum: float
@@ -20,7 +21,7 @@ module DynamicMomentum =
           ConsecutiveAwayEvents = 0 }
 
     let update (momentum: MatchMomentum) (subTick: int) (eventClub: ClubSide) : MatchMomentum =
-        let mw = EngineWeightDefaults.defaults.Momentum
+        let mw = BalanceConfig.defaultConfig.Momentum
         let delta = mw.EventDelta
         let decay = mw.Decay
 

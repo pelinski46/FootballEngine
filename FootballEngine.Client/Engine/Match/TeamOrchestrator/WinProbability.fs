@@ -13,7 +13,7 @@ type MatchSituation =
 module WinProbability =
 
     let calculate (ctx: MatchContext) (state: SimState) (clock: SimulationClock) : float =
-        let w = EngineWeightDefaults.defaults.WinProbability
+        let w = BalanceConfig.defaultConfig.WinProbability
         let scoreDiff = state.HomeScore - state.AwayScore
         let minutesLeft = subTicksToSeconds clock state.SubTick / 60.0
 

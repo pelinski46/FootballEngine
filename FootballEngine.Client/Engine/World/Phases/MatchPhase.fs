@@ -299,7 +299,7 @@ module MatchPhase =
             |> parallelMapLimited (fun (id, fixture) ->
                 let home = gsReady.Clubs[fixture.HomeClubId]
                 let away = gsReady.Clubs[fixture.AwayClubId]
-                id, fixture, trySimulateMatch home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
+                id, fixture, trySimulateMatch BalanceConfig.defaultConfig home away gsReady.Players gsReady.Staff gsReady.ProfileCache)
             |> Array.choose (fun (id, fixture, result) ->
                 match result with
                 | Ok(h, a, events, finalState) ->
@@ -327,7 +327,7 @@ module MatchPhase =
 
         let afterOutcomes = applyOutcomes (fixtureToCompMap gsReady) outcomes gsReady
 
-        let w = FootballEngine.ML.EngineWeightDefaults.defaults.Collective
+        let w = BalanceConfig.defaultConfig.Collective
 
         let updateClubCoord (clubId: ClubId) (gs: GameState) : GameState =
             let outcome = outcomes |> Array.tryFind (fun o -> o.Fixture.HomeClubId = clubId || o.Fixture.AwayClubId = clubId)

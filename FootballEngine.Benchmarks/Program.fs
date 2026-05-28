@@ -43,7 +43,7 @@ let main _args =
     printfn "=== Warm-up (1 iteration)..."
 
     let ctx, state, _, _ =
-        MatchSimulator.setup homeClub awayClub gameState.Players gameState.Staff false gameState.ProfileCache
+        MatchSimulator.setup BalanceConfig.defaultConfig homeClub awayClub gameState.Players gameState.Staff false gameState.ProfileCache
         |> function
             | Ok v -> v
             | Error e -> failwithf $"Setup failed: %A{e}"
@@ -59,7 +59,7 @@ let main _args =
 
     while true do
         let ctx, state, _, _ =
-            MatchSimulator.setup homeClub awayClub gameState.Players gameState.Staff false gameState.ProfileCache
+            MatchSimulator.setup BalanceConfig.defaultConfig homeClub awayClub gameState.Players gameState.Staff false gameState.ProfileCache
             |> function
                 | Ok v -> v
                 | Error e -> failwithf $"Setup failed: %A{e}"

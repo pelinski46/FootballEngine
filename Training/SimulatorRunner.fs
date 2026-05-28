@@ -3,6 +3,7 @@ namespace Training
 open FootballEngine
 open FootballEngine.Domain
 open FootballEngine.Simulation
+open FootballEngine.Types
 
 type SimResult = {
     HomeScore: int
@@ -16,19 +17,20 @@ type SimResult = {
 module SimulatorRunner =
 
     let runOneMatch
+        (config: BalanceConfig)
         (home: Club)
         (away: Club)
         (players: Map<PlayerId, Player>)
         (staff: Map<StaffId, Staff>)
         (profileMap: Map<PlayerId, BehavioralProfile>)
         : Result<SimResult, string> =
-        match MatchSimulator.trySimulateMatch home away players staff profileMap with
-        | Ok (homeScore, awayScore, events, finalState) ->
+        match MatchSimulator.trySimulateMatchFull config home away players staff profileMap with
+        | Ok replay ->
             Ok {
-                HomeScore = homeScore
-                AwayScore = awayScore
-                Events = events
-                FinalState = finalState
+                HomeScore = replay.Final.HomeScore
+                AwayScore = replay.Final.AwayScore
+                Events = replay.Events
+                FinalState = replay.Final
                 HomeId = home.Id
                 AwayId = away.Id
             }
@@ -36,6 +38,7 @@ module SimulatorRunner =
             Error (sprintf "Simulation error: %A" err)
 
     let runBatch
+        (config: BalanceConfig)
         (n: int)
         (home: Club)
         (away: Club)
@@ -43,10 +46,7 @@ module SimulatorRunner =
         (staff: Map<StaffId, Staff>)
         (profileMap: Map<PlayerId, BehavioralProfile>)
         : SimResult list =
-        let rec loop i acc =
-            if i >= n then List.rev acc
-            else
-                match runOneMatch home away players staff profileMap with
-                | Ok result -> loop (i + 1) (result :: acc)
-                | Error _ -> loop (i + 1) acc
-        loop 0 []
+        Array.Parallel.init n (fun _ ->
+            runOneMatch config home away players staff profileMap)
+        |> Array.choose (function Ok r -> Some r | Error _ -> None)
+        |> Array.toList

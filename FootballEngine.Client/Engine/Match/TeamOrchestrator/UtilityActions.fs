@@ -41,7 +41,7 @@ module private UtilityEvaluators =
         (clubSide: ClubSide)
         (ctx: MatchContext)
         =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let ballZoneBonus =
             match depth, bb.BallZone with
             | PressHigh, AttackingZone -> uw.PressZoneBonus_HighAttacking
@@ -71,7 +71,7 @@ module private UtilityEvaluators =
         (clubSide: ClubSide)
         (ctx: MatchContext)
         =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let sd = scoreDiffFor state clubSide
         let ml = minutesLeft state
 
@@ -97,7 +97,7 @@ module private UtilityEvaluators =
         (clubSide: ClubSide)
         (ctx: MatchContext)
         =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         if not bb.JustLostBall then
             0.0
         else
@@ -112,7 +112,7 @@ module private UtilityEvaluators =
         (clubSide: ClubSide)
         (ctx: MatchContext)
         =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         if bb.OurPhase = Defending then
             0.0
         else
@@ -126,7 +126,7 @@ module private UtilityEvaluators =
             clamp (uw.BuildFromBackBase + comfortBonus + shapeBonus) 0.0 1.0
 
     let evaluatePlayWings bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         if bb.OurPhase = Defending then
             0.0
         else
@@ -136,7 +136,7 @@ module private UtilityEvaluators =
             clamp (uw.DropDeepBase + wingSpace + staminaFactor * uw.StaminaWingMult) 0.0 1.0
 
     let evaluateOverloadFlank flank bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         if bb.OurPhase = Defending then
             0.0
         else
@@ -152,7 +152,7 @@ module private UtilityEvaluators =
             clamp (uw.OverloadFlankBase + bonus) 0.0 1.0
 
     let evaluateDirectPlay bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let sd = scoreDiffFor state clubSide
         let ml = minutesLeft state
 
@@ -170,7 +170,7 @@ module private UtilityEvaluators =
         clamp (uw.DirectPlayBase + urgencyBonus + highLineBonus) 0.0 1.0
 
     let evaluateSitAndCounter bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let sd = scoreDiffFor state clubSide
 
         if sd <= 0 then
@@ -181,7 +181,7 @@ module private UtilityEvaluators =
             clamp (uw.SitAndCounterBase + leadBonus + staminaFactor * uw.SitAndCounterStaminaFactor) 0.0 1.0
 
     let evaluateHoldPossession bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let sd = scoreDiffFor state clubSide
         let ml = minutesLeft state
 
@@ -197,7 +197,7 @@ module private UtilityEvaluators =
         clamp (uw.HoldPossessionBase + leadBonus + timeBonus + pressPenalty) 0.0 1.0
 
     let evaluateCompactBlock bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         let sd = scoreDiffFor state clubSide
         let ml = minutesLeft state
 
@@ -217,7 +217,7 @@ module private UtilityEvaluators =
         clamp (uw.CompactBlockBase + defensiveBonus + opponentBonus + timeBonus) 0.0 1.0
 
     let evaluateHighLine bb emergent state clubSide ctx =
-        let uw = EngineWeightDefaults.defaults.Utility
+        let uw = BalanceConfig.defaultConfig.Utility
         if bb.OurPhase = Attacking then
             0.0
         else
@@ -233,7 +233,7 @@ module private UtilityEvaluators =
             clamp (uw.HighLineBase + cohesionBonus + staminaFactor * uw.HighLineStaminaFactor + riskPenalty) 0.0 1.0
 
     let evaluateStructured _bb _emergent _state _clubSide _ctx =
-        EngineWeightDefaults.defaults.Utility.StructuredBase
+        BalanceConfig.defaultConfig.Utility.StructuredBase
 
 module UtilityActions =
 
@@ -305,7 +305,7 @@ module UtilityActions =
 
         match prevAction with
         | Some prev when prev <> best ->
-            let uw = EngineWeightDefaults.defaults.Utility
+            let uw = BalanceConfig.defaultConfig.Utility
             if bestScore > prevScore + uw.DirectiveChangeThreshold then best else prev
         | _ -> best
 

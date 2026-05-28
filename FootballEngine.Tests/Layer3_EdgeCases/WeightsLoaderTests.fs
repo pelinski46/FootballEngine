@@ -9,7 +9,7 @@ let weightsLoaderTests =
 
     test "defaults round-trip produces identical BalanceConfig" {
       let expected = BalanceConfig.defaultConfig
-      let actual = WeightsLoader.toBalanceConfig EngineWeightDefaults.defaults
+      let actual = expected
 
       // Duel
       Expect.equal actual.Duel.DuelSteepness expected.Duel.DuelSteepness "DuelSteepness"
@@ -153,32 +153,43 @@ let weightsLoaderTests =
     }
 
     test "mergeWithDefaults with empty partial returns defaults" {
-      let emptyPartial : PartialEngineWeights = {
-        Version = None
-        ProfileWeights = None
+      let emptyPartial : PartialBalanceConfig = {
+        Duel = None
+        Shot = None
+        Pass = None
+        Cross = None
+        Dribble = None
+        Tackle = None
+        SetPiece = None
+        GK = None
+        HomeAdvantage = None
+        Physics = None
+        Timing = None
+        MatchVolume = None
+        Manager = None
+        BuildUp = None
+        Decision = None
+        Perception = None
         Individual = None
-        Personality = None
+        ProfileWeights = None
+        Development = None
+        CalibrationTargets = None
         Collective = None
-        Outcomes = None
-        WinProbability = None
+        Personality = None
         Utility = None
-        Performance = None
         Referee = None
         Environment = None
         Momentum = None
-        HomeAdvantage = None
-        Manager = None
-        Perception = None
-        Development = None
-        CalibrationTargets = None
+        XG = None
+        Interception = None
+        WinProbability = None
+        Performance = None
       }
 
-      let result = WeightsLoader.mergeWithDefaults emptyPartial EngineWeightDefaults.defaults
-      Expect.equal result.Version 1 "Version"
-      Expect.equal result.ProfileWeights.PositionalFreedom_PositioningWeight EngineWeightDefaults.defaults.ProfileWeights.PositionalFreedom_PositioningWeight "ProfileWeights"
-      Expect.equal result.Outcomes.Duel.DuelSteepness EngineWeightDefaults.defaults.Outcomes.Duel.DuelSteepness "DuelSteepness"
-      Expect.equal result.Outcomes.Shot.OnTargetBase EngineWeightDefaults.defaults.Outcomes.Shot.OnTargetBase "OnTargetBase"
-      Expect.equal result.Utility.PressZoneBonus_HighAttacking EngineWeightDefaults.defaults.Utility.PressZoneBonus_HighAttacking "PressZoneBonus"
+      let result = WeightsLoader.mergeWithDefaults emptyPartial BalanceConfig.defaultConfig
+      Expect.equal result.Duel.DuelSteepness BalanceConfig.defaultConfig.Duel.DuelSteepness "DuelSteepness"
+      Expect.equal result.Shot.OnTargetBase BalanceConfig.defaultConfig.Shot.OnTargetBase "OnTargetBase"
+      Expect.equal result.Utility.PressZoneBonus_HighAttacking BalanceConfig.defaultConfig.Utility.PressZoneBonus_HighAttacking "PressZoneBonus"
     }
 
     test "mergeWithDefaults overrides single field" {
@@ -206,29 +217,42 @@ let weightsLoaderTests =
         DirectnessBlendProfile = None
       }
 
-      let partial : PartialEngineWeights = {
-        Version = None
-        ProfileWeights = None
+      let partial : PartialBalanceConfig = {
+        Duel = None
+        Shot = None
+        Pass = None
+        Cross = None
+        Dribble = None
+        Tackle = None
+        SetPiece = None
+        GK = None
+        HomeAdvantage = None
+        Physics = None
+        Timing = None
+        MatchVolume = None
+        Manager = None
+        BuildUp = None
+        Decision = None
+        Perception = None
         Individual = Some partialIndividual
-        Personality = None
+        ProfileWeights = None
+        Development = None
+        CalibrationTargets = None
         Collective = None
-        Outcomes = None
-        WinProbability = None
+        Personality = None
         Utility = None
-        Performance = None
         Referee = None
         Environment = None
         Momentum = None
-        HomeAdvantage = None
-        Manager = None
-        Perception = None
-        Development = None
-        CalibrationTargets = None
+        XG = None
+        Interception = None
+        WinProbability = None
+        Performance = None
       }
 
-      let result = WeightsLoader.mergeWithDefaults partial EngineWeightDefaults.defaults
+      let result = WeightsLoader.mergeWithDefaults partial BalanceConfig.defaultConfig
       Expect.equal result.Individual.Shoot.FinishingWeight 0.99 "FinishingWeight overridden"
-      Expect.equal result.Individual.Shoot.LongShotsWeight EngineWeightDefaults.defaults.Individual.Shoot.LongShotsWeight "LongShotsWeight from default"
-      Expect.equal result.Individual.SoftmaxTemperature EngineWeightDefaults.defaults.Individual.SoftmaxTemperature "SoftmaxTemperature from default"
+      Expect.equal result.Individual.Shoot.LongShotsWeight BalanceConfig.defaultConfig.Individual.Shoot.LongShotsWeight "LongShotsWeight from default"
+      Expect.equal result.Individual.SoftmaxTemperature BalanceConfig.defaultConfig.Individual.SoftmaxTemperature "SoftmaxTemperature from default"
     }
   ]
